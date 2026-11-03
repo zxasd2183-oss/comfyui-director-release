@@ -1,0 +1,29 @@
+name: Test VPS read-only controller
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vps-control/**'
+      - '.github/workflows/ci-vps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate local control center
+        working-directory: vps-control
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile api.py app.py
+          python -m unittest discover -s tests -v
+          bash -n install-ubuntu.sh
