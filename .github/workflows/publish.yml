@@ -1,0 +1,77 @@
+name: Publish signed ComfyUI Director to GitHub Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.3.0)'
+        required: true
+        default: '0.3.0'
+        type: string
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: director-signed-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify archive and extract source
+        env:
+          PINNED_SHA256: a4ceaf17af06c09a0ef3b18a568e6d100f196d9519701c4d31cffc104f84f204
+        run: |
+          base64 --decode bootstrap/director-v0.3.0-bootstrap.tar.gz.b64 > /tmp/director.tar.gz
+          echo "$PINNED_SHA256  /tmp/director.tar.gz" | sha256sum -c -
+          mkdir extracted
+          tar -xzf /tmp/director.tar.gz -C extracted --no-same-owner --no-same-permissions
+      - name: Run offline regression tests
+        run: |
+          cd extracted
+          python -m pip install --disable-pip-version-check cryptography
+          python -m unittest discover -s tests -q
+      - name: Sign release (private key stays in Actions Secret)
+        env:
+          DIRECTOR_SIGNING_PRIVATE_HEX: ${{ secrets.DIRECTOR_SIGNING_PRIVATE_HEX }}
+          VERSION_INPUT: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          python - <<'PY'
+          import os,re,subprocess,sys
+          from pathlib import Path
+          if not os.environ.get('DIRECTOR_SIGNING_PRIVATE_HEX'):
+              sys.exit('Missing DIRECTOR_SIGNING_PRIVATE_HEX Actions secret; never publish unsigned updates')
+          ver=(os.environ['VERSION_INPUT'] if os.environ['EVENT_NAME']=='workflow_dispatch'
+               else os.environ['REF_NAME'].removeprefix('v'))
+          if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',ver):
+              sys.exit('Invalid version')
+          text=Path('extracted/studio_mcp.py').read_text()
+          if 'VERSION = "'+ver+'"' not in text:
+              sys.exit('Source version differs from requested version')
+          url=f"https://{os.environ['REPO_OWNER']}.github.io/{os.environ['REPO_NAME']}"
+          subprocess.run([sys.executable,'extracted/release_tools.py','release','--version',ver,
+                          '--source','extracted','--base-url',url,'--output','site'],check=True)
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
