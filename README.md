@@ -12,6 +12,30 @@
 - ⏳ **尚未启用自动更新**：需要仓库所有者设置签名密钥 Secret、启用 GitHub Pages，并在 GPU 上首次安装和绑定公钥。
 - ⏳ V3 尚未在优云智算实机测试/切换；此前成功连接的 V1 仍独立运行。
 
+## 当前实例的重要端口说明（2026-11-03）
+
+**优云智算 Slink 使用 8765，ComfyUI Director V3 实际监听 8790。** 不要再用 `8765/health` 测试 Director，也不要停止 Slink。V3 已由实例上的 `director_supervisor.py` 管理；默认安装脚本中的 8765 仅是通用默认值，不适用于此实例。
+
+### 不上传 ZIP，验证和连接 ChatGPT Plus
+
+先验证 V3 和 8 个 MCP 工具是否已经可以在本地使用（不会生成视频）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-release/main/scripts/connect_v3.py \
+  -o ~/connect_v3.py
+python3 ~/connect_v3.py
+```
+
+如果输出显示 `version: 0.3.0`、`port: 8790`、`Tools: 8`，创建一条新的临时 Cloudflare HTTPS 隧道：
+
+```bash
+python3 ~/connect_v3.py --tunnel
+```
+
+脚本会将完整的含私密 `/mcp/<secret>` 路径的 HTTPS URL 只显示在**你的终端**。**不要把该地址发到聊天、GitHub、截图或日志**。请在 ChatGPT 中**新建自定义 MCP 插件** `ComfyUI Director V3` 并填写完整 Server URL。创建新插件而不是刷新旧 V1，是为了强制新一轮工具发现；成功后应当出现 8 个工具，其中包含 `get_upgrade_readiness`、`audit_h3_workflow`、`get_h3_node_inputs`。旧插件在成功前可以保留。
+
+本流程只读，不会修改 ComfyUI、执行视频生成或关闭 GPU。Quick Tunnel 仅用于短期测试，生产环境应改为具有正式身份认证的稳定 HTTPS 地址。
+
 ## 云端首次安装（无需手动上传 ZIP）
 
 在**优云智算 GPU 终端**运行：
@@ -50,7 +74,7 @@ a4ceaf17af06c09a0ef3b18a568e6d100f196d9519701c4d31cffc104f84f204
    ```
 6. 启动 Supervisor 后检查：
    ```bash
-   curl -fsS http://127.0.0.1:8765/health
+   curl -fsS http://127.0.0.1:8790/health # 当前实例；其他实例以 config.json 的 port 为准
    cat ~/.comfyui-director/status.json
    ```
 
