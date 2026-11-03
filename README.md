@@ -32,7 +32,7 @@ bash ~/director-install-v3.sh
 a4ceaf17af06c09a0ef3b18a568e6d100f196d9519701c4d31cffc104f84f204
 ```
 
-成功安装后再停掉旧 V1 Python 进程，并运行 `~/.comfyui-director/controller/start.sh` 切换到 V3；保留原有 Cloudflare Tunnel 连接，若域名没变就不需要在 ChatGPT 重建插件。
+注意：签名自动更新的公钥验签需要 GPU 上的 Python 环境能够导入 `cryptography`；如脚本提示缺失，请运行 `python3 -m pip install cryptography`。只读网关本身不依赖这个库。\n\n成功安装后再停掉旧 V1 Python 进程，并运行 `~/.comfyui-director/controller/start.sh` 切换到 V3；保留原有 Cloudflare Tunnel 连接，若域名没变就不需要在 ChatGPT 重建插件。
 
 **请注意：** GPU 实例关机后，运行在 GPU 内的 Supervisor 也会停止；需要根据你实例的持久化与启动方式配置自动启动，不能只依靠 nohup。
 
