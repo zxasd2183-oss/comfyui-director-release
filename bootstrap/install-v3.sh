@@ -36,6 +36,11 @@ tar -tzf director.tar.gz | while IFS= read -r path; do
 done
 tar -xzf director.tar.gz -C src --no-same-owner --no-same-permissions
 cd src
+if ! python3 -c 'from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey' >/dev/null 2>&1; then
+  echo "NOTE: Signed AUTO-UPDATES need the Python cryptography package."
+  echo "Install it into this Python environment before enabling updates:"
+  echo "  python3 -m pip install cryptography"
+fi
 echo "Running offline tests ..."
 python3 -m unittest discover -s tests -q
 echo "Installing files without stopping existing V1 or changing the GPU ..."
