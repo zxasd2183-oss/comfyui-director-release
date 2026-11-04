@@ -142,7 +142,7 @@ def atomic_write(path,data):
 def mirror(directory):
     if not directory.is_dir() or directory.is_symlink():
         raise ValueError("Mirror destination must be a real directory")
-    lock=Path("/tmp/glacier-macos-update-mirror.lock")
+    lock=directory/".sync.lock"
     fd=os.open(str(lock),os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
     try:
         fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
