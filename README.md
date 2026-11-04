@@ -12,6 +12,31 @@
 - ⏳ **尚未启用自动更新**：需要仓库所有者设置签名密钥 Secret、启用 GitHub Pages，并在 GPU 上首次安装和绑定公钥。
 - ⏳ V3 尚未在优云智算实机测试/切换；此前成功连接的 V1 仍独立运行。
 
+## GPU 再次开机后：一键恢复 V3 连接
+
+GPU 开关机由广州 VPS 的 Director Power Requests 独立审批；**运行中的 GPU 与连通的 ComfyUI MCP 是两回事**。之前在 GPU 内启动的 Cloudflare Quick Tunnel 会随着 GPU 关机而消失，其临时 HTTPS 域名不会自动恢复。
+
+在**优云智算 GPU 终端**执行（不是广州 VPS）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-release/main/scripts/recover_gpu_v3.py -o ~/recover_gpu_v3.py
+python3 ~/recover_gpu_v3.py --tunnel
+```
+
+工具只检查本机 ComfyUI 8188 和 Director V3 8790；若 Supervisor 未响应，尝试运行**已安装**的 `~/.comfyui-director/controller/start.sh`。它不会安装软件、运行视频任务、重启 ComfyUI 或调用 GPU 开关机 API。只有在 V3 自检通过时才运行新临时 HTTPS Tunnel。Cloudflared 必须已经安装。
+
+将 GPU 终端最后输出的**完整私密 MCP URL**只填入 ChatGPT 的 `ComfyUI Director V3` 自定义连接设置（若不可修改则重新添加该插件）。**不要把私密 URL 或 `/mcp/<token>` 复制到聊天、GitHub、截图或日志。** 运行后可以在这里请求 `get_studio_status` 验证。
+
+**必须同步 VPS 关机安全校验入口：** 在**广州 VPS** 用 `sudoedit /etc/comfyui-director-control.env` 将 `DIRECTOR_GPU_MCP_URL` 更新为刚得到的 GPU 端新 MCP URL，保持原始文件 root 拥有且权限 0600，然后执行：
+
+```bash
+sudo systemctl restart director-power-mcp director-power-approval
+```
+
+若不更新，V0.3 的安全关机申请将因为旧的队列地址不可达而被拒绝；绝不可因连不上队列就绕过安全检查。
+
+上述方案属于短期联调：每次 GPU 重启 Quick Tunnel 都会换地址。长期无人值守需要固定域名的认证隧道（Cloudflare Named Tunnel / 等效方案），并在 GPU 启动环境中配置持久化服务；是否有 systemd 和持久化目录需要在 GPU 本机确认后再安装启动项。
+
 ## 当前实例的重要端口说明（2026-11-03）
 
 **优云智算 Slink 使用 8765，ComfyUI Director V3 实际监听 8790。** 不要再用 `8765/health` 测试 Director，也不要停止 Slink。V3 已由实例上的 `director_supervisor.py` 管理；默认安装脚本中的 8765 仅是通用默认值，不适用于此实例。
