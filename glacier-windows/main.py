@@ -14,6 +14,7 @@ from ui09 import GlacierUI09
 from update_ui import GlacierUpdateUI
 from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
+from chrome14 import GlacierChrome14
 
 APP = "Glacier Browser"
 def appdir():
@@ -107,7 +108,7 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -134,7 +135,7 @@ class Browser(GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, Glac
   self.setup_ui08(lay,bar)
   self.setup_updater(bar, appdir())
   self.setup_windows_ui12(bar)
-  self.setWindowTitle('❄ Glacier Browser · v0.13 · 标签页体验升级')
+  self.setup_chrome14(lay,bar)
   self.restore_startup_session()
   QShortcut(QKeySequence("Ctrl+L"),self,activated=lambda:self.address.setFocus())
   QShortcut(QKeySequence("Ctrl+T"),self,activated=self.new_tab)
@@ -142,10 +143,13 @@ class Browser(GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, Glac
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
   self.attach_tab13(v)
+  v.titleChanged.connect(lambda _title: self.refresh_tabs14())
+  v.iconChanged.connect(lambda _icon: self.refresh_tabs14())
   v.urlChanged.connect(lambda _url,view=v:self.sync_url() if view is self.current() else None)
   v.loadFinished.connect(lambda ok,view=v:self.on_page_loaded(view,ok))
   self.attach_page_security(v)
   v.setHtml(self.home_markup(),QUrl("about:blank"));self.open_startup_home(v)
+  self.refresh_tabs14()
   return v
  def close_tab(self,i):
   v=self.tabs.widget(i)
@@ -153,6 +157,7 @@ class Browser(GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, Glac
   self.remember_closed_tab(v.url().toString())
   self.cleanup_closed13(v)
   self.tabs.removeTab(i);v.deleteLater()
+  self.refresh_tabs14()
   if not self.tabs.count():self.new_tab()
  def sync_url(self):
   v=self.current()
