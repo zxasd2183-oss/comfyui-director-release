@@ -20,12 +20,14 @@
 在 VPS 已经建立的管理员 SSH 会话：
 
     sudo id directorlink >/dev/null 2>&1 || sudo useradd --system --create-home --home-dir /home/directorlink --shell /usr/sbin/nologin directorlink
-    sudo passwd -l directorlink
+    sudo usermod -p NP directorlink
     sudo install -d -o directorlink -g directorlink -m 0700 /home/directorlink/.ssh
     sudo touch /home/directorlink/.ssh/authorized_keys
     sudo chown directorlink:directorlink /home/directorlink/.ssh/authorized_keys
     sudo chmod 0600 /home/directorlink/.ssh/authorized_keys
     sudoedit /home/directorlink/.ssh/authorized_keys
+
+注意：OpenSSH 在部分 Linux 系统上会拒绝密码字段以惊叹号开头的**锁定账号**，即使使用公钥也可能无法连接。因此这里使用不可作为有效密码哈希的 NP，占用密码字段，但不调用 passwd -l。再结合以下 Match User 的 PasswordAuthentication no、KbdInteractiveAuthentication no 与禁用会话，确保它只用于 SSH 公钥反向转发。<https://man7.org/linux/man-pages/man8/sshd.8.html>
 
 添加一行，用 GPU 第 1 步的真实 Ed25519 **公钥**替换示例：
 
