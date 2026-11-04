@@ -96,6 +96,10 @@ class MacDesktop15:
             "Meta+Shift+T": self.reopen_closed_tab15,
             "Meta+N": lambda: self.open_satellite(private=False),
             "Meta+Shift+N": lambda: self.open_satellite(private=True),
+            "Meta+D": self.toggle_bookmark,
+            "Meta+F": self.open_find13,
+            "Meta+J": self.show_downloads,
+            "Meta+Y": self.show_history,
         }
         for index in range(1, 9):
             shortcuts[f"Meta+{index}"] = (
