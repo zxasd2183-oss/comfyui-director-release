@@ -22,8 +22,12 @@ JWKS_URL = ISSUER + "/.well-known/jwks"
 AUDIENCE = "jipite-vps-update-sync"
 REPOSITORY = "zxasd2183-oss/comfyui-director-release"
 REPOSITORY_ID = "1444506143"
+OWNER_ID = "292720048"
 WORKFLOW_REF = REPOSITORY + "/.github/workflows/jipite-immediate-sync.yml@refs/heads/main"
-SUBJECT = "repo:" + REPOSITORY + ":ref:refs/heads/main"
+# This repo was created after 2026-07-15; GitHub uses immutable OIDC subjects.
+SUBJECT = ("repo:zxasd2183-oss@" + OWNER_ID +
+           "/comfyui-director-release@" + REPOSITORY_ID +
+           ":ref:refs/heads/main")
 MAX_TOKEN_LENGTH = 10000
 MAX_JWKS_BYTES = 100000
 
@@ -86,7 +90,8 @@ def check_claims(payload: dict, now: int | None = None) -> None:
         raise AuthenticationFailure("Malformed token claims")
     required = {
         "iss": ISSUER, "aud": AUDIENCE, "repository": REPOSITORY,
-        "repository_id": REPOSITORY_ID, "ref": "refs/heads/main",
+        "repository_id": REPOSITORY_ID, "repository_owner_id": OWNER_ID,
+        "ref": "refs/heads/main",
         "event_name": "workflow_run", "workflow_ref": WORKFLOW_REF,
         "sub": SUBJECT,
     }
@@ -113,6 +118,8 @@ def get_jwks():
     with urlopen(Request(JWKS_URL, headers={
         "Accept": "application/json", "User-Agent": "jipite-vps-oidc/1.0"
     }), timeout=8) as response:
+        if response.geturl() != JWKS_URL:
+            raise AuthenticationFailure("OIDC JWKS URL redirected")
         data = response.read(MAX_JWKS_BYTES + 1)
         if len(data) > MAX_JWKS_BYTES:
             raise AuthenticationFailure("JWK payload too large")
