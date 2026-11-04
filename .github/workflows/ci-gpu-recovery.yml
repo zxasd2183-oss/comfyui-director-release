@@ -8,6 +8,8 @@ on:
       - 'scripts/test_recover_gpu_v3.py'
       - 'scripts/gpu-named-tunnel-boot.sh'
       - 'scripts/install_gpu_named_tunnel.sh'
+      - 'scripts/gpu-ssh-backhaul.sh'
+      - 'scripts/install_gpu_ssh_backhaul.sh'
       - '.github/workflows/ci-gpu-recovery.yml'
   workflow_dispatch:
 
@@ -25,5 +27,6 @@ jobs:
       - name: Compile and test GPU boot recovery (offline, no GPU commands)
         run: |
           bash -n scripts/gpu-named-tunnel-boot.sh scripts/install_gpu_named_tunnel.sh
+          bash -n scripts/gpu-ssh-backhaul.sh scripts/install_gpu_ssh_backhaul.sh
           python -m py_compile scripts/recover_gpu_v3.py scripts/test_recover_gpu_v3.py
           python -m unittest scripts.test_recover_gpu_v3 -v
