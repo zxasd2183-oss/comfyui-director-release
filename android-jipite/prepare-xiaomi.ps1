@@ -47,6 +47,21 @@ try {
   if (-not ($entries -contains 'AndroidManifest.xml') -or -not ($entries -contains 'classes.jar')) {
     throw 'Invalid AAR structure: AndroidManifest.xml or classes.jar is missing.'
   }
+  $jarMemory = New-Object System.IO.MemoryStream
+  $zip.GetEntry('classes.jar').Open().CopyTo($jarMemory)
+  $jarMemory.Position = 0
+  $jar = New-Object System.IO.Compression.ZipArchive($jarMemory, [System.IO.Compression.ZipArchiveMode]::Read, $true)
+  try {
+    $jarNames = @($jar.Entries | ForEach-Object { $_.FullName })
+    if (-not ($jarNames -contains 'com/xiaomi/mipush/sdk/MiPushClient.class') -or
+        -not ($jarNames -contains 'com/xiaomi/mipush/sdk/PushMessageReceiver.class')) {
+      throw 'This AAR does not contain official MiPushClient + PushMessageReceiver classes.'
+    }
+  }
+  finally {
+    $jar.Dispose()
+    $jarMemory.Dispose()
+  }
 }
 finally {
   $zip.Dispose()
@@ -82,6 +97,7 @@ Set-Content -LiteralPath $MiResource -Value $xml -Encoding UTF8
 
 Write-Host 'Xiaomi mainland build inputs prepared.'
 Write-Host 'Mi Push AAR: app/libs/MiPush_SDK_Client.aar'
+Write-Host 'Local AAR SHA256:' (Get-FileHash -LiteralPath $AarDestination -Algorithm SHA256).Hash
 Write-Host 'MSAL redirect and Android Manifest: configured for supplied signing hash.'
 Write-Host 'Firebase/Google Play Services NOT required for xiaomiDebug.'
 Write-Host 'AppSecret must remain ONLY on your VPS.'
