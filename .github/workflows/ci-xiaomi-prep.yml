@@ -1,0 +1,52 @@
+name: Validate Xiaomi APK preparation (no vendor binaries)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-jipite/prepare-xiaomi.ps1'
+      - 'android-jipite/XIAOMI_PUSH.md'
+      - '.github/workflows/ci-xiaomi-prep.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows PowerShell preparation script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD.Path 'android-jipite/prepare-xiaomi.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | Format-List
+            throw "PowerShell syntax validation failed"
+          }
+          Write-Host "PowerShell script parses successfully."
+      - name: Make invalid AAR without Xiaomi Java classes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile("/tmp/not-mipush.aar","w") as archive:
+              archive.writestr("AndroidManifest.xml","<manifest package='invalid'/>")
+              archive.writestr("classes.jar","not a real JAR")
+          PY
+      - name: Security smoke test - reject incorrect SDK before writing configuration
+        shell: pwsh
+        run: |
+          $errorMessage = ""
+          try {
+            & ./android-jipite/prepare-xiaomi.ps1 -AarPath /tmp/not-mipush.aar -MicrosoftClientId '11111111-2222-3333-4444-555555555555' -MicrosoftSigningHash 'AAAAAAAAAAAAAAAAAAAAAAAAAAA=' -MiAppId 'XiaomiTestAppId' -MiAppKey 'XiaomiTestAppKey'
+          } catch {
+            $errorMessage = $_.Exception.Message
+          }
+          if ($errorMessage -notmatch 'MiPushClient|AAR|ZipArchive|archive|central directory') {
+            throw "Expected non-Mi Push SDK to be rejected; received: $errorMessage"
+          }
+          Write-Host "Rejected non-Mi Push SDK without changing credentials."
