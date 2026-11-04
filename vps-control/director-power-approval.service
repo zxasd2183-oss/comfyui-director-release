@@ -1,0 +1,35 @@
+[Unit]
+Description=Director V0.3 independent owner 2FA power approval web page
+After=network-online.target director-power-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=directorpower
+Group=directorpower
+WorkingDirectory=/opt/comfyui-director-power
+LoadCredential=directorenv:/etc/comfyui-director-control.env
+LoadCredential=otp:/etc/comfyui-director-otp.seed
+LoadCredential=webkey:/etc/comfyui-director-approval-route
+Environment=DIRECTOR_POWER_CONFIG=%d/directorenv
+Environment=DIRECTOR_POWER_TOTP=%d/otp
+Environment=DIRECTOR_POWER_WEB_KEY=%d/webkey
+Environment=DIRECTOR_POWER_DB=/var/lib/comfyui-director-power/requests.db
+StateDirectory=comfyui-director-power
+StateDirectoryMode=0700
+ExecStart=/opt/comfyui-director-control/.venv/bin/python /opt/comfyui-director-power/power_approval_http.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
