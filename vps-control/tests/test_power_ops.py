@@ -88,6 +88,44 @@ class PowerTests(unittest.TestCase):
         self.assertFalse(get_queue_state({**CFG,"DIRECTOR_GPU_QUEUE_URL":
                                         "http://example.com/queue"})["verified"])
 
+    def test_h3_director_v3_queue_check(self):
+        import io
+        endpoint="https://example.trycloudflare.com/mcp/long-random-token"
+        class Reply(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+            def geturl(self): return endpoint
+        captured=[]
+        def opener(req, timeout):
+            self.assertEqual(req.get_method(),"POST")
+            data=json.loads(req.data)
+            self.assertEqual(data["params"]["name"],"get_queue_summary")
+            captured.append(True)
+            response={"jsonrpc":"2.0","id":1,"result":{
+                "structuredContent":{"ok":True,"running":0,"pending":0,"read_only":True}
+            }}
+            return Reply(json.dumps(response).encode())
+        status=get_queue_state({**CFG,"DIRECTOR_GPU_MCP_URL":endpoint},opener=opener)
+        self.assertTrue(status["verified"])
+        self.assertTrue(status["empty"])
+        self.assertTrue(captured)
+
+    def test_h3_director_v3_running_queue_blocks(self):
+        import io
+        endpoint="https://example.trycloudflare.com/mcp/test"
+        class Reply(io.BytesIO):
+            def geturl(self): return endpoint
+        def opener(req, timeout):
+            response={"jsonrpc":"2.0","id":1,"result":{
+                "structuredContent":{"ok":True,"running":1,"pending":2}
+            }}
+            return Reply(json.dumps(response).encode())
+        queue=get_queue_state({**CFG,"DIRECTOR_GPU_MCP_URL":endpoint},opener=opener)
+        self.assertTrue(queue["verified"])
+        self.assertFalse(queue["empty"])
+        self.assertFalse(build_plan("stop",CFG,FakeClient("Running"),
+                                   queue_check=lambda _:queue)["allowed"])
+
     def test_read_env_file_needs_root_only_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "env"
