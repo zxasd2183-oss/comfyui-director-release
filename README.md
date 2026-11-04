@@ -12,6 +12,12 @@
 - ⏳ **尚未启用自动更新**：需要仓库所有者设置签名密钥 Secret、启用 GitHub Pages，并在 GPU 上首次安装和绑定公钥。
 - ⏳ V3 尚未在优云智算实机测试/切换；此前成功连接的 V1 仍独立运行。
 
+## 固定域名 borealos.cn（推荐，不再重复配置）
+
+[一次性配置 Cloudflare Named Tunnel + GPU/VPS 自启动](./FIXED_DOMAIN.md)：
+`director.borealos.cn`、`status.borealos.cn`、`power.borealos.cn`、`approve.borealos.cn`。
+这四个 DNS 主机名需要在 Cloudflare 真正创建并验证，不能只修改文档。此方案取代每次重新创建 `trycloudflare.com` 临时链接。
+
 ## GPU 再次开机后：一键恢复 V3 连接
 
 GPU 开关机由广州 VPS 的 Director Power Requests 独立审批；**运行中的 GPU 与连通的 ComfyUI MCP 是两回事**。之前在 GPU 内启动的 Cloudflare Quick Tunnel 会随着 GPU 关机而消失，其临时 HTTPS 域名不会自动恢复。
