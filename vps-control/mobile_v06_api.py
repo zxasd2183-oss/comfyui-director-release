@@ -218,7 +218,7 @@ def build_handler(identity, config_provider, pairing_code: str, db_path: str):
                     answer = decide(sub, body.get("device_id"),
                                     body.get("request_id"), body.get("nonce"),
                                     body.get("signature"), body.get("decision"),
-                                    config_provider(), db_path)
+                                    config_provider, db_path)
                 self.reply(200, answer)
             except Rejected as exc:
                 self.reply(409, {"ok":False,"reason":str(exc)})
