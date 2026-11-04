@@ -80,6 +80,34 @@ def fcm_sender(credentials_path: str):
     return send
 
 
+def xiaomi_sender(secret_path: str):
+    """Optional Xiaomi mainland Mi Push provider. Secret is server-only."""
+    if not Path(secret_path).is_file():
+        return None
+    from mobile_v06_xiaomi import send_xiaomi
+    secret = Path(secret_path).read_text(encoding="ascii").strip()
+    if not 8 <= len(secret) <= 256:
+        raise RuntimeError("invalid Xiaomi server credentials")
+    def send(reg_id: str, request_id: str, action: str, ttl_ms: int):
+        send_xiaomi(reg_id, request_id, action, secret, ttl_ms=ttl_ms)
+    return send
+
+
+def push_dispatcher(firebase, xiaomi):
+    if firebase is None and xiaomi is None:
+        return None
+    def send(registration: str, request_id: str, action: str, ttl_ms: int):
+        if registration.startswith("xm:"):
+            if xiaomi is None:
+                raise RuntimeError("xiaomi_push_not_configured")
+            xiaomi(registration[3:], request_id, action, ttl_ms)
+        else:
+            if firebase is None:
+                raise RuntimeError("fcm_not_configured")
+            firebase(registration, request_id, action)
+    return send
+
+
 def notify_worker(db_path: str, sender, stop: threading.Event):
     """Best-effort delivery, never blocks MCP request creation or approval.
     Push has no authority. Only the app's biometric signature may approve.
@@ -102,7 +130,8 @@ def notify_worker(db_path: str, sender, stop: threading.Event):
             for row in rows:
                 delivered = False
                 try:
-                    sender(row["fcm_token"], row["id"], row["action"])
+                    sender(row["fcm_token"], row["id"], row["action"],
+                           max(1000, int((row["expires"] - time.time()) * 1000)))
                     delivered = True
                 except Exception:
                     pass
@@ -211,7 +240,9 @@ def main():
     with open_db(db_path) as db:
         db.execute("SELECT 1")
     firebase_path = str(Path(directory) / "firebase")
-    sender = fcm_sender(firebase_path)
+    firebase = fcm_sender(firebase_path)
+    xiaomi = xiaomi_sender(str(Path(directory) / "xiaomi"))
+    sender = push_dispatcher(firebase, xiaomi)
     stop = threading.Event()
     worker = threading.Thread(target=notify_worker,
                               args=(db_path,sender,stop),daemon=True)
@@ -220,7 +251,8 @@ def main():
                               build_handler(identity,power_config,pairing_code,db_path))
     srv.daemon_threads = True
     print("Jipite V0.6 mobile API: loopback-only 127.0.0.1:8895; "
-          "FCM enabled=" + str(sender is not None),flush=True)
+          "FCM enabled=" + str(firebase is not None) +
+          "; Mi Push enabled=" + str(xiaomi is not None),flush=True)
     try:
         srv.serve_forever()
     finally:
