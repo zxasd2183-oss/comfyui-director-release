@@ -23,10 +23,14 @@ REPOSITORY = "zxasd2183-oss/comfyui-director-release"
 REPOSITORY_ID = "1444506143"
 OWNER_ID = "292720048"
 WORKFLOW_REF = REPOSITORY + "/.github/workflows/glacier-macos-vps-immediate.yml@refs/heads/glacier-browser-updates"
-# This repo was created after 2026-07-15; GitHub uses immutable OIDC subjects.
+MANUAL_WORKFLOW_REF = REPOSITORY + "/.github/workflows/glacier-macos-vps-manual-sync.yml@refs/heads/main"
+# This repository uses GitHub's immutable owner/repository OIDC subject IDs.
 SUBJECT = ("repo:zxasd2183-oss@" + OWNER_ID +
            "/comfyui-director-release@" + REPOSITORY_ID +
            ":ref:refs/heads/glacier-browser-updates")
+MAIN_SUBJECT = ("repo:zxasd2183-oss@" + OWNER_ID +
+                "/comfyui-director-release@" + REPOSITORY_ID +
+                ":ref:refs/heads/main")
 MAX_TOKEN_LENGTH = 10000
 MAX_JWKS_BYTES = 100000
 
@@ -90,15 +94,25 @@ def check_claims(payload: dict, now: int | None = None) -> None:
     required = {
         "iss": ISSUER, "aud": AUDIENCE, "repository": REPOSITORY,
         "repository_id": REPOSITORY_ID, "repository_owner_id": OWNER_ID,
-        "ref": "refs/heads/glacier-browser-updates",
-        "workflow_ref": WORKFLOW_REF,
-        "sub": SUBJECT,
+
     }
     for name, expected in required.items():
         if payload.get(name) != expected:
             raise AuthenticationFailure("OIDC claim mismatch: " + name)
-    if payload.get("event_name") not in ("push", "workflow_dispatch"):
-        raise AuthenticationFailure("Unexpected GitHub workflow event")
+    identities = (
+        ("refs/heads/glacier-browser-updates", WORKFLOW_REF, SUBJECT,
+         ("push", "workflow_dispatch")),
+        ("refs/heads/main", MANUAL_WORKFLOW_REF, MAIN_SUBJECT,
+         ("workflow_dispatch",)),
+    )
+    if not any(
+        payload.get("ref") == ref and
+        payload.get("workflow_ref") == workflow_ref and
+        payload.get("sub") == subject and
+        payload.get("event_name") in events
+        for ref, workflow_ref, subject, events in identities
+    ):
+        raise AuthenticationFailure("OIDC workflow identity mismatch")
     current = int(time.time() if now is None else now)
     for key in ("exp", "iat", "nbf"):
         if not isinstance(payload.get(key), int):
