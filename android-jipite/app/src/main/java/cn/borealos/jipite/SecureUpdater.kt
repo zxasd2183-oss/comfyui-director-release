@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import org.json.JSONObject
 import java.io.File
 import java.net.URL
 import java.security.MessageDigest
