@@ -23,10 +23,11 @@ class PowerError(Exception):
     """Safe failure; the message never includes provider response or credentials."""
 
 
-def read_env_file(path: str = "/etc/comfyui-director-control.env") -> dict:
+def read_env_file(path: str = "/etc/comfyui-director-control.env", *,
+                  validate_file_mode: bool = True) -> dict:
     file = Path(path)
     mode = stat.S_IMODE(file.stat().st_mode)
-    if mode & 0o077:
+    if validate_file_mode and mode & 0o077:
         raise PowerError("Credential file permissions must be 0600")
     config = {}
     for raw_line in file.read_text(encoding="utf-8").splitlines():
@@ -57,6 +58,45 @@ def read_env_file(path: str = "/etc/comfyui-director-control.env") -> dict:
         raise PowerError("Invalid zone")
     return config
 
+
+
+def read_systemd_credential_env(credential_file: str,
+                               credential_directory: str,
+                               source_file: str = "/etc/comfyui-director-control.env",
+                               expected_source_uid: int = 0) -> dict:
+    """Load a systemd LoadCredential copy, validating its private source.
+
+    systemd protects the runtime credential with a private service namespace.
+    Verify the runtime file is the directorenv credential within the service
+    directory, AND ensure the root-owned original remains mode 0600.
+    The normal CLI read_env_file() retains strict mode enforcement.
+    """
+    if not credential_file or not credential_directory:
+        raise PowerError("Systemd credential environment not configured")
+    runtime = Path(credential_file)
+    directory = Path(credential_directory)
+    if runtime.name != "directorenv" or runtime.is_symlink():
+        raise PowerError("Unexpected runtime credential file")
+    try:
+        resolved_runtime = runtime.resolve(strict=True)
+        resolved_directory = directory.resolve(strict=True)
+    except OSError:
+        raise PowerError("Systemd credential path unavailable") from None
+    if resolved_runtime.parent != resolved_directory:
+        raise PowerError("Systemd credential outside runtime directory")
+    if not resolved_runtime.is_file():
+        raise PowerError("Invalid runtime credential")
+    try:
+        source = Path(source_file)
+        if source.is_symlink():
+            raise PowerError("Source credential cannot be symlink")
+        srcstat = source.stat()
+    except OSError:
+        raise PowerError("Original credential file not accessible") from None
+    if (not stat.S_ISREG(srcstat.st_mode) or srcstat.st_uid != expected_source_uid
+            or stat.S_IMODE(srcstat.st_mode) & 0o077):
+        raise PowerError("Original credential must be root-owned and mode 0600")
+    return read_env_file(str(resolved_runtime), validate_file_mode=False)
 
 def silence_sdk_logging():
     # UCloud's own documentation documents this logger switch. The Describe
