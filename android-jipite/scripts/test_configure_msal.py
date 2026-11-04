@@ -20,7 +20,7 @@ class SigningConfigurationTests(unittest.TestCase):
         self.config_path = configure_msal.PROJECT / "app/src/main/res/raw/msal_config.json"
         self.manifest_path = configure_msal.PROJECT / "app/src/main/AndroidManifest.xml"
         self.config_path.parent.mkdir(parents=True)
-        self.manifest_path.parent.mkdir(parents=True)
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.write_text(json.dumps({"client_id": "00000000-0000-0000-0000-000000000000"}), encoding="utf-8")
         self.manifest_path.write_text(
             '<manifest><activity android:name="com.microsoft.identity.client.BrowserTabActivity" '
