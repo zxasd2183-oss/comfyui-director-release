@@ -1,0 +1,27 @@
+[Unit]
+Description=Isolated Glacier macOS GitHub OIDC release notification receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=glacierupdate
+Group=glacierupdate
+WorkingDirectory=/opt/glacier-macos-updates
+ExecStart=/opt/glacier-macos-updates/venv/bin/python /opt/glacier-macos-updates/glacier-macos-immediate-notify.py --port 8897
+Restart=on-failure
+RestartSec=4
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/glacier-macos-updates
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=1024M
+TimeoutStopSec=10
