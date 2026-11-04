@@ -1,6 +1,6 @@
 # 吉皮提 V0.9.0 · Fluent 风格与应用内更新
 
-本次是界面和发布分发升级，不修改已有 Microsoft 身份认证、一次性配对、Android Keystore 签名、VPS 审批规则或 GPU 电源安全边界。
+V0.9.1 在 V0.9.0 的 Fluent 界面和更新功能基础上增加下载版本名校验与安装源路径再次核验。此次是界面和发布分发升级，不修改已有 Microsoft 身份认证、一次性配对、Android Keystore 签名、VPS 审批规则或 GPU 电源安全边界。
 
 ## 界面
 
@@ -29,9 +29,9 @@
 
 `.github/workflows/build-jipite-apk.yml` 对受信任 `main` 分支变更生成同一证书签名的联机版 APK，并单独由 `publish` 作业使用受限的 `contents: write` 权限创建：
 
-- Release tag：`jipite-v0.9.0`
-- APK asset：`Jipite-v0.9.0-Microsoft-connected.apk`
-- 发布页：`https://github.com/zxasd2183-oss/comfyui-director-release/releases/tag/jipite-v0.9.0`
+- Release tag：`jipite-vX.Y.Z`，例如 `jipite-v0.9.1`
+- APK asset：`Jipite-vX.Y.Z-Microsoft-connected.apk`
+- 发布页：`https://github.com/zxasd2183-oss/comfyui-director-release/releases`
 
 发布前需成功编译并通过 apksigner 校验。CI 不将签名私钥上传到 Release。若同版本 Release 已存在，不覆盖已有版本；后续迭代必须增加 Android `versionCode`、`versionName` 和对应 Release 标签。
 

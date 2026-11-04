@@ -471,7 +471,8 @@ class MainActivity : FragmentActivity() {
     private fun installAppUpdate() {
         val file = downloadedUpdate ?: return
         try {
-            val started = SecureUpdater.requestInstall(this, file)
+            val version = latestUpdate?.version ?: return
+            val started = SecureUpdater.requestInstall(this, file, version)
             updateStatus.text = if (started)
                 "已打开 Android 系统安装确认；请核对版本并选择安装。"
             else

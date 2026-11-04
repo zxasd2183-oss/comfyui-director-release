@@ -171,7 +171,7 @@ object SecureUpdater {
                         require(actual.equals(release.sha256, ignoreCase = true)) {
                             "SHA-256 校验失败，已拒绝安装"
                         }
-                        validateApk(context, part)
+                        validateApk(context, part, release.version)
                         target.delete()
                         require(part.renameTo(target)) { "无法保存已验证 APK" }
                         target
@@ -187,12 +187,13 @@ object SecureUpdater {
         }
     }
 
-    private fun validateApk(context: android.content.Context, file: File) {
+    private fun validateApk(context: android.content.Context, file: File, expectedVersion: String) {
         val manager = context.packageManager
         val archive = manager.getPackageArchiveInfo(
             file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES
         ) ?: error("无法读取 APK 安装信息")
         require(archive.packageName == context.packageName) { "更新包名不匹配" }
+        require(archive.versionName == expectedVersion) { "更新包版本号与发布记录不一致" }
         val installed = manager.getPackageInfo(
             context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
         )
@@ -207,9 +208,13 @@ object SecureUpdater {
         }
     }
 
-    fun requestInstall(activity: Activity, file: File): Boolean {
+    fun requestInstall(activity: Activity, file: File, expectedVersion: String): Boolean {
         if (BuildConfig.DEBUG) return false
-        validateApk(activity, file) // Revalidate again before invoking the system installer.
+        val expectedPath = File(activity.cacheDir, "jipite-updates/jipite-update.apk")
+        require(file.canonicalFile == expectedPath.canonicalFile) {
+            "不能安装应用私有更新缓存以外的 APK"
+        }
+        validateApk(activity, file, expectedVersion) // Verify again just before installer.
         if (!activity.packageManager.canRequestPackageInstalls()) {
             val permission = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
