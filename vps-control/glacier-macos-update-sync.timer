@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh owner VPS Glacier Mac release mirror twice hourly
+
+[Timer]
+OnBootSec=4min
+OnUnitInactiveSec=30min
+RandomizedDelaySec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
