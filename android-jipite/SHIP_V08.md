@@ -2,6 +2,26 @@
 
 本仓库已实现离线模拟演示、基于 Microsoft 个人账号的 Android OAuth、设备 P-256 Keystore 公钥绑定、每次强生物识别 ECDSA 签名、VPS 一次性挑战、防重放、关机前状态/队列重新检查、可选推送与手动刷新。V0.8 又增加了客户端签名载荷逐字节绑定检查和操作二次确认。
 
+## Microsoft App 注册已完成（2026-11-04）
+
+应用名：`Jipite`；公众 Client ID：`76fb73a5-fc82-4217-893a-6070eedd16be`；用户在 Entra 截图中已经确认账户受众包含个人 Microsoft 账号。
+
+这个公开 Client ID 已作为 GitHub Actions `connected` 模式的缺省值；不需要新建 Client Secret，不需要把微软密码发送给 GitHub 或 ChatGPT。
+
+## Windows 一次性签名与 GitHub Secrets 自动配置
+
+仓库已提供 [setup-signing-windows.ps1](./setup-signing-windows.ps1)。在自己可信的 Windows 电脑上安装 JDK 17+（提供 `keytool`）和 GitHub CLI（`gh`），查看脚本后执行一次。脚本将：
+
+1. 通过 `gh auth login --web` 让所有者在浏览器授权 GitHub（仅在尚未登录时）。
+2. 在个人用户目录 `~/JipitePrivate/jipite-signing.p12` 生成长期 P-256 签名证书并保留私钥；若文件已存在则**绝不覆盖**。
+3. 通过 GitHub CLI 输入流上传加密的签名文件和密码到仓库 Secrets，设置公开 Client ID、密钥别名 Variables。
+4. 输出公开 Android 包名和 SHA-1 Base64 签名哈希，提供本地公开文本副本（不要把 **P12 文件或密码**粘贴到聊天）。
+5. 触发 GitHub Actions `mode=connected` 签名 APK 构建。
+
+脚本本身不会部署 VPS，也不会开启 GPU 电源写操作。必须确保脚本运行在自己受信任的电脑上并妥善备份私人签名证书和密码；丢失它将影响后续 APK 同签名升级。
+
+**脚本运行后仍需由账户所有者在 Entra 中添加 Android 平台**：App registrations → Jipite → Authentication → Add a platform → Android，包名 `cn.borealos.jipite`，签名哈希粘贴脚本输出的公开值，选择 Configure。这个 Android 回调不可由普通的“Mobile and desktop applications”平台代替。
+
 ## 一次性构建与下载
 
 - 无账户版：GitHub Actions `Build Jipite APK on GitHub` 的 `preview` 模式会给出 `Jipite-V0.8-MuMu-safe-preview`，是**严格离线** Debug APK。可在 MuMu 无网使用，不具备真实微软登录、真实 GPU 审批。
