@@ -1,0 +1,49 @@
+name: Glacier macOS OIDC webhook and VPS isolation QA
+on:
+  push:
+    branches:
+      - feature/glacier-macos-oidc-sync
+    paths:
+      - 'vps-control/glacier_oidc.py'
+      - 'vps-control/glacier-macos-immediate-notify.py'
+      - 'vps-control/install-glacier-macos-oidc-immediate.sh'
+      - 'vps-control/glacier-macos-immediate-notify.service'
+      - 'vps-control/nginx-alidns/glacier-macos-immediate-notify.conf'
+      - 'vps-control/tests/test_glacier_mac_oidc.py'
+      - '.github/workflows/glacier-macos-vps-immediate.yml'
+      - '.github/workflows/glacier-macos-oidc-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate script, service, and webhook isolation
+        run: |
+          set -euo pipefail
+          bash -n vps-control/install-glacier-macos-oidc-immediate.sh
+          python -m py_compile vps-control/glacier_oidc.py vps-control/glacier-macos-immediate-notify.py
+          python - <<'PY'
+          from pathlib import Path
+          w=Path(".github/workflows/glacier-macos-vps-immediate.yml").read_text()
+          n=Path("vps-control/nginx-alidns/glacier-macos-immediate-notify.conf").read_text()
+          s=Path("vps-control/glacier-macos-immediate-notify.service").read_text()
+          t=Path("vps-control/glacier-macos-immediate-notify.py").read_text()
+          assert "id-token: write" in w
+          assert "OIDC_AUDIENCE: glacier-macos-vps-update-sync" in w
+          assert "https://jipite.borealos.cn/glacier-updates/notify" in w
+          assert "GLACIER_SSH" not in w and "ssh -F" not in w
+          assert "location = /glacier-updates/notify" in n
+          assert "127.0.0.1:8897" in n
+          assert "User=glacierupdate" in s
+          assert "127.0.0.1" in t and 'PORT = 8897' in t
+          assert "/opt/glacier-macos-updates/sync-glacier-macos-updates.py" in t
+          print("Glacier OIDC workflow, nginx, service isolation: PASS")
+          PY
+      - name: Test real RSA-signed OIDC claims and forged-token rejection
+        run: |
+          python -m pip install --disable-pip-version-check 'cryptography>=43,<47'
+          python -m unittest -v vps-control/tests/test_glacier_mac_oidc.py
