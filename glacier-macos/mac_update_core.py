@@ -1,4 +1,4 @@
-"""Glacier macOS ARM64: signed metadata and VLESS-only update downloader.
+"""Glacier macOS ARM64: signed metadata and first-party VPS HTTPS-only updater.
 
 This is NOT Apple Developer ID notarization. Installer origin is authenticated by
 an embedded Ed25519 key, checksum/size and constrained GitHub release URL.
@@ -22,14 +22,11 @@ CURRENT_VERSION = "0.14.1"
 CHANNEL = "macos-arm64"
 KEY_ID = "cf9452226375ff7d"
 PUBLIC_KEY = bytes.fromhex("7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab")
-FEED_URL = "https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-release/glacier-browser-updates/channels/macos-arm64.json"
+FEED_URL = "https://jipite.borealos.cn/glacier-updates/macos-arm64.json"
 MAX_MANIFEST = 65536
 MAX_DMG = 1_073_741_824
 FIELDS = frozenset(("channel","version","url","sha256","size","notes","key_id","signature"))
-TRUSTED_REDIRECT_HOSTS = frozenset((
-    "github.com", "release-assets.githubusercontent.com",
-    "objects.githubusercontent.com", "github-releases.githubusercontent.com",
-))
+TRUSTED_REDIRECT_HOSTS = frozenset(("jipite.borealos.cn",))
 VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
 
@@ -86,9 +83,8 @@ def verify_manifest(doc):
     if not isinstance(url,str):
         raise UpdateError("下载地址无效")
     p=urlsplit(url)
-    expected=(f"/zxasd2183-oss/comfyui-director-release/releases/download/"
-              f"glacier-macos-v{ver}/GlacierBrowser-v{ver}-macOS-AppleSilicon.dmg")
-    if (p.scheme!="https" or p.hostname!="github.com" or p.username or
+    expected=f"/glacier-updates/GlacierBrowser-v{ver}-macOS-AppleSilicon.dmg"
+    if (p.scheme!="https" or p.hostname!="jipite.borealos.cn" or p.username or
             p.password or p.port or p.query or p.fragment or p.path!=expected):
         raise UpdateError("下载地址不符合 Mac 可信发布路径")
     digest=doc["sha256"]
@@ -101,25 +97,24 @@ def verify_manifest(doc):
     return doc
 
 
-def proxy_session(port):
-    if type(port) is not int or not 1<=port<=65535:
-        raise UpdateError("本地 VLESS 代理端口无效")
+def first_party_session():
+    """HTTPS update traffic to the user-owned VPS only; browser traffic stays VLESS-only."""
     sess=requests.Session()
     sess.trust_env=False
-    proxy=f"socks5h://127.0.0.1:{port}"
-    sess.proxies={"http":proxy,"https":proxy}
+    sess.proxies={}
     return sess
 
 
 def _request(session,url,allowed_hosts,stream=True):
     for _ in range(8):
         parsed=urlsplit(url)
-        if parsed.scheme!="https" or parsed.hostname not in allowed_hosts or parsed.username or parsed.password:
+        if (parsed.scheme!="https" or parsed.hostname not in allowed_hosts or parsed.username
+                or parsed.password or parsed.port or parsed.fragment):
             raise UpdateError("发现不受信任的更新下载重定向，已阻止")
         try:
             response=session.get(url,timeout=(12,60),allow_redirects=False,stream=stream)
         except requests.RequestException as exc:
-            raise UpdateError("VLESS 更新网络请求失败：" + str(exc)) from exc
+            raise UpdateError("VPS 更新网络请求失败：" + str(exc)) from exc
         if response.status_code in (301,302,303,307,308):
             dest=response.headers.get("Location","")
             response.close()
@@ -135,10 +130,10 @@ def _request(session,url,allowed_hosts,stream=True):
 
 
 def get_manifest(port):
-    session=proxy_session(port)
+    session=first_party_session()
     try:
-        # Manifest may not redirect away from its original raw.githubusercontent.com endpoint.
-        response=_request(session,FEED_URL,{"raw.githubusercontent.com"})
+        # Manifest must come from the dedicated first-party HTTPS path.
+        response=_request(session,FEED_URL,{"jipite.borealos.cn"})
         with response:
             buf=bytearray()
             for chunk in response.iter_content(8192):
@@ -160,7 +155,7 @@ def download_dmg(manifest, port, directory, progress=lambda n:None):
     directory.mkdir(parents=True,exist_ok=True)
     final=directory/("GlacierBrowser-v"+manifest["version"]+"-macOS-AppleSilicon.dmg")
     partial=final.with_suffix(".dmg.partial")
-    session=proxy_session(port)
+    session=first_party_session()
     expected=manifest["size"]
     total=0
     digest=hashlib.sha256()
