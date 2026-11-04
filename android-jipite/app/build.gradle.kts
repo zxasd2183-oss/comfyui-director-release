@@ -16,6 +16,7 @@ android {
     compileSdk = 35
     flavorDimensions += "push"
     productFlavors {
+        create("manual") { dimension = "push" }  // No SDK / vendor review required
         create("google") { dimension = "push" }
         create("xiaomi") { dimension = "push" }
     }
