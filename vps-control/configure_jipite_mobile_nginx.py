@@ -124,6 +124,34 @@ def insert_route(source: str) -> str:
     return source[:closing] + "\n    " + MARKER + "\n" + source[closing:]
 
 
+def route_already_configured(source: str) -> bool:
+    """Accept an exact, single include in the intended HTTPS vhost only.
+
+    This makes re-running the deploy script safe after a successful manual
+    Nginx install. Unexpected inline routes and ambiguous includes are still
+    rejected; nginx -t and the matching snippet are separately verified.
+    """
+    masked = masked_nginx(source)
+    selected = []
+    for _, _, block in server_blocks(source):
+        names = set()
+        for group in DOMAIN_RE.findall(block):
+            names.update(group.split())
+        if DOMAIN in names and (LISTEN_TLS_RE.search(block) or LISTEN_PORT_RE.search(block)):
+            selected.append(block)
+    if len(selected) != 1:
+        raise RuntimeError("Cannot uniquely locate HTTPS block in physical Nginx file")
+    block = selected[0]
+    if re.search(r"\blocation\s+[^\n{]*?/api/v1/mobile/", block):
+        raise RuntimeError("An inline mobile route already exists; manual review required")
+    installed = MARKER in block
+    if installed and (block.count(MARKER) != 1 or masked.count(MARKER) != 1):
+        raise RuntimeError("Unexpected duplicate mobile snippet include")
+    if not installed and MARKER in masked:
+        raise RuntimeError("Mobile snippet include is in the wrong Nginx block")
+    return installed
+
+
 def run_check(*args):
     return subprocess.run(args, check=True, stdout=subprocess.DEVNULL,
                           stderr=subprocess.PIPE, text=True)
@@ -137,13 +165,19 @@ def apply():
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout
     target = locate_https_vhost(dump)
     original = target.read_bytes()
-    patched = insert_route(original.decode("utf-8")).encode("utf-8")
+    source = original.decode("utf-8")
     snippet = SOURCE_SNIPPET.read_bytes()
     if SNIPPET.is_symlink():
         raise RuntimeError("Refusing to overwrite a symlink in /etc/nginx/snippets")
     snippet_existed = SNIPPET.exists()
     if snippet_existed and SNIPPET.read_bytes() != snippet:
         raise RuntimeError("Existing mobile Nginx snippet differs; manual review required")
+    if route_already_configured(source):
+        if not snippet_existed:
+            raise RuntimeError("Mobile include exists but snippet file is missing")
+        print(f"Jipite HTTPS route already configured and validated in {target}; no changes made.")
+        return
+    patched = insert_route(source).encode("utf-8")
     SNIPPET.parent.mkdir(parents=True, exist_ok=True)
     fd, backup = tempfile.mkstemp(prefix=".jipite-mobile-backup-", dir=str(target.parent))
     os.close(fd)
