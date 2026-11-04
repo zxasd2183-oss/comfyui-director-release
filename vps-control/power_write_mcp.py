@@ -10,7 +10,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from power_ops import PowerError, read_env_file
+from power_ops import PowerError, read_env_file, read_systemd_credential_env
 from power_v03 import DB_DEFAULT, plan_and_request, request_status
 
 app = FastMCP("ComfyUI Director VPS - Power Requests",
@@ -25,6 +25,8 @@ def _config():
             path = os.path.join(directory, "directorenv")
     if not path:
         raise RuntimeError("Systemd LoadCredential path unavailable")
+    if os.environ.get("CREDENTIALS_DIRECTORY"):
+        return read_systemd_credential_env(path, os.environ["CREDENTIALS_DIRECTORY"])
     return read_env_file(path)
 
 def _db():
