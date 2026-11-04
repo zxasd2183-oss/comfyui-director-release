@@ -6,9 +6,9 @@
 
 在 GitHub 仓库里打开 Actions -> Build Jipite APK on GitHub -> Run workflow -> mode=preview。自动打包并通过 Android apksigner 检查签名，在本次运行的 Artifacts 处得到 Android 11+ 的 app-manual-debug.apk。
 
-**V0.6.1 Preview APK 仅用于 MuMu 离线模拟测试**。构建产物名为 `Jipite-V0.6.1-MuMu-offline-demo`，内部 APK 为 `app-manual-debug.apk`。其微软 Client ID 仍是占位值，无法真实微软登录或审批 GPU。
+**V0.7 Beta Preview APK 仅用于 MuMu 离线模拟和联机准备检查**。构建产物名为 `Jipite-V0.7-MuMu-readiness-preview`，内部 APK 为 `app-manual-debug.apk`。其微软 Client ID 仍是占位值，无法真实微软登录或审批 GPU。
 
-现在可在本地按钮模拟开机/关机申请、查看风险提示以及模拟批准/拒绝；此流程完全不调用 Microsoft、VPS、GPU 或 Android Keystore，不需要小米 SDK、Firebase、Android Studio。完整步骤见 [MuMu 测试清单](./MUMU_TEST.md)。
+现在可在本地按钮模拟开机/关机申请、查看风险提示、模拟批准/拒绝并查看联机配置检查结果；所有 Debug 变体均严格离线，完全不调用 Microsoft、VPS、GPU 或 Android Keystore，不需要小米 SDK、Firebase、Android Studio。详细步骤见 [V0.7 联机准备指南](./CONNECTED_V07.md) 和 [MuMu 测试清单](./MUMU_TEST.md)。
 
 ### 微软真实登录：connected（仅需一次性配置）
 
