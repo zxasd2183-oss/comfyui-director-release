@@ -1,0 +1,53 @@
+# EXAMPLE ONLY, NOT DEPLOYED. Before using:
+# - Verify borealos.cn ICP compliance for mainland VPS public hosting.
+# - Set AliDNS A records director/status/power/approve -> OWNED VPS public IPv4.
+# - Ensure no other service already owns 80/443, or merge into existing proxy.
+# - Install Caddy >=2.8 and replace the placeholder bcrypt hash below.
+# - Do NOT log private request URLs containing MCP secret paths.
+#
+# Every origin binds to VPS loopback only.
+# SSH reverse forwarding must be listening at 127.0.0.1:18790
+# ONLY while the GPU V3 is online.
+#
+# Keep current MCP secret paths; add OAuth before production use.
+
+director.borealos.cn {
+    handle /mcp/* {
+        reverse_proxy 127.0.0.1:18790 {
+            header_up Host 127.0.0.1:8790
+        }
+    }
+    handle {
+        respond 404
+    }
+}
+
+status.borealos.cn {
+    handle /mcp/* {
+        reverse_proxy 127.0.0.1:8891
+    }
+    handle {
+        respond 404
+    }
+}
+
+power.borealos.cn {
+    handle /mcp/* {
+        reverse_proxy 127.0.0.1:8894
+    }
+    handle {
+        respond 404
+    }
+}
+
+approve.borealos.cn {
+    basic_auth {
+        director-owner REPLACE_WITH_CADDY_BCRYPT_HASH
+    }
+    handle /approve/* {
+        reverse_proxy 127.0.0.1:8893
+    }
+    handle {
+        respond 404
+    }
+}
