@@ -1,0 +1,24 @@
+[Unit]
+Description=Sync Ed25519-authorized Glacier macOS DMG releases to owner VPS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=glacierupdate
+Group=glacierupdate
+WorkingDirectory=/var/lib/glacier-macos-updates
+ExecStart=/opt/glacier-macos-updates/venv/bin/python /opt/glacier-macos-updates/sync-glacier-macos-updates.py --directory /var/lib/glacier-macos-updates
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/glacier-macos-updates
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=1024M
+TimeoutStartSec=900
