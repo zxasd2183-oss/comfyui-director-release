@@ -1,0 +1,32 @@
+[Unit]
+Description=Jipite V0.6 Android biometric GPU approval API and optional FCM sender
+After=network-online.target director-power-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=directorpower
+Group=directorpower
+WorkingDirectory=/opt/comfyui-director-power
+LoadCredential=directorenv:/etc/comfyui-director-control.env
+LoadCredential=clientid:/etc/comfyui-director-mobile-clientid
+LoadCredential=pairing:/etc/comfyui-director-mobile-pairing
+Environment=DIRECTOR_POWER_DB=/var/lib/comfyui-director-power/requests.db
+StateDirectory=comfyui-director-power
+StateDirectoryMode=0700
+ExecStart=/opt/comfyui-director-control/.venv/bin/python /opt/comfyui-director-power/mobile_v06_api.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
