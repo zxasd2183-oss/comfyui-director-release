@@ -26,7 +26,7 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check -r requirements.txt
           python -m pip install --disable-pip-version-check 'PyJWT[crypto]>=2.9,<3'
-          python -m py_compile api.py app.py check_status.py bridge.py power_ops.py powerctl.py power_v03.py power_write_mcp.py power_approval_http.py enroll_totp.py mobile_v06_core.py mobile_v06_api.py mobile_v06_xiaomi.py
+          python -m py_compile api.py app.py check_status.py bridge.py power_ops.py powerctl.py power_v03.py power_write_mcp.py power_approval_http.py enroll_totp.py mobile_v06_core.py mobile_v06_api.py mobile_v06_xiaomi.py configure_jipite_mobile_nginx.py
           python -m unittest discover -s tests -v
           bash -n install-ubuntu.sh
           bash -n install-bridge.sh
@@ -34,3 +34,4 @@ jobs:
           bash -n install-power-v03.sh
           bash -n install-vps-named-tunnel.sh
           bash -n install-mobile-v06.sh
+          bash -n deploy-jipite-mobile-v08.sh
