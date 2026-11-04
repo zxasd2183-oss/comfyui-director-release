@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'android-jipite/prepare-xiaomi.ps1'
+      - 'android-jipite/prepare-manual.ps1'
       - 'android-jipite/XIAOMI_PUSH.md'
       - '.github/workflows/ci-xiaomi-prep.yml'
   workflow_dispatch:
@@ -28,6 +29,16 @@ jobs:
             throw "PowerShell syntax validation failed"
           }
           Write-Host "PowerShell script parses successfully."
+      - name: Parse no-push Microsoft manual build preparation
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD.Path 'android-jipite/prepare-manual.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            throw "Manual Android PowerShell syntax invalid"
+          }
       - name: Make invalid AAR without Xiaomi Java classes
         shell: bash
         run: |
