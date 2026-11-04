@@ -53,6 +53,10 @@ def get_power_service_health() -> dict:
             reason = "credential_region_invalid"
         elif message == "Invalid zone":
             reason = "credential_zone_invalid"
+        elif message == "Original credential must be root-owned and mode 0600":
+            reason = "original_credential_source_insecure"
+        elif message.startswith("Systemd credential") or message.startswith("Unexpected runtime credential"):
+            reason = "systemd_credential_path_invalid"
         elif message in ("Invalid config line", "Invalid config value"):
             reason = "credential_format_invalid"
         else:
