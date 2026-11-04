@@ -11,6 +11,7 @@ if (providers.gradleProperty("enableFirebase").orNull == "true") {
 }
 
 android {
+    buildFeatures { buildConfig = true }
     namespace = "cn.borealos.jipite"
     compileSdk = 35
     flavorDimensions += "push"
