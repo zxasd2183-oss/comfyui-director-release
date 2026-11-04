@@ -34,7 +34,7 @@ Android Studio 选择 xiaomiDebug，或运行：
 
     gradle :app:assembleXiaomiDebug
 
-当前主工程仍包含可选的 Firebase 后备依赖和 Google Services 插件，所以构建时可能需要已有的本地 google-services.json。小米原生 Mi Push 接收通知不要求手机运行 Google Play 服务。源码暂未使用你的真实 Xiaomi SDK AAR 进行 xiaomiDebug 构建验证。
+构建 Xiaomi 版时，不必提供 Firebase 项目或 google-services.json；Google Services 插件仅在传入 enableFirebase=true 时启用。小米原生 Mi Push 接收通知也不要求手机运行 Google Play 服务。源码暂未使用你的真实 Xiaomi SDK AAR 进行 xiaomiDebug 构建验证。
 
 ## 第三步：广州 VPS 保存 server AppSecret
 
