@@ -119,8 +119,9 @@ object SecureUpdater {
         worker.execute {
             val result = runCatching {
                 require(isNewer(release.version, installedVersion())) { "已是最新版本" }
-                require(release.downloadUrl ==
-                    "$DOWNLOAD_PREFIX${release.tag}/Jipite-v${release.version}-Microsoft-connected.apk") {
+                require(release.tag == "jipite-v${release.version}" &&
+                    release.downloadUrl ==
+                    "$DOWNLOAD_PREFIX" + "Jipite-v${release.version}-Microsoft-connected.apk") {
                     "更新下载地址不可信"
                 }
                 val directory = File(context.cacheDir, "jipite-updates")
