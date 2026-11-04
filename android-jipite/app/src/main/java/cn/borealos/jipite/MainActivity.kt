@@ -827,7 +827,7 @@ class MainActivity : FragmentActivity() {
 
     /** Silent MSAL token renewal; if it fails, require explicit Microsoft login. */
     private fun withMicrosoftToken(
-        next: (String) -> Unit, onFailure: (() -> Unit)? = null
+        onFailure: (() -> Unit)? = null, next: (String) -> Unit
     ) {
         if (isOfflinePreview || !microsoftConfigured()) {
             setStatus("本版本未启用真实登录")
