@@ -119,13 +119,19 @@ def build_handler(token: str, upstream: str = "http://127.0.0.1:8890/mcp"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8891)
+    ap.add_argument("--upstream", default="http://127.0.0.1:8890/mcp")
     ap.add_argument("--token-file", default="/etc/comfyui-director-bridge.token")
     args = ap.parse_args()
+    parsed_upstream = urlsplit(args.upstream)
+    if (parsed_upstream.scheme != "http" or parsed_upstream.hostname != "127.0.0.1"
+            or parsed_upstream.path != "/mcp" or parsed_upstream.port not in (8890, 8892)
+            or parsed_upstream.query or parsed_upstream.fragment):
+        raise SystemExit("Refuse non-loopback or unsupported MCP upstream")
     token_path = Path(args.token_file)
     token = token_path.read_text(encoding="ascii").strip()
     if len(token) < 48 or any(c not in "0123456789abcdef" for c in token):
         raise SystemExit("Invalid token file, expected at least 48 hexadecimal characters")
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), build_handler(token))
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), build_handler(token, upstream=args.upstream))
     server.daemon_threads = True
     print(f"Director VPS MCP bridge listening only on 127.0.0.1:{args.port}", flush=True)
     server.serve_forever(poll_interval=0.3)
