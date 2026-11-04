@@ -11,7 +11,7 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-from power_ops import read_env_file
+from power_ops import read_env_file, read_systemd_credential_env
 from power_v03 import DB_DEFAULT, approve_request, request_status
 
 MAX_FORM = 2048
@@ -123,7 +123,9 @@ def build_handler(path_key: str, seed: str, config_path: str,
             if form.get("ack") != ["yes"]:
                 return self.page("<p>未确认风险。未执行任何操作。</p>", 400)
             try:
-                config = read_env_file(config_path)
+                directory = os.environ.get("CREDENTIALS_DIRECTORY")
+                config = (read_systemd_credential_env(config_path, directory)
+                          if directory else read_env_file(config_path))
                 result = approve_request(rid, otp, phrase, seed, config, db_path)
             except Exception:
                 return self.page("<p>审批服务异常。未确认云平台最终状态，"
