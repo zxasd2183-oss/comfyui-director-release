@@ -24,6 +24,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m py_compile api.py app.py
+          python -m py_compile api.py app.py check_status.py
           python -m unittest discover -s tests -v
           bash -n install-ubuntu.sh
