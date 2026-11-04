@@ -84,7 +84,7 @@ class PowerTests(unittest.TestCase):
         self.assertNotIn("secret", str(caught.exception))
 
     def test_unverified_queue_blocks_stop(self):
-        self.assertEqual(get_queue_state(CFG)["reason"], "queue_url_not_configured")
+        self.assertEqual(get_queue_state(CFG)["reason"], "queue_endpoint_not_configured")
         self.assertFalse(get_queue_state({**CFG,"DIRECTOR_GPU_QUEUE_URL":
                                         "http://example.com/queue"})["verified"])
 
