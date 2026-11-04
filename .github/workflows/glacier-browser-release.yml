@@ -1,4 +1,4 @@
-name: Glacier Browser v0.10 Windows self-updating release
+name: Glacier Browser v0.10.1 Windows self-updating release
 on:
   push:
     branches:
@@ -49,7 +49,7 @@ jobs:
           python -m pip install 'PySide6>=6.8,<7' 'PyInstaller>=6,<8'
           python -c "import base64,lzma,pathlib; files=['features.py','ui08.py','ui09.py','update_core.py','update_ui.py']; [(pathlib.Path(f).write_bytes(lzma.decompress(base64.b64decode(pathlib.Path(f+'.xz.b64').read_text().strip())))) for f in files]"
           python -m py_compile main.py features.py ui08.py ui09.py update_core.py update_ui.py
-          python -c "import update_core; assert update_core.newer_than('0.9.0','0.10.0'); assert not update_core.newer_than('0.10.0','0.9.0'); import update_ui; print('Updater imports and semver checks passed')"
+          python -c "import update_core; assert update_core.newer_than('0.9.0','0.10.1'); assert not update_core.newer_than('0.10.1','0.9.0'); import update_ui; print('Updater imports and semver checks passed')"
       - name: Build Windows executable with embedded VLESS core
         run: |
           python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets main.py
@@ -68,12 +68,12 @@ jobs:
           [Setup]
           AppId={{A1DDACCC-09D1-41AF-B0B3-B48300D0AD0D}
           AppName=Glacier Browser
-          AppVersion=0.10.0
+          AppVersion=0.10.1
           AppPublisher=Glacier Browser Preview
           DefaultDirName={localappdata}\Programs\GlacierBrowser
           DefaultGroupName=Glacier Browser
           OutputDir=dist
-          OutputBaseFilename=GlacierBrowser-v0.10.0-Windows-Setup-x64
+          OutputBaseFilename=GlacierBrowser-v0.10.1-Windows-Setup-x64
           Compression=lzma
           SolidCompression=yes
           PrivilegesRequired=lowest
@@ -94,28 +94,23 @@ jobs:
           Set-Content installer.iss $iss -Encoding utf8
           & $iscc installer.iss
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
-          if (-not (Test-Path dist/GlacierBrowser-v0.10.0-Windows-Setup-x64.exe)) { throw 'Setup EXE missing' }
+          if (-not (Test-Path dist/GlacierBrowser-v0.10.1-Windows-Setup-x64.exe)) { throw 'Setup EXE missing' }
       - name: Upload installable Windows artifact for backup
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierBrowser-v0.10.0-Windows-Setup
-          path: glacier-windows/dist/GlacierBrowser-v0.10.0-Windows-Setup-x64.exe
+          name: GlacierBrowser-v0.10.1-Windows-Setup
+          path: glacier-windows/dist/GlacierBrowser-v0.10.1-Windows-Setup-x64.exe
           if-no-files-found: error
           retention-days: 30
       - name: Publish public test release and update manifest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = '0.10.0'
+          $version = '0.10.1'
           $tag = "glacier-v$version"
           $name = "GlacierBrowser-v$version-Windows-Setup-x64.exe"
           $installer = "dist/$name"
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $installer --clobber
-          } else {
-            gh release create $tag $installer --target glacier-browser-updates --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser $version: About/version display; check updates via the existing VLESS proxy; automatic verified download; user-confirmed in-app installation. Unsigned Windows preview." --prerelease
-          }
+          gh release create $tag $installer --target glacier-browser-updates --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser ${version}: in-app update end-to-end verification. Version display, VLESS-only verified download, manual installation confirmation." --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'Failed to publish GitHub release' }
           $sha = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
           $size = (Get-Item $installer).Length
@@ -125,7 +120,7 @@ jobs:
             url = "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/$tag/$name"
             sha256 = $sha
             size = [long]$size
-            notes = 'v0.10: 关于、版本信息、检查更新、启动时自动检查、自动下载与确认安装；经 VLESS 代理访问更新通道。'
+            notes = 'v0.10.1：软件内升级通道验证；修复发布流程，保持原有 VLESS 和浏览数据。'
           }
           New-Item -ItemType Directory -Force -Path ../channels | Out-Null
           $body | ConvertTo-Json -Depth 3 | Set-Content ../channels/windows-x64.json -Encoding utf8
