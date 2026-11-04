@@ -1,10 +1,10 @@
 {
   "channel": "macos-arm64",
-  "version": "0.14.0",
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v0.14.0/GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg",
-  "sha256": "b0d8d07f222bc516f4e16e84cd89d1a9bda8391fab1a2cc9651d638590d994e9",
-  "size": 281103604,
-  "notes": "v0.14.0 macOS Apple Silicon 首发：Chrome 风格、内置 VLESS、macOS 钥匙串和软件内安全更新。",
+  "version": "0.14.1",
+  "url": "https://jipite.borealos.cn/glacier-updates/GlacierBrowser-v0.14.1-macOS-AppleSilicon.dmg",
+  "sha256": "6a9d0ed4c03b02f692033d670298b4982c98330c842abed7f7e2bc1c54e8620a",
+  "size": 276191519,
+  "notes": "v0.14.1：修复输入 VLESS 后 Mac 界面闪退；更新改从专属 VPS HTTPS 下载并验证，网页仍使用 VLESS 代理。",
   "key_id": "cf9452226375ff7d",
-  "signature": "jimPyRBL8Qsgn28PusgS7SXeF01hx9O6ZVeco3HyOYnx+P2+RPozQeRBLEenb7IUlHdXiaOARHMx4wnigptYCA=="
+  "signature": "HqsbFbaBxrhBZJvtHc/VpzRgrTsPkemiPgdgBs4EL9dYInXSw8dOuko+D7aKxT4LqeDh/tljuEYsIJvu8/e2DA=="
 }
