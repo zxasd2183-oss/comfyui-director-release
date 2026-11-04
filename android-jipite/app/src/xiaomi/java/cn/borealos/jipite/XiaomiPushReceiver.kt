@@ -17,7 +17,7 @@ class XiaomiPushReceiver : PushMessageReceiver() {
         if (message.command != MiPushClient.COMMAND_REGISTER ||
             message.resultCode != ErrorCode.SUCCESS) return
         val regId = message.commandArguments?.firstOrNull().orEmpty()
-        if (regId.length !in 8..256 || !regId.matches(Regex("[A-Za-z0-9_-]+"))) return
+        if (regId.length !in 8..256 || !regId.matches(Regex("[A-Za-z0-9_+=/-]+"))) return
         context.getSharedPreferences("jipite-device", Context.MODE_PRIVATE).edit()
             .putString("fcm_token", "xm:" + regId).apply()
         // User's next in-app refresh syncs this regId to the authenticated VPS.
@@ -28,7 +28,7 @@ class XiaomiPushReceiver : PushMessageReceiver() {
         val info = runCatching { JSONObject(message.content) }.getOrNull()
         if (info?.optString("kind") != "gpu-approval") return
         val id = info.optString("request_id")
-        if (id.length !in 20..80 || !id.matches(Regex("[A-Za-z0-9_-]+"))) return
+        if (id.length !in 20..80 || !id.matches(Regex("[A-Za-z0-9_+=/-]+"))) return
         val intent = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra("request_id", id)
