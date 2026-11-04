@@ -44,14 +44,9 @@ systemctl is-active --quiet director-mobile-v06 || {
   echo "Mobile API did not start. Inspect: sudo journalctl -u director-mobile-v06 -n 50 --no-pager" >&2
   exit 5
 }
-health="$(curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8895/health)" || {
-  echo "Mobile service is not listening on loopback 127.0.0.1:8895" >&2
-  exit 5
-}
-python3 -c 'import json,sys; o=json.loads(sys.argv[1]); assert o.get("ok") is True and o.get("mode")=="device_signed"' "$health" || {
-  echo "ABORT: unexpected health response from 8895" >&2; exit 5;
-}
-echo "Local Android API health: OK"
+# Service can be 'active' before the Python HTTP server binds to 8895.
+# Retry for up to 20 attempts; reject unexpected health JSON immediately.
+bash "$HERE/wait-jipite-mobile-health.sh"
 
 echo "[4/4] Installing ONLY the jipite HTTPS virtual-host route"
 python3 "$HERE/configure_jipite_mobile_nginx.py" --apply
