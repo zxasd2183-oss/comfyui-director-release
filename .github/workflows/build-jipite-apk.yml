@@ -1,0 +1,120 @@
+name: Build Jipite APK on GitHub
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-jipite/app/**'
+      - 'android-jipite/scripts/**'
+      - '.github/workflows/build-jipite-apk.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'preview (UI-only) or connected (Microsoft login, stable signed APK)'
+        type: choice
+        options:
+          - preview
+          - connected
+        default: preview
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      JIPITE_EVENT: ${{ github.event_name }}
+      JIPITE_MODE: ${{ inputs.mode }}
+      JIPITE_MS_CLIENT_ID: ${{ vars.JIPITE_MS_CLIENT_ID }}
+      JIPITE_KEYSTORE_BASE64: ${{ secrets.JIPITE_KEYSTORE_BASE64 }}
+      JIPITE_SIGNING_STORE_PASSWORD: ${{ secrets.JIPITE_SIGNING_STORE_PASSWORD }}
+      JIPITE_SIGNING_KEY_ALIAS: ${{ vars.JIPITE_SIGNING_KEY_ALIAS }}
+      JIPITE_SIGNING_KEY_PASSWORD: ${{ secrets.JIPITE_SIGNING_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Configure Microsoft login and verified release signing
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'connected'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$JIPITE_MS_CLIENT_ID" || -z "$JIPITE_KEYSTORE_BASE64" ||
+                -z "$JIPITE_SIGNING_STORE_PASSWORD" || -z "$JIPITE_SIGNING_KEY_ALIAS" ||
+                -z "$JIPITE_SIGNING_KEY_PASSWORD" ]]; then
+            echo "::error::Configure the JIPITE_MS_CLIENT_ID and JIPITE_SIGNING_KEY_ALIAS repository variables plus the three JIPITE signing repository secrets."
+            exit 2
+          fi
+          keyfile="$RUNNER_TEMP/jipite-signing.p12"
+          printf '%s' "$JIPITE_KEYSTORE_BASE64" | base64 -d > "$keyfile"
+          chmod 600 "$keyfile"
+          keytool -exportcert -alias "$JIPITE_SIGNING_KEY_ALIAS" \
+            -keystore "$keyfile" \
+            -storepass:env JIPITE_SIGNING_STORE_PASSWORD \
+            -file "$RUNNER_TEMP/jipite-signing.cer" >/dev/null
+          export SIGNATURE_HASH
+          SIGNATURE_HASH="$(openssl dgst -sha1 -binary "$RUNNER_TEMP/jipite-signing.cer" | openssl base64 -A)"
+          python3 android-jipite/scripts/configure_msal.py
+          echo "JIPITE_SIGNING_KEYSTORE_FILE=$keyfile" >> "$GITHUB_ENV"
+          {
+            echo "### Microsoft Android app registration"
+            echo "Package: cn.borealos.jipite"
+            echo "SHA-1 Base64 signature hash:"
+            echo ""
+            echo "$SIGNATURE_HASH"
+            echo ""
+            echo "Register this public hash in Microsoft Entra Android platform for the same Client ID."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build preview APK (no Microsoft or Xiaomi registration)
+        if: github.event_name != 'workflow_dispatch' || inputs.mode == 'preview'
+        working-directory: android-jipite
+        run: gradle :app:assembleManualDebug --no-daemon --stacktrace
+
+      - name: Build Microsoft-connected, signed manual approval APK
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'connected'
+        working-directory: android-jipite
+        run: gradle :app:assembleManualRelease --no-daemon --stacktrace
+
+      - name: Verify APK signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$JIPITE_EVENT" == "workflow_dispatch" && "$JIPITE_MODE" == "connected" ]]; then
+            apk=android-jipite/app/build/outputs/apk/manual/release/app-manual-release.apk
+          else
+            apk=android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
+          fi
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk" >/dev/null
+          sha256sum "$apk" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload UI-only APK
+        if: github.event_name != 'workflow_dispatch' || inputs.mode == 'preview'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jipite-V0.6-manual-UI-only
+          path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload Microsoft-connected signed APK
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'connected'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jipite-V0.6-manual-Microsoft-signed
+          path: android-jipite/app/build/outputs/apk/manual/release/app-manual-release.apk
+          retention-days: 14
+          if-no-files-found: error
