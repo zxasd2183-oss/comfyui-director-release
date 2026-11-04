@@ -40,10 +40,13 @@ class MainActivity : FragmentActivity() {
     private var current: JSONObject? = null
     private var hintRequestId: String? = null
     // GitHub preview builds are deliberately offline; real approval must use a signed release.
+    // All debug flavors are strictly offline. Only a properly configured, signed release
+    // can initialize Microsoft authentication or reach the owner-controlled backend.
     private val isOfflinePreview: Boolean
-        get() = BuildConfig.DEBUG && BuildConfig.FLAVOR == "manual"
+        get() = BuildConfig.DEBUG
     private lateinit var status: TextView
     private lateinit var detail: TextView
+    private lateinit var readiness: TextView
     private lateinit var pairing: EditText
     private lateinit var approveButton: Button
     private lateinit var denyButton: Button
@@ -53,7 +56,11 @@ class MainActivity : FragmentActivity() {
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         buildUi()
         if (isOfflinePreview) {
-            setStatus("MuMu 离线演示模式：可模拟申请，但不会连接微软、VPS 或 GPU")
+            setStatus("V0.7 MuMu 离线演示：不会连接微软、VPS 或 GPU")
+            return
+        }
+        if (!microsoftConfigured()) {
+            setStatus("尚未配置真实微软 Client ID：请使用 GitHub Actions connected 签名版")
             return
         }
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -108,7 +115,7 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
-        refresh()
+        if (!isOfflinePreview) refresh()
     }
 
     private fun buildUi() {
@@ -138,8 +145,25 @@ class MainActivity : FragmentActivity() {
         line("Microsoft 个人账号 + 本机强生物识别\n绝不从通知直接执行开关机", 14f)
         if (isOfflinePreview) {
             line("【离线演示 / MuMu 测试】所有申请与决策均为本地模拟，不会控制 GPU", 17f)
+        } else {
+            line("【V0.7 联机准备版】仅已完成微软注册、设备绑定和生物识别时才能批准真实申请", 15f)
         }
         status = line("初始化中……", 15f)
+        button("查看 V0.7 接入准备清单") { readiness.text = readinessReport() }
+        readiness = line("点击上方按钮检查本地配置（不访问网络）", 14f)
+        if (!isOfflinePreview) {
+            button("检测 VPS HTTPS 审批接口（不需要登录）") {
+                readiness.text = "正在检查 HTTPS 接口是否要求 Microsoft 身份认证……"
+                MobileApi.probe { result ->
+                    runOnUiThread {
+                        readiness.text = result.fold(
+                            onSuccess = { it },
+                            onFailure = { "HTTPS 预检失败：网络不可达或接口配置不正确。不会执行 GPU 操作。" }
+                        )
+                    }
+                }
+            }
+        }
         val loginButton = button("使用 Microsoft 账号登录 / 重新验证") { signIn() }
         line("首次绑定：请输入 VPS 终端生成的一次性配对密钥", 14f)
         pairing = EditText(this).apply {
@@ -182,6 +206,32 @@ class MainActivity : FragmentActivity() {
         runOnUiThread { status.text = message }
     }
 
+    /** Metadata-only checks; never validates the signing key against Entra or VPS. */
+    private fun microsoftConfigured(): Boolean {
+        return runCatching {
+            val raw = resources.openRawResource(R.raw.msal_config)
+                .bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val json = JSONObject(raw)
+            val clientId = json.optString("client_id")
+            clientId.matches(Regex("[0-9a-fA-F-]{36}")) &&
+                clientId != "00000000-0000-0000-0000-000000000000" &&
+                json.optString("redirect_uri").startsWith("msauth://cn.borealos.jipite/")
+        }.getOrDefault(false)
+    }
+
+    private fun readinessReport(): String {
+        val microsoft = if (microsoftConfigured()) "已写入 Client ID（还需真实登录验证）"
+                        else "未配置真实 Client ID"
+        val biometric = if (BiometricManager.from(this).canAuthenticate(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG
+            ) == BiometricManager.BIOMETRIC_SUCCESS) "可检测到强生物识别"
+            else "未检测到可用的强生物识别（MuMu 模拟结果不代表硬件安全）"
+        val mode = if (isOfflinePreview) "Debug 离线演示：禁用所有真实审批"
+                   else "Release 联机模式：仍需登录、配对及 VPS 验签"
+        return "当前模式：$mode\n微软应用：$microsoft\n生物识别：$biometric\n" +
+            "VPS 后端部署与真实 GPU 操作必须单独验收。"
+    }
+
     private fun deviceId() = prefs.getString("device_id", null)
     private fun present(result: Result<JSONObject>, then: (JSONObject) -> Unit) {
         runOnUiThread {
@@ -191,6 +241,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun signIn() {
+        if (isOfflinePreview || !microsoftConfigured()) return setStatus("需要正式签名与 Microsoft 配置才能登录")
         val app = msal ?: return setStatus("MSAL 尚未初始化")
         val callback = object : AuthenticationCallback {
             override fun onSuccess(result: IAuthenticationResult) {
@@ -218,6 +269,7 @@ class MainActivity : FragmentActivity() {
 
     /** Silent MSAL token renewal; if it fails, require explicit Microsoft login. */
     private fun withMicrosoftToken(next: (String) -> Unit) {
+        if (isOfflinePreview || !microsoftConfigured()) return setStatus("本版本未启用真实登录")
         val app = msal ?: return setStatus("请先初始化微软登录")
         app.acquireTokenSilentAsync(
             arrayOf("User.Read"),
@@ -355,6 +407,7 @@ class MainActivity : FragmentActivity() {
 
     private fun requestDecision(decision: String) {
         if (isOfflinePreview) return confirmOfflineDecision(decision)
+        if (!microsoftConfigured()) return setStatus("未配置正式微软身份，禁止审批")
         val item = current ?: return setStatus("没有待审批申请")
         val rid = item.optString("request_id")
         val action = item.optString("action")
