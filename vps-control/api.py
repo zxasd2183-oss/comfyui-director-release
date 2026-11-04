@@ -4,6 +4,7 @@ No secrets or complete provider response are ever returned from the MCP tool.
 """
 from __future__ import annotations
 import os
+import logging
 from typing import Callable
 
 
@@ -26,6 +27,10 @@ def get_instance_status(client_factory: Callable | None = None) -> dict:
     zone = os.getenv('COMP_ZONE', '')
     if not (public and private and instance):
         return {'ok': False, 'reason': 'not_configured', 'mode': 'read_only'}
+
+    # Official UCloud SDK supports disabling its logger. Provider responses may
+    # contain SSH passwords and FileBrowser tokens; never log them.
+    logging.getLogger('ucloud').disabled = True
 
     if client_factory is None:
         try:
