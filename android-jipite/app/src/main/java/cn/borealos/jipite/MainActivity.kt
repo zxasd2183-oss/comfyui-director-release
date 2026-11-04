@@ -57,6 +57,13 @@ class MainActivity : FragmentActivity() {
     private lateinit var updateInstallButton: Button
     private lateinit var updateStatus: TextView
     private lateinit var updateProgress: android.widget.ProgressBar
+    private lateinit var homePage: LinearLayout
+    private lateinit var requestsPage: LinearLayout
+    private lateinit var settingsPage: LinearLayout
+    private lateinit var pageScroll: ScrollView
+    private lateinit var homeTab: TextView
+    private lateinit var requestsTab: TextView
+    private lateinit var settingsTab: TextView
     private var latestUpdate: SecureUpdater.Release? = null
     private var downloadedUpdate: java.io.File? = null
 
@@ -64,6 +71,10 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         buildUi()
+        if (!isOfflinePreview && prefs.getBoolean("auto_update_check", false)) {
+            // Opt-in: metadata check only; never download or install automatically.
+            checkForAppUpdates()
+        }
         if (isOfflinePreview) {
             setStatus("V0.8 MuMu 离线演示：不会连接微软、VPS 或 GPU")
             return
@@ -138,271 +149,403 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
+        if (hintRequestId != null) showPage("requests")
         if (!isOfflinePreview) refresh()
     }
 
-    // Fluent-inspired, original Android UI: quiet neutral canvas, Windows-like
-    // surfaces, restrained blue accent, clear typography and accessible spacing.
+    /**
+     * Compact three-tab Fluent-inspired original UI. The account and approval
+     * state remain in Activity fields, so navigating never recreates MSAL or
+     * biometric/Keystore objects and never executes a GPU operation.
+     */
     private fun buildUi() {
-        val bg = android.graphics.Color.rgb(246, 248, 252)
-        val ink = android.graphics.Color.rgb(29, 34, 43)
-        val subdued = android.graphics.Color.rgb(98, 108, 125)
-        val blue = android.graphics.Color.rgb(0, 103, 192)
-        val border = android.graphics.Color.rgb(224, 229, 236)
-        val white = android.graphics.Color.WHITE
-        fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
-        fun surface(color: Int, stroke: Int? = null, radius: Int = 16): android.graphics.drawable.GradientDrawable {
-            return android.graphics.drawable.GradientDrawable().apply {
-                setColor(color)
-                cornerRadius = dp(radius).toFloat()
-                if (stroke != null) setStroke(dp(1), stroke)
-            }
-        }
-        val scroll = ScrollView(this).apply {
-            setBackgroundColor(bg)
-            isFillViewport = true
-            clipToPadding = false
-        }
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(36))
-        }
-        scroll.addView(root)
+        val canvas = android.graphics.Color.rgb(247, 249, 252)
+        val paper = android.graphics.Color.WHITE
+        val ink = android.graphics.Color.rgb(30, 38, 50)
+        val secondary = android.graphics.Color.rgb(91, 105, 124)
+        val accent = android.graphics.Color.rgb(0, 103, 192)
+        val outline = android.graphics.Color.rgb(226, 232, 241)
+        val softBlue = android.graphics.Color.rgb(235, 244, 255)
 
-        fun text(
-            parent: LinearLayout, value: String, sp: Float = 14f,
-            color: Int = ink, strong: Boolean = false
-        ): TextView {
-            val label = TextView(this).apply {
-                this.text = value
-                textSize = sp
+        // Light status/navigation bar icons stay legible on the pale canvas.
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+        window.statusBarColor = canvas
+        window.navigationBarColor = paper
+        val lightBars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+            android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        window.insetsController?.setSystemBarsAppearance(lightBars, lightBars)
+
+        fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
+        fun surface(color: Int, border: Int? = null, round: Int = 14) =
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(color)
+                cornerRadius = dp(round).toFloat()
+                if (border != null) setStroke(dp(1), border)
+            }
+        fun caption(parent: LinearLayout, value: String, size: Float = 13f,
+                    color: Int = ink, medium: Boolean = false): TextView {
+            val view = TextView(this).apply {
+                text = value
+                textSize = size
                 setTextColor(color)
                 typeface = android.graphics.Typeface.create(
-                    if (strong) "sans-serif-medium" else "sans-serif",
+                    if (medium) "sans-serif-medium" else "sans-serif",
                     android.graphics.Typeface.NORMAL
                 )
                 setLineSpacing(dp(2).toFloat(), 1f)
             }
-            parent.addView(label)
-            return label
+            parent.addView(view)
+            return view
         }
-
-        fun section(title: String, subtitle: String): LinearLayout {
-            val label = text(root, title, 19f, ink, true)
-            label.setPadding(dp(2), dp(24), dp(2), dp(5))
-            val sub = text(root, subtitle, 12f, subdued)
-            sub.setPadding(dp(2), 0, dp(2), dp(10))
-            return LinearLayout(this).apply {
+        fun space(parent: LinearLayout, height: Int) {
+            parent.addView(View(this), LinearLayout.LayoutParams(1, dp(height)))
+        }
+        fun card(parent: LinearLayout, title: String, hint: String = ""): LinearLayout {
+            val c = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                background = surface(white, border)
-                setPadding(dp(18), dp(18), dp(18), dp(18))
-                elevation = dp(2).toFloat()
-                root.addView(
-                    this,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = dp(5) }
-                )
+                background = surface(paper, outline)
+                setPadding(dp(15), dp(15), dp(15), dp(15))
+                elevation = dp(1).toFloat()
             }
+            parent.addView(c, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) })
+            caption(c, title, 16f, ink, true)
+            if (hint.isNotEmpty()) {
+                space(c, 3)
+                caption(c, hint, 12f, secondary)
+            }
+            space(c, 12)
+            return c
         }
-
-        fun spacer(parent: LinearLayout, h: Int) {
-            parent.addView(
-                View(this),
-                LinearLayout.LayoutParams(1, dp(h))
-            )
-        }
-
-        fun action(
-            parent: LinearLayout, title: String, filled: Boolean = false,
-            callback: () -> Unit
-        ): Button {
-            val fill = if (filled) blue else android.graphics.Color.rgb(248, 250, 253)
-            val outline = if (filled) blue else border
-            val ripple = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(
-                    if (filled) 0x33FFFFFF else 0x220067C0
-                ),
-                surface(fill, outline, 10),
-                null
-            )
+        fun button(parent: LinearLayout, title: String,
+                   filled: Boolean = false, click: () -> Unit): Button {
+            val color = if (filled) accent else canvas
             val button = Button(this).apply {
                 text = title
                 isAllCaps = false
-                textSize = 14f
+                textSize = 13.5f
                 typeface = android.graphics.Typeface.create(
-                    "sans-serif-medium", android.graphics.Typeface.NORMAL
+                    "sans-serif-medium", android.graphics.Typeface.NORMAL)
+                setTextColor(if (filled) paper else accent)
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(
+                        if (filled) 0x33FFFFFF else 0x220067C0),
+                    surface(color, if (filled) null else outline, 9),
+                    null
                 )
-                setTextColor(if (filled) white else blue)
-                background = ripple
                 stateListAnimator = null
                 minHeight = 0
                 minimumHeight = 0
-                setPadding(dp(12), dp(12), dp(12), dp(12))
-                setOnClickListener { callback() }
+                setPadding(dp(10), 0, dp(10), 0)
+                setOnClickListener { click() }
             }
-            parent.addView(
-                button,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
-                ).apply { bottomMargin = dp(10) }
-            )
+            parent.addView(button, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46)
+            ).apply { bottomMargin = dp(7) })
             return button
         }
+        fun heading(parent: LinearLayout, title: String, hint: String) {
+            caption(parent, title, 21f, ink, true)
+            space(parent, 3)
+            caption(parent, hint, 12f, secondary)
+            space(parent, 14)
+        }
 
-        // Original monogram instead of any Microsoft-owned logo or branding.
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val mark = TextView(this).apply {
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(canvas)
+        }
+        // App bar stays visible while navigating; it is not tied to any page.
+        val appBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(17), dp(13), dp(17), dp(10))
+            setBackgroundColor(paper)
+        }
+        val monogram = TextView(this).apply {
             text = "J"
-            textSize = 26f
-            gravity = android.view.Gravity.CENTER
-            setTextColor(white)
+            textSize = 20f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
-            background = surface(blue, radius = 14)
+            gravity = android.view.Gravity.CENTER
+            setTextColor(paper)
+            background = surface(accent, round = 10)
+            contentDescription = "吉皮提"
         }
-        header.addView(mark, LinearLayout.LayoutParams(dp(56), dp(56)))
-        val heading = LinearLayout(this).apply {
+        appBar.addView(monogram, LinearLayout.LayoutParams(dp(39), dp(39)))
+        val appTitle = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(4), 0, 0)
+            setPadding(dp(11), 0, 0, 0)
         }
-        text(heading, "吉皮提", 25f, ink, true)
-        text(heading, "GPU 安全审批中心", 13f, subdued)
-        header.addView(heading)
-        root.addView(header)
-        spacer(root, 18)
+        caption(appTitle, "吉皮提", 19f, ink, true)
+        caption(appTitle, "安全审批中心 · v" + BuildConfig.VERSION_NAME, 11f, secondary)
+        appBar.addView(appTitle, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val settingsShortcut = TextView(this).apply {
+            text = "设置"
+            textSize = 13f
+            setTextColor(accent)
+            gravity = android.view.Gravity.CENTER
+            setPadding(dp(7), dp(6), dp(7), dp(6))
+            contentDescription = "打开设置和应用更新"
+            setOnClickListener { showPage("settings") }
+        }
+        appBar.addView(settingsShortcut)
+        shell.addView(appBar)
 
-        val overview = LinearLayout(this).apply {
+        val line = View(this).apply { setBackgroundColor(outline) }
+        shell.addView(line, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
+        ))
+
+        val statusBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = surface(android.graphics.Color.rgb(233, 243, 255),
-                android.graphics.Color.rgb(202, 223, 247))
-            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = surface(softBlue, round = 0)
+            setPadding(dp(17), dp(9), dp(17), dp(9))
         }
-        text(overview, if (isOfflinePreview) "安全离线预览" else "账户与设备安全", 13f, blue, true)
-        spacer(overview, 8)
-        status = text(overview, "正在初始化……", 15f, ink, true)
-        spacer(overview, 8)
-        text(overview, "每次真实审批都必须单独确认并完成强生物识别。", 12f, subdued)
-        root.addView(overview)
-        val account = section("Microsoft 账户", "使用个人 Microsoft 账号验证身份")
-        microsoftState = text(
-            account,
-            if (isOfflinePreview) "微软账号：离线演示版不提供真实登录"
-            else "微软账号：正在读取登录状态……",
-            15f, ink, true
-        )
-        spacer(account, 14)
-        val loginButton = action(account, "使用 Microsoft 账号登录 / 重新验证", true) { signIn() }
-        val network = section("安全连接", "VPS HTTPS · Microsoft 身份保护")
-        readiness = text(network, "点击诊断按钮查看连接和设备状态。", 13f, subdued)
-        spacer(network, 14)
-        action(network, "查看连接与安全准备清单") {
-            readiness.text = readinessReport()
+        status = caption(statusBar,
+            if (isOfflinePreview) "离线预览：不会连接 Microsoft、VPS 或 GPU"
+            else "正在读取 Microsoft 账号及设备状态……", 12.5f, ink)
+        status.maxLines = 3
+        shell.addView(statusBar)
+
+        pageScroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
         }
+        val pageHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(18), dp(16), dp(24))
+        }
+        pageScroll.addView(pageHost)
+        fun page(): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            pageHost.addView(this, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        homePage = page()
+        requestsPage = page()
+        settingsPage = page()
+
+        // Home: identity and connection status, no excessive vertical controls.
+        heading(homePage, "概览", "验证身份、查看连接与设备安全状态")
+        val account = card(homePage, "Microsoft 账户")
+        microsoftState = caption(account,
+            if (isOfflinePreview) "离线演示 · 不提供真实登录"
+            else "正在确认登录状态……", 14.5f, ink, true)
+        space(account, 13)
+        val loginButton = button(account,
+            "使用 Microsoft 账号登录 / 重新验证", true) { signIn() }
+
+        val network = card(homePage, "VPS 安全连接", "仅通过 HTTPS 连接受身份保护的审批接口")
+        readiness = caption(network,
+            if (isOfflinePreview) "离线演示：不访问 VPS"
+            else "未检查 · 点击下方按钮执行安全探测", 12.5f, secondary)
+        space(network, 11)
         if (!isOfflinePreview) {
-            action(network, "检测 VPS HTTPS 审批接口") {
-                readiness.text = "正在验证 HTTPS 与身份认证保护……"
+            button(network, "检查 HTTPS 连接") {
+                readiness.text = "正在检测 HTTPS 与 Microsoft 身份保护……"
                 MobileApi.probe { result ->
                     runOnUiThread {
                         readiness.text = result.fold(
-                            onSuccess = { it },
-                            onFailure = { "HTTPS 检测失败：请检查网络或 VPS 接口。" }
+                            onSuccess = { "连接正常 · VPS 已启用身份保护" },
+                            onFailure = { "连接未通过 · 请检查网络或 VPS 接口" }
                         )
                     }
                 }
             }
         }
+        button(network, "查看安全诊断与设备配置") {
+            showPage("settings")
+        }
+        val quick = card(homePage, "审批安全", "通知不会直接执行 GPU 开关机")
+        caption(quick,
+            "真实批准须经过账户身份验证、设备绑定、操作确认和强生物识别签名。",
+            12.5f, secondary)
+        space(quick, 12)
+        button(quick, "查看待审批申请") { showPage("requests") }
 
-        val approval = section("待审批申请", "先阅读操作信息，再决定是否允许")
-        detail = text(approval, "暂无待审批申请", 16f, ink, true)
-        spacer(approval, 14)
-        val refreshButton = action(approval, "刷新待审批申请") { refresh() }
-        denyButton = action(approval,
+        // Dedicated approval page: don't hide approval controls under settings.
+        heading(requestsPage, "待审批申请", "请逐项确认 GPU 操作类型、费用及数据风险")
+        val pending = card(requestsPage, "当前申请")
+        detail = caption(pending, "暂无待审批申请", 15f, ink, true)
+        space(pending, 12)
+        val refreshButton = button(pending, "刷新待审批申请") { refresh() }
+        denyButton = button(pending,
             if (isOfflinePreview) "模拟拒绝（不发送）" else "拒绝本次操作"
         ) { requestDecision("deny") }
-        approveButton = action(approval,
-            if (isOfflinePreview) "模拟批准（不发送）" else "使用指纹 / 面容批准",
+        approveButton = button(pending,
+            if (isOfflinePreview) "模拟批准（不发送）" else "使用生物识别批准",
             true
         ) { requestDecision("approve") }
         showRequest(null)
 
-        val enrollment = section("设备绑定", "首次配对仅限受信任、具备强生物识别的真机")
-        text(enrollment, "一次性 VPS 配对密钥", 13f, subdued, true)
-        spacer(enrollment, 8)
-        pairing = EditText(this).apply {
-            hint = "不要把配对密钥发送给任何人"
-            textSize = 14f
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            isSingleLine = true
-            setTextColor(ink)
-            setHintTextColor(subdued)
-            background = surface(white, border, 10)
-            setPadding(dp(12), 0, dp(12), 0)
-        }
-        enrollment.addView(
-            pairing, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
-            )
-        )
-        spacer(enrollment, 12)
-        val enrollButton = action(enrollment, "绑定此手机（仅首次）") { enrollPhone() }
         if (isOfflinePreview) {
-            loginButton.isEnabled = false
-            loginButton.alpha = 0.45f
-            enrollButton.isEnabled = false
-            enrollButton.alpha = 0.45f
-            refreshButton.isEnabled = false
-            refreshButton.alpha = 0.45f
-            pairing.isEnabled = false
-            val demo = section("离线演示", "本地模拟申请，绝不会连接 Microsoft、VPS 或 GPU")
-            action(demo, "模拟开机申请") { showOfflineDemo("start") }
-            action(demo, "模拟关机申请") { showOfflineDemo("stop") }
-            action(demo, "清除模拟申请") {
+            val demo = card(requestsPage, "离线模拟", "所有操作仅在本地运行，不会改变 GPU 状态")
+            button(demo, "模拟开机申请") { showOfflineDemo("start") }
+            button(demo, "模拟关机申请") { showOfflineDemo("stop") }
+            button(demo, "清除模拟申请") {
                 current = null
                 showRequest(null)
                 setStatus("已清除本地模拟申请")
             }
         }
 
-        val about = section("关于与更新", "应用版本、更新状态与安全安装")
-        text(about, "吉皮提 · Version " + BuildConfig.VERSION_NAME, 16f, ink, true)
-        spacer(about, 5)
-        text(about, "构建编号 " + BuildConfig.VERSION_CODE.toString() +
+        val enrollment = card(requestsPage, "首次设备绑定",
+            "仅在受信任且具备强生物识别的小米真机操作")
+        pairing = EditText(this).apply {
+            hint = "输入 VPS 私人终端的一次性配对密钥"
+            textSize = 13f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSingleLine = true
+            setTextColor(ink)
+            setHintTextColor(secondary)
+            background = surface(paper, outline, 9)
+            setPadding(dp(11), 0, dp(11), 0)
+        }
+        enrollment.addView(pairing, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(45)
+        ))
+        space(enrollment, 11)
+        val enrollButton = button(enrollment, "绑定此手机（仅首次）") { enrollPhone() }
+        if (isOfflinePreview) {
+            for (view in arrayOf(loginButton, refreshButton, enrollButton)) {
+                view.isEnabled = false
+                view.alpha = 0.44f
+            }
+            pairing.isEnabled = false
+        }
+
+        // Settings: version and updates have a first-class, dedicated tab.
+        heading(settingsPage, "设置", "管理更新、诊断和应用信息")
+        val about = card(settingsPage, "关于吉皮提", "独立的安全审批应用 · Fluent 风格")
+        caption(about, "版本 " + BuildConfig.VERSION_NAME, 18f, ink, true)
+        space(about, 4)
+        caption(about, "构建 " + BuildConfig.VERSION_CODE +
             "  ·  " + (if (isOfflinePreview) "离线预览版" else "Microsoft 联机版"),
-            12f, subdued)
-        spacer(about, 14)
-        updateStatus = text(about,
-            if (isOfflinePreview) "离线演示不下载或安装真实更新。"
-            else "可手动检查更新；下载后由 Android 系统确认安装。",
-            13f, subdued)
-        spacer(about, 10)
-        updateProgress = android.widget.ProgressBar(
-            this, null, android.R.attr.progressBarStyleHorizontal
-        ).apply {
+            12f, secondary)
+
+        val updates = card(settingsPage, "应用更新",
+            "下载验证通过后，由 Android 系统确认安装")
+        updateStatus = caption(updates,
+            if (isOfflinePreview) "离线预览版不访问在线更新源。"
+            else "可手动检查最新版，或开启启动时自动检查。",
+            12.5f, secondary)
+        space(updates, 10)
+        updateProgress = android.widget.ProgressBar(this, null,
+            android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progress = 0
             visibility = View.GONE
-            progressTintList = android.content.res.ColorStateList.valueOf(blue)
+            progressTintList = android.content.res.ColorStateList.valueOf(accent)
         }
-        about.addView(updateProgress, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(5)
+        updates.addView(updateProgress, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(4)
         ))
-        spacer(about, 12)
-        updateCheckButton = action(about, "检查更新") { checkForAppUpdates() }
-        updateDownloadButton = action(about, "在应用内下载新版") { downloadAppUpdate() }
-        updateInstallButton = action(about, "安装已验证的新版", true) { installAppUpdate() }
+        space(updates, 10)
+        updateCheckButton = button(updates, "检查更新") { checkForAppUpdates() }
+        updateDownloadButton = button(updates, "下载发现的新版本") { downloadAppUpdate() }
+        updateInstallButton = button(updates, "安装已验证的更新", true) {
+            installAppUpdate()
+        }
         updateDownloadButton.isEnabled = false
         updateInstallButton.isEnabled = false
-        updateDownloadButton.alpha = 0.45f
-        updateInstallButton.alpha = 0.45f
+        updateDownloadButton.alpha = 0.44f
+        updateInstallButton.alpha = 0.44f
         if (isOfflinePreview) {
             updateCheckButton.isEnabled = false
-            updateCheckButton.alpha = 0.45f
+            updateCheckButton.alpha = 0.44f
         }
 
-        spacer(root, 14)
-        text(root, "吉皮提是独立 GPU 审批应用，界面采用 Fluent 风格设计。", 11f, subdued)
-        setContentView(scroll)
+        val preference = card(settingsPage, "更新偏好")
+        val autoUpdateSwitch = android.widget.Switch(this).apply {
+            text = "启动时自动检查更新"
+            textSize = 13.5f
+            setTextColor(ink)
+            isChecked = prefs.getBoolean("auto_update_check", false)
+            isEnabled = !isOfflinePreview
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean("auto_update_check", checked).apply()
+            }
+        }
+        preference.addView(autoUpdateSwitch)
+        space(preference, 7)
+        caption(preference, "仅检查新版本，不会自动下载或安装。", 12f, secondary)
+
+        val safety = card(settingsPage, "安全与诊断", "版本和登录操作不会改变 GPU 电源权限")
+        caption(safety, "仅在小米真机上进行正式设备绑定和生物识别审批。",
+            12.5f, secondary)
+        space(safety, 12)
+        button(safety, "查看本机安全检查结果") {
+            AlertDialog.Builder(this)
+                .setTitle("安全准备状态")
+                .setMessage(readinessReport())
+                .setPositiveButton("关闭", null)
+                .show()
+        }
+
+        shell.addView(pageScroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        // Persistent bottom navigation: three pages, no page has to scroll past
+        // all of the others just to find "Settings" or "Updates".
+        val navigation = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(14), dp(5), dp(14), dp(5))
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setBackgroundColor(paper)
+            elevation = dp(5).toFloat()
+        }
+        fun tab(label: String, pageName: String): TextView {
+            val control = TextView(this).apply {
+                text = label
+                textSize = 13.5f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(secondary)
+                setOnClickListener { showPage(pageName) }
+                contentDescription = "打开" + label
+            }
+            navigation.addView(control, LinearLayout.LayoutParams(0, dp(48), 1f))
+            return control
+        }
+        homeTab = tab("首页", "home")
+        requestsTab = tab("审批", "requests")
+        settingsTab = tab("设置", "settings")
+        shell.addView(navigation)
+        setContentView(shell)
+        showPage(if (hintRequestId != null) "requests" else "home")
+    }
+
+    private fun showPage(page: String) {
+        if (!::homePage.isInitialized || !::requestsPage.isInitialized ||
+            !::settingsPage.isInitialized) return
+        val selected = if (page in setOf("home", "requests", "settings")) page else "home"
+        homePage.visibility = if (selected == "home") View.VISIBLE else View.GONE
+        requestsPage.visibility = if (selected == "requests") View.VISIBLE else View.GONE
+        settingsPage.visibility = if (selected == "settings") View.VISIBLE else View.GONE
+        val dark = android.graphics.Color.rgb(0, 103, 192)
+        val muted = android.graphics.Color.rgb(91, 105, 124)
+        for ((name, tab) in listOf("home" to homeTab,
+            "requests" to requestsTab, "settings" to settingsTab)) {
+            tab.setTextColor(if (name == selected) dark else muted)
+            tab.typeface = android.graphics.Typeface.create(
+                if (name == selected) "sans-serif-medium" else "sans-serif",
+                android.graphics.Typeface.NORMAL
+            )
+            tab.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(if (name == selected)
+                    android.graphics.Color.rgb(232, 243, 255)
+                    else android.graphics.Color.TRANSPARENT)
+                cornerRadius = (11 * resources.displayMetrics.density)
+            }
+        }
+        if (::pageScroll.isInitialized) pageScroll.scrollTo(0, 0)
     }
 
     private fun checkForAppUpdates() {
@@ -415,8 +558,10 @@ class MainActivity : FragmentActivity() {
                 onSuccess = { release ->
                     latestUpdate = release
                     if (release == null) {
+                        if (::settingsTab.isInitialized) settingsTab.text = "设置"
                         updateStatus.text = "当前已是最新版本（" + BuildConfig.VERSION_NAME + "）。"
                     } else {
+                        if (::settingsTab.isInitialized) settingsTab.text = "设置 · 新版"
                         downloadedUpdate = null
                         updateInstallButton.isEnabled = false
                         updateInstallButton.alpha = 0.45f
