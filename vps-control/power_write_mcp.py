@@ -4,6 +4,7 @@ Authentication boundary: bind to localhost only; configure authenticated HTTPS
 proxy separately. Requests require independent owner TOTP approval in browser.
 """
 import os
+import stat
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -55,6 +56,19 @@ def get_power_service_health() -> dict:
         else:
             reason = "credential_file_invalid_or_incomplete"
         result = {"ok": False, "stage": "configuration", "reason": reason}
+        if reason == "credential_file_permissions_too_open":
+            try:
+                credential_path = os.environ.get("DIRECTOR_POWER_CONFIG")
+                directory = os.environ.get("CREDENTIALS_DIRECTORY")
+                if not credential_path and directory:
+                    credential_path = os.path.join(directory, "directorenv")
+                if credential_path:
+                    result["runtime_file_mode"] = format(stat.S_IMODE(os.stat(credential_path).st_mode), "04o")
+                    result["loaded_via_systemd"] = bool(directory and os.path.realpath(credential_path).startswith(os.path.realpath(directory).rstrip("/") + "/"))
+                    if directory:
+                        result["credential_directory_mode"] = format(stat.S_IMODE(os.stat(directory).st_mode), "04o")
+            except OSError:
+                pass
         if reason == "credential_required_fields_missing":
             names = message.split(":", 1)[1].strip().split(", ")
             allowed = {"COMP_PUBLIC_KEY", "COMP_PRIVATE_KEY", "COMP_UHOST_ID",
