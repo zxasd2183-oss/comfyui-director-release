@@ -33,6 +33,28 @@ sudo systemctl is-active director-power-mcp director-power-approval director-pow
 
 **安装期间不会调用任何实际开关机接口。**
 
+## 推荐：用二维码绑定手机验证器（不影响 GPU 电源）
+
+在广州 VPS 的**私人 SSH 终端**运行：
+
+```bash
+cd ~/comfyui-director-release
+git pull --ff-only
+cd vps-control
+sudo apt-get install -y qrencode
+sudo python3 enroll_totp.py
+```
+
+安装器已生成的 `/etc/comfyui-director-otp.seed` 会被读取，但**不会重置**，并且仍要求是 root 所有的 `0600` 文件。脚本先显示仅限本机终端查看的 TOTP 二维码，手机用受信任的验证器扫描（6 位 / 30 秒），随后在终端的隐藏输入框输入手机上当前的验证码。**验证全部在 VPS 本地完成，没有调用 GPU 电源 API，也不会生成开机申请。**
+
+扫码后只想再测试一次动态码，可以运行：
+
+```bash
+sudo python3 enroll_totp.py --verify-only
+```
+
+不要把二维码、TOTP 种子或验证码复制到 ChatGPT、截图或者公开文件。若 SSH 终端二维码显示不完整，下面保留了手动输入 TOTP 种子的备用方法。
+
 ## 一次性设置手机验证器
 
 V0.3 首次安装自动在 VPS 生成私密 TOTP 种子文件，永远不要发给 ChatGPT、提交 GitHub、截图、转发或记录到日志。
