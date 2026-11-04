@@ -42,6 +42,10 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(result["reason"],"credential_file_invalid_or_incomplete")
         self.assertNotIn("secret",str(result))
 
+    def test_insecure_original_source_is_classified(self):
+        status = self.classify("Original credential must be root-owned and mode 0600")
+        self.assertEqual(status["reason"], "original_credential_source_insecure")
+
     def test_region_zone_errors_are_distinct(self):
         self.assertEqual(self.classify("Invalid region")["reason"],"credential_region_invalid")
         self.assertEqual(self.classify("Invalid zone")["reason"],"credential_zone_invalid")
