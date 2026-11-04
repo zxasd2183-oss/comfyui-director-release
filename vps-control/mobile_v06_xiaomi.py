@@ -18,11 +18,12 @@ PACKAGE = "cn.borealos.jipite"
 
 
 def send_xiaomi(reg_id: str, request_id: str, action: str,
-                app_secret: str, ttl_ms: int = 300000, transport=None) -> None:
+                app_secret: str, ttl_ms: int = 300000, transport=None, *,
+                channel_id: str = "", template_id: str = "") -> None:
     """Raise on failure. Notify worker safely retries with backoff."""
     if not isinstance(reg_id, str) or not re.fullmatch(r"[A-Za-z0-9_+=/-]{8,256}", reg_id):
         raise ValueError("invalid Xiaomi registration ID")
-    if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_+=/-]{20,80}", request_id):
+    if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", request_id):
         raise ValueError("invalid request")
     if action not in ("start", "stop"):
         raise ValueError("invalid action")
@@ -30,6 +31,13 @@ def send_xiaomi(reg_id: str, request_id: str, action: str,
         raise ValueError("invalid server secret")
     if not isinstance(ttl_ms, int) or ttl_ms <= 0:
         raise ValueError("expired request")
+    # Approved Xiaomi 2026 private-message channel and NO-VARIABLE template.
+    # Never silently send unclassified messages with a generic default channel.
+    if (not isinstance(channel_id, str)
+            or not re.fullmatch(r"[0-9]{1,20}", channel_id)
+            or not isinstance(template_id, str)
+            or not re.fullmatch(r"[0-9]{1,20}", template_id)):
+        raise ValueError("xiaomi_approved_channel_and_template_required")
     # Limit stale notifications: the app must still fetch the pending request
     # over authenticated TLS, and the VPS will reject an expired request.
     ttl_ms = min(ttl_ms, 300000)
@@ -44,6 +52,10 @@ def send_xiaomi(reg_id: str, request_id: str, action: str,
         "description": description,
         "payload": payload,
         "time_to_live": str(ttl_ms),
+        "pass_through": "0",
+        "extra.channel_id": channel_id,
+        "extra.template_id": template_id,
+        "extra.template_param": "{}",
         "extra.notify_effect": "1",  # open installed app, not browser
         "extra.only_send_once": "1",
     }
