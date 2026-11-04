@@ -1,10 +1,10 @@
 {
   "channel": "macos-arm64",
-  "version": "0.14.1",
-  "url": "https://jipite.borealos.cn/glacier-updates/GlacierBrowser-v0.14.1-macOS-AppleSilicon.dmg",
-  "sha256": "6a9d0ed4c03b02f692033d670298b4982c98330c842abed7f7e2bc1c54e8620a",
-  "size": 276191519,
-  "notes": "v0.14.1：修复输入 VLESS 后 Mac 界面闪退；更新改从专属 VPS HTTPS 下载并验证，网页仍使用 VLESS 代理。",
+  "version": "0.14.2",
+  "url": "https://jipite.borealos.cn/glacier-updates/GlacierBrowser-v0.14.2-macOS-AppleSilicon.dmg",
+  "sha256": "108c55a0ebb6729489a7a73d6bc7df47e580b9f9c9d700aa05caad21dc26330c",
+  "size": 269943174,
+  "notes": "v0.14.2：修复 macOS 冻结打包后的 HTTPS CA 根证书加载，VLESS 连通性检测继续完整验证 TLS 证书链和域名；保留 Mac VPS 软件内安全更新。",
   "key_id": "cf9452226375ff7d",
-  "signature": "HqsbFbaBxrhBZJvtHc/VpzRgrTsPkemiPgdgBs4EL9dYInXSw8dOuko+D7aKxT4LqeDh/tljuEYsIJvu8/e2DA=="
+  "signature": "vH5pFL9Mb5WYtomTOYCkaEgRHCeC4ViVPbv+ouK8C+Z7YRLELlSEdWv1s8xtQMcIVo6QV1jokggqSh43lDV3Bw=="
 }
