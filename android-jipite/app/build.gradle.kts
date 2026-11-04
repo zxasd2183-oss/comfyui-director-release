@@ -7,6 +7,11 @@ plugins {
 android {
     namespace = "cn.borealos.jipite"
     compileSdk = 35
+    flavorDimensions += "push"
+    productFlavors {
+        create("google") { dimension = "push" }
+        create("xiaomi") { dimension = "push" }
+    }
     defaultConfig {
         applicationId = "cn.borealos.jipite"
         minSdk = 30
@@ -26,4 +31,7 @@ dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("com.microsoft.identity.client:msal:8.6.0")
     implementation("com.google.firebase:firebase-messaging:24.1.2")
+    // Install the official AAR locally before building the xiaomi flavor.
+    // It is not redistributed in this public source repository.
+    add("xiaomiImplementation", files("libs/MiPush_SDK_Client.aar"))
 }
