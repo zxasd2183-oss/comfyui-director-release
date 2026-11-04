@@ -1,0 +1,183 @@
+import ctypes, json, os, re, socket, subprocess, sys, uuid
+from pathlib import Path
+from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtNetwork import QNetworkProxy
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+ QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from features import GlacierFeatures
+from ui08 import GlacierUI08, GlacierPrefs
+from ui09 import GlacierUI09
+from update_ui import GlacierUpdateUI
+
+APP = "Glacier Browser"
+def appdir():
+ p=Path(os.getenv("LOCALAPPDATA",str(Path.home()))) / "GlacierBrowser"
+ p.mkdir(parents=True,exist_ok=True)
+ return p
+def parse_node(link):
+ p=urlsplit(link.strip())
+ if p.scheme.lower()!="vless" or not p.hostname or not p.port: raise ValueError("只支持完整的 vless:// 分享链接")
+ try: uuid.UUID(unquote(p.username or ""))
+ except Exception: raise ValueError("VLESS UUID 无效")
+ q=parse_qs(p.query,keep_blank_values=True)
+ g=lambda k,d="": q.get(k,[d])[0]
+ if g("encryption","none")!="none": raise ValueError("不支持此 encryption")
+ if g("allowInsecure","0").lower() in ("true","1") or g("insecure","0").lower() in ("true","1"): raise ValueError("不接受禁用 TLS 校验")
+ o={"type":"vless","tag":"node","server":p.hostname,"server_port":p.port,"uuid":unquote(p.username)}
+ if g("flow"): o["flow"]=g("flow")
+ security=g("security","none").lower()
+ if security not in ("none","tls","reality"): raise ValueError("不支持安全类型 "+security)
+ if security!="none":
+  tls={"enabled":True,"server_name":g("sni") or p.hostname}
+  if g("fp"): tls["utls"]={"enabled":True,"fingerprint":g("fp")}
+  if g("alpn"): tls["alpn"]=g("alpn").split(",")
+  if security=="reality":
+   if not g("pbk"): raise ValueError("REALITY 缺少 pbk")
+   tls["reality"]={"enabled":True,"public_key":g("pbk"),"short_id":g("sid")}
+  o["tls"]=tls
+ transport=g("type","tcp").lower()
+ if transport=="ws":
+  t={"type":"ws","path":g("path","/")}
+  if g("host"):t["headers"]={"Host":g("host")}
+  o["transport"]=t
+ elif transport=="grpc":o["transport"]={"type":"grpc","service_name":g("serviceName")}
+ elif transport not in ("","tcp","raw"):raise ValueError("暂不支持传输类型 "+transport)
+ return o
+class Blob(ctypes.Structure):
+ _fields_=[("size",ctypes.c_ulong),("data",ctypes.POINTER(ctypes.c_byte))]
+def dpapi(data,decrypt=False):
+ raw=ctypes.create_string_buffer(data)
+ src=Blob(len(data),ctypes.cast(raw,ctypes.POINTER(ctypes.c_byte)))
+ out=Blob()
+ f=ctypes.windll.crypt32.CryptUnprotectData if decrypt else ctypes.windll.crypt32.CryptProtectData
+ f.restype=ctypes.c_int
+ f.argtypes=([ctypes.POINTER(Blob),ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_ulong,ctypes.POINTER(Blob)] if decrypt else [ctypes.POINTER(Blob),ctypes.c_wchar_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_ulong,ctypes.POINTER(Blob)])
+ if not f(ctypes.byref(src),None,None,None,None,1,ctypes.byref(out)):raise ctypes.WinError()
+ try:return ctypes.string_at(out.data,out.size)
+ finally:
+  ctypes.windll.kernel32.LocalFree.argtypes=[ctypes.c_void_p]
+  ctypes.windll.kernel32.LocalFree(ctypes.cast(out.data,ctypes.c_void_p))
+def get_link(app):
+ path=appdir()/"node.dpapi"
+ if path.exists():
+  try:
+   link=dpapi(path.read_bytes(),True).decode()
+   parse_node(link)
+   return link
+  except Exception as e: QMessageBox.warning(None,APP,"已有线路无法读取："+str(e))
+ clip=app.clipboard().text().strip()
+ proposal=clip if clip.lower().startswith("vless://") else ""
+ link,ok=QInputDialog.getMultiLineText(None,"冰川浏览器首次导入",
+  "从 v2rayN 复制 VLESS 分享链接并粘贴：\n仅在本机使用 Windows DPAPI 加密保存。",proposal)
+ if not ok or not link.strip():return ""
+ try:
+  parse_node(link)
+  path.write_bytes(dpapi(link.strip().encode()))
+  return link.strip()
+ except Exception as e:
+  QMessageBox.warning(None,APP,"导入失败："+str(e))
+  return ""
+def core_path():
+ roots=[Path(getattr(sys,"_MEIPASS",Path(__file__).resolve().parent)),Path(sys.executable).parent]
+ for root in roots:
+  for part in ("bin/sing-box.exe","_internal/bin/sing-box.exe"):
+   candidate=root/part
+   if candidate.is_file():return candidate
+ return None
+def proxy_start(link,port):
+ if not link:return None
+ core=core_path()
+ if not core:raise RuntimeError("安装包内未找到 sing-box.exe")
+ config={"log":{"level":"warn"},"inbounds":[{"type":"mixed","tag":"in","listen":"127.0.0.1","listen_port":port,"set_system_proxy":False}],"outbounds":[parse_node(link)],"route":{"final":"node"}}
+ configfile=appdir()/"runtime.json"
+ configfile.write_text(json.dumps(config),encoding="utf-8")
+ flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
+ result=subprocess.run([str(core),"check","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15,creationflags=flags)
+ if result.returncode:raise RuntimeError("代理内核无法识别这个 VLESS 节点（可能存在不兼容参数）")
+ return subprocess.Popen([str(core),"run","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
+class Page(QWebEngineView):
+ def __init__(self,win):
+  super().__init__(win)
+  self.win=win
+  self.setPage(QWebEnginePage(win.profile,self))
+ def createWindow(self,typ):return self.win.new_tab()
+class Browser(GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+ def __init__(self,process,port):
+  super().__init__()
+  self.proc=process
+  self.proxy_port=port
+  self.prefs=GlacierPrefs(appdir()/"settings.json")
+  self.setWindowTitle("❄ Glacier Browser · v0.9")
+  self.resize(1260,850)
+  self.profile=QWebEngineProfile("Glacier",self)
+  self.profile.setPersistentStoragePath(str(appdir()/"profile"))
+  self.profile.setCachePath(str(appdir()/"cache"))
+  self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+  root=QWidget();lay=QVBoxLayout(root);self.setCentralWidget(root)
+  bar=QHBoxLayout();lay.addLayout(bar)
+  for label,cb in [("←",lambda:self.current().back()),("→",lambda:self.current().forward()),("↻",lambda:self.current().reload()),("＋",self.new_tab)]:
+   b=QPushButton(label);b.clicked.connect(cb);bar.addWidget(b)
+  self.address=QLineEdit();self.address.setPlaceholderText("输入网址或搜索");self.address.returnPressed.connect(self.navigate);bar.addWidget(self.address,1)
+  self.init_features(bar)
+  self.init_ui09(bar, lambda data: dpapi(data), lambda data: dpapi(data, True), appdir())
+  self.proxy_label=QLabel("● 核心运行中（尚未联网验证）" if process else "● 未连接（禁止直连）");bar.addWidget(self.proxy_label)
+  self.tabs=QTabWidget();self.tabs.setTabsClosable(True);self.tabs.tabCloseRequested.connect(self.close_tab);self.tabs.currentChanged.connect(self.sync_url);self.tabs.currentChanged.connect(lambda _idx:self.queue_session_save())
+  lay.addWidget(self.tabs);self.new_tab()
+  self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
+  self.setup_ui08(lay,bar)
+  self.setup_updater(bar, appdir())
+  self.setWindowTitle('❄ Glacier Browser · v0.10 · 内置更新')
+  self.restore_startup_session()
+  QShortcut(QKeySequence("Ctrl+L"),self,activated=lambda:self.address.setFocus())
+  QShortcut(QKeySequence("Ctrl+T"),self,activated=self.new_tab)
+ def current(self):return self.tabs.currentWidget()
+ def new_tab(self):
+  v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
+  v.titleChanged.connect(lambda title,view=v:self.tabs.setTabText(self.tabs.indexOf(view),title[:18] or "新标签") if self.tabs.indexOf(view)>=0 else None)
+  v.urlChanged.connect(lambda _url,view=v:self.sync_url() if view is self.current() else None)
+  v.loadFinished.connect(lambda ok,view=v:self.on_page_loaded(view,ok))
+  self.attach_page_security(v)
+  v.setHtml(self.home_markup(),QUrl("about:blank"));self.open_startup_home(v)
+  return v
+ def close_tab(self,i):
+  v=self.tabs.widget(i)
+  if v is None:return
+  self.remember_closed_tab(v.url().toString())
+  self.tabs.removeTab(i);v.deleteLater()
+  if not self.tabs.count():self.new_tab()
+ def sync_url(self):
+  v=self.current()
+  if v:self.address.setText(v.url().toString() if v.url().scheme() in ("http","https") else "")
+  self.refresh_bookmark_icon()
+ def navigate(self):
+  text=self.address.text().strip()
+  if not text:return
+  if re.match(r"^https?://",text,re.I):url=text
+  elif re.match(r"^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?(?:/\S*)?$",text):url="https://"+text
+  else:url=self.search_url(text)
+  self.current().setUrl(QUrl(url))
+ def closeEvent(self,event):
+  self.session_timer.stop();self.save_session()
+  if self.proc and self.proc.poll() is None:self.proc.terminate()
+  try:(appdir()/"runtime.json").unlink(missing_ok=True)
+  except OSError:pass
+  super().closeEvent(event)
+def main():
+ app=QApplication(sys.argv);app.setApplicationName(APP)
+ link=get_link(app)
+ with socket.socket() as s:
+  s.bind(("127.0.0.1",0));port=s.getsockname()[1]
+ proc=None
+ try:proc=proxy_start(link,port)
+ except Exception as e:QMessageBox.warning(None,APP,"代理未启动，禁止直连："+str(e))
+ # The proxy remains configured even when the core is unavailable: fail closed.
+ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
+ QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
+ win=Browser(proc,port);win.show();code=app.exec()
+ if proc and proc.poll() is None:proc.terminate()
+ return code
+if __name__=="__main__":sys.exit(main())
