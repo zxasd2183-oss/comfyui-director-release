@@ -1,21 +1,23 @@
-# Director V0.4 — fixed domain and GPU boot recovery
+# Director V0.4 — borealos.cn 固定域名 + GPU 开机自动恢复
+
+目标域名：`borealos.cn`。本文件已替换为真实的四个子域名；**这不代表 DNS 或 Cloudflare Tunnel 已创建**，需在域名控制台核验生效。
 
 One-time setup, no repeated temporary Cloudflare URLs.
 
 ## Cloudflare configuration (Dashboard → Networking → Tunnels)
 
-Prerequisite: Your own domain on Cloudflare DNS. Create **two remotely managed Named Tunnels**, not Quick Tunnels.
+Prerequisite: borealos.cn is added to Cloudflare and zone status is Active. Before changing authoritative nameservers, back up all existing A/AAAA/CNAME/MX/TXT/SRV records, including website and email records. Do not replace existing DNS entries blindly. If nameservers are not on Cloudflare, determine the correct DNS hosting arrangement before deployment. Create **two remotely managed Named Tunnels**, not Quick Tunnels.
 
 | Tunnel | Published hostname | Origin |
 |---|---|---|
-| director-gpu | director.YOUR_DOMAIN | http://127.0.0.1:8790 |
-| director-vps | status.YOUR_DOMAIN | http://127.0.0.1:8891 |
-| director-vps | power.YOUR_DOMAIN | http://127.0.0.1:8894 |
-| director-vps | approve.YOUR_DOMAIN | http://127.0.0.1:8893 |
+| director-gpu | director.borealos.cn | http://127.0.0.1:8790 |
+| director-vps | status.borealos.cn | http://127.0.0.1:8891 |
+| director-vps | power.borealos.cn | http://127.0.0.1:8894 |
+| director-vps | approve.borealos.cn | http://127.0.0.1:8893 |
 
 Cloudflare will configure DNS CNAME routes. Do not expose ComfyUI 8188. Each tunnel has its own private TOKEN (see Dashboard → Install connector / Add replica). **Never share tokens in ChatGPT/GitHub**.
 
-Protect approve.YOUR_DOMAIN with Cloudflare Access restricted to the owner, on top of the existing independent mobile TOTP and typed confirmation phrase. For long-term MCP use, also implement proper OAuth; a fixed hostname does NOT by itself authenticate callers. A generic browser Access login in front of MCP can interfere with ChatGPT MCP handshakes, so verify auth integration separately. Existing secret MCP paths are transitional.
+Protect approve.borealos.cn with Cloudflare Access restricted to the owner, on top of the existing independent mobile TOTP and typed confirmation phrase. For long-term MCP use, also implement proper OAuth; a fixed hostname does NOT by itself authenticate callers. A generic browser Access login in front of MCP can interfere with ChatGPT MCP handshakes, so verify auth integration separately. Existing secret MCP paths are transitional.
 
 ## GPU: prepare once in CompShare root shell
 
@@ -49,13 +51,13 @@ Paste ONLY the VPS tunnel TOKEN in the secure local prompt. A new systemd servic
 
 Preserve the private MCP path component exactly as before; change only the temporary hostname:
 
-- ComfyUI Director V3: https://director.YOUR_DOMAIN/mcp/GPU_PRIVATE_TOKEN
-- Director VPS: https://status.YOUR_DOMAIN/mcp/VPS_READONLY_PRIVATE_TOKEN
-- Director Power Requests: https://power.YOUR_DOMAIN/mcp/VPS_POWER_PRIVATE_TOKEN
+- ComfyUI Director V3: https://director.borealos.cn/mcp/GPU_PRIVATE_TOKEN
+- Director VPS: https://status.borealos.cn/mcp/VPS_READONLY_PRIVATE_TOKEN
+- Director Power Requests: https://power.borealos.cn/mcp/VPS_POWER_PRIVATE_TOKEN
 
 Do not paste full URLs into ChatGPT messages. If the existing plugin URL cannot be edited, connect a new plugin and disable the old temporary one.
 
-Independent approval page remains at https://approve.YOUR_DOMAIN/approve/ORIGINAL_APPROVAL_ROUTE_SECRET with no secret changes needed. Do not share the route secret.
+Independent approval page remains at https://approve.borealos.cn/approve/ORIGINAL_APPROVAL_ROUTE_SECRET with no secret changes needed. Do not share the route secret.
 
 ## VPS shutdown safety preflight must be updated once
 
