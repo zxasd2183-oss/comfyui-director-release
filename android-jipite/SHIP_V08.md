@@ -44,3 +44,5 @@ MuMu 只能验证界面与无网模拟；要在可信小米真机验证：
 ## 测试证书说明
 
 `.github/workflows/ci-android-jipite.yml` 现在会在 CI runner 内创建短期一次性签名证书和**假的** Microsoft Client ID，编译并验证签名的 Android Release APK，以测试打包链路。这个 Release 测试文件**不会公开上传**，也不能拿来真实登录。正式 APK 只能通过手动 `connected` 模式和用户自己拥有的稳定签名密钥构建。
+
+**MSAL 个人账户 Authority：** Android 模板明确配置 `PersonalMicrosoftAccount` 且设置 `default: true`，使交互登录与后续静默刷新统一使用消费者账号受众；VPS 仍验证真实个人账户租户 ID 与发行者。见 [微软 MSAL Android 配置说明](https://learn.microsoft.com/en-us/entra/msal/android/msal-configuration)。

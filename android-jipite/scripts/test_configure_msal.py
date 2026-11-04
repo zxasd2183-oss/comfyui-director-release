@@ -44,6 +44,16 @@ class SigningConfigurationTests(unittest.TestCase):
         self.assertIn('android:path="/' + self.hash + '"',
                       self.manifest_path.read_text(encoding="utf-8"))
 
+    def test_app_template_uses_personal_consumer_authority(self):
+        template = Path(__file__).resolve().parents[1] / "app/src/main/res/raw/msal_config.json"
+        config = json.loads(template.read_text(encoding="utf-8"))
+        self.assertEqual(len(config["authorities"]), 1)
+        authority = config["authorities"][0]
+        self.assertEqual(authority["type"], "AAD")
+        self.assertTrue(authority["default"])
+        self.assertEqual(authority["audience"]["type"], "PersonalMicrosoftAccount")
+        self.assertNotIn("tenant_id", authority["audience"])
+
     def test_placeholder_client_id_is_rejected(self):
         with self.assertRaises(ValueError):
             configure_msal.configure("00000000-0000-0000-0000-000000000000", self.hash)

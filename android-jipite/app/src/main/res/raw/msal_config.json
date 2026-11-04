@@ -8,9 +8,9 @@
     {
       "type": "AAD",
       "audience": {
-        "type": "AzureADandPersonalMicrosoftAccount",
-        "tenant_id": "consumers"
-      }
+        "type": "PersonalMicrosoftAccount"
+      },
+      "default": true
     }
   ]
 }
