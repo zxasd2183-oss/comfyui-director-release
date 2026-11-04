@@ -1,7 +1,13 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.gms.google-services")
+    id("com.google.gms.google-services") apply false
+}
+
+// Google Services plugin is only required for Google/FCM builds.
+// Xiaomi Mi Push builds do NOT need a Firebase project or google-services.json.
+if (providers.gradleProperty("enableFirebase").orNull == "true") {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 android {
