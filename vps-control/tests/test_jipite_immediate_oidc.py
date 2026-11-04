@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import hashes
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from jipite_oidc import (AuthenticationFailure, AUDIENCE, ISSUER,
-                         REPOSITORY, REPOSITORY_ID, SUBJECT, WORKFLOW_REF,
+                         REPOSITORY, REPOSITORY_ID, OWNER_ID, SUBJECT, WORKFLOW_REF,
                          check_claims, verify)
 
 
@@ -43,7 +43,8 @@ class GitHubOIDCVerifierTests(unittest.TestCase):
     def claims(self):
         return {
             "iss": ISSUER, "aud": AUDIENCE, "repository": REPOSITORY,
-            "repository_id": REPOSITORY_ID, "ref": "refs/heads/main",
+            "repository_id": REPOSITORY_ID, "repository_owner_id": OWNER_ID,
+            "ref": "refs/heads/main",
             "event_name": "workflow_run", "workflow_ref": WORKFLOW_REF,
             "sub": SUBJECT, "sha": "a" * 40, "run_id": "41838803961",
             "exp": self.now + 180, "iat": self.now - 10, "nbf": self.now - 10,
@@ -80,6 +81,7 @@ class GitHubOIDCVerifierTests(unittest.TestCase):
         for name, value in [
             ("aud", "other-vps"), ("workflow_ref", "other-workflow"),
             ("repository", "other/repo"), ("repository_id", "1"),
+            ("repository_owner_id", "123"),
             ("ref", "refs/heads/other"), ("event_name", "pull_request"),
             ("sub", "repo:untrusted/repo:ref:refs/heads/main"),
         ]:
