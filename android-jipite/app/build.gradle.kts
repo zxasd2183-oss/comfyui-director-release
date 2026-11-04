@@ -37,7 +37,7 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("com.microsoft.identity.client:msal:8.6.0")
-    implementation("com.google.firebase:firebase-messaging:24.1.2")
+    add("googleImplementation", "com.google.firebase:firebase-messaging:24.1.2")
     // Install the official AAR locally before building the xiaomi flavor.
     // It is not redistributed in this public source repository.
     add("xiaomiImplementation", files("libs/MiPush_SDK_Client.aar"))
