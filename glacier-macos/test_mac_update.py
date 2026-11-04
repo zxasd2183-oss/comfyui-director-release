@@ -22,7 +22,7 @@ class ManifestTests(unittest.TestCase):
         payload={
             "channel":"macos-arm64",
             "version":version,
-            "url":f"https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v{version}/GlacierBrowser-v{version}-macOS-AppleSilicon.dmg",
+            "url":f"https://jipite.borealos.cn/glacier-updates/GlacierBrowser-v{version}-macOS-AppleSilicon.dmg",
             "sha256":hashlib.sha256(b"test").hexdigest(),
             "size":2_000_000,
             "notes":"Mac build test",
@@ -92,8 +92,11 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(u.UpdateError):
             u._request(Session(),"https://github.com/allowed",u.TRUSTED_REDIRECT_HOSTS)
 
-    def test_no_proxy_on_invalid_port(self):
-        with self.assertRaises(u.UpdateError):u.proxy_session(0)
+    def test_first_party_vps_does_not_inherit_system_proxy(self):
+        session=u.first_party_session()
+        self.assertFalse(session.trust_env)
+        self.assertEqual(session.proxies,{})
+        session.close()
 
 if __name__=="__main__":
     unittest.main()
