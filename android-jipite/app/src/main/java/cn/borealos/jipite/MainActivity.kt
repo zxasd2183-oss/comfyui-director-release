@@ -717,7 +717,9 @@ class MainActivity : FragmentActivity() {
                 if (deviceId() != null) {
                     refresh()
                 } else {
-                    setStatus("Microsoft 登录成功！此设备尚未绑定 VPS；MuMu 只用于登录测试，请使用小米真机完成配对。")
+                    setStatus(if (DeviceSafety.likelyEmulator())
+                        "Microsoft 登录成功！当前为模拟器环境，不允许绑定 VPS。"
+                        else "Microsoft 登录成功！尚未绑定 VPS，请先查看审批页的真机安全诊断。")
                 }
             }
             override fun onError(exception: MsalException) {
@@ -807,18 +809,47 @@ class MainActivity : FragmentActivity() {
             .show()
     }
 
+    /**
+     * Error-code-only local diagnostic. No pairing secret, Microsoft identity
+     * token, private key, public key, device ID, or GPU API is shown or logged.
+     */
+    private fun showKeystoreProblem(error: Exception) {
+        val code = ApprovalKey.safeError(error)
+        setStatus("本机硬件密钥检查未通过［$code］；配对码未发送")
+        val report = DeviceSafety.report(this)
+        AlertDialog.Builder(this)
+            .setTitle("未绑定 VPS · 本机安全检查")
+            .setMessage(
+                "错误代码：$code\n\n" + report +
+                "\n\n请勿删除应用数据、重置密钥或关闭安全保护。" +
+                "可以复制下面的安全诊断文字，不含配对码、密钥或微软令牌。"
+            )
+            .setNegativeButton("关闭", null)
+            .setPositiveButton("复制诊断") { _, _ ->
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                    as android.content.ClipboardManager
+                clipboard.setPrimaryClip(
+                    android.content.ClipData.newPlainText(
+                        "吉皮提本机安全诊断", "错误代码：$code\n" + report
+                    )
+                )
+                setStatus("本机安全诊断已复制（不含账户和配对信息）")
+            }
+            .show()
+    }
+
     private fun beginSecureEnrollment(code: String) {
         val problem = DeviceSafety.prerequisiteProblem(this)
         if (problem != null) return setStatus(problem)
         val pub = try {
             ApprovalKey.publicKeyBase64() // Fails closed if secure hardware is absent.
-        } catch (_: Exception) {
-            return setStatus("无法创建或验证硬件级审批密钥，已禁止绑定；请检查设备安全诊断")
+        } catch (e: Exception) {
+            return showKeystoreProblem(e)
         }
         val signingOp = try {
             ApprovalKey.signatureForBiometric()
-        } catch (_: Exception) {
-            return setStatus("硬件密钥不可用于逐次生物识别，已禁止配对")
+        } catch (e: Exception) {
+            return showKeystoreProblem(e)
         }
         // Do not leave the root-only code visible in the screen during biometric UI.
         pairing.text.clear()
@@ -871,8 +902,8 @@ class MainActivity : FragmentActivity() {
             .build()
         try {
             prompt.authenticate(info, BiometricPrompt.CryptoObject(signingOp))
-        } catch (_: Exception) {
-            setStatus("无法启动强生物识别；配对码未发送")
+        } catch (e: Exception) {
+            showKeystoreProblem(e)
         }
     }
 

@@ -12,55 +12,147 @@ import java.security.PrivateKey
 import java.security.Signature
 
 /**
- * Owner-controlled P-256 signing key: nonexportable, hardware-backed and
- * gated by BIOMETRIC_STRONG for EVERY signature. No credential/PIN fallback.
+ * Hardware-backed, per-use BIOMETRIC_STRONG P-256 key. Existing alias is
+ * preserved across upgrades. No software or PIN-only fallback is permitted.
+ *
+ * Diagnostic output contains only nonsecret KeyInfo authorization flags.
  */
 object ApprovalKey {
-    // Retain the original alias to preserve already bound devices across APK updates.
     private const val ALIAS = "jipite-v06-approval"
+
+    class KeySafetyException(val code: String, cause: Throwable? = null) :
+        IllegalStateException(code, cause)
+
     private fun store(): KeyStore =
         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     private fun entry(): KeyStore.PrivateKeyEntry? =
         store().getEntry(ALIAS, null) as? KeyStore.PrivateKeyEntry
 
-    private fun inspectSecureKey(keyEntry: KeyStore.PrivateKeyEntry): String {
-        val privateKey = keyEntry.privateKey
-        val info = KeyFactory.getInstance(privateKey.algorithm, "AndroidKeyStore")
-            .getKeySpec(privateKey, KeyInfo::class.java)
-        val level = if (Build.VERSION.SDK_INT >= 31) info.securityLevel else -10
+    private fun keyInfo(actual: KeyStore.PrivateKeyEntry): KeyInfo =
+        try {
+            KeyFactory.getInstance(actual.privateKey.algorithm, "AndroidKeyStore")
+                .getKeySpec(actual.privateKey, KeyInfo::class.java)
+        } catch (e: Exception) {
+            throw KeySafetyException("KEYINFO_UNAVAILABLE_" + safeError(e), e)
+        }
+
+    private fun levelLabel(level: Int): String = when (level) {
+        KeyProperties.SECURITY_LEVEL_SOFTWARE -> "SOFTWARE"
+        KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> "TEE"
+        KeyProperties.SECURITY_LEVEL_STRONGBOX -> "STRONGBOX"
+        KeyProperties.SECURITY_LEVEL_UNKNOWN_SECURE -> "UNKNOWN_SECURE"
+        KeyProperties.SECURITY_LEVEL_UNKNOWN -> "UNKNOWN"
+        else -> "OTHER"
+    }
+
+    private data class Audit(
+        val level: String,
+        val hardwareBacked: Boolean,
+        val authenticationRequired: Boolean,
+        val everyUse: Boolean,
+        val hardwareEnforcedAuth: Boolean,
+        val biometricEnrollmentInvalidates: Boolean
+    ) {
+        fun failureCode(): String? = when {
+            !hardwareBacked -> "KEY_NOT_HARDWARE_BACKED"
+            !authenticationRequired -> "AUTH_NOT_REQUIRED"
+            !everyUse -> "AUTH_NOT_PER_USE"
+            !hardwareEnforcedAuth -> "AUTH_NOT_HARDWARE_ENFORCED"
+            else -> null
+        }
+
+        fun summary(): String = buildString {
+            append("安全等级：").append(level)
+            append("\n硬件密钥：").append(if (hardwareBacked) "是" else "否")
+            append("\n要求身份认证：").append(if (authenticationRequired) "是" else "否")
+            append("\n每次操作重新认证：").append(if (everyUse) "是" else "否")
+            append("\n认证由安全硬件强制：").append(if (hardwareEnforcedAuth) "是" else "否")
+            append("\n新增指纹后密钥失效：")
+                .append(if (biometricEnrollmentInvalidates) "是" else "否")
+        }
+    }
+
+    private fun audit(actual: KeyStore.PrivateKeyEntry): Audit {
+        val info = keyInfo(actual)
+        val level = if (Build.VERSION.SDK_INT >= 31) {
+            levelLabel(info.securityLevel)
+        } else {
+            @Suppress("DEPRECATION")
+            if (info.isInsideSecureHardware) "TEE_OR_SECURE_ELEMENT" else "SOFTWARE"
+        }
         val backed = if (Build.VERSION.SDK_INT >= 31) {
-            level == KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT ||
-                level == KeyProperties.SECURITY_LEVEL_STRONGBOX ||
-                level == KeyProperties.SECURITY_LEVEL_UNKNOWN_SECURE
+            info.securityLevel in setOf(
+                KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT,
+                KeyProperties.SECURITY_LEVEL_STRONGBOX,
+                KeyProperties.SECURITY_LEVEL_UNKNOWN_SECURE
+            )
         } else {
             @Suppress("DEPRECATION")
             info.isInsideSecureHardware
         }
-        require(backed) { "审批私钥未受可信执行环境保护" }
-        require(info.isUserAuthenticationRequired) { "审批私钥未要求身份认证" }
-        require(info.userAuthenticationValidityDurationSeconds == -1) {
-            "审批私钥未设置每次操作重新验证"
-        }
-        require(info.isUserAuthenticationRequirementEnforcedBySecureHardware) {
-            "设备无法确认硬件强制生物识别"
-        }
-        return if (level == KeyProperties.SECURITY_LEVEL_STRONGBOX) "StrongBox 硬件安全"
-               else "TEE 硬件安全"
+        return Audit(
+            level = level,
+            hardwareBacked = backed,
+            authenticationRequired = info.isUserAuthenticationRequired,
+            everyUse = info.userAuthenticationValidityDurationSeconds == -1,
+            hardwareEnforcedAuth = info.isUserAuthenticationRequirementEnforcedBySecureHardware,
+            biometricEnrollmentInvalidates = info.isInvalidatedByBiometricEnrollment
+        )
     }
 
-    /** Read-only check: NEVER create a key merely to display readiness. */
-    fun existingKeyReport(): String = try {
-        val keyEntry = entry()
-        if (keyEntry == null) "尚未创建（首次绑定时生成）"
-        else inspectSecureKey(keyEntry) + "，每次签名须强生物识别"
-    } catch (_: Exception) {
-        "当前审批密钥不可用或安全等级不符合要求；禁止绑定和批准"
+    private fun inspectSecureKey(actual: KeyStore.PrivateKeyEntry): String {
+        val outcome = audit(actual)
+        val failure = outcome.failureCode()
+        if (failure != null) throw KeySafetyException(failure)
+        return if (outcome.level == "STRONGBOX") "StrongBox 硬件安全"
+               else "TEE / 硬件安全"
+    }
+
+    /**
+     * Only a stable nonsecret error identifier reaches the UI, never an OEM
+     * exception message that could accidentally contain sensitive details.
+     */
+    fun safeError(exception: Throwable): String {
+        if (exception is KeySafetyException) return exception.code
+        return when (exception) {
+            is android.security.keystore.KeyPermanentlyInvalidatedException ->
+                "KEY_INVALIDATED_BY_BIOMETRIC_CHANGE"
+            is java.security.InvalidAlgorithmParameterException ->
+                "KEYGEN_PARAMETERS_UNSUPPORTED"
+            is java.security.ProviderException -> "KEYSTORE_PROVIDER_ERROR"
+            is java.security.UnrecoverableKeyException -> "KEY_UNRECOVERABLE"
+            is java.security.spec.InvalidKeySpecException -> "KEY_SPEC_UNAVAILABLE"
+            is java.security.KeyStoreException -> "KEYSTORE_UNAVAILABLE"
+            is java.security.NoSuchAlgorithmException -> "KEY_ALGORITHM_UNAVAILABLE"
+            is java.security.NoSuchProviderException -> "KEYSTORE_PROVIDER_UNAVAILABLE"
+            is java.security.InvalidKeyException -> "KEY_NOT_AUTHORIZED"
+            else -> "KEYSTORE_OPERATION_FAILED"
+        }
+    }
+
+    /** Read-only diagnostic: does NOT generate, destroy or rotate keys. */
+    fun existingKeyReport(): String {
+        val actual = try {
+            entry()
+        } catch (e: Exception) {
+            return "读取密钥失败［${safeError(e)}］；禁止绑定"
+        }
+        if (actual == null) return "尚未创建（首次绑定时才生成）"
+        return try {
+            val report = audit(actual)
+            val issue = report.failureCode()
+            (if (issue == null) "密钥本机检查通过"
+             else "密钥本机检查未通过［$issue］，禁止配对") +
+                "\n" + report.summary()
+        } catch (e: Exception) {
+            "密钥检查异常［${safeError(e)}］；禁止绑定和批准"
+        }
     }
 
     fun publicKeyBase64(): String {
-        var keyEntry = entry()
-        if (keyEntry == null) {
+        var actual = entry()
+        if (actual == null) {
             val spec = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
                 .setAlgorithmParameterSpec(java.security.spec.ECGenParameterSpec("secp256r1"))
                 .setDigests(KeyProperties.DIGEST_SHA256)
@@ -68,23 +160,31 @@ object ApprovalKey {
                 .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
                 .setInvalidatedByBiometricEnrollment(true)
                 .build()
-            val generator = KeyPairGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore"
-            )
-            generator.initialize(spec)
-            generator.generateKeyPair()
-            keyEntry = entry()
+            try {
+                val generator = KeyPairGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore"
+                )
+                generator.initialize(spec)
+                generator.generateKeyPair()
+                actual = entry()
+            } catch (e: Exception) {
+                throw KeySafetyException("KEYGEN_FAILED_" + safeError(e), e)
+            }
         }
-        val actual = keyEntry ?: error("无法获得 Android Keystore 审批密钥")
-        inspectSecureKey(actual)
-        return Base64.encodeToString(actual.certificate.publicKey.encoded, Base64.NO_WRAP)
+        val keyEntry = actual ?: throw KeySafetyException("KEY_ENTRY_MISSING")
+        inspectSecureKey(keyEntry)
+        return Base64.encodeToString(keyEntry.certificate.publicKey.encoded, Base64.NO_WRAP)
     }
 
     fun signatureForBiometric(): Signature {
-        val actual = entry() ?: error("设备尚未创建硬件审批密钥")
+        val actual = entry() ?: throw KeySafetyException("KEY_ENTRY_MISSING")
         inspectSecureKey(actual)
-        return Signature.getInstance("SHA256withECDSA").apply {
-            initSign(actual.privateKey as PrivateKey)
+        return try {
+            Signature.getInstance("SHA256withECDSA").apply {
+                initSign(actual.privateKey as PrivateKey)
+            }
+        } catch (e: Exception) {
+            throw KeySafetyException("SIGN_INIT_FAILED_" + safeError(e), e)
         }
     }
 }

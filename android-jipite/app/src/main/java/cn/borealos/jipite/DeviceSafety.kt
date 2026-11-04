@@ -62,7 +62,8 @@ object DeviceSafety {
                      else "未发现常见模拟器特征（不等于硬件远程证明）"
         val key = ApprovalKey.existingKeyReport()
         return buildString {
-            append("设备环境：").append(device)
+            append("Android API：").append(Build.VERSION.SDK_INT)
+            append("\n设备环境：").append(device)
             append("\n本机检查：").append(issue ?: "安全锁屏及强生物识别已就绪")
             append("\n审批密钥：").append(key)
             append("\n\n真实配对必须在受信任的小米真机上操作。")
