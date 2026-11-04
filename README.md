@@ -12,6 +12,14 @@
 - ⏳ **尚未启用自动更新**：需要仓库所有者设置签名密钥 Secret、启用 GitHub Pages，并在 GPU 上首次安装和绑定公钥。
 - ⏳ V3 尚未在优云智算实机测试/切换；此前成功连接的 V1 仍独立运行。
 
+## V0.6 · 吉皮提安卓原生推送审批器（源码已提交，尚未部署）
+
+[安卓工程](./android-jipite/README.md) ｜ [VPS 移动审批后端和安全部署手册](./vps-control/MOBILE_V06.md)
+
+个人 Microsoft 账号登录用于初次绑定手机；Firebase Cloud Messaging（可用时）负责推送开关机申请；Android Keystore + 强生物识别对本次申请签名；VPS 验签之后才重新检查 GPU 状态与 ComfyUI 队列并执行一次 API。旧的独立 TOTP 网页先保留为灾难恢复备用。无需日常打开审批网站，也无需修改 `borealos.cn` 五个固定域名。
+
+**注意：Android 构建 CI 使用虚拟 Firebase 项目，仅做源码编译检查；必须先完成你自己的微软 Android App Registration、签名回调和 Firebase 项目配置，才可在真实手机上推送审批。部署前没有任何新代码实际操作 GPU 电源。**
+
 ## 固定域名 borealos.cn（推荐，不再重复配置）
 
 [一次性配置阿里云 DNS + 自有 VPS HTTPS + GPU 出站 SSH 反向隧道](./FIXED_DOMAIN.md)：
