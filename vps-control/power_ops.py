@@ -6,6 +6,7 @@ Actual start/stop is invoked only by powerctl.py with local interactive confirma
 from __future__ import annotations
 
 import os
+import logging
 import re
 import stat
 from pathlib import Path
@@ -57,7 +58,14 @@ def read_env_file(path: str = "/etc/comfyui-director-control.env") -> dict:
     return config
 
 
+def silence_sdk_logging():
+    # UCloud's own documentation documents this logger switch. The Describe
+    # response contains secrets not intended for CLI output or journald.
+    logging.getLogger('ucloud').disabled = True
+
+
 def create_provider_client(config: dict):
+    silence_sdk_logging()
     from ucloud.client import Client
     return Client({
         "region": config["COMP_REGION"],
@@ -68,6 +76,7 @@ def create_provider_client(config: dict):
 
 
 def get_provider_state(config: dict, client=None) -> dict:
+    silence_sdk_logging()
     try:
         client = client or create_provider_client(config)
         response = client.ucompshare().invoke("DescribeCompShareInstance", {
@@ -200,6 +209,7 @@ def build_plan(action: str, config: dict, client=None, queue_check=get_queue_sta
 
 
 def submit_power_request(action: str, config: dict, client=None) -> dict:
+    silence_sdk_logging()
     if action not in VALID_ACTIONS:
         raise PowerError("Unsupported operation")
     client = client or create_provider_client(config)
