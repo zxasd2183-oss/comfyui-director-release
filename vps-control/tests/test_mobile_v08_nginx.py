@@ -2,7 +2,7 @@
 import unittest
 
 from configure_jipite_mobile_nginx import (
-    MARKER, insert_route, masked_nginx, sections, server_blocks,
+    MARKER, insert_route, masked_nginx, route_already_configured, sections, server_blocks,
 )
 
 TWO_VHOSTS = """
@@ -33,6 +33,25 @@ class JipiteNginxTests(unittest.TestCase):
         self.assertEqual(len(blocks), 2)
         self.assertNotIn(MARKER, updated[blocks[0][0]:blocks[0][1]])
         self.assertIn(MARKER, updated[blocks[1][0]:blocks[1][1]])
+
+    def test_successful_manual_install_is_idempotently_recognized(self):
+        self.assertFalse(route_already_configured(TWO_VHOSTS))
+        once = insert_route(TWO_VHOSTS)
+        self.assertTrue(route_already_configured(once))
+
+    def test_misplaced_snippet_is_not_considered_installed(self):
+        raw = TWO_VHOSTS.replace(
+            "return 301 https://$host$request_uri;",
+            "return 301 https://$host$request_uri;\n    " + MARKER
+        )
+        with self.assertRaises(RuntimeError):
+            route_already_configured(raw)
+
+    def test_duplicate_include_does_not_count_as_safe_install(self):
+        raw = insert_route(TWO_VHOSTS)
+        raw = raw.replace(MARKER, MARKER + "\n    " + MARKER)
+        with self.assertRaises(RuntimeError):
+            route_already_configured(raw)
 
     def test_duplicate_route_refused(self):
         once = insert_route(TWO_VHOSTS)
