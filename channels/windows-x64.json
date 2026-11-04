@@ -1,8 +1,8 @@
 {
-  "channel": "windows-x64",
-  "version": "0.10.0",
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.10.0/GlacierBrowser-v0.10.0-Windows-Setup-x64.exe",
-  "sha256": "6dd35202ecceb89f582de44bff2ce6602532075bb13b0e47da41a6218006675d",
-  "size": 170712362,
-  "notes": "v0.10：增加版本信息、检查更新、启动时自动检查、自动下载和软件内确认安装。"
+  "size": 170630680,
+  "notes": "v0.10.1：软件内升级通道验证；修复发布流程，保持原有 VLESS 和浏览数据。",
+  "version": "0.10.1",
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.10.1/GlacierBrowser-v0.10.1-Windows-Setup-x64.exe",
+  "sha256": "b6eb4b4ac2b0aa2e1d1d2ef63c367c6abac0bd0a2abef24f900467291a04d265",
+  "channel": "windows-x64"
 }
