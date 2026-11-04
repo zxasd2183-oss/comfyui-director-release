@@ -9,7 +9,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from power_ops import read_env_file
+from power_ops import PowerError, read_env_file
 from power_v03 import DB_DEFAULT, plan_and_request, request_status
 
 app = FastMCP("ComfyUI Director VPS - Power Requests",
@@ -19,11 +19,41 @@ app = FastMCP("ComfyUI Director VPS - Power Requests",
 def _config():
     path = os.environ.get("DIRECTOR_POWER_CONFIG")
     if not path:
-        raise RuntimeError("Systemd LoadCredential must supply DIRECTOR_POWER_CONFIG")
+        directory = os.environ.get("CREDENTIALS_DIRECTORY")
+        if directory:
+            path = os.path.join(directory, "directorenv")
+    if not path:
+        raise RuntimeError("Systemd LoadCredential path unavailable")
     return read_env_file(path)
 
 def _db():
     return os.environ.get("DIRECTOR_POWER_DB", DB_DEFAULT)
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+def get_power_service_health() -> dict:
+    """Safe diagnostic for V0.3 configuration; never returns credential values."""
+    try:
+        cfg = _config()
+    except FileNotFoundError:
+        return {"ok": False, "stage": "configuration", "reason": "credential_file_not_found"}
+    except PermissionError:
+        return {"ok": False, "stage": "configuration", "reason": "credential_file_access_denied"}
+    except PowerError:
+        return {"ok": False, "stage": "configuration", "reason": "credential_file_invalid_or_incomplete"}
+    except Exception:
+        return {"ok": False, "stage": "configuration", "reason": "credential_read_unavailable"}
+    try:
+        from power_v03 import connect
+        with connect(_db()) as db:
+            db.execute("SELECT 1")
+    except Exception:
+        return {"ok": False, "stage": "database", "reason": "database_unavailable"}
+    return {"ok": True, "stage": "ready", "config_loaded": True,
+            "region_set": bool(cfg.get("COMP_REGION")),
+            "zone_set": bool(cfg.get("COMP_ZONE")),
+            "write_request_tools_enabled": True,
+            "gpu_power_operation_executed": False}
+
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=False,
                                       destructiveHint=False,
