@@ -21,6 +21,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/jipite_update_paths"/>
         </provider>
+        <!-- Android's own JobScheduler: no Mi Push/FCM vendor dependency. -->
+        <service
+            android:name=".VpsPollJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

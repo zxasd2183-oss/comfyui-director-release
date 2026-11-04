@@ -52,6 +52,28 @@ class MainActivity : FragmentActivity() {
     private lateinit var pairing: EditText
     private lateinit var approveButton: Button
     private lateinit var denyButton: Button
+    private lateinit var selftestButton: Button
+    private lateinit var selftestStatus: TextView
+    private var selftestBusy = false
+    private val notificationPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val foregroundNotificationPoll = object : Runnable {
+        override fun run() {
+            if (!isOfflinePreview && VpsNotifications.enabled(this@MainActivity) &&
+                deviceId() != null && loginConfirmedInSession && !selftestBusy) {
+                val id = deviceId()
+                if (id != null) {
+                    withMicrosoftToken { token ->
+                        MobileApi.post("pending", token, JSONObject().put("device_id", id)) { result ->
+                            result.onSuccess {
+                                VpsNotifications.onPendingResponse(applicationContext, it)
+                            }
+                        }
+                    }
+                }
+            }
+            notificationPollHandler.postDelayed(this, 45_000L)
+        }
+    }
     private lateinit var updateCheckButton: Button
     private lateinit var updateDownloadButton: Button
     private lateinit var updateInstallButton: Button
@@ -71,6 +93,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         buildUi()
+        if (!isOfflinePreview) VpsNotifications.configureJob(this)
         if (!isOfflinePreview && prefs.getBoolean("auto_update_check", false)) {
             // Opt-in: metadata check only; never download or install automatically.
             checkForAppUpdates()
@@ -147,6 +170,20 @@ class MainActivity : FragmentActivity() {
                 }
             }
         )
+    }
+
+    override fun onResume() {
+        super.onResume()
+        notificationPollHandler.removeCallbacks(foregroundNotificationPoll)
+        if (!isOfflinePreview) {
+            VpsNotifications.configureJob(this)
+            notificationPollHandler.postDelayed(foregroundNotificationPoll, 8_000L)
+        }
+    }
+
+    override fun onPause() {
+        notificationPollHandler.removeCallbacks(foregroundNotificationPoll)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -386,6 +423,23 @@ class MainActivity : FragmentActivity() {
         ) { requestDecision("approve") }
         showRequest(null)
 
+        val safetySelftest = card(requestsPage, "安全审批链路自检",
+            "验证微软身份、VPS 设备绑定和本机指纹签名；不会产生 GPU 开关机申请")
+        selftestStatus = caption(safetySelftest,
+            if (isOfflinePreview) "离线预览版不连接 VPS，无法执行真实自检"
+            else "尚未测试 · 已绑定后可验证指纹签名与服务器验签", 12.5f, secondary)
+        space(safetySelftest, 11)
+        selftestButton = button(safetySelftest, "开始指纹安全自检", true) {
+            confirmSecureSelftest()
+        }
+        if (isOfflinePreview) {
+            selftestButton.isEnabled = false
+            selftestButton.alpha = 0.44f
+        }
+        caption(safetySelftest,
+            "只使用独立的一次性测试随机数；不会审批申请、触发 GPU 或修改设备绑定。",
+            12f, secondary)
+
         if (isOfflinePreview) {
             val demo = card(requestsPage, "离线模拟", "所有操作仅在本地运行，不会改变 GPU 状态")
             button(demo, "模拟开机申请") { showOfflineDemo("start") }
@@ -485,6 +539,30 @@ class MainActivity : FragmentActivity() {
         space(preference, 7)
         caption(preference, "仅检查新版本，不会自动下载或安装。", 12f, secondary)
 
+        val ownerNotify = card(settingsPage, "自建 VPS 通知（不接小米平台）",
+            "不依赖 Mi Push / FCM，不需要第三方开发者账号")
+        val noticeSwitch = android.widget.Switch(this).apply {
+            text = "启用自己的 HTTPS 待审批提醒"
+            textSize = 13.5f
+            setTextColor(ink)
+            isChecked = VpsNotifications.enabled(this@MainActivity)
+            isEnabled = !isOfflinePreview
+            setOnCheckedChangeListener { _, checked ->
+                val scheduled = VpsNotifications.setEnabled(this@MainActivity, checked)
+                setStatus(when {
+                    !checked -> "已关闭自建 VPS 提醒，不再进行后台检查"
+                    scheduled -> "自建提醒已开启：前台约 45 秒检查，后台由 Android 系统定期调度"
+                    else -> "已开启提醒偏好，但尚未绑定设备或系统未接受后台任务"
+                })
+            }
+        }
+        ownerNotify.addView(noticeSwitch)
+        space(ownerNotify, 9)
+        caption(ownerNotify,
+            "后台约每 15 分钟检查一次，省电策略可能延迟；需要通知权限。" +
+            " 建议在小米系统中允许吉皮提通知、自启动和后台电池使用。" +
+            " 提醒不包含审批权限，点击后仍需本人指纹。",
+            12f, secondary)
 
         val safety = card(settingsPage, "安全与诊断", "版本和登录操作不会改变 GPU 电源权限")
         caption(safety, "仅在小米真机上进行正式设备绑定和生物识别审批。",
@@ -748,23 +826,37 @@ class MainActivity : FragmentActivity() {
     }
 
     /** Silent MSAL token renewal; if it fails, require explicit Microsoft login. */
-    private fun withMicrosoftToken(next: (String) -> Unit) {
-        if (isOfflinePreview || !microsoftConfigured()) return setStatus("本版本未启用真实登录")
-        val app = msal ?: return setStatus("请先初始化微软登录")
+    private fun withMicrosoftToken(
+        next: (String) -> Unit, onFailure: (() -> Unit)? = null
+    ) {
+        if (isOfflinePreview || !microsoftConfigured()) {
+            setStatus("本版本未启用真实登录")
+            onFailure?.invoke()
+            return
+        }
+        val app = msal
+        if (app == null) {
+            setStatus("请先初始化微软登录")
+            onFailure?.invoke()
+            return
+        }
         app.acquireTokenSilentAsync(
             arrayOf("User.Read"),
             "https://login.microsoftonline.com/consumers",
             object : SilentAuthenticationCallback {
                 override fun onSuccess(result: IAuthenticationResult) {
                     val token = result.account.idToken
-                    if (token.isNullOrBlank()) setStatus("缺少 ID Token，请重新登录微软账号")
-                    else {
+                    if (token.isNullOrBlank()) {
+                        setStatus("缺少 ID Token，请重新登录微软账号")
+                        onFailure?.invoke()
+                    } else {
                         cachedIdToken = token
                         next(token)
                     }
                 }
                 override fun onError(exception: MsalException) {
                     setStatus("微软登录已过期，请点击登录/重新验证")
+                    onFailure?.invoke()
                 }
             }
         )
@@ -882,6 +974,7 @@ class MainActivity : FragmentActivity() {
                         ) { response ->
                             present(response) { json ->
                                 prefs.edit().putString("device_id", json.getString("device_id")).apply()
+                                VpsNotifications.configureJob(this@MainActivity)
                                 setStatus("真机首次绑定成功；以后审批仍需每次指纹 / 强生物识别")
                                 refresh()
                             }
@@ -933,6 +1026,7 @@ class MainActivity : FragmentActivity() {
                         }
                     }
                     current = chosen
+                    VpsNotifications.onPendingResponse(applicationContext, json)
                     showRequest(chosen)
                     setStatus(if (chosen == null) "没有待审批的 GPU 操作" else "请检查操作类型、费用和风险")
                     syncPushToken()
@@ -1027,6 +1121,175 @@ class MainActivity : FragmentActivity() {
             Base64.decode(challenge.getString("payload_b64"), Base64.DEFAULT)
         } catch (_: Exception) { return false }
         return received.contentEquals(canonical)
+    }
+
+    /**
+     * Biometric proof-of-possession for the already enrolled public key.
+     * This path must never invoke GPU challenge/decision APIs.
+     * Every response and the exact domain-separated bytes are checked before
+     * handing a per-use Keystore Signature to BiometricPrompt.
+     */
+    private fun confirmSecureSelftest() {
+        if (selftestBusy || isOfflinePreview) return
+        val id = deviceId() ?: return setStatus("尚未绑定 VPS，无法进行指纹验签自检")
+        val problem = DeviceSafety.prerequisiteProblem(this)
+        if (problem != null) return setStatus("自检条件未满足：" + problem)
+        val keyReport = ApprovalKey.existingKeyReport()
+        if (!keyReport.startsWith("密钥本机检查通过")) {
+            return setStatus("硬件密钥本机检查未通过，禁止自检。请先查看安全诊断。")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("仅验证指纹签名 · 不操作 GPU")
+            .setMessage(
+                "VPS 将提供一次性随机挑战。你需要使用小米指纹确认，" +
+                "VPS 只用已绑定公钥验签，检查后会立即作废挑战。\n\n" +
+                "不会创建待审批 GPU 任务，不会执行开关机，也不会更改配对绑定。"
+            )
+            .setNegativeButton("取消", null)
+            .setPositiveButton("开始安全自检") { _, _ -> startSecureSelftest(id) }
+            .show()
+    }
+
+    private fun finishSecureSelftest(message: String) {
+        runOnUiThread {
+            selftestBusy = false
+            if (::selftestButton.isInitialized) selftestButton.isEnabled = !isOfflinePreview
+            if (::selftestStatus.isInitialized) selftestStatus.text = message
+            setStatus(message)
+        }
+    }
+
+    private fun isValidSelftestChallenge(challenge: JSONObject, deviceId: String): Boolean {
+        if (challenge.optString("kind") != "biometric_selftest") return false
+        if (!deviceId.matches(Regex("[A-Za-z0-9_-]{16,100}"))) return false
+        val nonce = challenge.optString("nonce")
+        if (!nonce.matches(Regex("[A-Za-z0-9_-]{24,64}"))) return false
+        val expiry = challenge.optLong("expires_at", -1)
+        val now = System.currentTimeMillis() / 1000
+        if (expiry !in (now - 15)..(now + 180)) return false
+        val encoded = challenge.optString("payload_b64")
+        if (encoded.length !in 50..1024) return false
+        val bytes = try { Base64.decode(encoded, Base64.DEFAULT) }
+                    catch (_: IllegalArgumentException) { return false }
+        val expected = ("JIPITE-SELFTEST-V1\n" + deviceId + "\n" +
+            nonce + "\n" + expiry).toByteArray(Charsets.US_ASCII)
+        return java.security.MessageDigest.isEqual(bytes, expected)
+    }
+
+    private fun startSecureSelftest(id: String) {
+        if (selftestBusy || isOfflinePreview) return
+        selftestBusy = true
+        selftestButton.isEnabled = false
+        selftestStatus.text = "正在验证 Microsoft 账号并获取 VPS 一次性挑战……"
+        withMicrosoftToken(
+            next = { token ->
+                MobileApi.post("selftest_challenge", token,
+                    JSONObject().put("device_id", id)
+                ) { response ->
+                    runOnUiThread {
+                        response.onSuccess { challenge ->
+                            if (!isValidSelftestChallenge(challenge, id)) {
+                                finishSecureSelftest("服务端自检挑战格式或有效期不符，已拒绝签名")
+                            } else {
+                                val signature = try { ApprovalKey.signatureForBiometric() }
+                                                catch (e: Exception) {
+                                                    finishSecureSelftest(
+                                                        "硬件审批密钥不可用：" + ApprovalKey.safeError(e))
+                                                    return@onSuccess
+                                                }
+                                selftestStatus.text = "请使用小米指纹完成逐次签名验证……"
+                                askSelftestBiometric(signature, challenge, token, id)
+                            }
+                        }
+                        response.onFailure {
+                            finishSecureSelftest(
+                                "无法获取 VPS 自检挑战：" +
+                                ((it.message ?: "网络或身份验证失败").take(100))
+                            )
+                        }
+                    }
+                }
+            },
+            onFailure = {
+                finishSecureSelftest("微软登录未就绪；请返回首页重新验证后再试")
+            }
+        )
+    }
+
+    private fun askSelftestBiometric(
+        signature: Signature, challenge: JSONObject, token: String, id: String
+    ) {
+        val prompt = BiometricPrompt(
+            this, ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(
+                    result: BiometricPrompt.AuthenticationResult
+                ) {
+                    super.onAuthenticationSucceeded(result)
+                    val signed = try {
+                        val authenticatedSignature = result.cryptoObject?.signature
+                            ?: error("No per-use biometric crypto object")
+                        val payload = Base64.decode(
+                            challenge.getString("payload_b64"), Base64.DEFAULT
+                        )
+                        authenticatedSignature.update(payload)
+                        Base64.encodeToString(authenticatedSignature.sign(), Base64.NO_WRAP)
+                    } catch (_: Exception) {
+                        finishSecureSelftest("硬件指纹签名失败；未向 VPS 提交验证")
+                        return
+                    }
+                    selftestStatus.text = "指纹已通过；正在请 VPS 验证已绑定公钥和防重放……"
+                    MobileApi.post("selftest_verify", token, JSONObject()
+                        .put("device_id", id)
+                        .put("nonce", challenge.getString("nonce"))
+                        .put("signature", signed)) { response ->
+                        runOnUiThread {
+                            response.onSuccess { reply ->
+                                val success =
+                                    reply.optBoolean("identity_verified") &&
+                                    reply.optBoolean("device_bound") &&
+                                    reply.optBoolean("signature_verified") &&
+                                    reply.optBoolean("one_time_challenge_consumed") &&
+                                    reply.has("gpu_operation_performed") &&
+                                    !reply.optBoolean("gpu_operation_performed", true)
+                                finishSecureSelftest(
+                                    if (success)
+                                        "安全自检通过 ✓ Microsoft、设备绑定、指纹签名、VPS 验签与防重放均正常；未操作 GPU"
+                                    else
+                                        "VPS 自检结果不完整，未确认验签通过；未操作 GPU"
+                                )
+                            }
+                            response.onFailure {
+                                finishSecureSelftest(
+                                    "VPS 未能确认签名：" +
+                                    ((it.message ?: "服务器验签失败").take(100)))
+                            }
+                        }
+                    }
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    finishSecureSelftest("指纹自检已取消或未通过；未操作 GPU")
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    selftestStatus.text = "指纹未通过，请在系统提示中重试或取消"
+                }
+            }
+        )
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("吉皮提 · 安全审批自检")
+            .setSubtitle("指纹签名仅供 VPS 一次性验签，不触发 GPU 操作")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .setNegativeButtonText("取消")
+            .build()
+        try {
+            prompt.authenticate(info, BiometricPrompt.CryptoObject(signature))
+        } catch (_: Exception) {
+            finishSecureSelftest("无法启动强生物识别签名；未操作 GPU")
+        }
     }
 
     private fun requestDecision(decision: String) {

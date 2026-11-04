@@ -18,6 +18,7 @@ from pathlib import Path
 from mobile_v06_core import (Rejected, challenge, decide, enroll, open_db,
                              pending, update_push)
 from power_ops import read_systemd_credential_env
+from mobile_v06_selftest import start as selftest_start, verify as selftest_verify
 
 PERSONAL_TID = "9188040d-6c67-4c5b-b112-36a304b66dad"
 PERSONAL_ISSUER = f"https://login.microsoftonline.com/{PERSONAL_TID}/v2.0"
@@ -157,7 +158,9 @@ def notify_worker(db_path: str, sender, stop: threading.Event):
 def build_handler(identity, config_provider, pairing_code: str, db_path: str):
     paths = {"/api/v1/mobile/enroll", "/api/v1/mobile/pending",
              "/api/v1/mobile/challenge", "/api/v1/mobile/decision",
-             "/api/v1/mobile/push"}
+             "/api/v1/mobile/push",
+             "/api/v1/mobile/selftest_challenge",
+             "/api/v1/mobile/selftest_verify"}
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         def log_message(self, *unused): pass
@@ -214,6 +217,13 @@ def build_handler(identity, config_provider, pairing_code: str, db_path: str):
                 elif self.path.endswith("/push"):
                     answer = update_push(sub, body.get("device_id"),
                                          body.get("fcm_token"), db_path)
+                elif self.path.endswith("/selftest_challenge"):
+                    answer = selftest_start(sub, body.get("device_id"), db_path)
+                elif self.path.endswith("/selftest_verify"):
+                    answer = selftest_verify(
+                        sub, body.get("device_id"), body.get("nonce"),
+                        body.get("signature"), db_path
+                    )
                 else:
                     answer = decide(sub, body.get("device_id"),
                                     body.get("request_id"), body.get("nonce"),

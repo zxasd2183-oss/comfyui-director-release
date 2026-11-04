@@ -47,7 +47,8 @@ object MobileApi {
         op: String, microsoftIdToken: String, json: JSONObject,
         callback: (Result<JSONObject>) -> Unit
     ) {
-        if (op !in setOf("enroll", "pending", "challenge", "decision", "push")) {
+        if (op !in setOf("enroll", "pending", "challenge", "decision", "push",
+                "selftest_challenge", "selftest_verify")) {
             callback(Result.failure(IllegalArgumentException("Unsupported API"))); return
         }
         executor.execute {
