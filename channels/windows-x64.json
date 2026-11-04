@@ -1,10 +1,10 @@
 {
   "channel": "windows-x64",
-  "version": "0.13.0",
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.13.0/GlacierBrowser-v0.13.0-Windows-Setup-x64.exe",
-  "sha256": "a24b4fa922162b1bf5d18f948ccc90de3cb9b3c2f3e85498b65aa521ccfaeea4",
-  "size": 173055319,
-  "notes": "v0.13.0：新增网页内查找、标签固定和右键管理、快捷键及网站图标；内置 VLESS、安全更新和无痕浏览保留。",
+  "version": "0.14.0",
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.14.0/GlacierBrowser-v0.14.0-Windows-Setup-x64.exe",
+  "sha256": "f32af7dec9283171245dae33b6da153f48317f3b5b86c48834e67fdc89c0dfa0",
+  "size": 173091043,
+  "notes": "v0.14.0：Chrome 风格浅色主界面、顶部圆角标签、独立地址栏、右上角菜单与清爽新标签页；VLESS、安全更新和浏览数据保持不变。",
   "key_id": "cf9452226375ff7d",
-  "signature": "E/pDuy77+/Mhdu6x2veLiyd2JJ4+G51WD0pBmklFqF0BDpl0YgcYaQCaCjyPFL4cXP4yjo9npffotvbjwuygBQ=="
+  "signature": "yWl4eHM8CCs1mdRf1UCXQEyKiShPXakfM0ErNsOXQpu5bJcKP1B5m0D3iU1uX9P3PzfTMZtsvAoIeMc3X1d3CQ=="
 }
