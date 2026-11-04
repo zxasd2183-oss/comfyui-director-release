@@ -1,0 +1,138 @@
+name: Glacier Browser v0.10 Windows self-updating release
+on:
+  push:
+    branches:
+      - glacier-browser-updates
+    paths:
+      - 'glacier-windows/**'
+      - '.github/workflows/glacier-browser-release.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-publish:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    defaults:
+      run:
+        working-directory: glacier-windows
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download and verify official sing-box binary
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          $version = '1.14.4'
+          $expected = '99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df'
+          $archive = "sing-box-$version-windows-amd64.zip"
+          $sources = @("https://dl.sing-box.org/releases/v$version/$archive", "https://github.com/SagerNet/sing-box/releases/download/v$version/$archive")
+          $ok = $false
+          foreach ($url in $sources) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile sing-box.zip -TimeoutSec 90
+              if ((Get-FileHash -Algorithm SHA256 sing-box.zip).Hash.ToLowerInvariant() -eq $expected) { $ok = $true; break }
+            } catch { Write-Warning "Unavailable core source." }
+          }
+          if (-not $ok) { throw 'Could not verify official sing-box binary' }
+          Expand-Archive sing-box.zip -DestinationPath core-unpack
+          $exe = @(Get-ChildItem core-unpack -Recurse -Filter sing-box.exe -File)
+          if ($exe.Count -ne 1) { throw 'Unexpected sing-box archive layout' }
+          Copy-Item $exe[0].FullName bin/sing-box.exe
+          & bin/sing-box.exe version
+          if ($LASTEXITCODE -ne 0) { throw 'sing-box runtime failed' }
+      - name: Install packaging dependencies and decode app modules
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'PySide6>=6.8,<7' 'PyInstaller>=6,<8'
+          python -c "import base64,lzma,pathlib; files=['features.py','ui08.py','ui09.py','update_core.py','update_ui.py']; [(pathlib.Path(f).write_bytes(lzma.decompress(base64.b64decode(pathlib.Path(f+'.xz.b64').read_text().strip())))) for f in files]"
+          python -m py_compile main.py features.py ui08.py ui09.py update_core.py update_ui.py
+          python -c "import update_core; assert update_core.newer_than('0.9.0','0.10.0'); assert not update_core.newer_than('0.10.0','0.9.0'); import update_ui; print('Updater imports and semver checks passed')"
+      - name: Build Windows executable with embedded VLESS core
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets main.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
+          if (-not (Test-Path dist/GlacierBrowser/GlacierBrowser.exe)) { throw 'Browser EXE missing' }
+          if (-not (Test-Path dist/GlacierBrowser/_internal/bin/sing-box.exe)) { throw 'Bundled sing-box missing' }
+          & dist/GlacierBrowser/_internal/bin/sing-box.exe version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled sing-box failed to execute' }
+          'Glacier Browser v0.10 update preview. Qt/PySide6 under their applicable licenses; sing-box GPL-3.0-or-later, https://github.com/SagerNet/sing-box. Unsigned test build; review licenses and source before redistribution.' | Set-Content dist/GlacierBrowser/THIRD-PARTY-NOTICES.txt -Encoding utf8
+      - name: Compile actual Windows Setup.exe
+        run: |
+          $iscc = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup not available' }
+          $iss = @'
+          [Setup]
+          AppId={{A1DDACCC-09D1-41AF-B0B3-B48300D0AD0D}
+          AppName=Glacier Browser
+          AppVersion=0.10.0
+          AppPublisher=Glacier Browser Preview
+          DefaultDirName={localappdata}\Programs\GlacierBrowser
+          DefaultGroupName=Glacier Browser
+          OutputDir=dist
+          OutputBaseFilename=GlacierBrowser-v0.10.0-Windows-Setup-x64
+          Compression=lzma
+          SolidCompression=yes
+          PrivilegesRequired=lowest
+          ArchitecturesAllowed=x64compatible
+          WizardStyle=modern
+          CloseApplications=yes
+          UninstallDisplayIcon={app}\GlacierBrowser.exe
+          [Files]
+          Source: "dist\GlacierBrowser\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+          [Icons]
+          Name: "{group}\Glacier Browser"; Filename: "{app}\GlacierBrowser.exe"
+          Name: "{autodesktop}\Glacier Browser"; Filename: "{app}\GlacierBrowser.exe"; Tasks: desktopicon
+          [Tasks]
+          Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加选项:"
+          [Run]
+          Filename: "{app}\GlacierBrowser.exe"; Description: "启动冰川浏览器"; Flags: nowait postinstall skipifsilent
+          '@
+          Set-Content installer.iss $iss -Encoding utf8
+          & $iscc installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
+          if (-not (Test-Path dist/GlacierBrowser-v0.10.0-Windows-Setup-x64.exe)) { throw 'Setup EXE missing' }
+      - name: Upload installable Windows artifact for backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierBrowser-v0.10.0-Windows-Setup
+          path: glacier-windows/dist/GlacierBrowser-v0.10.0-Windows-Setup-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish public test release and update manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '0.10.0'
+          $tag = "glacier-v$version"
+          $name = "GlacierBrowser-v$version-Windows-Setup-x64.exe"
+          $installer = "dist/$name"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $installer --clobber
+          } else {
+            gh release create $tag $installer --target glacier-browser-updates --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser $version: About/version display; check updates via the existing VLESS proxy; automatic verified download; user-confirmed in-app installation. Unsigned Windows preview." --prerelease
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to publish GitHub release' }
+          $sha = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
+          $size = (Get-Item $installer).Length
+          $body = @{
+            channel = 'windows-x64'
+            version = $version
+            url = "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/$tag/$name"
+            sha256 = $sha
+            size = [long]$size
+            notes = 'v0.10: 关于、版本信息、检查更新、启动时自动检查、自动下载与确认安装；经 VLESS 代理访问更新通道。'
+          }
+          New-Item -ItemType Directory -Force -Path ../channels | Out-Null
+          $body | ConvertTo-Json -Depth 3 | Set-Content ../channels/windows-x64.json -Encoding utf8
+          git -C .. config user.name 'github-actions[bot]'
+          git -C .. config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C .. add channels/windows-x64.json
+          git -C .. commit -m "Publish Glacier update manifest $version"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit manifest' }
+          git -C .. push origin HEAD:glacier-browser-updates
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish manifest' }
