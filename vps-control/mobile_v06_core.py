@@ -217,9 +217,13 @@ def decide(subject: str, device_id: str, request_id: str, nonce: str,
         return {"ok": True, "request_id":request_id, "state":"denied"}
     state, result = "blocked", "state_or_queue_changed"
     try:
-        plan = plan_fn(req["action"], config)
+        # Fetch the provider configuration ONLY after successful biometric
+        # signature verification and atomic request consumption. Denial never
+        # needs provider credentials or a working GPU control connection.
+        effective_config = config() if callable(config) else config
+        plan = plan_fn(req["action"], effective_config)
         if plan.get("allowed"):
-            output = submit_fn(req["action"], config)
+            output = submit_fn(req["action"], effective_config)
             if output.get("accepted") is True:
                 state, result = "submitted", "accepted_by_provider_verify_final_state"
             else:
