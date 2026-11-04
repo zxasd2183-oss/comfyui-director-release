@@ -4,6 +4,8 @@
 *.iml
 local.properties
 app/google-services.json
+app/libs/*.aar
+app/src/xiaomi/res/values/mipush.xml
 *.jks
 *.keystore
 *.apk
