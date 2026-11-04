@@ -15,7 +15,7 @@ from mac_update import MacUpdateUI
 from mac_platform import appdir, dpapi, get_link, core_path
 from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
-from chrome14 import GlacierChrome14
+from mac_chrome_adapter import MacChrome14
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -65,13 +65,13 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.14")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.14.1")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -145,7 +145,23 @@ def main():
  # The proxy remains configured even when the core is unavailable: fail closed.
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
- win=Browser(proc,port);win.show();code=app.exec()
+ try:
+  win=Browser(proc,port)
+ except Exception as exc:
+  # Expose a startup error instead of a silent macOS .app exit.
+  # Never write VLESS credentials or raw traceback values to logs.
+  import traceback
+  frames=traceback.extract_tb(exc.__traceback__)
+  last=frames[-1] if frames else None
+  location=(str(Path(last.filename).name)+":"+str(last.lineno)) if last else "startup"
+  safe_error=f"{type(exc).__name__} at {location}"
+  try:
+   (appdir()/"startup-error.txt").write_text(safe_error+"\\n",encoding="utf-8")
+  except OSError:pass
+  QMessageBox.critical(None,APP,"Mac 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt 以便排查。")
+  if proc and proc.poll() is None:proc.terminate()
+  return 1
+ win.show();code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
 if __name__=="__main__":sys.exit(main())
