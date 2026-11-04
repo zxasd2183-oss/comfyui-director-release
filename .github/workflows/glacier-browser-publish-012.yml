@@ -1,0 +1,53 @@
+name: Glacier Browser 0.12.0 publish verified Windows artifact
+on:
+  push:
+    branches:
+      - build/glacier-browser-v0-12
+    paths:
+      - '.github/workflows/glacier-browser-publish-012.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch already compiled Windows Setup.exe
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierBrowser-v0.12.0-Windows-Setup
+          run-id: 41808398441
+          github-token: ${{ github.token }}
+          path: dist
+      - name: Validate EXE then publish with GitHub API retry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='glacier-v0.12.0'
+          exe='GlacierBrowser-v0.12.0-Windows-Setup-x64.exe'
+          input="dist/$exe"
+          test -f "$input"
+          test "$(stat -c%s "$input")" = '173051303'
+          test "$(sha256sum "$input" | cut -d' ' -f1)" = '80f17897be6bea15b15e9b3eac3c5ddaebc011c268c2a603d11c5360db13144c'
+          file "$input"
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "$input" --clobber && break
+            else
+              gh release create "$tag" "$input" --target build/glacier-browser-v0-12 --title 'Glacier Browser 0.12.0 (Windows preview)' --notes 'Normal multiwindow and isolated private windows. Built-in VLESS, Ed25519 authorized updates. Windows installer remains unsigned; user installation approval required.' --prerelease && break
+            fi
+            echo "GitHub release attempt $attempt failed; retrying"
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep 20
+          done
+          gh release view "$tag" --json tagName,assets > release-result.json
+          python - <<'PY'
+          import json
+          r=json.load(open('release-result.json'))
+          assert any(a['name']=='GlacierBrowser-v0.12.0-Windows-Setup-x64.exe' for a in r['assets'])
+          print('Release available:', r['tagName'])
+          PY
