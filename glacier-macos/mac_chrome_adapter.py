@@ -7,6 +7,7 @@ This adapter is initialized AFTER setup_updater, before setup_chrome14.
 """
 from types import SimpleNamespace
 from chrome14 import GlacierChrome14
+from mac_update_core import CURRENT_VERSION
 
 
 class MacChrome14(GlacierChrome14):
@@ -20,4 +21,4 @@ class MacChrome14(GlacierChrome14):
             show_dialog=self.show_mac_updates,
         )
         super().setup_chrome14(layout, nav)
-        self.setWindowTitle("❄ Glacier Browser · macOS v0.14.1")
+        self.setWindowTitle(f"❄ Glacier Browser · macOS v{CURRENT_VERSION}")
