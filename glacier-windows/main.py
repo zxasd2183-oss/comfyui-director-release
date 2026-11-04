@@ -130,7 +130,7 @@ class Browser(GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainW
   self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
   self.setup_ui08(lay,bar)
   self.setup_updater(bar, appdir())
-  self.setWindowTitle('❄ Glacier Browser · v0.10 · 内置更新')
+  self.setWindowTitle('❄ Glacier Browser · v0.11 · 安全更新')
   self.restore_startup_session()
   QShortcut(QKeySequence("Ctrl+L"),self,activated=lambda:self.address.setFocus())
   QShortcut(QKeySequence("Ctrl+T"),self,activated=self.new_tab)
