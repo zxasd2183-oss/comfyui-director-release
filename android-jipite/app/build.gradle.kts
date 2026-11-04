@@ -14,6 +14,29 @@ android {
     buildFeatures { buildConfig = true }
     namespace = "cn.borealos.jipite"
     compileSdk = 35
+
+    // Optional GitHub Actions signing. Only configured builds consume the
+    // private keystore; UI-only debug builds remain unaffected.
+    val signedStore = System.getenv("JIPITE_SIGNING_KEYSTORE_FILE")
+    if (!signedStore.isNullOrBlank()) {
+        signingConfigs {
+            create("jipiteRelease") {
+                storeFile = file(signedStore)
+                storePassword = System.getenv("JIPITE_SIGNING_STORE_PASSWORD")
+                    ?: error("JIPITE_SIGNING_STORE_PASSWORD missing")
+                keyAlias = System.getenv("JIPITE_SIGNING_KEY_ALIAS")
+                    ?: error("JIPITE_SIGNING_KEY_ALIAS missing")
+                keyPassword = System.getenv("JIPITE_SIGNING_KEY_PASSWORD")
+                    ?: error("JIPITE_SIGNING_KEY_PASSWORD missing")
+            }
+        }
+        buildTypes {
+            getByName("release") {
+                signingConfig = signingConfigs.getByName("jipiteRelease")
+                isMinifyEnabled = false
+            }
+        }
+    }
     flavorDimensions += "push"
     productFlavors {
         create("manual") { dimension = "push" }  // No SDK / vendor review required
