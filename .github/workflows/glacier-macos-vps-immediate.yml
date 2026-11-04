@@ -90,9 +90,49 @@ jobs:
           trap 'rm -rf "$dir"' EXIT
           chmod 0700 "$dir"
           printf '%s\n' "$GLACIER_SSH_PRIVATE" > "$dir/id_ed25519"
-          printf '%s\n' "$GLACIER_SSH_HOSTKEY" > "$dir/known_hosts"
-          chmod 0600 "$dir/id_ed25519" "$dir/known_hosts"
+          chmod 0600 "$dir/id_ed25519"
           ssh-keygen -y -f "$dir/id_ed25519" >/dev/null
+          # Accept either an OpenSSH server public key or a known_hosts line.
+          # Bind that exact pinned key to the configured host AND port; never
+          # ssh-keyscan, accept-new, disable StrictHostKeyChecking, or trust DNS.
+          GLACIER_NORMALIZED_PORT="$port" python - "$dir/known_hosts" <<'PY'
+          import base64, os, pathlib, struct, sys
+          secret=os.environ["GLACIER_SSH_HOSTKEY"]
+          keys=set()
+          for line in secret.splitlines():
+              parts=line.split()
+              if not parts or parts[0].startswith("#"):
+                  continue
+              if parts[0]=="ssh-ed25519" and len(parts)>=2:
+                  value=parts[1]
+              elif len(parts)>=3 and parts[1]=="ssh-ed25519":
+                  value=parts[2]
+              else:
+                  continue
+              try:
+                  blob=base64.b64decode(value,validate=True)
+                  def field(position):
+                      size=struct.unpack_from(">I",blob,position)[0]
+                      start=position+4
+                      return blob[start:start+size],start+size
+                  algorithm,pos=field(0)
+                  public,pos=field(pos)
+                  if algorithm!=b"ssh-ed25519" or len(public)!=32 or pos!=len(blob):
+                      raise ValueError("Unexpected public key")
+              except (ValueError,IndexError,struct.error) as e:
+                  raise SystemExit("Invalid pinned SSH server public key") from e
+              keys.add(value)
+          if len(keys)!=1:
+              raise SystemExit("Expected exactly one pinned Ed25519 SSH SERVER host key")
+          host=os.environ["GLACIER_SSH_HOST"].strip()
+          if not host or any(c.isspace() for c in host) or "@" in host or "/" in host or host.startswith("-"):
+              raise SystemExit("SSH host secret must contain a hostname or IP only")
+          port=int(os.environ["GLACIER_NORMALIZED_PORT"])
+          target=host if port==22 else f"[{host}]:{port}"
+          pathlib.Path(sys.argv[1]).write_text(f"{target} ssh-ed25519 {next(iter(keys))}\n",encoding="ascii")
+          print("Pinned SSH ED25519 server key to requested host and port; strict checking enabled")
+          PY
+          chmod 0600 "$dir/known_hosts"
           ssh -F /dev/null \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
