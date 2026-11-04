@@ -1,0 +1,26 @@
+[Unit]
+Description=Director V0.3 private-path HTTPS bridge (staged power requests only)
+After=network-online.target director-power-mcp.service
+Requires=director-power-mcp.service
+
+[Service]
+Type=simple
+User=directorctl
+Group=directorctl
+WorkingDirectory=/opt/comfyui-director-control
+ExecStart=/usr/bin/python3 /opt/comfyui-director-control/bridge.py --port 8894 --upstream http://127.0.0.1:8892/mcp --token-file /etc/comfyui-director-power-mcp.token
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
