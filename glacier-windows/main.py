@@ -12,6 +12,7 @@ from features import GlacierFeatures
 from ui08 import GlacierUI08, GlacierPrefs
 from ui09 import GlacierUI09
 from update_ui import GlacierUpdateUI
+from ui12 import GlacierUI12
 
 APP = "Glacier Browser"
 def appdir():
@@ -105,7 +106,7 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -130,7 +131,8 @@ class Browser(GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainW
   self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
   self.setup_ui08(lay,bar)
   self.setup_updater(bar, appdir())
-  self.setWindowTitle('❄ Glacier Browser · v0.11 · 安全更新')
+  self.setup_windows_ui12(bar)
+  self.setWindowTitle('❄ Glacier Browser · v0.12 · 多窗口与无痕')
   self.restore_startup_session()
   QShortcut(QKeySequence("Ctrl+L"),self,activated=lambda:self.address.setFocus())
   QShortcut(QKeySequence("Ctrl+T"),self,activated=self.new_tab)
@@ -161,6 +163,7 @@ class Browser(GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainW
   else:url=self.search_url(text)
   self.current().setUrl(QUrl(url))
  def closeEvent(self,event):
+  self.close_satellite_windows()
   self.session_timer.stop();self.save_session()
   if self.proc and self.proc.poll() is None:self.proc.terminate()
   try:(appdir()/"runtime.json").unlink(missing_ok=True)
