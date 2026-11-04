@@ -164,14 +164,16 @@ jobs:
           binary="Jipite-v$VERSION-Microsoft-connected.apk"
           cp "$source" "dist/$binary"
           {
-            echo "Jipite $VERSION — Fluent UI and secure in-app updates."
+            echo "Jipite $VERSION — Xiaomi real-device security readiness."
             echo ""
-            echo "Includes current version information, GitHub Releases update detection,"
-            echo "HTTPS download with SHA-256 validation, same-certificate and package checks,"
-            echo "and the Android system install confirmation."
+            echo "Includes independent Microsoft login, Fluent navigation, owner-hosted VPS"
+            echo "HTTPS updates with SHA-256 and APK signing checks, and Android installation"
+            echo "confirmation. Xiaomi onboarding now requires explicit unique-device consent,"
+            echo "real BIOMETRIC_STRONG challenge and hardware-backed Android Keystore security."
             echo ""
-            echo "Existing Android device binding and GPU power safeguards are unchanged."
-            echo "The old V0.8.x client requires one manual upgrade to V0.9.0."
+            echo "The manual build does not require the pending Mi Push vendor review."
+            echo "GPU provider power permissions and existing TOTP backup remain unchanged."
+            echo "See android-jipite/XIAOMI_DEVICE_V010.md for prerequisites and limitations."
           } > dist/release-notes.md
           gh release create "$TAG" "dist/$binary" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \

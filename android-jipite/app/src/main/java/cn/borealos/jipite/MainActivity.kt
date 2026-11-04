@@ -399,6 +399,13 @@ class MainActivity : FragmentActivity() {
 
         val enrollment = card(requestsPage, "首次设备绑定",
             "仅在受信任且具备强生物识别的小米真机操作")
+        button(enrollment, "检查本机强生物识别和硬件密钥") {
+            AlertDialog.Builder(this)
+                .setTitle("真机绑定安全检查")
+                .setMessage(DeviceSafety.report(this))
+                .setPositiveButton("关闭", null)
+                .show()
+        }
         pairing = EditText(this).apply {
             hint = "输入 VPS 私人终端的一次性配对密钥"
             textSize = 13f
@@ -477,6 +484,7 @@ class MainActivity : FragmentActivity() {
         preference.addView(autoUpdateSwitch)
         space(preference, 7)
         caption(preference, "仅检查新版本，不会自动下载或安装。", 12f, secondary)
+
 
         val safety = card(settingsPage, "安全与诊断", "版本和登录操作不会改变 GPU 电源权限")
         caption(safety, "仅在小米真机上进行正式设备绑定和生物识别审批。",
@@ -666,16 +674,17 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun readinessReport(): String {
-        val microsoft = if (microsoftConfigured()) "已写入 Client ID（还需真实登录验证）"
-                        else "未配置真实 Client ID"
-        val biometric = if (BiometricManager.from(this).canAuthenticate(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG
-            ) == BiometricManager.BIOMETRIC_SUCCESS) "可检测到强生物识别"
-            else "未检测到可用的强生物识别（MuMu 模拟结果不代表硬件安全）"
-        val mode = if (isOfflinePreview) "Debug 离线演示：禁用所有真实审批"
-                   else "Release 联机模式：仍需登录、配对及 VPS 验签"
-        return "当前模式：$mode\n微软应用：$microsoft\n生物识别：$biometric\n" +
-            "VPS 后端部署与真实 GPU 操作必须单独验收。"
+        val microsoft = if (!microsoftConfigured()) "尚未配置正式微软应用"
+                        else if (loginConfirmedInSession) "已成功验证（本次会话）"
+                        else "已配置 Client ID，登录状态待确认"
+        val binding = if (deviceId() == null) "尚未绑定 VPS（不会进行真实审批）"
+                      else "已有设备绑定记录；仍须服务端验签"
+        val mode = if (isOfflinePreview) "Debug：禁止真实配对和审批"
+                   else "Release：需要 Microsoft 登录 + 真机硬件密钥 + 逐次生物识别"
+        return "当前模式：$mode\n微软账户：$microsoft\n设备绑定：$binding\n" +
+            DeviceSafety.report(this) +
+            "\n\nMi Push 审核未完成前，可通过审批页手动刷新；通知绝不自动批准。" +
+            "\nGPU 电源仍由 VPS 安全规则单独控制。"
     }
 
     private fun deviceId() = prefs.getString("device_id", null)
@@ -759,26 +768,111 @@ class MainActivity : FragmentActivity() {
         )
     }
 
+    /**
+     * First-time binding is a security-sensitive operation. A separate explicit
+     * confirmation and hardware-backed biometric signature must both succeed
+     * BEFORE sending the one-time VPS pairing code. No GPU action occurs.
+     *
+     * This local enrollment proof is not a remote hardware attestation: the VPS
+     * still authorizes enrollment using a Microsoft ID token + root-only code.
+     */
     private fun enrollPhone() {
-        val code = pairing.text.toString()
-        if (code.length < 32) return setStatus("请输入从 VPS 私人终端读取的配对密钥")
-        if (BiometricManager.from(this).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            != BiometricManager.BIOMETRIC_SUCCESS) {
-            return setStatus("手机需要先设置强生物识别（指纹或支持的安全面容）")
+        if (isOfflinePreview) return setStatus("离线预览禁止真实配对")
+        if (deviceId() != null) return setStatus(
+            "此应用已有设备绑定记录；不要重复绑定，若换机请通过 VPS 管理员安全重置"
+        )
+        val problem = DeviceSafety.prerequisiteProblem(this)
+        if (problem != null) return AlertDialog.Builder(this)
+            .setTitle("手机尚不满足安全绑定条件")
+            .setMessage(problem + "\n\n可在设置 → 安全与诊断查看详细状态。")
+            .setPositiveButton("知道了", null)
+            .show().let { Unit }
+
+        val code = pairing.text.toString().trim()
+        if (code.length < 32) {
+            return setStatus("请在小米真机输入 VPS 私人 SSH 终端获取的一次性配对码")
         }
-        val pub = try { ApprovalKey.publicKeyBase64() }
-                  catch (e: Exception) { return setStatus("无法创建 Android Keystore 审批密钥") }
-        withMicrosoftToken { token ->
-            MobileApi.post("enroll", token, JSONObject()
-                .put("pairing_code", code).put("public_key", pub)
-                .put("fcm_token", prefs.getString("fcm_token", "") ?: "")) { response ->
-                present(response) { json ->
-                    prefs.edit().putString("device_id", json.getString("device_id")).apply()
-                    pairing.text.clear()
-                    setStatus("手机绑定成功。今后只需打开推送并使用生物识别")
-                    refresh()
+        AlertDialog.Builder(this)
+            .setTitle("确认将此真机绑定到 VPS？")
+            .setMessage(
+                "这将占用 VPS 唯一的审批设备名额。绑定后如换手机，需由 VPS 管理员" +
+                "人工安全重置。\n\n只有你主动确认并通过强生物识别后，" +
+                "才会发送 Microsoft 身份凭据和一次性配对码。\n" +
+                "不会立即开机、关机或提交 GPU 审批。"
+            )
+            .setNegativeButton("取消", null)
+            .setPositiveButton("继续生物识别") { _, _ ->
+                beginSecureEnrollment(code)
+            }
+            .show()
+    }
+
+    private fun beginSecureEnrollment(code: String) {
+        val problem = DeviceSafety.prerequisiteProblem(this)
+        if (problem != null) return setStatus(problem)
+        val pub = try {
+            ApprovalKey.publicKeyBase64() // Fails closed if secure hardware is absent.
+        } catch (_: Exception) {
+            return setStatus("无法创建或验证硬件级审批密钥，已禁止绑定；请检查设备安全诊断")
+        }
+        val signingOp = try {
+            ApprovalKey.signatureForBiometric()
+        } catch (_: Exception) {
+            return setStatus("硬件密钥不可用于逐次生物识别，已禁止配对")
+        }
+        // Do not leave the root-only code visible in the screen during biometric UI.
+        pairing.text.clear()
+        val challenge = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val prompt = BiometricPrompt(
+            this, ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    try {
+                        val authorized = result.cryptoObject?.signature
+                            ?: error("Biometric CryptoObject missing")
+                        authorized.update("JIPITE-ENROLL-LOCAL\\n".toByteArray(Charsets.US_ASCII))
+                        authorized.update(challenge)
+                        val proof = authorized.sign()
+                        if (proof.isEmpty()) error("Hardware biometric signature missing")
+                    } catch (_: Exception) {
+                        setStatus("本机强生物识别验证失败，未发送 VPS 配对码")
+                        return
+                    }
+                    if (deviceId() != null) {
+                        setStatus("绑定状态已变化，请勿重复提交")
+                        return
+                    }
+                    withMicrosoftToken { token ->
+                        MobileApi.post("enroll", token, JSONObject()
+                            .put("pairing_code", code)
+                            .put("public_key", pub)
+                            .put("fcm_token", prefs.getString("fcm_token", "") ?: "")
+                        ) { response ->
+                            present(response) { json ->
+                                prefs.edit().putString("device_id", json.getString("device_id")).apply()
+                                setStatus("真机首次绑定成功；以后审批仍需每次指纹 / 强生物识别")
+                                refresh()
+                            }
+                        }
+                    }
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    setStatus("已取消或未通过强生物识别；配对码未发送")
                 }
             }
+        )
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("吉皮提 · 首次绑定设备")
+            .setSubtitle("仅验证本人持有的硬件审批密钥；不执行 GPU 操作")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .setNegativeButtonText("取消")
+            .build()
+        try {
+            prompt.authenticate(info, BiometricPrompt.CryptoObject(signingOp))
+        } catch (_: Exception) {
+            setStatus("无法启动强生物识别；配对码未发送")
         }
     }
 
@@ -914,6 +1008,8 @@ class MainActivity : FragmentActivity() {
             requestId.length !in 20..80) {
             return setStatus("操作信息异常，禁止审批")
         }
+        val problem = DeviceSafety.prerequisiteProblem(this)
+        if (problem != null) return setStatus("安全条件未满足，禁止真实审批：" + problem)
         val id = deviceId() ?: return setStatus("设备未绑定")
         if (System.currentTimeMillis() / 1000 >= item.optLong("expires_at")) {
             return setStatus("申请已过期，请重新刷新")
