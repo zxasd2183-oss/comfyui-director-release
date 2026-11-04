@@ -17,7 +17,6 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import com.google.firebase.messaging.FirebaseMessaging
 import com.microsoft.identity.client.AuthenticationCallback
 import com.microsoft.identity.client.IAuthenticationResult
 import com.microsoft.identity.client.IPublicClientApplication
@@ -53,18 +52,13 @@ class MainActivity : FragmentActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
         }
-        // Xiaomi devices use Mi Push first; Google/FCM remains a fallback
-        // when Google Play Services are actually available.
-        XiaomiPush.initialize(this)
-        if (BuildConfig.FLAVOR == "google") {
-            runCatching {
-                FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-                    val currentToken = prefs.getString("fcm_token", "") ?: ""
-                    if (!currentToken.startsWith("xm:")) {
-                        prefs.edit().putString("fcm_token", token).apply()
-                        if (prefs.getString("device_id", null) != null) syncPushToken()
-                    }
-                }
+        // Only the chosen product flavor initializes a push SDK.
+        // Xiaomi builds NEVER initialize Firebase/Google Play Services.
+        PushBootstrap.initialize(this) { pushToken ->
+            val existing = prefs.getString("fcm_token", null)
+            if (existing != pushToken) {
+                prefs.edit().putString("fcm_token", pushToken).apply()
+                if (prefs.getString("device_id", null) != null) syncPushToken()
             }
         }
         PublicClientApplication.createSingleAccountPublicClientApplication(
