@@ -122,12 +122,16 @@ class MainActivity : FragmentActivity() {
                             currentAccount: com.microsoft.identity.client.IAccount?
                         ) {
                             if (priorAccount?.id != currentAccount?.id) {
-                                cachedIdToken = null
-                                current = null
-                                showRequest(null)
-                                if (currentAccount == null) {
-                                    loginConfirmedInSession = false
-                                    setMicrosoftState("微软账号：未登录")
+                                // MSAL account-change callbacks may run off the main thread.
+                                // Never touch an Android TextView or approval button there.
+                                runOnUiThread {
+                                    cachedIdToken = null
+                                    current = null
+                                    showRequest(null)
+                                    if (currentAccount == null) {
+                                        loginConfirmedInSession = false
+                                        setMicrosoftState("微软账号：未登录")
+                                    }
                                 }
                             }
                         }
