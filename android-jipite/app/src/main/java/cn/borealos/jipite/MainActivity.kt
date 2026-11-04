@@ -53,9 +53,17 @@ class MainActivity : FragmentActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
         }
-        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-            prefs.edit().putString("fcm_token", token).apply()
-            if (prefs.getString("device_id", null) != null) syncPushToken()
+        // Xiaomi devices use Mi Push first; Google/FCM remains a fallback
+        // when Google Play Services are actually available.
+        XiaomiPush.initialize(this)
+        runCatching {
+            FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                val currentToken = prefs.getString("fcm_token", "") ?: ""
+                if (!currentToken.startsWith("xm:")) {
+                    prefs.edit().putString("fcm_token", token).apply()
+                    if (prefs.getString("device_id", null) != null) syncPushToken()
+                }
+            }
         }
         PublicClientApplication.createSingleAccountPublicClientApplication(
             this, R.raw.msal_config,
