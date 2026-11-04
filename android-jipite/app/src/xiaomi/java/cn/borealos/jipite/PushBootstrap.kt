@@ -9,7 +9,7 @@ object PushBootstrap {
         XiaomiPush.initialize(context)
         val regId = MiPushClient.getRegId(context.applicationContext).orEmpty()
         if (regId.length in 8..256 &&
-            regId.matches(Regex("[A-Za-z0-9_-]+"))) {
+            regId.matches(Regex("[A-Za-z0-9_+=/-]+"))) {
             onToken("xm:" + regId)
         }
     }
