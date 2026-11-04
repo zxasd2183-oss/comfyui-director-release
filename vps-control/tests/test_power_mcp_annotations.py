@@ -11,6 +11,7 @@ class ToolAnnotationsTests(unittest.TestCase):
         by_name = {t.name: t for t in tools}
         self.assertEqual(set(by_name), {
             "request_gpu_start", "request_gpu_stop", "get_power_request_status",
+            "get_power_service_health",
         })
         for name in ("request_gpu_start", "request_gpu_stop"):
             anno = by_name[name].annotations
@@ -18,6 +19,8 @@ class ToolAnnotationsTests(unittest.TestCase):
             self.assertIs(anno.readOnlyHint, False)
             self.assertIs(anno.destructiveHint, False)
         self.assertIs(by_name["get_power_request_status"].annotations.readOnlyHint,
+                      True)
+        self.assertIs(by_name["get_power_service_health"].annotations.readOnlyHint,
                       True)
 
 
