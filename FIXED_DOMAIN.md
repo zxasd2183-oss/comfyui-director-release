@@ -2,6 +2,8 @@
 
 THIS SUPERSEDES the previous Cloudflare Named Tunnel or Caddy ideas. Do NOT run the old install-vps-named-tunnel.sh or install_gpu_named_tunnel.sh scripts for the current design. This file is a proposed deployment, NOT confirmation that DNS, proxies, SSH access or certificates have been installed.
 
+**NEW: 五个域名的 Nginx HTTPS 已经由用户部署生效。现在只需核对 acme.sh 的 Nginx reloadcmd，并完成 GPU → 自有 VPS 的 SSH 反向回连。详细操作和开机重连脚本见 [SSH_BACKHAUL.md](./vps-control/SSH_BACKHAUL.md)。原有 status/power/approve 服务不要因关闭 Quick Tunnel 而停止。**
+
 ## Target architecture
 
 - Domain borealos.cn stays at Alibaba Cloud DNS; do not move nameservers.
