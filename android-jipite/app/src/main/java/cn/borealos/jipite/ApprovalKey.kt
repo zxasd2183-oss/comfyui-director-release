@@ -50,13 +50,17 @@ object ApprovalKey {
         val level: String,
         val hardwareBacked: Boolean,
         val authenticationRequired: Boolean,
+        val validitySeconds: Int,
+        val authenticationType: Int,
         val everyUse: Boolean,
+        val onlyStrongBiometric: Boolean,
         val hardwareEnforcedAuth: Boolean,
         val biometricEnrollmentInvalidates: Boolean
     ) {
         fun failureCode(): String? = when {
             !hardwareBacked -> "KEY_NOT_HARDWARE_BACKED"
             !authenticationRequired -> "AUTH_NOT_REQUIRED"
+            !onlyStrongBiometric -> "AUTH_TYPE_NOT_STRONG_BIOMETRIC_ONLY"
             !everyUse -> "AUTH_NOT_PER_USE"
             !hardwareEnforcedAuth -> "AUTH_NOT_HARDWARE_ENFORCED"
             else -> null
@@ -66,7 +70,12 @@ object ApprovalKey {
             append("安全等级：").append(level)
             append("\n硬件密钥：").append(if (hardwareBacked) "是" else "否")
             append("\n要求身份认证：").append(if (authenticationRequired) "是" else "否")
-            append("\n每次操作重新认证：").append(if (everyUse) "是" else "否")
+            append("\n密钥原始有效期：").append(validitySeconds).append(" 秒")
+            append("\n认证方式：").append(
+                if (onlyStrongBiometric) "仅强生物识别"
+                else "不符合仅强生物识别要求（系统标志 $authenticationType）"
+            )
+            append("\n每次操作重新认证：").append(if (everyUse && onlyStrongBiometric) "是" else "否")
             append("\n认证由安全硬件强制：").append(if (hardwareEnforcedAuth) "是" else "否")
             append("\n新增指纹后密钥失效：")
                 .append(if (biometricEnrollmentInvalidates) "是" else "否")
@@ -95,7 +104,19 @@ object ApprovalKey {
             level = level,
             hardwareBacked = backed,
             authenticationRequired = info.isUserAuthenticationRequired,
-            everyUse = info.userAuthenticationValidityDurationSeconds == -1,
+            // Android's KeyGenParameterSpec.Builder.setUserAuthenticationParameters(
+            // 0, AUTH_BIOMETRIC_STRONG) defines 0 as *every* cryptographic
+            // operation, while the legacy KeyInfo getter documents -1.
+            // Some OEMs expose the raw 0; accept it ONLY for biometric-only
+            // keys protected and auth-enforced by secure hardware.
+            validitySeconds = info.userAuthenticationValidityDurationSeconds,
+            authenticationType = info.userAuthenticationType,
+            everyUse = ApprovalAuthPolicy.isPerOperationTimeout(
+                info.userAuthenticationValidityDurationSeconds
+            ),
+            onlyStrongBiometric = ApprovalAuthPolicy.isBiometricOnly(
+                info.userAuthenticationType, KeyProperties.AUTH_BIOMETRIC_STRONG
+            ),
             hardwareEnforcedAuth = info.isUserAuthenticationRequirementEnforcedBySecureHardware,
             biometricEnrollmentInvalidates = info.isInvalidatedByBiometricEnrollment
         )

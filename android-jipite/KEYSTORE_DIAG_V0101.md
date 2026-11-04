@@ -1,4 +1,19 @@
-# 吉皮提 0.10.1：小米国行真机硬件密钥诊断修复
+# 吉皮提 · 小米国行真机硬件密钥诊断与兼容性
+
+## V0.10.2 · Android Keystore 授权有效期兼容性修复
+
+- 已收到小米真机 Android API 37 的 `AUTH_NOT_PER_USE` 截图；TEE、硬件保护、硬件强制身份认证及指纹变更失效检查均显示通过。
+- 原诊断将 `KeyInfo.userAuthenticationValidityDurationSeconds == -1` 作为**唯一**逐次认证条件。Android `KeyGenParameterSpec.Builder.setUserAuthenticationParameters(0, AUTH_BIOMETRIC_STRONG)` 则明确规定超时为 `0` 表示每次加密操作都需要认证。
+- 仅在 Android 真实报告的授权有效期为 **-1 或 0**，且 `KeyInfo.userAuthenticationType` **恰好等于** `AUTH_BIOMETRIC_STRONG`、密钥位于 TEE / StrongBox、需要身份认证并由安全硬件强制时，允许继续；大于零的有效期、PIN/密码混合认证或软件密钥仍会拒绝。
+- 诊断增加**原始有效期秒数**和**允许的认证类型**，避免再次只看到“是/否”无法判断。
+- 仍然通过带 `Signature` 的 `BiometricPrompt.CryptoObject` 完成真正的签名，不依赖单纯的指纹回调；没有自动执行 GPU 任何操作。
+- 保留原 KeyStore 密钥别名、已安装应用数据和微软登录；**不重建、删除或替换密钥**，且不清除 VPS 配对状态。
+- 新增 JVM 单元测试覆盖 `-1/0`、正数超时、负数异常、密码混合认证与不确定认证类型；CI 自动运行。
+
+更新后先只打开「审批 → 首次设备绑定 → 检查本机强生物识别和硬件密钥」核验原始有效期和认证类型，**不要马上输入配对码**。若仍失败，请发送没有敏感信息的诊断截图。
+
+参考：Android 官方 `KeyInfo`、`KeyGenParameterSpec.Builder` API 和 OWASP 密钥加密绑定指引。
+
 
 ## 背景
 

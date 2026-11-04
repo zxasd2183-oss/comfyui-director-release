@@ -59,6 +59,11 @@ jobs:
         working-directory: android-jipite
         run: |
           gradle :app:assembleManualDebug --no-daemon --stacktrace
+      - name: Test per-operation biometric-only key authorization policy
+        shell: bash
+        working-directory: android-jipite
+        run: |
+          gradle :app:testManualDebugUnitTest --no-daemon --stacktrace
       - name: Publish manual UI test APK (placeholder Microsoft identity)
         uses: actions/upload-artifact@v4
         with:
