@@ -50,7 +50,7 @@ try {
   $jarMemory = New-Object System.IO.MemoryStream
   $zip.GetEntry('classes.jar').Open().CopyTo($jarMemory)
   $jarMemory.Position = 0
-  $jar = New-Object System.IO.Compression.ZipArchive($jarMemory, [System.IO.Compression.ZipArchiveMode]::Read, $true)
+  $jar = [System.IO.Compression.ZipArchive]::new($jarMemory, [System.IO.Compression.ZipArchiveMode]::Read, $true)
   try {
     $jarNames = @($jar.Entries | ForEach-Object { $_.FullName })
     if (-not ($jarNames -contains 'com/xiaomi/mipush/sdk/MiPushClient.class') -or
