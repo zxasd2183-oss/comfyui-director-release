@@ -10,6 +10,7 @@ VENV="/opt/comfyui-director-control/.venv"
 CLIENT="/etc/comfyui-director-mobile-clientid"
 PAIR="/etc/comfyui-director-mobile-pairing"
 FCM="/etc/comfyui-director-firebase-service-account.json"
+XIAOMI="/etc/comfyui-director-xiaomi-appsecret"
 
 [[ -x "$VENV/bin/python" && -f /etc/comfyui-director-control.env ]] || {
   echo "V0.3 controller must be installed first" >&2; exit 2;
@@ -17,7 +18,7 @@ FCM="/etc/comfyui-director-firebase-service-account.json"
 systemctl is-active --quiet director-power-approval || {
   echo "Existing TOTP backup must be healthy before V0.6 installation" >&2; exit 2;
 }
-[[ -f "$HERE/mobile_v06_core.py" && -f "$HERE/mobile_v06_api.py" ]] || {
+[[ -f "$HERE/mobile_v06_core.py" && -f "$HERE/mobile_v06_api.py" && -f "$HERE/mobile_v06_xiaomi.py" ]] || {
   echo "Missing new V0.6 source files" >&2; exit 2;
 }
 
@@ -55,7 +56,7 @@ if [[ -s "$FCM" ]]; then
   chown root:root "$FCM"; chmod 0600 "$FCM"
   "$VENV/bin/python" -m pip install --disable-pip-version-check 'firebase-admin>=6.6,<8'
 fi
-for name in mobile_v06_core.py mobile_v06_api.py; do
+for name in mobile_v06_core.py mobile_v06_api.py mobile_v06_xiaomi.py; do
   install -o root -g root -m 0644 "$HERE/$name" "$APP/$name"
 done
 install -o root -g root -m 0644 "$HERE/director-mobile-v06.service" \
@@ -67,6 +68,15 @@ if [[ -s "$FCM" ]]; then
 else
   rm -f /etc/systemd/system/director-mobile-v06.service.d/firebase.conf
   echo "FCM credential not installed. App polling works; automatic push is disabled."
+fi
+if [[ -e "$XIAOMI" ]]; then
+  [[ -f "$XIAOMI" && ! -L "$XIAOMI" ]] || { echo "Refusing unsafe Xiaomi credential file"; exit 4; }
+  chown root:root "$XIAOMI"; chmod 0600 "$XIAOMI"
+  printf '[Service]\\nLoadCredential=xiaomi:%s\\n' "$XIAOMI" > /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
+  echo "Xiaomi Mi Push will be enabled with existing server-only credential."
+else
+  rm -f /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
+  echo "Xiaomi Mi Push appSecret not configured yet. Device polling remains available."
 fi
 systemctl daemon-reload
 systemctl enable --now director-mobile-v06
