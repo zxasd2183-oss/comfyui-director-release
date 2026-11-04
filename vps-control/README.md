@@ -42,6 +42,61 @@ sudo systemctl status director-vps-control --no-pager
 
 广州 VPS 的跨境访问需要实测；公网域名还需要遵守云厂商要求及适用的中国大陆备案规定。
 
+
+## 第一次接入 ChatGPT Plus（只读、安全测试）
+
+VPS 上的 `8890` MCP **一直只监听 localhost**，不要直接映射到公网。我们增加了不依赖第三方 Python 包的 `bridge.py`，在本地 `8891` 只转发已验证随机访问路径的 MCP 请求。
+
+### A. VPS 安装只读桥接服务
+
+在先前克隆的仓库中（不要在 GPU 上操作）：
+
+```bash
+cd ~/comfyui-director-release
+git pull --ff-only
+cd vps-control
+sudo bash install-bridge.sh
+sudo systemctl is-active director-vps-control director-vps-bridge
+```
+
+两项服务都应输出 `active`。如果当初克隆到别的目录，请进入实际目录。Bridge 运行在 `127.0.0.1:8891`，内部指向 `127.0.0.1:8890/mcp`。
+
+### B. 临时 HTTPS 连接（验证中国大陆 VPS 跨境连通性）
+
+若没有安装 `cloudflared`，按照 [Cloudflare 官方 Ubuntu 软件源安装文档](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/) 安装。之后在 **VPS 的另一个终端**运行：
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8891
+```
+
+它会输出类似 `https://abc-def.trycloudflare.com` 的临时域名。
+
+此时仅在 VPS 本地查看你自己的随机路径令牌：
+
+```bash
+sudo cat /etc/comfyui-director-bridge.token
+```
+
+在 ChatGPT → 添加自定义 MCP 服务器 → Server URL 填写：
+
+```text
+https://abc-def.trycloudflare.com/mcp/<上面获取的随机令牌>
+```
+
+插件名可用 `Director VPS`，认证暂选 `No authentication`（随机 URL 访问令牌已由代理验证，但不是标准 OAuth）。**不要把令牌或完整链接复制到本聊天、截图、Shell 历史记录、公开 GitHub 或任何日志。** 保留终端运行，直到验证完成。
+
+验证工具：`get_control_center_status` 和 `get_gpu_power_status`。这两个工具只读，不支持开关机。
+
+### C. 长期使用注意事项
+
+- Quick Tunnel 是临时测试通道，不承诺稳定域名或服务级别；VPS 重启后测试隧道可能需要重新创建。
+- 不要直接在 VPS 防火墙开放 `8890` 或 `8891`。
+- 随机路径令牌一旦泄漏应轮换，且只适合初步只读联调。长期服务建议 **正式 Cloudflare Named Tunnel + OAuth 身份认证**（或 ChatGPT Secure MCP Tunnel）。
+- 出现 `Invalid Host header` 时，检查流量是否先进入 `8891` 代理（它会把内部 Host 改为 localhost），不要直接把原 `8890` MCP 端口暴露到公网。
+- 广东 VPS 与境外服务的连通性、备案及其他监管要求仍需按实际网络和云厂商规则检查。
+- 由于这是外部控制中心，GPU 已关机也能通过优云智算实例 API 读状态；**这不意味着 GPT Plus 已获得执行开关机的权限。**
+
+
 ## 后续
 
 下一步接入安全认证和 HTTPS；再加入经明确授权的 GPU 启停工具。关机前须验证 ComfyUI 队列和视频素材持久化成功；GPU 已离线时可以查询电源状态，但不能直接检查 ComfyUI 内存态。
