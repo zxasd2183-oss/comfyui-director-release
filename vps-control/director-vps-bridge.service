@@ -1,0 +1,25 @@
+[Unit]
+Description=ComfyUI Director VPS read-only MCP bridge
+After=network-online.target director-vps-control.service
+Requires=director-vps-control.service
+
+[Service]
+Type=simple
+User=directorctl
+Group=directorctl
+WorkingDirectory=/opt/comfyui-director-control
+ExecStart=/usr/bin/python3 /opt/comfyui-director-control/bridge.py --port 8891 --token-file /etc/comfyui-director-bridge.token
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
