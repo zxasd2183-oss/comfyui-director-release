@@ -42,6 +42,13 @@ class FakeClient:
         return {"RetCode": 0, "UHostId": "uhost-test"}
 
 class PowerTests(unittest.TestCase):
+    def test_ucloud_sdk_logging_disabled(self):
+        import logging
+        logger = logging.getLogger("ucloud")
+        logger.disabled = False
+        get_provider_state(CFG, FakeClient("Running"))
+        self.assertTrue(logger.disabled)
+
     def test_state_is_redacted(self):
         state = get_provider_state(CFG, FakeClient("Running"))
         self.assertEqual(state["state"], "Running")
