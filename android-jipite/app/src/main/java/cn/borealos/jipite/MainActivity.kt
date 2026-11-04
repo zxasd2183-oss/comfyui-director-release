@@ -563,6 +563,21 @@ class MainActivity : FragmentActivity() {
             " 建议在小米系统中允许吉皮提通知、自启动和后台电池使用。" +
             " 提醒不包含审批权限，点击后仍需本人指纹。",
             12f, secondary)
+        space(ownerNotify, 10)
+        val noticeTestStatus = caption(ownerNotify,
+            "尚未测试 Android 本机通知通道。", 12f, secondary)
+        space(ownerNotify, 7)
+        val noticeTestButton = button(ownerNotify, "发送本地测试通知（不操作 GPU）") {
+            noticeTestStatus.text = VpsNotifications.sendLocalTest(this@MainActivity)
+        }
+        if (isOfflinePreview) {
+            noticeTestButton.isEnabled = false
+            noticeTestButton.alpha = 0.44f
+        }
+        caption(ownerNotify,
+            "仅测试安卓通知权限、提醒通道和点击返回应用。" +
+            " 不生成审批申请，不使用微软令牌，也不保证后台准时提醒。",
+            12f, secondary)
 
         val safety = card(settingsPage, "安全与诊断", "版本和登录操作不会改变 GPU 电源权限")
         caption(safety, "仅在小米真机上进行正式设备绑定和生物识别审批。",

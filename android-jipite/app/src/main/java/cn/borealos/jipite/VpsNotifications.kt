@@ -31,6 +31,7 @@ object VpsNotifications {
     private const val JOB_ID = 0x4a503103
     private const val CHANNEL = "jipite_owner_pending"
     private const val ID = 17031
+    private const val TEST_ID = 17032
 
     fun enabled(context: Context): Boolean =
         !BuildConfig.DEBUG &&
@@ -68,6 +69,70 @@ object VpsNotifications {
         return manager.schedule(info) == JobScheduler.RESULT_SUCCESS
     }
 
+
+    private fun ensureChannel(manager: NotificationManager) {
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL, "吉皮提 · GPU 待审批提醒",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply { description = "来自自己 VPS 的待审批提醒，仅提醒，不能直接批准" }
+        )
+    }
+
+    /**
+     * User-initiated, local-only Android notification transport check.
+     *
+     * Does not call the VPS, create a pending GPU request, touch approval keys
+     * or change the deduplication digest for real pending notifications.
+     * A separate notification ID and PendingIntent request code prevent it
+     * from replacing or opening an actual approval request.
+     */
+    fun sendLocalTest(context: Context): String {
+        if (!enabled(context)) return "请先开启「启用自己的 HTTPS 待审批提醒」。"
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) {
+            return "Android 通知权限未开启。请在系统设置中允许吉皮提发送通知。"
+        }
+        return try {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                as NotificationManager
+            if (!manager.areNotificationsEnabled()) {
+                "系统已关闭吉皮提的通知，请在手机系统设置中允许通知。"
+            } else {
+                ensureChannel(manager)
+                if (manager.getNotificationChannel(CHANNEL)?.importance ==
+                    NotificationManager.IMPORTANCE_NONE) {
+                    "GPU 提醒通知通道已被关闭，请在手机系统通知设置中重新开启。"
+                } else {
+                    val open = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        // No request_id: a test notification must never select a GPU request.
+                    }
+                    val launch = PendingIntent.getActivity(
+                        context, 1, open,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    val notification = Notification.Builder(context, CHANNEL)
+                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .setContentTitle("吉皮提 · 本地通知自检")
+                        .setContentText("这只是系统通知测试，没有 GPU 操作或审批申请。")
+                        .setContentIntent(launch)
+                        .setAutoCancel(true)
+                        .setCategory(Notification.CATEGORY_STATUS)
+                        .build()
+                    manager.notify(TEST_ID, notification)
+                    "已向 Android 提交本地测试通知，请下拉通知栏查看；" +
+                        "它不代表后台轮询或 VPS 网络已经验收。"
+                }
+            }
+        } catch (_: SecurityException) {
+            "系统拒绝发送通知，请检查吉皮提的通知权限。"
+        } catch (_: Exception) {
+            "通知自检未完成，请检查系统通知设置后重试。"
+        }
+    }
+
     /** Return a safe notification candidate only from a genuine pending response. */
     fun onPendingResponse(context: Context, response: JSONObject) {
         if (!enabled(context) || !response.optBoolean("ok")) return
@@ -100,12 +165,11 @@ object VpsNotifications {
                     PackageManager.PERMISSION_GRANTED) return
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
                 as NotificationManager
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL, "吉皮提 · GPU 待审批提醒",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "来自自己 VPS 的待审批提醒，仅提醒，不能直接批准" }
-            )
+            // Never mark an alert as delivered while system/app channel is disabled.
+            if (!manager.areNotificationsEnabled()) return
+            ensureChannel(manager)
+            if (manager.getNotificationChannel(CHANNEL)?.importance ==
+                NotificationManager.IMPORTANCE_NONE) return
             val open = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra("request_id", chosenId)
