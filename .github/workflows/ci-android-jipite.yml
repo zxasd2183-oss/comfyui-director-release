@@ -1,0 +1,55 @@
+name: Build Jipite Android V0.6 (placeholder identity only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-jipite/**'
+      - '.github/workflows/ci-android-jipite.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  assemble:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Prepare non-production placeholder Firebase project for compilation ONLY
+        shell: bash
+        run: |
+          cat > android-jipite/app/google-services.json <<'EOF'
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "jipite-ci-not-real",
+              "storage_bucket": "jipite-ci-not-real.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:abcdef0123456789",
+                "android_client_info": {
+                  "package_name": "cn.borealos.jipite"
+                }
+              },
+              "oauth_client": [],
+              "api_key": [{"current_key":"CI_ONLY_NOT_AN_API_KEY"}],
+              "services": {"appinvite_service":{"other_platform_oauth_client":[]}}
+            }],
+            "configuration_version": "1"
+          }
+          EOF
+      - name: Compile Android source (NOT a deployable authenticated APK)
+        shell: bash
+        working-directory: android-jipite
+        run: |
+          gradle :app:assembleDebug --no-daemon --stacktrace
