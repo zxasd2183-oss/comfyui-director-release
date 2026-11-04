@@ -23,7 +23,109 @@ options="$(ssh -G -F "$CFG" director-backhaul 2>/dev/null)" || {
 printf '%s\n' "$options" | grep -qx 'user directorlink' || {
  echo "SSH alias must use dedicated directorlink account" >&2; exit 3;
 }
-printf '%s\n' "$options" | grep -qx 'stricthostkeychecking true' || {
+printf '%s\n' "$options" | grep -Eq '^stricthostkeychecking (yes|true)
+ echo "Pin VPS SSH host key and set StrictHostKeyChecking yes" >&2; exit 3;
+}
+printf '%s\n' "$options" | grep -Eq '^batchmode (yes|true)
+ echo "BatchMode must be yes for unattended startup" >&2; exit 3;
+}
+printf '%s\n' "$options" | grep -Eq '^userknownhostsfile /root/.ssh/director_backhaul_known_hosts($| )' || {
+ echo "Use a separate trusted VPS known-hosts file" >&2; exit 3;
+}
+KNOWN="$DIR/director_backhaul_known_hosts"
+[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || {
+ echo "Trusted VPS known-hosts file missing: verify fingerprint first" >&2; exit 3;
+}
+[[ -f "$DIR/director_backhaul_ed25519" && ! -L "$DIR/director_backhaul_ed25519" ]] || {
+ echo "Dedicated GPU private SSH key missing" >&2; exit 3;
+}
+if [[ -e /start.d/90-director-gpu-backhaul.sh ]]; then
+ echo "Existing /start.d/90-director-gpu-backhaul.sh left unchanged" >&2
+ echo "Review it manually if reinstalling." >&2
+ exit 4
+fi
+install -o root -g root -m 0750 "$SCRIPT_DIR/gpu-ssh-backhaul.sh" \
+ /usr/local/sbin/director-gpu-ssh-backhaul
+install -d -o root -g root -m 0755 /start.d
+cat > /start.d/90-director-gpu-backhaul.sh <<'EOF'
+#!/usr/bin/env bash
+# CompShare /start.d auto-launch, no secrets or GPU power operations.
+/usr/local/sbin/director-gpu-ssh-backhaul --launch
+EOF
+chown root:root /start.d/90-director-gpu-backhaul.sh
+chmod 0750 /start.d/90-director-gpu-backhaul.sh
+echo "Installed /start.d/90-director-gpu-backhaul.sh for next GPU boot."
+echo "To test now, on the GPU: bash /start.d/90-director-gpu-backhaul.sh"
+echo "The VPS must already have the dedicated restricted SSH user/key."
+echo "This installer did NOT power the GPU on/off or change ComfyUI jobs."
+ || {
+ echo "Pin VPS SSH host key and set StrictHostKeyChecking yes" >&2; exit 3;
+}
+printf '%s\n' "$options" | grep -qx 'batchmode yes' || {
+ echo "BatchMode must be yes for unattended startup" >&2; exit 3;
+}
+printf '%s\n' "$options" | grep -q '^userknownhostsfile /root/.ssh/director_backhaul_known_hosts$' || {
+ echo "Use a separate trusted VPS known-hosts file" >&2; exit 3;
+}
+KNOWN="$DIR/director_backhaul_known_hosts"
+[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || {
+ echo "Trusted VPS known-hosts file missing: verify fingerprint first" >&2; exit 3;
+}
+[[ -f "$DIR/director_backhaul_ed25519" && ! -L "$DIR/director_backhaul_ed25519" ]] || {
+ echo "Dedicated GPU private SSH key missing" >&2; exit 3;
+}
+if [[ -e /start.d/90-director-gpu-backhaul.sh ]]; then
+ echo "Existing /start.d/90-director-gpu-backhaul.sh left unchanged" >&2
+ echo "Review it manually if reinstalling." >&2
+ exit 4
+fi
+install -o root -g root -m 0750 "$SCRIPT_DIR/gpu-ssh-backhaul.sh" \
+ /usr/local/sbin/director-gpu-ssh-backhaul
+install -d -o root -g root -m 0755 /start.d
+cat > /start.d/90-director-gpu-backhaul.sh <<'EOF'
+#!/usr/bin/env bash
+# CompShare /start.d auto-launch, no secrets or GPU power operations.
+/usr/local/sbin/director-gpu-ssh-backhaul --launch
+EOF
+chown root:root /start.d/90-director-gpu-backhaul.sh
+chmod 0750 /start.d/90-director-gpu-backhaul.sh
+echo "Installed /start.d/90-director-gpu-backhaul.sh for next GPU boot."
+echo "To test now, on the GPU: bash /start.d/90-director-gpu-backhaul.sh"
+echo "The VPS must already have the dedicated restricted SSH user/key."
+echo "This installer did NOT power the GPU on/off or change ComfyUI jobs."
+ || {
+ echo "BatchMode must be yes for unattended startup" >&2; exit 3;
+}
+printf '%s\n' "$options" | grep -q '^userknownhostsfile /root/.ssh/director_backhaul_known_hosts$' || {
+ echo "Use a separate trusted VPS known-hosts file" >&2; exit 3;
+}
+KNOWN="$DIR/director_backhaul_known_hosts"
+[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || {
+ echo "Trusted VPS known-hosts file missing: verify fingerprint first" >&2; exit 3;
+}
+[[ -f "$DIR/director_backhaul_ed25519" && ! -L "$DIR/director_backhaul_ed25519" ]] || {
+ echo "Dedicated GPU private SSH key missing" >&2; exit 3;
+}
+if [[ -e /start.d/90-director-gpu-backhaul.sh ]]; then
+ echo "Existing /start.d/90-director-gpu-backhaul.sh left unchanged" >&2
+ echo "Review it manually if reinstalling." >&2
+ exit 4
+fi
+install -o root -g root -m 0750 "$SCRIPT_DIR/gpu-ssh-backhaul.sh" \
+ /usr/local/sbin/director-gpu-ssh-backhaul
+install -d -o root -g root -m 0755 /start.d
+cat > /start.d/90-director-gpu-backhaul.sh <<'EOF'
+#!/usr/bin/env bash
+# CompShare /start.d auto-launch, no secrets or GPU power operations.
+/usr/local/sbin/director-gpu-ssh-backhaul --launch
+EOF
+chown root:root /start.d/90-director-gpu-backhaul.sh
+chmod 0750 /start.d/90-director-gpu-backhaul.sh
+echo "Installed /start.d/90-director-gpu-backhaul.sh for next GPU boot."
+echo "To test now, on the GPU: bash /start.d/90-director-gpu-backhaul.sh"
+echo "The VPS must already have the dedicated restricted SSH user/key."
+echo "This installer did NOT power the GPU on/off or change ComfyUI jobs."
+ || {
  echo "Pin VPS SSH host key and set StrictHostKeyChecking yes" >&2; exit 3;
 }
 printf '%s\n' "$options" | grep -qx 'batchmode yes' || {
