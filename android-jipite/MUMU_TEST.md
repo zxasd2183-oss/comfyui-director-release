@@ -5,8 +5,8 @@
 ## 准备
 
 1. 在 GitHub Actions 运行 **Build Jipite APK on GitHub**，选择 `preview`。也可使用推送自动构建的成功产物。
-2. 下载 Artifacts 中的 `Jipite-V0.6-manual-UI-only` ZIP，解压得到 `app-manual-debug.apk`。
-3. 在 Android 11 或更高版本的 MuMu 中拖入 APK 安装。
+2. 下载 Artifacts 中的 `Jipite-V0.6.1-MuMu-offline-demo` ZIP，解压得到 `app-manual-debug.apk`。
+3. 在 Android 11 或更高版本的 MuMu 中拖入 APK 安装。如果旧版无法覆盖安装，先卸载旧的 V0.6 预览版（测试数据不会保留），再装新版；GitHub 临时 Debug 签名可能不同。
 4. 打开应用，检查顶部是否出现 **【离线演示 / MuMu 测试】**，并且微软登录、绑定和真实刷新按钮不可用。
 
 ## 检查清单
