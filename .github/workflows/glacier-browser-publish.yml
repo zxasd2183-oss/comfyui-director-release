@@ -1,0 +1,54 @@
+name: Publish Glacier Browser v0.10 from successful Windows artifact
+on:
+  push:
+    branches:
+      - glacier-browser-updates
+    paths:
+      - '.github/workflows/glacier-browser-publish.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actual compiled Setup.exe (GitHub Actions artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierBrowser-v0.10.0-Windows-Setup
+          run-id: 41801359202
+          github-token: ${{ github.token }}
+          path: dist
+      - name: Verify and publish EXE release plus update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION='0.10.0'
+          TAG="glacier-v$VERSION"
+          EXE="GlacierBrowser-v$VERSION-Windows-Setup-x64.exe"
+          FILE="dist/$EXE"
+          test -f "$FILE"
+          file "$FILE"
+          BYTES=$(stat -c%s "$FILE")
+          SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
+          if [ "$BYTES" -lt 1000000 ]; then echo 'Setup.exe unexpectedly small' >&2; exit 1; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+          else
+            gh release create "$TAG" "$FILE" --target glacier-browser-updates --title "Glacier Browser $VERSION (Windows preview)" --notes "Version information, check updates, automatic verified download over VLESS, and in-app update installation with confirmation. Unsigned test build." --prerelease
+          fi
+          mkdir -p channels
+          python - "$VERSION" "$TAG" "$EXE" "$SHA" "$BYTES" <<'PY'
+          import json,sys,pathlib
+          ver,tag,exe,sha,size=sys.argv[1:]
+          feed={'channel':'windows-x64','version':ver,'url':f'https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/{tag}/{exe}','sha256':sha,'size':int(size),'notes':'v0.10：增加版本信息、检查更新、启动时自动检查、自动下载和软件内确认安装。'}
+          pathlib.Path('channels/windows-x64.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2)+'\n',encoding='utf8')
+          print(json.dumps(feed,ensure_ascii=False,indent=2))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add channels/windows-x64.json
+          git commit -m "Publish Glacier update feed $VERSION"
+          git push origin HEAD:glacier-browser-updates
