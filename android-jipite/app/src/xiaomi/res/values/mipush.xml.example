@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copy to mipush.xml on your LOCAL computer and replace with
+     public Android client AppId and AppKey from Xiaomi Developer Console.
+     NEVER put the server AppSecret into this file or GitHub. -->
+<resources>
+    <string name="mipush_app_id">REPLACE_APP_ID</string>
+    <string name="mipush_app_key">REPLACE_APP_KEY</string>
+</resources>
