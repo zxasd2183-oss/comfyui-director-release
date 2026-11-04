@@ -1,8 +1,6 @@
-name: Manually sync signed Glacier macOS updates to VPS
-
+name: Manually sync signed Glacier macOS updates via OIDC
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
 
@@ -12,9 +10,12 @@ concurrency:
 
 jobs:
   notify-vps:
-    name: Verify Ed25519 metadata, trigger restricted VPS sync, confirm HTTPS
+    name: Verify signed Mac feed, notify VPS via OIDC, confirm HTTPS
     runs-on: ubuntu-24.04
-    timeout-minutes: 23
+    permissions:
+      id-token: write
+      contents: read
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,53 +63,41 @@ jobs:
           print("Expected installer SHA256:",document["sha256"])
           PY
 
-      - name: Start the VPS mirror immediately through restricted SSH
-        env:
-          GLACIER_SSH_PRIVATE: ${{ secrets.GLACIER_VPS_SSH_PRIVATE_KEY }}
-          GLACIER_SSH_HOST: ${{ secrets.GLACIER_VPS_SSH_HOST }}
-          GLACIER_SSH_PORT: ${{ secrets.GLACIER_VPS_SSH_PORT }}
-          GLACIER_SSH_HOSTKEY: ${{ secrets.GLACIER_VPS_SSH_KNOWN_HOSTS }}
+      - name: Notify Glacier Mac VPS using short-lived GitHub OIDC (no SSH secret)
         shell: bash
+        env:
+          NOTIFY_URL: https://jipite.borealos.cn/glacier-updates/notify
+          OIDC_AUDIENCE: glacier-macos-vps-update-sync
         run: |
           set -euo pipefail
-          for item in GLACIER_SSH_PRIVATE GLACIER_SSH_HOST GLACIER_SSH_HOSTKEY; do
-            if [[ -z "${!item:-}" ]]; then
-              echo "::error::Missing repository Actions secret $item; VPS immediate sync is NOT active"
-              exit 2
-            fi
-          done
-          port="${GLACIER_SSH_PORT:-22}"
-          if ! [[ "$port" =~ ^[0-9]{1,5}$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); then
-            echo "::error::Invalid GLACIER_VPS_SSH_PORT"
-            exit 2
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          token_response="$(curl -fsS --max-time 12 \
+            --get --data-urlencode "audience=${OIDC_AUDIENCE}" \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}")"
+          token="$(printf '%s' "$token_response" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin)["value"])')"
+          test -n "$token"
+          status="$(curl -sS --max-time 22 --connect-timeout 7 \
+            --retry 2 --retry-delay 3 --retry-all-errors \
+            -o "$RUNNER_TEMP/glacier-notify-result.json" -w '%{http_code}' \
+            -X POST "$NOTIFY_URL" \
+            -H "Authorization: Bearer ${token}" \
+            -H "Content-Type: application/json" --data '{}')"
+          echo "Glacier Mac VPS notify HTTP status: $status"
+          if [[ "$status" != "202" ]]; then
+            echo "::error::OIDC notification was not authorized or VPS not ready. Timer fallback remains active."
+            exit 1
           fi
-          dir="$(mktemp -d)"
-          trap 'rm -rf "$dir"' EXIT
-          chmod 0700 "$dir"
-          printf '%s\n' "$GLACIER_SSH_PRIVATE" > "$dir/id_ed25519"
-          printf '%s\n' "$GLACIER_SSH_HOSTKEY" > "$dir/known_hosts"
-          chmod 0600 "$dir/id_ed25519" "$dir/known_hosts"
-          ssh-keygen -y -f "$dir/id_ed25519" >/dev/null
-          ssh -F /dev/null \
-            -o BatchMode=yes \
-            -o IdentitiesOnly=yes \
-            -o PreferredAuthentications=publickey \
-            -o StrictHostKeyChecking=yes \
-            -o "UserKnownHostsFile=$dir/known_hosts" \
-            -o ConnectTimeout=20 \
-            -o ServerAliveInterval=15 \
-            -o ServerAliveCountMax=6 \
-            -o NumberOfPasswordPrompts=0 \
-            -i "$dir/id_ed25519" -p "$port" \
-            "glaciertrigger@$GLACIER_SSH_HOST" "start-signed-glacier-sync"
-          echo "VPS restricted sync command completed"
+          echo "Glacier Mac VPS accepted signed-release notification; checking distribution." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify current signed feed is served from VPS over HTTPS
         shell: bash
         run: |
           set -euo pipefail
           url='https://jipite.borealos.cn/glacier-updates/macos-arm64.json'
-          for attempt in {1..12}; do
+          for attempt in {1..40}; do
             if curl --fail --silent --show-error --max-time 22 "$url" -o "$RUNNER_TEMP/glacier-live-feed.json" \
               && cmp -s channels/macos-arm64.json "$RUNNER_TEMP/glacier-live-feed.json"; then
               echo "Owner VPS is serving the exact signed manifest"
@@ -126,8 +115,8 @@ jobs:
           PY
               exit 0
             fi
-            echo "Waiting for VPS HTTPS to publish signed macOS metadata (attempt $attempt/12)"
-            sleep 10
+            echo "Waiting for VPS HTTPS to publish signed macOS metadata (attempt $attempt/40)"
+            sleep 15
           done
           echo "::error::VPS is not serving the newly signed update feed"
           exit 1
