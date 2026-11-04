@@ -1,10 +1,10 @@
 {
   "channel": "windows-x64",
-  "version": "0.11.0",
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.11.0/GlacierBrowser-v0.11.0-Windows-Setup-x64.exe",
-  "sha256": "e458f0b9e0323af7b90e4b4f1a279ec12727c66145f589b991f85f8eb5f6f628",
-  "size": 173067923,
-  "notes": "v0.11：独立 Ed25519 签名更新清单、拒绝伪造/降级；保留内置 VLESS、书签、历史和软件内确认安装。",
+  "version": "0.12.0",
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.12.0/GlacierBrowser-v0.12.0-Windows-Setup-x64.exe",
+  "sha256": "80f17897be6bea15b15e9b3eac3c5ddaebc011c268c2a603d11c5360db13144c",
+  "size": 173051303,
+  "notes": "v0.12.0：支持独立普通窗口与隔离无痕窗口；保留内置 VLESS 和 Ed25519 安全更新。",
   "key_id": "cf9452226375ff7d",
-  "signature": "zr6VNaqEbSMoT/4CofCAWODom9SgijlEddrR/jPs85F5CYTZkCO4jheLT5dU7iLwCQMgfHVFeQJ27Ip9caW0AA=="
+  "signature": "OJDVW+zujlSegerHPeLfH8kPXX6Coa1Nau24jrw/52oXxRx0Rq0WuXBneXMkHNQ8VOVbVMrylbIaCwaTeebIDA=="
 }
