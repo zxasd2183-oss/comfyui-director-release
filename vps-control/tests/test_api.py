@@ -20,6 +20,15 @@ class Tests(unittest.TestCase):
         with patch.dict(os.environ,{},clear=True):
             self.assertEqual(get_instance_status()['reason'],'not_configured')
             self.assertFalse(config_status()['configured'])
+    def test_ucloud_sdk_logging_disabled(self):
+        import logging
+        with patch.dict(os.environ,{'COMP_PUBLIC_KEY':'x','COMP_PRIVATE_KEY':'y',
+                                    'COMP_UHOST_ID':'uhost-test123'},clear=True):
+            logger = logging.getLogger('ucloud')
+            logger.disabled = False
+            get_instance_status(Client)
+            self.assertTrue(logger.disabled)
+
     def test_fields_redacted(self):
         with patch.dict(os.environ,{'COMP_PUBLIC_KEY':'x','COMP_PRIVATE_KEY':'y','COMP_UHOST_ID':'uhost-test123'},clear=True):
             status=get_instance_status(Client)
