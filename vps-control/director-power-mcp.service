@@ -1,0 +1,31 @@
+[Unit]
+Description=Director V0.3 staged GPU power requests MCP (no direct power actions)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=directorpower
+Group=directorpower
+WorkingDirectory=/opt/comfyui-director-power
+LoadCredential=directorenv:/etc/comfyui-director-control.env
+Environment=DIRECTOR_POWER_CONFIG=%d/directorenv
+Environment=DIRECTOR_POWER_DB=/var/lib/comfyui-director-power/requests.db
+StateDirectory=comfyui-director-power
+StateDirectoryMode=0700
+ExecStart=/opt/comfyui-director-control/.venv/bin/python /opt/comfyui-director-power/power_write_mcp.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
