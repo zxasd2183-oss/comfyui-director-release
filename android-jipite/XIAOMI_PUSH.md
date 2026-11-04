@@ -4,6 +4,49 @@
 
 **如果手机是国际版系统或所在推送服务区域不在中国大陆，则应使用该地区对应的非中国大陆 SDK、服务器 API，或使用 FCM。当前代码里的小米 REST endpoint 是中国大陆版。**
 
+## 国行小米 APK 构建准备（Windows 优先）
+
+已增加 Windows PowerShell 引导脚本：android-jipite/prepare-xiaomi.ps1。
+
+先在小米官方 SDK 下载页登录，获取**中国大陆版 Mi Push AAR**，保存在电脑，例如 C:\Downloads\MiPush_SDK_Client_xxx.aar；另准备你从小米控制台取得的 Android 客户端 AppId/AppKey。
+
+同时在 Microsoft Entra 注册支持个人账号的 Android App，登记 cn.borealos.jipite 和**要安装 APK 的签名证书 SHA1 Base64 哈希**。Debug APK 和 Release APK 的签名不同，必须分别登记。
+
+在 Windows PowerShell 的仓库 android-jipite 文件夹运行（替换所有示例参数）：
+
+    .\prepare-xiaomi.ps1 -AarPath "C:\Downloads\MiPush_SDK_Client_xxx.aar" -MicrosoftClientId "11111111-2222-3333-4444-555555555555" -MicrosoftSigningHash "ANDROID_SHA1_BASE64" -MiAppId "MY_XIAOMI_APP_ID" -MiAppKey "MY_XIAOMI_APP_KEY"
+
+此脚本只在本机检查 SDK 包内 MiPushClient/PushMessageReceiver、复制 Mi Push AAR，并写入 Microsoft Client ID/真实签名哈希、小米客户端 AppId/AppKey，不要求 Firebase/Google Play 服务，也不会把服务器 AppSecret 放进 APK。
+
+随后用 Android Studio 打开 android-jipite 工程，选择 xiaomiDebug，执行 Build APK(s)。如果 Windows 已装 Gradle 8.10.2/JDK17/Android SDK，也可以给命令增加 -Build 参数自动构建。
+
+构建完成后 APK 预期输出：
+
+    android-jipite/app/build/outputs/apk/xiaomi/debug/app-xiaomi-debug.apk
+
+**当前 GitHub CI 只验证 Google 基线变体，不代表 Xiaomi 变体已有官方 AAR 且完成实机编译。** 仓库当前也没有 Gradle Wrapper JAR，需要 Android Studio 或你本机的 Gradle。微软 Client ID 与 Android AppId 是客户端标识，但在修改本地源文件后仍需检查 git diff，避免误提交其他数据。
+
+## 2026 年小米消息分类、通道和模板
+
+从 2026 年 8 月起，小米消息分类规则已经生效。GPU 审批提醒属于用户主动请求的操作通知，但能否进入特定的私信类型，须由小米审核判定，不应自行宣称属于“设备状态”或其他私信类。
+
+在小米后台申请真实用途对应的消息 channel 和**无变量模板**。通过审核后，获取数字 channel_id / template_id。示例文字：吉皮提 RTX 5090 有待处理的操作申请，请打开手机应用查看。模板最终文案以小米审核通过为准。
+
+在广州 VPS 私人终端保存两份文件（root:root 0600）：
+
+    /etc/comfyui-director-xiaomi-appsecret
+    /etc/comfyui-director-xiaomi-channel.json
+
+第二份 JSON 示例（数字仅用于说明格式，不是真实 ID）：
+
+    {"channel_id":"130","template_id":"1002"}
+
+只有两份文件同时存在、格式验证通过，VPS 才启用小米推送。Mi Push HTTP 请求会携带小米要求的 extra.channel_id、extra.template_id 和 extra.template_param={}，并只通知手机用户，绝不授权 GPU。否则仍可在 App 手动刷新待审批申请。
+
+小米官方新规：https://dev.mi.com/xiaomihyperos/documentation/detail?pId=2321
+
+小米官方模板：https://dev.mi.com/xiaomihyperos/documentation/detail?pId=2314
+
 ## 第一步：小米开发者平台注册
 
 访问 https://dev.mi.com/ 或 https://admin.xmpush.xiaomi.com/zh_CN 注册应用：
