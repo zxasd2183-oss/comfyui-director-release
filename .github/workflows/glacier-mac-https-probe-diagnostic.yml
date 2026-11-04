@@ -1,0 +1,31 @@
+name: Glacier macOS HTTPS probe diagnosis (source inspection)
+on:
+  push:
+    branches: [build/glacier-browser-macos-arm64-v0-14-2]
+    paths: ['.github/workflows/glacier-mac-https-probe-diagnostic.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect SSL and diagnostic implementation (no user data)
+        run: |
+          python - <<'PY'
+          import base64,lzma,ast,re,pathlib
+          root=pathlib.Path('glacier-windows')
+          for f in ('features.py','ui08.py','ui09.py','ui12.py','tabtools13.py'):
+            text=lzma.decompress(base64.b64decode((root/(f+'.xz.b64')).read_text().strip())).decode()
+            lines=text.splitlines()
+            print('===',f,'===',flush=True)
+            for n,node in enumerate(ast.walk(ast.parse(text))):
+              if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and any(x in node.name.lower() for x in ('https','ssl','proxy','connection','check','cert','request','network')):
+                print('FUNCTION',node.name,'LINES',node.lineno,node.end_lineno,flush=True)
+                for line in lines[node.lineno-1:min(node.end_lineno,node.lineno+90)]:
+                  print(line,flush=True)
+            for i,line in enumerate(lines):
+              if re.search(r'certifi|ssl\.create|SSL_CERT|REQUESTS_CA_BUNDLE|CERTIFICATE_VERIFY|HTTPS 检测|urlopen|urllib|httpx|requests',line,re.I):
+                print('MATCH',i+1,line[:250],flush=True)
+          PY
