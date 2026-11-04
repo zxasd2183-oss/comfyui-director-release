@@ -1,0 +1,31 @@
+name: Validate Glacier Mac VPS immediate-sync scripts
+on:
+  push:
+    branches:
+      - glacier-browser-updates
+    paths:
+      - vps-control/install-glacier-macos-immediate-trigger.sh
+      - .github/workflows/glacier-macos-vps-immediate-qa.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate least-privilege VPS trigger bootstrap
+        run: |
+          set -euo pipefail
+          bash -n vps-control/install-glacier-macos-immediate-trigger.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("vps-control/install-glacier-macos-immediate-trigger.sh").read_text()
+          assert 'glacier-macos-update-sync.service' in p
+          assert 'restrict,command=' in p
+          assert 'NOPASSWD:' in p
+          assert 'nginx -t' not in p, "Immediate trigger must not modify Nginx"
+          assert 'systemctl reload nginx' not in p
+          assert 'PRIVATE' not in p or 'ssh-keygen' in p
+          print("SSH forced-command bootstrap syntax and isolation tests passed")
+          PY
