@@ -47,6 +47,8 @@ class MainActivity : FragmentActivity() {
     private lateinit var status: TextView
     private lateinit var detail: TextView
     private lateinit var readiness: TextView
+    private lateinit var microsoftState: TextView
+    private var loginConfirmedInSession = false
     private lateinit var pairing: EditText
     private lateinit var approveButton: Button
     private lateinit var denyButton: Button
@@ -85,9 +87,17 @@ class MainActivity : FragmentActivity() {
                         override fun onAccountLoaded(account: com.microsoft.identity.client.IAccount?) {
                             if (account != null) {
                                 cachedIdToken = account.idToken
-                                setStatus("已登录 Microsoft 个人账号，正在检查待审批申请")
-                                refresh()
-                            } else setStatus("请先使用 Microsoft 个人账号登录")
+                                loginConfirmedInSession = true
+                                setMicrosoftState("微软账号：已登录（已从安全账户缓存恢复）")
+                                if (deviceId() != null) {
+                                    refresh()
+                                } else {
+                                    setStatus("Microsoft 登录状态已恢复。尚未绑定手机；请在小米真机完成首次配对。")
+                                }
+                            } else if (!loginConfirmedInSession) {
+                                setMicrosoftState("微软账号：未登录")
+                                setStatus("请先使用 Microsoft 个人账号登录")
+                            }
                         }
                         override fun onAccountChanged(
                             priorAccount: com.microsoft.identity.client.IAccount?,
@@ -97,15 +107,21 @@ class MainActivity : FragmentActivity() {
                                 cachedIdToken = null
                                 current = null
                                 showRequest(null)
+                                if (currentAccount == null) {
+                                    loginConfirmedInSession = false
+                                    setMicrosoftState("微软账号：未登录")
+                                }
                             }
                         }
                         override fun onError(exception: MsalException) {
-                            setStatus("微软账号初始化失败，请检查 MSAL 配置")
+                            setMicrosoftState("微软账号：读取账户失败（${msalErrorCode(exception)}）")
+                            setStatus("请检查网络、微软应用注册以及 Android 回调配置")
                         }
                     })
                 }
                 override fun onError(exception: MsalException) {
-                    setStatus("MSAL 初始化失败，请核对 client_id 和 Android 签名哈希")
+                    setMicrosoftState("微软账号：初始化失败（${msalErrorCode(exception)}）")
+                    setStatus("请核对 client_id、Android 签名哈希及网络连接")
                 }
             }
         )
@@ -149,6 +165,10 @@ class MainActivity : FragmentActivity() {
             line("【V0.8 联机准备版】仅已完成微软注册、设备绑定和生物识别时才能批准真实申请", 15f)
         }
         status = line("初始化中……", 15f)
+        microsoftState = line(
+            if (isOfflinePreview) "微软账号：离线演示版不提供真实登录"
+            else "微软账号：正在读取登录状态……", 17f
+        )
         button("查看 V0.8 接入准备清单") { readiness.text = readinessReport() }
         readiness = line("点击上方按钮检查本地配置（不访问网络）", 14f)
         if (!isOfflinePreview) {
@@ -206,6 +226,14 @@ class MainActivity : FragmentActivity() {
         runOnUiThread { status.text = message }
     }
 
+    private fun setMicrosoftState(message: String) {
+        runOnUiThread { microsoftState.text = message }
+    }
+
+    // MSAL error codes are diagnostic identifiers, not access tokens or credentials.
+    private fun msalErrorCode(error: MsalException): String =
+        error.errorCode?.take(80) ?: "unknown"
+
     /** Metadata-only checks; never validates the signing key against Entra or VPS. */
     private fun microsoftConfigured(): Boolean {
         return runCatching {
@@ -241,18 +269,38 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun signIn() {
-        if (isOfflinePreview || !microsoftConfigured()) return setStatus("需要正式签名与 Microsoft 配置才能登录")
-        val app = msal ?: return setStatus("MSAL 尚未初始化")
+        if (isOfflinePreview || !microsoftConfigured()) {
+            return setStatus("需要正式签名与 Microsoft 配置才能登录")
+        }
+        val app = msal ?: return setStatus("MSAL 初始化尚未完成，请重新点击登录")
+        setMicrosoftState("微软账号：正在启动 Microsoft 登录……")
+        setStatus("请在微软浏览器页面完成登录，授权后将返回吉皮提")
         val callback = object : AuthenticationCallback {
             override fun onSuccess(result: IAuthenticationResult) {
-                cachedIdToken = result.account.idToken
-                setStatus("微软账号登录成功")
-                refresh()
+                val token = result.account.idToken
+                if (token.isNullOrBlank()) {
+                    loginConfirmedInSession = false
+                    setMicrosoftState("微软账号：登录回调已完成，但缺少 ID Token")
+                    setStatus("暂时无法进行设备绑定，请重新验证微软登录")
+                    return
+                }
+                cachedIdToken = token
+                loginConfirmedInSession = true
+                setMicrosoftState("微软账号：登录成功 ✓（已取得 Microsoft 身份凭据）")
+                if (deviceId() != null) {
+                    refresh()
+                } else {
+                    setStatus("Microsoft 登录成功！此设备尚未绑定 VPS；MuMu 只用于登录测试，请使用小米真机完成配对。")
+                }
             }
             override fun onError(exception: MsalException) {
-                setStatus("登录失败，请检查个人微软账号和网络")
+                setMicrosoftState("微软账号：登录失败（${msalErrorCode(exception)}）")
+                setStatus("请检查浏览器回调、网络及微软账号授权。不要分享登录令牌。")
             }
-            override fun onCancel() { setStatus("已取消微软账号登录") }
+            override fun onCancel() {
+                setMicrosoftState("微软账号：登录已取消")
+                setStatus("已取消 Microsoft 登录，未进行设备绑定")
+            }
         }
         app.getCurrentAccountAsync(object : ISingleAccountPublicClientApplication.CurrentAccountCallback {
             override fun onAccountLoaded(account: com.microsoft.identity.client.IAccount?) {
@@ -263,7 +311,10 @@ class MainActivity : FragmentActivity() {
             override fun onAccountChanged(
                 priorAccount: com.microsoft.identity.client.IAccount?,
                 currentAccount: com.microsoft.identity.client.IAccount?) {}
-            override fun onError(exception: MsalException) { setStatus("无法获取已登录微软账号") }
+            override fun onError(exception: MsalException) {
+                setMicrosoftState("微软账号：读取登录状态失败（${msalErrorCode(exception)}）")
+                setStatus("无法确认已登录账号，请稍后重试")
+            }
         })
     }
 
