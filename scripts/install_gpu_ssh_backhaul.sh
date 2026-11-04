@@ -1,162 +1,70 @@
 #!/usr/bin/env bash
-# Install a persistent GPU outbound SSH reverse tunnel on an existing CompShare
-# container. Does NOT create keys, trust VPS host keys, open public GPU ports,
-# operate GPU power or submit ComfyUI jobs. All SSH enrollment remains local.
+# Install only the pre-existing Director V3 GPU SSH backhaul boot hook.
+# The GPU private key, trusted host fingerprint and VPS restricted account
+# MUST have been configured independently before running this installer.
+# No GPU power, ComfyUI jobs, DNS or external credentials are changed.
 set -euo pipefail
 umask 077
-[[ "$EUID" -eq 0 ]] || { echo "Run as GPU container root" >&2; exit 2; }
+
+fail() { printf 'ERROR: %s\n' "$1" >&2; exit 2; }
+[[ "$EUID" -eq 0 ]] || fail "Run as GPU container root"
+
 ROOT="/root/.comfyui-director"
-DIR="/root/.ssh"
-CFG="$DIR/director_backhaul_config"
+CFG="/root/.ssh/director_backhaul_config"
+KNOWN="/root/.ssh/director_backhaul_known_hosts"
+KEY="/root/.ssh/director_backhaul_ed25519"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-[[ -f "$ROOT/config.json" ]] || { echo "Existing installed V3 missing" >&2; exit 2; }
-[[ -f "$CFG" && ! -L "$CFG" && "$(stat -c '%a' "$CFG")" == 600 ]] || {
- echo "Expected private 0600 SSH client config at $CFG" >&2; exit 2;
-}
-command -v ssh >/dev/null || { echo "Install openssh-client first" >&2; exit 2; }
-command -v flock >/dev/null || { echo "Install util-linux first" >&2; exit 2; }
-[[ -f "$SCRIPT_DIR/gpu-ssh-backhaul.sh" ]] || { echo "Backhaul source missing" >&2; exit 2; }
-# Effective SSH options must not permit accepting unknown VPS SSH host keys.
-options="$(ssh -G -F "$CFG" director-backhaul 2>/dev/null)" || {
- echo "SSH config has errors" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -qx 'user directorlink' || {
- echo "SSH alias must use dedicated directorlink account" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -Eq '^stricthostkeychecking (yes|true)
- echo "Pin VPS SSH host key and set StrictHostKeyChecking yes" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -Eq '^batchmode (yes|true)
- echo "BatchMode must be yes for unattended startup" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -Eq '^userknownhostsfile /root/.ssh/director_backhaul_known_hosts($| )' || {
- echo "Use a separate trusted VPS known-hosts file" >&2; exit 3;
-}
-KNOWN="$DIR/director_backhaul_known_hosts"
-[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || {
- echo "Trusted VPS known-hosts file missing: verify fingerprint first" >&2; exit 3;
-}
-[[ -f "$DIR/director_backhaul_ed25519" && ! -L "$DIR/director_backhaul_ed25519" ]] || {
- echo "Dedicated GPU private SSH key missing" >&2; exit 3;
-}
-if [[ -e /start.d/90-director-gpu-backhaul.sh ]]; then
- echo "Existing /start.d/90-director-gpu-backhaul.sh left unchanged" >&2
- echo "Review it manually if reinstalling." >&2
- exit 4
+SOURCE="$SCRIPT_DIR/gpu-ssh-backhaul.sh"
+DEST="/usr/local/sbin/director-gpu-ssh-backhaul"
+HOOK="/start.d/90-director-gpu-backhaul.sh"
+
+[[ -f "$ROOT/config.json" && ! -L "$ROOT/config.json" ]] || fail "Installed Director V3 config missing"
+[[ -f "$ROOT/controller/start.sh" && ! -L "$ROOT/controller/start.sh" ]] || fail "Installed V3 supervisor missing"
+[[ -f "$SOURCE" && ! -L "$SOURCE" ]] || fail "GPU SSH backhaul runtime script missing"
+[[ -f "$CFG" && ! -L "$CFG" ]] || fail "Dedicated SSH config missing"
+[[ "$(stat -c '%a' "$CFG")" == "600" ]] || fail "SSH config must have mode 0600"
+[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || fail "Verify VPS host fingerprint; trusted known_hosts file missing"
+[[ -s "$KEY" && ! -L "$KEY" ]] || fail "Dedicated GPU private key missing"
+[[ "$(stat -c '%a' "$KEY")" == "600" ]] || fail "SSH private key must have mode 0600"
+command -v ssh >/dev/null || fail "OpenSSH client is missing"
+command -v flock >/dev/null || fail "flock command is missing"
+bash -n "$SOURCE" || fail "GPU SSH runtime script contains invalid Bash syntax"
+
+python3 - "$ROOT/config.json" <<'PY' || fail "Expected existing Director V3 on local port 8790"
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    config = json.load(stream)
+assert type(config.get("port")) is int and config["port"] == 8790
+assert isinstance(config.get("mcp_path"), str) and config["mcp_path"].startswith("/mcp/")
+PY
+
+# ssh -G reads the local effective alias, without connecting to the VPS.
+options="$(ssh -G -F "$CFG" director-backhaul 2>/dev/null)" || fail "Invalid SSH backhaul client configuration"
+option() { awk -v wanted="$1" '$1 == wanted { $1=""; sub(/^[[:space:]]+/, ""); print; exit }' <<< "$options"; }
+[[ "$(option user)" == "directorlink" ]] || fail "SSH must use dedicated directorlink user"
+case "$(option stricthostkeychecking)" in yes|true) ;; *) fail "StrictHostKeyChecking must be yes" ;; esac
+case "$(option batchmode)" in yes|true) ;; *) fail "BatchMode must be yes" ;; esac
+case "$(option exitonforwardfailure)" in yes|true) ;; *) fail "ExitOnForwardFailure must be yes" ;; esac
+[[ "$(option userknownhostsfile)" == "$KNOWN" ]] || fail "Use dedicated verified VPS known_hosts path"
+[[ "$(option identityfile)" == "$KEY" ]] || fail "Use dedicated backhaul private key"
+
+# Protect any previously deployed hook against accidental overwrites.
+if [[ -e "$HOOK" || -L "$HOOK" ]]; then
+    echo "Existing GPU /start.d hook preserved. Nothing was overwritten."
+    echo "Your manually installed working backhaul does not need reinstalling."
+    exit 0
 fi
-install -o root -g root -m 0750 "$SCRIPT_DIR/gpu-ssh-backhaul.sh" \
- /usr/local/sbin/director-gpu-ssh-backhaul
-install -d -o root -g root -m 0755 /start.d
-cat > /start.d/90-director-gpu-backhaul.sh <<'EOF'
+
+install -d -o root -g root -m 0755 /usr/local/sbin /start.d
+install -o root -g root -m 0750 "$SOURCE" "$DEST"
+cat > "$HOOK" <<'EOF'
 #!/usr/bin/env bash
-# CompShare /start.d auto-launch, no secrets or GPU power operations.
-/usr/local/sbin/director-gpu-ssh-backhaul --launch
+# CompShare /start.d launches a local outbound SSH reconnect watcher only.
+exec /usr/local/sbin/director-gpu-ssh-backhaul --launch
 EOF
-chown root:root /start.d/90-director-gpu-backhaul.sh
-chmod 0750 /start.d/90-director-gpu-backhaul.sh
-echo "Installed /start.d/90-director-gpu-backhaul.sh for next GPU boot."
-echo "To test now, on the GPU: bash /start.d/90-director-gpu-backhaul.sh"
-echo "The VPS must already have the dedicated restricted SSH user/key."
-echo "This installer did NOT power the GPU on/off or change ComfyUI jobs."
- || {
- echo "Pin VPS SSH host key and set StrictHostKeyChecking yes" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -qx 'batchmode yes' || {
- echo "BatchMode must be yes for unattended startup" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -q '^userknownhostsfile /root/.ssh/director_backhaul_known_hosts$' || {
- echo "Use a separate trusted VPS known-hosts file" >&2; exit 3;
-}
-KNOWN="$DIR/director_backhaul_known_hosts"
-[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || {
- echo "Trusted VPS known-hosts file missing: verify fingerprint first" >&2; exit 3;
-}
-[[ -f "$DIR/director_backhaul_ed25519" && ! -L "$DIR/director_backhaul_ed25519" ]] || {
- echo "Dedicated GPU private SSH key missing" >&2; exit 3;
-}
-if [[ -e /start.d/90-director-gpu-backhaul.sh ]]; then
- echo "Existing /start.d/90-director-gpu-backhaul.sh left unchanged" >&2
- echo "Review it manually if reinstalling." >&2
- exit 4
-fi
-install -o root -g root -m 0750 "$SCRIPT_DIR/gpu-ssh-backhaul.sh" \
- /usr/local/sbin/director-gpu-ssh-backhaul
-install -d -o root -g root -m 0755 /start.d
-cat > /start.d/90-director-gpu-backhaul.sh <<'EOF'
-#!/usr/bin/env bash
-# CompShare /start.d auto-launch, no secrets or GPU power operations.
-/usr/local/sbin/director-gpu-ssh-backhaul --launch
-EOF
-chown root:root /start.d/90-director-gpu-backhaul.sh
-chmod 0750 /start.d/90-director-gpu-backhaul.sh
-echo "Installed /start.d/90-director-gpu-backhaul.sh for next GPU boot."
-echo "To test now, on the GPU: bash /start.d/90-director-gpu-backhaul.sh"
-echo "The VPS must already have the dedicated restricted SSH user/key."
-echo "This installer did NOT power the GPU on/off or change ComfyUI jobs."
- || {
- echo "BatchMode must be yes for unattended startup" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -q '^userknownhostsfile /root/.ssh/director_backhaul_known_hosts$' || {
- echo "Use a separate trusted VPS known-hosts file" >&2; exit 3;
-}
-KNOWN="$DIR/director_backhaul_known_hosts"
-[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || {
- echo "Trusted VPS known-hosts file missing: verify fingerprint first" >&2; exit 3;
-}
-[[ -f "$DIR/director_backhaul_ed25519" && ! -L "$DIR/director_backhaul_ed25519" ]] || {
- echo "Dedicated GPU private SSH key missing" >&2; exit 3;
-}
-if [[ -e /start.d/90-director-gpu-backhaul.sh ]]; then
- echo "Existing /start.d/90-director-gpu-backhaul.sh left unchanged" >&2
- echo "Review it manually if reinstalling." >&2
- exit 4
-fi
-install -o root -g root -m 0750 "$SCRIPT_DIR/gpu-ssh-backhaul.sh" \
- /usr/local/sbin/director-gpu-ssh-backhaul
-install -d -o root -g root -m 0755 /start.d
-cat > /start.d/90-director-gpu-backhaul.sh <<'EOF'
-#!/usr/bin/env bash
-# CompShare /start.d auto-launch, no secrets or GPU power operations.
-/usr/local/sbin/director-gpu-ssh-backhaul --launch
-EOF
-chown root:root /start.d/90-director-gpu-backhaul.sh
-chmod 0750 /start.d/90-director-gpu-backhaul.sh
-echo "Installed /start.d/90-director-gpu-backhaul.sh for next GPU boot."
-echo "To test now, on the GPU: bash /start.d/90-director-gpu-backhaul.sh"
-echo "The VPS must already have the dedicated restricted SSH user/key."
-echo "This installer did NOT power the GPU on/off or change ComfyUI jobs."
- || {
- echo "Pin VPS SSH host key and set StrictHostKeyChecking yes" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -qx 'batchmode yes' || {
- echo "BatchMode must be yes for unattended startup" >&2; exit 3;
-}
-printf '%s\n' "$options" | grep -q '^userknownhostsfile /root/.ssh/director_backhaul_known_hosts$' || {
- echo "Use a separate trusted VPS known-hosts file" >&2; exit 3;
-}
-KNOWN="$DIR/director_backhaul_known_hosts"
-[[ -s "$KNOWN" && ! -L "$KNOWN" ]] || {
- echo "Trusted VPS known-hosts file missing: verify fingerprint first" >&2; exit 3;
-}
-[[ -f "$DIR/director_backhaul_ed25519" && ! -L "$DIR/director_backhaul_ed25519" ]] || {
- echo "Dedicated GPU private SSH key missing" >&2; exit 3;
-}
-if [[ -e /start.d/90-director-gpu-backhaul.sh ]]; then
- echo "Existing /start.d/90-director-gpu-backhaul.sh left unchanged" >&2
- echo "Review it manually if reinstalling." >&2
- exit 4
-fi
-install -o root -g root -m 0750 "$SCRIPT_DIR/gpu-ssh-backhaul.sh" \
- /usr/local/sbin/director-gpu-ssh-backhaul
-install -d -o root -g root -m 0755 /start.d
-cat > /start.d/90-director-gpu-backhaul.sh <<'EOF'
-#!/usr/bin/env bash
-# CompShare /start.d auto-launch, no secrets or GPU power operations.
-/usr/local/sbin/director-gpu-ssh-backhaul --launch
-EOF
-chown root:root /start.d/90-director-gpu-backhaul.sh
-chmod 0750 /start.d/90-director-gpu-backhaul.sh
-echo "Installed /start.d/90-director-gpu-backhaul.sh for next GPU boot."
-echo "To test now, on the GPU: bash /start.d/90-director-gpu-backhaul.sh"
-echo "The VPS must already have the dedicated restricted SSH user/key."
-echo "This installer did NOT power the GPU on/off or change ComfyUI jobs."
+chown root:root "$HOOK"
+chmod 0750 "$HOOK"
+bash -n "$HOOK"
+echo "SUCCESS: GPU SSH backhaul boot hook installed."
+echo "Test it locally: bash /start.d/90-director-gpu-backhaul.sh"
+echo "No GPU provider power, DNS, or ComfyUI jobs were changed."
