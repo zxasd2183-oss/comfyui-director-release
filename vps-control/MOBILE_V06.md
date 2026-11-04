@@ -1,5 +1,9 @@
 # 吉皮提 V0.6 Android 原生审批器
 
+**国行小米适配说明（当前首选）：** 中国大陆 HyperOS/MIUI 优先使用**小米官方 Mi Push AAR + 审核通过的 2026 channel/template**，而不是 FCM。Windows APK 构建准备脚本、SDK 依赖和真实凭证清单位于 [国行小米 Mi Push 专项指南](../android-jipite/XIAOMI_PUSH.md) 和 [prepare-xiaomi.ps1](../android-jipite/prepare-xiaomi.ps1)。VPS 需要仅在本机保存 root-only 的 AppSecret 以及经过审批的 channel_id/template_id JSON；V0.6 服务正常运行不依赖小米推送成功，App 仍可人工刷新待审批。旧 TOTP 网页作为紧急回退保留。
+
+
+
 这是已提交 GitHub 的源码和部署工程，**不是已在手机或 VPS 安装好的正式 APK**。日常使用不需要审批网页。旧 V0.3 手机 TOTP 审批网页先保留作为故障恢复入口，直到 V0.6 真正验证通过。
 
 ## 操作流程
