@@ -54,4 +54,4 @@ jobs:
         shell: bash
         working-directory: android-jipite
         run: |
-          gradle :app:assembleGoogleDebug --no-daemon --stacktrace
+          gradle :app:assembleGoogleDebug -PenableFirebase=true --no-daemon --stacktrace
