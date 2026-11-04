@@ -6,6 +6,8 @@ on:
     paths:
       - 'scripts/recover_gpu_v3.py'
       - 'scripts/test_recover_gpu_v3.py'
+      - 'scripts/gpu-named-tunnel-boot.sh'
+      - 'scripts/install_gpu_named_tunnel.sh'
       - '.github/workflows/ci-gpu-recovery.yml'
   workflow_dispatch:
 
@@ -22,5 +24,6 @@ jobs:
           python-version: '3.12'
       - name: Compile and test GPU boot recovery (offline, no GPU commands)
         run: |
+          bash -n scripts/gpu-named-tunnel-boot.sh scripts/install_gpu_named_tunnel.sh
           python -m py_compile scripts/recover_gpu_v3.py scripts/test_recover_gpu_v3.py
           python -m unittest scripts.test_recover_gpu_v3 -v
