@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m py_compile api.py app.py check_status.py bridge.py power_ops.py powerctl.py power_v03.py power_write_mcp.py power_approval_http.py
+          python -m py_compile api.py app.py check_status.py bridge.py power_ops.py powerctl.py power_v03.py power_write_mcp.py power_approval_http.py enroll_totp.py
           python -m unittest discover -s tests -v
           bash -n install-ubuntu.sh
           bash -n install-bridge.sh
