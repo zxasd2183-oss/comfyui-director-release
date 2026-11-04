@@ -42,7 +42,7 @@ def validate_push_token(token: str) -> None:
     """
     if not isinstance(token, str) or len(token) > 2048:
         raise Rejected("push_token_invalid")
-    if token.startswith("xm:") and not re.fullmatch(r"xm:[A-Za-z0-9_-]{8,256}", token):
+    if token.startswith("xm:") and not re.fullmatch(r"xm:[A-Za-z0-9_+=/-]{8,256}", token):
         raise Rejected("push_token_invalid")
 
 
