@@ -1,0 +1,61 @@
+name: Notify Jipite VPS immediately after signed release
+
+on:
+  workflow_run:
+    workflows:
+      - Build Jipite APK on GitHub
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  notify-vps:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Notify VPS via short-lived GitHub OIDC identity
+        shell: bash
+        env:
+          NOTIFY_URL: https://jipite.borealos.cn/app-updates/notify
+          OIDC_AUDIENCE: jipite-vps-update-sync
+        run: |
+          set -euo pipefail
+          # GitHub issues a short-lived OIDC JWT scoped to this Actions job.
+          # No VPS SSH key, shared webhook secret, keystore, Microsoft token
+          # or GPU credential is stored or passed to this workflow.
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          token_response="$(curl -fsS --max-time 10 \
+            --get --data-urlencode "audience=${OIDC_AUDIENCE}" \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}")"
+          token="$(printf '%s' "$token_response" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin)["value"])')"
+          test -n "$token"
+          # The VPS accepts only the verified GitHub OIDC identity from this
+          # exact workflow on main, then runs its already installed *read-only*
+          # signed APK mirror. It never accepts a URL or APK upload.
+          status="$(curl -sS --max-time 18 --connect-timeout 7 \
+            --retry 2 --retry-delay 3 --retry-all-errors \
+            -o "$RUNNER_TEMP/vps-result.json" -w '%{http_code}' \
+            -X POST "$NOTIFY_URL" \
+            -H "Authorization: Bearer ${token}" \
+            -H "Content-Type: application/json" \
+            --data '{}')"
+          echo "VPS notify HTTP status: $status"
+          if [[ "$status" != "202" ]]; then
+            echo "::error::Immediate VPS sync notification failed; hourly timer remains the fallback."
+            exit 1
+          fi
+          echo "VPS accepted immediate update sync notification." >> "$GITHUB_STEP_SUMMARY"
+          echo "The VPS verifies signed Releases and publishes its static HTTPS manifest." >> "$GITHUB_STEP_SUMMARY"
