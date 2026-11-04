@@ -1,5 +1,5 @@
 name: Build Jipite APK on GitHub
-run-name: Jipite V0.7 beta readiness APK (${{ github.event_name }})
+run-name: Jipite V0.8 release candidate (${{ github.event_name }})
 
 on:
   push:
@@ -106,7 +106,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.mode == 'preview'
         uses: actions/upload-artifact@v4
         with:
-          name: Jipite-V0.7-MuMu-readiness-preview
+          name: Jipite-V0.8-MuMu-safe-preview
           path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
           retention-days: 30
           if-no-files-found: error
@@ -115,7 +115,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'connected'
         uses: actions/upload-artifact@v4
         with:
-          name: Jipite-V0.7-Microsoft-connected-signed
+          name: Jipite-V0.8-Microsoft-connected-signed
           path: android-jipite/app/build/outputs/apk/manual/release/app-manual-release.apk
           retention-days: 30
           if-no-files-found: error

@@ -47,8 +47,8 @@ android {
         applicationId = "cn.borealos.jipite"
         minSdk = 30
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.7.0-beta1"
+        versionCode = 4
+        versionName = "0.8.0-rc1"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

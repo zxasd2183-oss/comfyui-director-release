@@ -1,4 +1,6 @@
-# 吉皮提 Android V0.6
+# 吉皮提 Android V0.8 RC1
+
+**最新统一构建与部署说明：** [V0.8 一次性配置及交付路线](./SHIP_V08.md)；[GitHub Actions 下载指南](./GITHUB_BUILD.md)。
 
 Android Studio Kotlin 项目（Android 11+，API 30+）。手机直接收 GPU 操作推送，点击通知后在 App 中看清开机/关机动作，指纹或强安全等级面容签名批准/拒绝。
 

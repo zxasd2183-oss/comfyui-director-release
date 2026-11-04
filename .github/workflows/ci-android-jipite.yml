@@ -1,4 +1,4 @@
-name: Build Jipite Android V0.6 (placeholder identity only)
+name: Test Jipite Android debug and signed-release source
 
 on:
   push:
@@ -50,6 +50,10 @@ jobs:
             "configuration_version": "1"
           }
           EOF
+      - name: Test Microsoft Android signing/configuration helper
+        shell: bash
+        working-directory: android-jipite
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Compile manual Android APK (no Xiaomi/Google SDK)
         shell: bash
         working-directory: android-jipite
@@ -62,8 +66,35 @@ jobs:
           path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
           retention-days: 7
           if-no-files-found: error
-      - name: Compile Android source (NOT a deployable authenticated APK)
+      - name: Compile Google Android source (NOT a deployable authenticated APK)
         shell: bash
         working-directory: android-jipite
         run: |
           gradle :app:assembleGoogleDebug -PenableFirebase=true --no-daemon --stacktrace
+
+      - name: Rehearse signed Android release with disposable identity (never published)
+        working-directory: android-jipite
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This test key is ephemeral and must NEVER be used for a user APK.
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          export JIPITE_SIGNING_STORE_PASSWORD=local-ci-only
+          export JIPITE_SIGNING_KEY_PASSWORD=local-ci-only
+          export JIPITE_SIGNING_KEY_ALIAS=ci-ephemeral
+          export JIPITE_SIGNING_KEYSTORE_FILE="$tmp/disposable.p12"
+          keytool -genkeypair -storetype PKCS12 -keystore "$JIPITE_SIGNING_KEYSTORE_FILE" \
+            -storepass:env JIPITE_SIGNING_STORE_PASSWORD \
+            -keypass:env JIPITE_SIGNING_KEY_PASSWORD -alias "$JIPITE_SIGNING_KEY_ALIAS" \
+            -keyalg EC -groupname secp256r1 -validity 1 -dname "CN=CI Disposable" -noprompt
+          keytool -exportcert -keystore "$JIPITE_SIGNING_KEYSTORE_FILE" \
+            -alias "$JIPITE_SIGNING_KEY_ALIAS" -storepass:env JIPITE_SIGNING_STORE_PASSWORD \
+            -file "$tmp/disposable.cer" >/dev/null
+          export SIGNATURE_HASH="$(openssl dgst -sha1 -binary "$tmp/disposable.cer" | openssl base64 -A)"
+          export JIPITE_MS_CLIENT_ID=11111111-1111-4111-8111-111111111111
+          python3 scripts/configure_msal.py
+          gradle :app:assembleManualRelease --no-daemon --stacktrace
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose \
+            app/build/outputs/apk/manual/release/app-manual-release.apk
+          # No release artifact upload: Microsoft ID and signing key above are fake.

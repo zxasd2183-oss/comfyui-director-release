@@ -56,7 +56,7 @@ class MainActivity : FragmentActivity() {
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         buildUi()
         if (isOfflinePreview) {
-            setStatus("V0.7 MuMu 离线演示：不会连接微软、VPS 或 GPU")
+            setStatus("V0.8 MuMu 离线演示：不会连接微软、VPS 或 GPU")
             return
         }
         if (!microsoftConfigured()) {
@@ -146,10 +146,10 @@ class MainActivity : FragmentActivity() {
         if (isOfflinePreview) {
             line("【离线演示 / MuMu 测试】所有申请与决策均为本地模拟，不会控制 GPU", 17f)
         } else {
-            line("【V0.7 联机准备版】仅已完成微软注册、设备绑定和生物识别时才能批准真实申请", 15f)
+            line("【V0.8 联机准备版】仅已完成微软注册、设备绑定和生物识别时才能批准真实申请", 15f)
         }
         status = line("初始化中……", 15f)
-        button("查看 V0.7 接入准备清单") { readiness.text = readinessReport() }
+        button("查看 V0.8 接入准备清单") { readiness.text = readinessReport() }
         readiness = line("点击上方按钮检查本地配置（不访问网络）", 14f)
         if (!isOfflinePreview) {
             button("检测 VPS HTTPS 审批接口（不需要登录）") {
@@ -362,7 +362,7 @@ class MainActivity : FragmentActivity() {
             denyButton.isEnabled = false
             return
         }
-        val title = if (action == "start") "启动 RTX 5090" else "关闭 RTX 5090"
+        val title = if (action == "start") "启动 GPU 实例" else "关闭 GPU 实例"
         val warning = if (action == "start") "审批后可能产生 GPU 租赁费用"
                       else "请先确认任务结束、文件已保存到持久化存储"
         detail.text = title + "\n" + warning + "\n申请：" +
@@ -405,47 +405,83 @@ class MainActivity : FragmentActivity() {
             .show()
     }
 
+    /**
+     * The bytes received from the VPS must be exactly the canonical payload
+     * for the action that was displayed. Never sign arbitrary server-provided
+     * Base64, even over HTTPS.
+     */
+    private fun challengeMatches(
+        challenge: JSONObject, item: JSONObject, decision: String, deviceId: String
+    ): Boolean {
+        val requestId = item.optString("request_id")
+        val action = item.optString("action")
+        val expiry = challenge.optLong("expires_at")
+        val now = System.currentTimeMillis() / 1000
+        val nonce = challenge.optString("nonce")
+        if (requestId.length !in 20..80) return false
+        if (action !in setOf("start", "stop") || decision !in setOf("approve", "deny")) return false
+        if (!nonce.matches(Regex("[A-Za-z0-9_-]{24,96}"))) return false
+        if (expiry <= now || expiry > now + 90 || expiry > item.optLong("expires_at")) return false
+        if (challenge.optString("request_id") != requestId ||
+            challenge.optString("action") != action ||
+            challenge.optString("decision") != decision) return false
+        val canonical = (
+            "JIPITE-V0.6\n" + requestId + "\n" + action + "\n" + decision +
+                "\n" + nonce + "\n" + expiry + "\n" + deviceId
+        ).toByteArray(Charsets.US_ASCII)
+        val received = try {
+            Base64.decode(challenge.getString("payload_b64"), Base64.DEFAULT)
+        } catch (_: Exception) { return false }
+        return received.contentEquals(canonical)
+    }
+
     private fun requestDecision(decision: String) {
         if (isOfflinePreview) return confirmOfflineDecision(decision)
         if (!microsoftConfigured()) return setStatus("未配置正式微软身份，禁止审批")
         val item = current ?: return setStatus("没有待审批申请")
-        val rid = item.optString("request_id")
+        val requestId = item.optString("request_id")
         val action = item.optString("action")
-        if (action !in setOf("start", "stop") || decision !in setOf("approve", "deny")) {
-            return setStatus("未知操作类型；拒绝发起审批")
+        if (action !in setOf("start", "stop") || decision !in setOf("approve", "deny") ||
+            requestId.length !in 20..80) {
+            return setStatus("操作信息异常，禁止审批")
         }
         val id = deviceId() ?: return setStatus("设备未绑定")
-        if (System.currentTimeMillis()/1000 >= item.optLong("expires_at")) {
-            return setStatus("申请已过期，请在 ChatGPT 创建新申请")
+        if (System.currentTimeMillis() / 1000 >= item.optLong("expires_at")) {
+            return setStatus("申请已过期，请重新刷新")
         }
-        // The API creates a NEW one-time nonce and server-bound canonical payload.
-        withMicrosoftToken { token ->
-            MobileApi.post("challenge", token, JSONObject()
-                .put("device_id", id).put("request_id", rid).put("decision", decision)) { response ->
-                present(response) { challenge ->
-                    if (challenge.optString("request_id") != rid ||
-                        challenge.optString("action") != action ||
-                        challenge.optString("decision") != decision) {
-                        return@present setStatus("服务器操作信息不匹配，拒绝签名")
+        val verb = if (decision == "approve") "批准" else "拒绝"
+        val operation = if (action == "start") "启动 GPU（可能计费）" else "关闭 GPU（可能丢失数据）"
+        AlertDialog.Builder(this)
+            .setTitle("确认$verb$operation？")
+            .setMessage("请核对申请编号：$requestId\n下一步需使用强生物识别签名，取消不会执行操作。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("继续验证") { _, _ ->
+                // Fetch a fresh challenge only after a deliberate confirmation.
+                withMicrosoftToken { token ->
+                    MobileApi.post("challenge", token, JSONObject()
+                        .put("device_id", id)
+                        .put("request_id", requestId)
+                        .put("decision", decision)) { response ->
+                        present(response) { challenge ->
+                            if (!challengeMatches(challenge, item, decision, id)) {
+                                return@present setStatus("挑战内容、时效或操作信息不一致，拒绝签名")
+                            }
+                            val signature = try { ApprovalKey.signatureForBiometric() }
+                                            catch (_: Exception) {
+                                                return@present setStatus("审批密钥不可用，请检查生物识别状态")
+                                            }
+                            askBiometric(signature, challenge, token, id, decision)
+                        }
                     }
-                    if (System.currentTimeMillis()/1000 >= challenge.optLong("expires_at")) {
-                        return@present setStatus("挑战已过期，重新刷新")
-                    }
-                    val signature = try { ApprovalKey.signatureForBiometric() }
-                                    catch (e: Exception) {
-                                        return@present setStatus("审批密钥无法使用，请检查生物识别是否变更")
-                                    }
-                    askBiometric(signature, challenge, token, id, decision)
                 }
-            }
-        }
+            }.show()
     }
 
     private fun askBiometric(signature: Signature, challenge: JSONObject, token: String,
                              id: String, decision: String) {
         val action = challenge.optString("action")
         val verb = if (decision == "deny") "拒绝" else "批准"
-        val title = if (action == "start") "启动 RTX 5090" else "关闭 RTX 5090"
+        val title = if (action == "start") "启动 GPU 实例" else "关闭 GPU 实例"
         val prompt = BiometricPrompt(
             this, ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {

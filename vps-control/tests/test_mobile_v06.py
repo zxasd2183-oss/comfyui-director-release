@@ -93,6 +93,33 @@ class MobileApprovalTests(unittest.TestCase):
                           submit_fn=lambda *_:self.fail("no submit"))
         self.assertEqual(out["state"],"blocked")
 
+    def test_config_loader_is_lazy_on_deny_and_called_once_after_signed_approve(self):
+        deny_info, deny_sig = self.make_signed(self.stop(), "deny")
+        def no_config():
+            raise AssertionError("Deny must not fetch cloud power configuration")
+        result = decide(
+            SUBJECT, self.device, deny_info["request_id"], deny_info["nonce"], deny_sig,
+            "deny", no_config, db_path=self.path, now=NOW + 2,
+            plan_fn=lambda *_: self.fail("Deny must not preflight"),
+            submit_fn=lambda *_: self.fail("Deny must not submit")
+        )
+        self.assertEqual(result["state"], "denied")
+        approve_info, approve_sig = self.make_signed(self.start())
+        loads = []
+        def config_loader():
+            loads.append("load")
+            return {"offline": True}
+        def plan(action, config):
+            self.assertEqual(config, {"offline": True})
+            return {"allowed": False}
+        result = decide(
+            SUBJECT, self.device, approve_info["request_id"], approve_info["nonce"],
+            approve_sig, "approve", config_loader, db_path=self.path, now=NOW + 2,
+            plan_fn=plan, submit_fn=lambda *_: self.fail("blocked action must not submit")
+        )
+        self.assertEqual(result["state"], "blocked")
+        self.assertEqual(loads, ["load"])
+
     def test_pairing_once_only_and_wrong_user_denied(self):
         with self.assertRaises(Rejected):
             enroll(SUBJECT,PAIR,PAIR,base64.b64encode(self.der).decode(),
