@@ -74,6 +74,31 @@ class GlacierOIDCTests(unittest.TestCase):
         payload["event_name"]="workflow_dispatch"
         self.assertEqual(self.verify(payload)["event_name"],"workflow_dispatch")
 
+    def test_valid_explicit_main_manual_identity(self):
+        payload=self.payload()
+        payload["ref"]="refs/heads/main"
+        payload["workflow_ref"]=oidc.MANUAL_WORKFLOW_REF
+        payload["sub"]=oidc.MAIN_SUBJECT
+        payload["event_name"]="workflow_dispatch"
+        self.assertEqual(self.verify(payload)["ref"],"refs/heads/main")
+
+    def test_reject_main_manual_on_push(self):
+        payload=self.payload()
+        payload["ref"]="refs/heads/main"
+        payload["workflow_ref"]=oidc.MANUAL_WORKFLOW_REF
+        payload["sub"]=oidc.MAIN_SUBJECT
+        with self.assertRaises(oidc.AuthenticationFailure):
+            self.verify(payload)
+
+    def test_reject_main_manual_claim_with_release_workflow(self):
+        payload=self.payload()
+        payload["ref"]="refs/heads/main"
+        payload["workflow_ref"]=oidc.WORKFLOW_REF
+        payload["sub"]=oidc.MAIN_SUBJECT
+        payload["event_name"]="workflow_dispatch"
+        with self.assertRaises(oidc.AuthenticationFailure):
+            self.verify(payload)
+
     def test_wrong_audience_denied(self):
         self.assert_rejected("aud","jipite-vps-update-sync")
 
