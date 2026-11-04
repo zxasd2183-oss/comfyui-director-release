@@ -173,10 +173,23 @@ jobs:
             echo ""
             echo "The manual build does not require the pending Mi Push vendor review."
             echo "GPU provider power permissions and existing TOTP backup remain unchanged."
-            echo "See android-jipite/XIAOMI_DEVICE_V010.md for prerequisites and limitations."
+            echo "Keystore diagnostic updates: safe error codes, read-only key"
+            echo "hardware/auth enforcement report, and no deletion of existing keys."
+            echo "See android-jipite/KEYSTORE_DIAG_V0101.md for verification steps."
           } > dist/release-notes.md
+          # GitHub's 2026 release API forbids GITHUB_TOKEN targeting a commit
+          # whose workflow files differ from the CURRENT default branch.
+          # Only retarget to main after verifying the signed APK's Android
+          # source and signing workflow have NOT changed since this run.
+          git fetch --no-tags origin main
+          release_commit="$(git rev-parse FETCH_HEAD)"
+          if ! git diff --quiet "$GITHUB_SHA" "$release_commit" -- \
+              android-jipite/ .github/workflows/build-jipite-apk.yml; then
+            echo "::error::Android build inputs changed after this run; refusing mismatched APK publication."
+            exit 8
+          fi
           gh release create "$TAG" "dist/$binary" \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --repo "$GITHUB_REPOSITORY" --target "$release_commit" \
             --title "吉皮提 v$VERSION · Fluent" \
             --notes-file dist/release-notes.md --prerelease
           echo "Published $TAG, SHA-256:" >> "$GITHUB_STEP_SUMMARY"
