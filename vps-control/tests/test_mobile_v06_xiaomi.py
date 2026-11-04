@@ -22,12 +22,17 @@ class Response:
 class XiaomiPushTests(unittest.TestCase):
     REQUEST = "test-request-1234567890abcde"
 
+    def push(self, *args, **kwargs):
+        kwargs.setdefault("channel_id", "130")
+        kwargs.setdefault("template_id", "1002")
+        return send_xiaomi(*args, **kwargs)
+
     def test_mainland_rest_contract_no_power_authority(self):
         calls = []
         def transport(req, timeout):
             calls.append((req, timeout))
             return Response({"result": "ok", "code": 0})
-        send_xiaomi("abcdefgh1234567890", self.REQUEST, "start", "secret-ABCDEFG", 50000, transport)
+        self.push("abcdefgh1234567890", self.REQUEST, "start", "secret-ABCDEFG", 50000, transport)
         self.assertEqual(len(calls), 1)
         req, timeout = calls[0]
         self.assertEqual(req.full_url, URL)
@@ -37,6 +42,10 @@ class XiaomiPushTests(unittest.TestCase):
         self.assertEqual(body["registration_id"], ["abcdefgh1234567890"])
         self.assertEqual(body["restricted_package_name"], ["cn.borealos.jipite"])
         self.assertEqual(body["time_to_live"], ["50000"])
+        self.assertEqual(body["extra.channel_id"], ["130"])
+        self.assertEqual(body["extra.template_id"], ["1002"])
+        self.assertEqual(body["extra.template_param"], ["{}"])
+        self.assertEqual(body["pass_through"], ["0"])
         payload = json.loads(body["payload"][0])
         self.assertEqual(payload["kind"], "gpu-approval")
         self.assertEqual(payload["action"], "start")
@@ -49,19 +58,31 @@ class XiaomiPushTests(unittest.TestCase):
         def transport(req, timeout):
             body.append(parse_qs(req.data.decode()))
             return Response({"result": "ok", "code": 0})
-        send_xiaomi("abcdefgh1234567890", self.REQUEST, "stop", "secret-ABCDEFG", 999999, transport)
+        self.push("abcdefgh1234567890", self.REQUEST, "stop", "secret-ABCDEFG", 999999, transport)
         self.assertEqual(body[0]["time_to_live"], ["300000"])
 
     def test_provider_rejection_is_not_delivery(self):
         with self.assertRaises(RuntimeError):
-            send_xiaomi("abcdefgh1234567890", self.REQUEST, "start",
+            self.push("abcdefgh1234567890", self.REQUEST, "start",
                         "secret-ABCDEFG", transport=lambda req,timeout:Response(
                             {"result":"error","code":65015}))
 
     def test_invalid_regid_rejected_without_http(self):
         with self.assertRaises(ValueError):
-            send_xiaomi("abc;/", self.REQUEST, "start", "secret-ABCDEFG",
+            self.push("abc;/", self.REQUEST, "start", "secret-ABCDEFG",
                         transport=lambda *_:self.fail("HTTP must not run"))
+
+    def test_unapproved_channel_cannot_send(self):
+        with self.assertRaises(ValueError):
+            send_xiaomi("abcdefgh1234567890", self.REQUEST, "start",
+                        "secret-ABCDEFG", transport=lambda *_:self.fail("HTTP forbidden"))
+
+    def test_real_regid_with_plus_slash_equals(self):
+        sent=[]
+        self.push("a+b/c=dEF0123456789", self.REQUEST, "stop",
+                  "secret-ABCDEFG", transport=lambda req,timeout:(sent.append(req) or Response(
+                      {"result":"ok","code":0})))
+        self.assertEqual(parse_qs(sent[0].data.decode())["registration_id"],["a+b/c=dEF0123456789"])
 
     def test_token_prefix_and_dispatch(self):
         calls = []
@@ -76,6 +97,7 @@ class XiaomiPushTests(unittest.TestCase):
         with self.assertRaises(Rejected):
             validate_push_token("xm:bad;evil")
         validate_push_token("xm:abcdefgh1234567890")
+        validate_push_token("xm:abcdefgh+12/34=567890")
 
 
 if __name__ == "__main__":
