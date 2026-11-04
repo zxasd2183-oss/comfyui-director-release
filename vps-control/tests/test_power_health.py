@@ -17,6 +17,21 @@ class HealthTests(unittest.TestCase):
                          ["COMP_PRIVATE_KEY","COMP_ZONE"])
         self.assertNotIn("private-value",str(result))
 
+    def test_mode_diagnostic_does_not_return_file_contents(self):
+        import os
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            file = Path(d) / "directorenv"
+            file.write_text("SECRET_TOKEN=do-not-return", encoding="ascii")
+            file.chmod(0o644)
+            with patch.dict(os.environ, {"DIRECTOR_POWER_CONFIG": str(file),
+                                        "CREDENTIALS_DIRECTORY": d}):
+                result = self.classify("Credential file permissions must be 0600")
+            self.assertEqual(result["runtime_file_mode"], "0644")
+            self.assertTrue(result["loaded_via_systemd"])
+            self.assertNotIn("do-not-return",str(result))
+
     def test_invalid_mode(self):
         result=self.classify("Credential file permissions must be 0600")
         self.assertEqual(result["reason"],"credential_file_permissions_too_open")
