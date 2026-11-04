@@ -72,7 +72,7 @@ fi
 if [[ -e "$XIAOMI" ]]; then
   [[ -f "$XIAOMI" && ! -L "$XIAOMI" ]] || { echo "Refusing unsafe Xiaomi credential file"; exit 4; }
   chown root:root "$XIAOMI"; chmod 0600 "$XIAOMI"
-  printf '[Service]\\nLoadCredential=xiaomi:%s\\n' "$XIAOMI" > /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
+  printf '[Service]\nLoadCredential=xiaomi:%s\n' "$XIAOMI" > /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
   echo "Xiaomi Mi Push will be enabled with existing server-only credential."
 else
   rm -f /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
