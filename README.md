@@ -14,9 +14,9 @@
 
 ## 固定域名 borealos.cn（推荐，不再重复配置）
 
-[一次性配置 Cloudflare Named Tunnel + GPU/VPS 自启动](./FIXED_DOMAIN.md)：
+[一次性配置阿里云 DNS + 自有 VPS HTTPS + GPU 出站 SSH 反向隧道](./FIXED_DOMAIN.md)：
 `director.borealos.cn`、`status.borealos.cn`、`power.borealos.cn`、`approve.borealos.cn`。
-这四个 DNS 主机名需要在 Cloudflare 真正创建并验证，不能只修改文档。此方案取代每次重新创建 `trycloudflare.com` 临时链接。
+这四个 DNS 主机名应在阿里云 DNS 配置为指向自有广州 VPS 的 A 记录，**不是出租 GPU**；并先确认中国内地服务器的 ICP 备案要求。原 Cloudflare Named Tunnel 提议已弃用，当前方案不依赖 Cloudflare。DNS/HTTPS/SSH 反向隧道尚未真正部署，不能只修改文档。
 
 ## GPU 再次开机后：一键恢复 V3 连接
 
