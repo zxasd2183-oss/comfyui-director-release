@@ -59,3 +59,38 @@ jobs:
             echo "No credentials, login tokens, pairing secrets, device IDs or cloud operations were used."
           } >> "$GITHUB_STEP_SUMMARY"
           # Report the diagnostic result without breaking source CI.
+      - name: Check Jipite VPS update manifest (read-only, no authentication)
+        shell: bash
+        run: |
+          set -u
+          url=https://jipite.borealos.cn/app-updates/latest.json
+          echo "Checking owner-hosted Android update manifest"
+          status=$(curl --silent --show-error --max-time 15 \
+            --output "$RUNNER_TEMP/jipite_latest.json" --write-out '%{http_code}' "$url")
+          rc=$?
+          if [ "$rc" -ne 0 ] || [ "$status" != "200" ]; then
+            echo "UPDATE_VERDICT=UNAVAILABLE http_status=$status curl_exit=$rc"
+            exit 0
+          fi
+          python3 - "$RUNNER_TEMP/jipite_latest.json" <<'PY'
+          import json,re,sys
+          try:
+              with open(sys.argv[1], encoding="utf-8") as fh:
+                  metadata=json.load(fh)
+              version=metadata.get("version", "")
+              valid=(metadata.get("schema")==1 and
+                     isinstance(version,str) and
+                     re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) and
+                     metadata.get("asset")==f"Jipite-v{version}-Microsoft-connected.apk" and
+                     re.fullmatch("[a-f0-9]{64}", metadata.get("sha256","")) and
+                     isinstance(metadata.get("size"),int) and
+                     100000 <= metadata["size"] <= 100000000)
+              if not valid: raise ValueError("invalid manifest fields")
+              print("UPDATE_VERDICT=OK_STATIC_VPS_MANIFEST")
+              print("UPDATE_VERSION="+version)
+              print("UPDATE_SIZE="+str(metadata["size"]))
+              with open(__import__("os").environ["GITHUB_STEP_SUMMARY"],"a") as out:
+                  out.write(f"\\n## Owner-hosted Android update mirror\\n- **HTTP:** 200\\n- **Version:** {version}\\n- **Manifest:** validated\\n")
+          except Exception as e:
+              print("UPDATE_VERDICT=INVALID_PUBLIC_MANIFEST", type(e).__name__)
+          PY
