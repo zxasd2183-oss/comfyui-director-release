@@ -20,9 +20,9 @@ PACKAGE = "cn.borealos.jipite"
 def send_xiaomi(reg_id: str, request_id: str, action: str,
                 app_secret: str, ttl_ms: int = 300000, transport=None) -> None:
     """Raise on failure. Notify worker safely retries with backoff."""
-    if not isinstance(reg_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,256}", reg_id):
+    if not isinstance(reg_id, str) or not re.fullmatch(r"[A-Za-z0-9_+=/-]{8,256}", reg_id):
         raise ValueError("invalid Xiaomi registration ID")
-    if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", request_id):
+    if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_+=/-]{20,80}", request_id):
         raise ValueError("invalid request")
     if action not in ("start", "stop"):
         raise ValueError("invalid action")
