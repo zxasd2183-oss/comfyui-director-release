@@ -47,7 +47,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_modified_url(self):
         m=self.signed()
-        m["url"]=m["url"].replace("github.com","evil.example")
+        m["url"]=m["url"].replace("jipite.borealos.cn","evil.example")
         with self.assertRaises(u.UpdateError):self.check(m)
 
     def test_wrong_channel(self):
