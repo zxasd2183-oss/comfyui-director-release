@@ -1,4 +1,4 @@
-"""In-app Mac updater: checks/downloads signed DMGs through the built-in VLESS."""
+"""In-app Mac updater: signed DMGs from the pinned owner-controlled HTTPS VPS."""
 from __future__ import annotations
 import json
 import subprocess
@@ -49,7 +49,7 @@ class MacUpdateUI:
         dlg.resize(460,270)
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel(f"❄ Glacier Browser  ·  macOS Apple Silicon v{CURRENT_VERSION}"))
-        lay.addWidget(QLabel("更新通道：macos-arm64  ·  Ed25519 数字签名校验"))
+        lay.addWidget(QLabel("更新通道：VPS / macos-arm64  ·  Ed25519 验签"))
         status = QLabel("点击「检查更新」获取最新版本。")
         status.setWordWrap(True)
         lay.addWidget(status)
@@ -76,7 +76,8 @@ class MacUpdateUI:
         auto_download.toggled.connect(lambda v:self._save_mac_setting("auto_download",v))
         lay.addWidget(auto_check)
         lay.addWidget(auto_download)
-        lay.addWidget(QLabel("未进行 Apple Developer ID 签名/公证；安装时需在 Finder 中确认。"))
+        lay.addWidget(QLabel("只向 jipite.borealos.cn 直连更新；网页流量仍走 VLESS。"))
+        lay.addWidget(QLabel("未进行 Apple Developer ID 签名/公证，安装时需确认。"))
         self._mac_dialog=dlg
         self._mac_status=status
         self._mac_progress=progress
@@ -101,10 +102,6 @@ class MacUpdateUI:
         self._mac_dialog.raise_()
         self._mac_dialog.activateWindow()
 
-    def _proxy_usable(self):
-        proc=getattr(self,"proc",None)
-        return (proc is not None and proc.poll() is None
-                and type(getattr(self,"proxy_port",None)) is int)
 
     def _set_busy(self,value):
         self._mac_update_busy=value
@@ -115,16 +112,12 @@ class MacUpdateUI:
 
     def check_mac_updates(self,show_ui=True):
         if self._mac_update_busy:return
-        if not self._proxy_usable():
-            self._mac_status.setText("VLESS 代理未运行，已禁止直连检查更新。")
-            if show_ui:self.show_mac_updates()
-            return
         self._mac_installer=None
         self._mac_manifest=None
         self._set_busy(True)
-        self._mac_status.setText("正在通过 VLESS 检查 Mac 更新…")
+        self._mac_status.setText("正在通过私人 VPS 检查 Mac 更新…")
         if show_ui:self.show_mac_updates()
-        port=self.proxy_port
+        port=getattr(self,"proxy_port",0)
         def job():
             try:
                 manifest=get_manifest(port)
@@ -151,14 +144,11 @@ class MacUpdateUI:
 
     def download_mac_update(self):
         if self._mac_update_busy or self._mac_manifest is None:return
-        if not self._proxy_usable():
-            self._mac_status.setText("VLESS 已断开，禁止直连下载。")
-            return
         self._mac_progress.setValue(0)
         self._set_busy(True)
-        self._mac_status.setText("正在通过 VLESS 下载并验证新版 DMG…")
+        self._mac_status.setText("正在从私人 VPS 下载并验证新版 DMG…")
         manifest=self._mac_manifest.copy()
-        port=self.proxy_port
+        port=getattr(self,"proxy_port",0)
         def job():
             try:
                 path=download_dmg(manifest,port,self._mac_update_dir,
