@@ -46,7 +46,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        hintRequestId = intent?.getStringExtra("request_id")
+        hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         buildUi()
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -99,7 +99,7 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        hintRequestId = intent.getStringExtra("request_id")
+        hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         refresh()
     }
 
