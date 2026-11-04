@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/glacier-macos-oidc-sync
+      - feature/glacier-macos-oidc-manual
     paths:
       - 'vps-control/glacier_oidc.py'
       - 'vps-control/glacier-macos-immediate-notify.py'
