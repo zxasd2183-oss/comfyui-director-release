@@ -1,0 +1,63 @@
+name: Validate borealos.cn Nginx snippets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vps-control/nginx-alidns/**"
+      - ".github/workflows/ci-nginx-alidns.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nginx for isolated syntax validation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx
+      - name: Test four isolated 443-server snippets (no real certificates)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo touch /etc/nginx/.director-approve.htpasswd
+          conf="$RUNNER_TEMP/borealos-test.conf"
+          cat > "$conf" <<EOF
+          events {}
+          http {
+            server {
+              listen 127.0.0.1:18901;
+              server_name director.borealos.cn;
+              include $GITHUB_WORKSPACE/vps-control/nginx-alidns/director.conf;
+              location / { return 200 'placeholder'; }
+            }
+            server {
+              listen 127.0.0.1:18902;
+              server_name status.borealos.cn;
+              include $GITHUB_WORKSPACE/vps-control/nginx-alidns/status.conf;
+              location / { return 200 'placeholder'; }
+            }
+            server {
+              listen 127.0.0.1:18903;
+              server_name power.borealos.cn;
+              include $GITHUB_WORKSPACE/vps-control/nginx-alidns/power.conf;
+              location / { return 200 'placeholder'; }
+            }
+            server {
+              listen 127.0.0.1:18904;
+              server_name approve.borealos.cn;
+              include $GITHUB_WORKSPACE/vps-control/nginx-alidns/approve.conf;
+              location / { return 200 'placeholder'; }
+            }
+            server {
+              listen 127.0.0.1:18905;
+              server_name jipite.borealos.cn;
+              location / { return 200 'placeholder'; }
+            }
+          }
+          EOF
+          sudo nginx -t -c "$conf"
