@@ -1,6 +1,7 @@
 package cn.borealos.jipite
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -38,6 +39,9 @@ class MainActivity : FragmentActivity() {
     private var cachedIdToken: String? = null
     private var current: JSONObject? = null
     private var hintRequestId: String? = null
+    // GitHub preview builds are deliberately offline; real approval must use a signed release.
+    private val isOfflinePreview: Boolean
+        get() = BuildConfig.DEBUG && BuildConfig.FLAVOR == "manual"
     private lateinit var status: TextView
     private lateinit var detail: TextView
     private lateinit var pairing: EditText
@@ -48,6 +52,10 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         buildUi()
+        if (isOfflinePreview) {
+            setStatus("MuMu 离线演示模式：可模拟申请，但不会连接微软、VPS 或 GPU")
+            return
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
@@ -128,8 +136,11 @@ class MainActivity : FragmentActivity() {
 
         line("吉皮提 · GPU 审批器", 25f)
         line("Microsoft 个人账号 + 本机强生物识别\n绝不从通知直接执行开关机", 14f)
+        if (isOfflinePreview) {
+            line("【离线演示 / MuMu 测试】所有申请与决策均为本地模拟，不会控制 GPU", 17f)
+        }
         status = line("初始化中……", 15f)
-        button("使用 Microsoft 账号登录 / 重新验证") { signIn() }
+        val loginButton = button("使用 Microsoft 账号登录 / 重新验证") { signIn() }
         line("首次绑定：请输入 VPS 终端生成的一次性配对密钥", 14f)
         pairing = EditText(this).apply {
             hint = "仅首次配对使用，不要发给 ChatGPT"
@@ -137,11 +148,29 @@ class MainActivity : FragmentActivity() {
             isSingleLine = true
         }
         root.addView(pairing)
-        button("绑定此手机（仅首次）") { enrollPhone() }
-        button("刷新待审批申请") { refresh() }
+        val enrollButton = button("绑定此手机（仅首次）") { enrollPhone() }
+        val refreshButton = button("刷新待审批申请") { refresh() }
+        if (isOfflinePreview) {
+            loginButton.isEnabled = false
+            enrollButton.isEnabled = false
+            refreshButton.isEnabled = false
+            pairing.isEnabled = false
+            line("模拟器本地测试（无需账号、网络或真实配对码）", 16f)
+            button("模拟开机申请 · 不会真实启动") { showOfflineDemo("start") }
+            button("模拟关机申请 · 不会真实关闭") { showOfflineDemo("stop") }
+            button("清除模拟申请") {
+                current = null
+                showRequest(null)
+                setStatus("已清除本地模拟申请")
+            }
+        }
         detail = line("暂无待审批申请", 18f)
-        denyButton = button("拒绝本次操作（需要生物识别）") { requestDecision("deny") }
-        approveButton = button("指纹 / 面容批准本次操作") { requestDecision("approve") }
+        denyButton = button(
+            if (isOfflinePreview) "模拟拒绝（不发送）" else "拒绝本次操作（需要生物识别）"
+        ) { requestDecision("deny") }
+        approveButton = button(
+            if (isOfflinePreview) "模拟批准（不执行）" else "指纹 / 面容批准本次操作"
+        ) { requestDecision("approve") }
         showRequest(null)
 
         val scroll = ScrollView(this)
@@ -275,6 +304,12 @@ class MainActivity : FragmentActivity() {
             return
         }
         val action = item.optString("action")
+        if (action !in setOf("start", "stop")) {
+            detail.text = "未知 GPU 操作类型：不允许审批"
+            approveButton.isEnabled = false
+            denyButton.isEnabled = false
+            return
+        }
         val title = if (action == "start") "启动 RTX 5090" else "关闭 RTX 5090"
         val warning = if (action == "start") "审批后可能产生 GPU 租赁费用"
                       else "请先确认任务结束、文件已保存到持久化存储"
@@ -285,10 +320,47 @@ class MainActivity : FragmentActivity() {
         denyButton.isEnabled = true
     }
 
+    /** In a debug manual build, no production identity, key, or network API is used. */
+    private fun showOfflineDemo(action: String) {
+        if (!isOfflinePreview || action !in setOf("start", "stop")) return
+        current = JSONObject()
+            .put("request_id", "DEMO-" + System.currentTimeMillis())
+            .put("action", action)
+            .put("expires_at", System.currentTimeMillis() / 1000 + 300)
+        showRequest(current)
+        setStatus("本地模拟申请已生成：仅用于查看界面和审批确认，不会操作 GPU")
+    }
+
+    private fun confirmOfflineDecision(decision: String) {
+        if (!isOfflinePreview) return
+        val item = current ?: return setStatus("没有模拟申请")
+        if (System.currentTimeMillis() / 1000 >= item.optLong("expires_at")) {
+            current = null
+            showRequest(null)
+            return setStatus("模拟申请已过期，请重新生成")
+        }
+        val verb = if (decision == "approve") "批准" else "拒绝"
+        val action = if (item.optString("action") == "start") "开机" else "关机"
+        AlertDialog.Builder(this)
+            .setTitle("离线模拟：$verb$action")
+            .setMessage("仅用于 MuMu 模拟器测试。不进行真实指纹验证，不向 VPS 发送数据，不执行 GPU 开关机。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("确认模拟") { _, _ ->
+                current = null
+                showRequest(null)
+                setStatus("已模拟$verb$action。没有发送请求，GPU 状态未被本应用改变。")
+            }
+            .show()
+    }
+
     private fun requestDecision(decision: String) {
+        if (isOfflinePreview) return confirmOfflineDecision(decision)
         val item = current ?: return setStatus("没有待审批申请")
         val rid = item.optString("request_id")
         val action = item.optString("action")
+        if (action !in setOf("start", "stop") || decision !in setOf("approve", "deny")) {
+            return setStatus("未知操作类型；拒绝发起审批")
+        }
         val id = deviceId() ?: return setStatus("设备未绑定")
         if (System.currentTimeMillis()/1000 >= item.optLong("expires_at")) {
             return setStatus("申请已过期，请在 ChatGPT 创建新申请")
