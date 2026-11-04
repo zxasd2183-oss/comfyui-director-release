@@ -50,6 +50,18 @@ jobs:
             "configuration_version": "1"
           }
           EOF
+      - name: Compile manual Android APK (no Xiaomi/Google SDK)
+        shell: bash
+        working-directory: android-jipite
+        run: |
+          gradle :app:assembleManualDebug --no-daemon --stacktrace
+      - name: Publish manual UI test APK (placeholder Microsoft identity)
+        uses: actions/upload-artifact@v4
+        with:
+          name: jipite-v06-manual-debug-UI-only
+          path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
+          retention-days: 7
+          if-no-files-found: error
       - name: Compile Android source (NOT a deployable authenticated APK)
         shell: bash
         working-directory: android-jipite
