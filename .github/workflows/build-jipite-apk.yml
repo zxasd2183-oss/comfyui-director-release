@@ -29,7 +29,7 @@ jobs:
     env:
       JIPITE_EVENT: ${{ github.event_name }}
       JIPITE_MODE: ${{ inputs.mode }}
-      JIPITE_MS_CLIENT_ID: ${{ vars.JIPITE_MS_CLIENT_ID }}
+      JIPITE_MS_CLIENT_ID: ${{ vars.JIPITE_MS_CLIENT_ID || '76fb73a5-fc82-4217-893a-6070eedd16be' }}
       JIPITE_KEYSTORE_BASE64: ${{ secrets.JIPITE_KEYSTORE_BASE64 }}
       JIPITE_SIGNING_STORE_PASSWORD: ${{ secrets.JIPITE_SIGNING_STORE_PASSWORD }}
       JIPITE_SIGNING_KEY_ALIAS: ${{ vars.JIPITE_SIGNING_KEY_ALIAS }}
@@ -55,7 +55,7 @@ jobs:
           if [[ -z "$JIPITE_MS_CLIENT_ID" || -z "$JIPITE_KEYSTORE_BASE64" ||
                 -z "$JIPITE_SIGNING_STORE_PASSWORD" || -z "$JIPITE_SIGNING_KEY_ALIAS" ||
                 -z "$JIPITE_SIGNING_KEY_PASSWORD" ]]; then
-            echo "::error::Configure the JIPITE_MS_CLIENT_ID and JIPITE_SIGNING_KEY_ALIAS repository variables plus the three JIPITE signing repository secrets."
+            echo "::error::Configure JIPITE_SIGNING_KEY_ALIAS variable and the three JIPITE signing repository secrets. The public Microsoft Client ID is already configured."
             exit 2
           fi
           keyfile="$RUNNER_TEMP/jipite-signing.p12"
