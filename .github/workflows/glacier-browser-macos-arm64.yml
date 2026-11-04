@@ -1,0 +1,147 @@
+name: Glacier Browser macOS Apple Silicon DMG v0.14
+on:
+  push:
+    branches:
+      - build/glacier-browser-macos-arm64-v0-14
+    paths:
+      - 'glacier-macos/**'
+      - '.github/workflows/glacier-browser-macos-arm64.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  macos-arm64:
+    runs-on: macos-15-arm64
+    timeout-minutes: 70
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'arm64'
+      - name: Verify actual Apple Silicon runner
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = 'arm64'
+          python -c 'import platform; assert platform.machine() == "arm64"'
+          sw_vers
+      - name: Install macOS build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'PySide6>=6.8,<7' 'pyinstaller>=6.11,<8' 'cryptography>=43,<47' 'keyring>=25,<27' 'requests[socks]>=2.32,<3'
+      - name: Decode cross-platform Glacier UI modules
+        working-directory: glacier-macos
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64,lzma,shutil
+          source=Path("../glacier-windows")
+          files=("features.py","ui08.py","ui09.py","ui12.py","tabtools13.py","chrome14.py")
+          for name in files:
+              encoded=(source/(name+".xz.b64")).read_text(encoding="ascii").strip()
+              Path(name).write_bytes(lzma.decompress(base64.b64decode(encoded,validate=True)))
+              print("Decoded",name)
+          PY
+          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
+          python -m unittest -v test_mac_update
+          python -c "from PySide6.QtWebEngineWidgets import QWebEngineView; import keyring.backends.macOS; import mac_update; print('Qt WebEngine / Keychain / updater imports passed')"
+      - name: Download and SHA256-verify official sing-box 1.14.4 darwin arm64
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          mkdir -p bin core-unpack
+          filename='sing-box-1.14.4-darwin-arm64.tar.gz'
+          url="https://github.com/SagerNet/sing-box/releases/download/v1.14.4/$filename"
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 420 "$url" -o sing-box.tar.gz
+          echo '0d8c7f5ed5d587b0f1a5e9772a708ec3bfa4ac4c9329604b01d8d9c2ba406838  sing-box.tar.gz' | shasum -a 256 -c -
+          tar -xzf sing-box.tar.gz -C core-unpack
+          found="$(find core-unpack -type f -name sing-box | head -1)"
+          test -n "$found"
+          cp "$found" bin/sing-box
+          chmod 755 bin/sing-box
+          file bin/sing-box
+          test "$(lipo -archs bin/sing-box)" = 'arm64'
+          bin/sing-box version
+      - name: Assemble native .app with Qt WebEngine and bundled sing-box
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser \
+            --target-architecture arm64 \
+            --osx-bundle-identifier cn.borealos.glacierbrowser \
+            --add-binary 'bin/sing-box:bin' \
+            --collect-all PySide6.QtWebEngineCore \
+            --collect-all PySide6.QtWebEngineWidgets \
+            --collect-all keyring \
+            --hidden-import keyring.backends.macOS \
+            --collect-all cryptography \
+            main.py
+          test -d dist/GlacierBrowser.app
+          test -f dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser
+          test "$(lipo -archs dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser)" = 'arm64'
+          test "$(find dist/GlacierBrowser.app -type f -name sing-box | wc -l | tr -d ' ')" -ge 1
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.14.0' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.14.0' dist/GlacierBrowser.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.14.0' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 0.14.0' dist/GlacierBrowser.app/Contents/Info.plist
+          # Local ad-hoc signature is for Apple Silicon execution only, NOT Developer ID notarization.
+          codesign --force --deep --sign - dist/GlacierBrowser.app
+          codesign --verify --deep --verbose=2 dist/GlacierBrowser.app
+      - name: Create installable Apple Silicon DMG
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          mkdir -p dmg-stage
+          ditto dist/GlacierBrowser.app dmg-stage/GlacierBrowser.app
+          ln -s /Applications dmg-stage/Applications
+          cat > dmg-stage/README-安装说明.txt <<'EOF'
+          Glacier Browser v0.14.0 · macOS Apple Silicon 测试版
+          1. 将 GlacierBrowser.app 拖到 Applications 文件夹。
+          2. 该测试版未经过 Apple Developer ID 签名/公证，macOS 可能拒绝首次打开。
+             请核对发布来源，并在 系统设置 > 隐私与安全性 中按系统提示授权。
+             不要全局关闭 Gatekeeper。
+          3. 首次启动请粘贴 VLESS 分享链接，仅存入本机钥匙串。
+          4. 应用内「Mac 更新」可通过 VLESS 检查、下载并校验新版 DMG，
+             仍需由你在 Finder 中确认替换安装。
+          5. 书签、历史及应用设置使用 Mac 本地数据目录；
+             Windows 上的线路/历史不会自动迁移到 Mac。
+          版本：0.14.0，架构：Apple Silicon (arm64)
+          EOF
+          hdiutil create -volname 'Glacier Browser' -srcfolder dmg-stage \
+            -ov -format UDZO 'GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg'
+          test -s 'GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg'
+          hdiutil verify 'GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg'
+          shasum -a 256 'GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg'
+      - name: Upload actual DMG for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierBrowser-v0.14.0-macOS-AppleSilicon-DMG
+          path: glacier-macos/GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Publish Mac-only release (update feed signed separately)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          tag='glacier-macos-v0.14.0'
+          dmg='GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg'
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "$dmg" --clobber && break
+            else
+              gh release create "$tag" "$dmg" --target build/glacier-browser-macos-arm64-v0-14 \
+                --title 'Glacier Browser 0.14.0 · macOS Apple Silicon preview' \
+                --notes 'Native arm64 DMG with Qt WebEngine Chrome-style UI, Keychain VLESS storage, signed macos-arm64 in-app update verification. Not Apple Developer ID signed/notarized.' \
+                --prerelease && break
+            fi
+            if [ "$attempt" = 5 ]; then exit 1; fi
+            sleep 20
+          done
+          gh release view "$tag" --json tagName,assets
+          echo 'Mac release available. Ed25519 update feed published independently after offline signature.'
