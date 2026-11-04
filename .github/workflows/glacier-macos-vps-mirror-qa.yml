@@ -1,0 +1,55 @@
+name: Glacier macOS VPS mirror QA (no deployment)
+on:
+  push:
+    branches:
+      - build/glacier-browser-macos-arm64-v0-14-1
+    paths:
+      - 'vps-control/**'
+      - '.github/workflows/glacier-macos-vps-mirror-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Lint mirror deployment tools
+        run: |
+          set -euo pipefail
+          bash -n vps-control/install-glacier-macos-updates.sh
+          python -m py_compile vps-control/sync-glacier-macos-updates.py
+          python -m pip install 'cryptography>=43,<47'
+      - name: Offline signed manifest acceptance and forged update rejection
+        run: |
+          python - <<'PY'
+          import importlib.util, pathlib, json, base64, hashlib
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          from cryptography.hazmat.primitives.serialization import Encoding,PublicFormat
+          p=pathlib.Path('vps-control/sync-glacier-macos-updates.py')
+          spec=importlib.util.spec_from_file_location('glacier_mirror',p)
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          key=Ed25519PrivateKey.generate()
+          mod.PUB=key.public_key().public_bytes(Encoding.Raw,PublicFormat.Raw)
+          d={
+             'channel':'macos-arm64','version':'0.14.1',
+             'url':mod.PUBLIC_BASE+'GlacierBrowser-v0.14.1-macOS-AppleSilicon.dmg',
+             'sha256':hashlib.sha256(b'unit-test').hexdigest(),'size':270000000,
+             'notes':'test vector','key_id':mod.KEY_ID,
+          }
+          d['signature']=base64.b64encode(key.sign(mod.canonical(d))).decode()
+          assert mod.validate_signed_manifest(json.dumps(d).encode())[0]['version']=='0.14.1'
+          d['sha256']='0'*64
+          try:
+             mod.validate_signed_manifest(json.dumps(d).encode())
+          except ValueError:
+             pass
+          else:
+             raise AssertionError('Unsafe: mirror accepted tampered hash')
+          print('VPS signed manifest and tamper tests: PASS')
+          PY
