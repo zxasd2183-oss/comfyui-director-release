@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import hmac
+import re
 import secrets
 import time
 
@@ -33,6 +34,16 @@ def b64_decode(value: str, max_len: int) -> bytes:
         return base64.b64decode(value, validate=True)
     except (ValueError, base64.binascii.Error):
         raise Rejected("invalid_encoding") from None
+
+
+def validate_push_token(token: str) -> None:
+    """Legacy fcm_token storage holds FCM or prefixed Xiaomi regId.
+    Token never conveys authorization to approve the GPU.
+    """
+    if not isinstance(token, str) or len(token) > 2048:
+        raise Rejected("push_token_invalid")
+    if token.startswith("xm:") and not re.fullmatch(r"xm:[A-Za-z0-9_-]{8,256}", token):
+        raise Rejected("push_token_invalid")
 
 
 def with_schema(db):
@@ -75,8 +86,7 @@ def enroll(subject: str, pairing: str, expected_pairing: str,
             or len(expected_pairing) < 32
             or not hmac.compare_digest(pairing, expected_pairing)):
         raise Rejected("pairing_invalid")
-    if not isinstance(fcm_token, str) or len(fcm_token) > 2048:
-        raise Rejected("push_token_invalid")
+    validate_push_token(fcm_token)
     der = b64_decode(public_key_b64, MAX_KEY_BYTES)
     try:
         pub = serialization.load_der_public_key(der)
@@ -99,8 +109,7 @@ def enroll(subject: str, pairing: str, expected_pairing: str,
 
 
 def update_push(subject: str, device_id: str, token: str, db_path=DB_DEFAULT) -> dict:
-    if not isinstance(token, str) or len(token) > 2048:
-        raise Rejected("push_token_invalid")
+    validate_push_token(token)
     with open_db(db_path) as db:
         db.execute("BEGIN IMMEDIATE")
         row = ensure_owner(db, subject)
