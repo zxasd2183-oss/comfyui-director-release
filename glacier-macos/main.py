@@ -2,7 +2,6 @@ import json, os, re, socket, subprocess, sys, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtNetwork import QNetworkProxy
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
@@ -17,6 +16,7 @@ from mac_platform import appdir, dpapi, get_link, core_path
 from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
 from mac_chrome_adapter import MacChrome14
+from mac_desktop15 import MacDesktop15
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -66,13 +66,13 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.14.2")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.15.0")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -95,8 +95,7 @@ class Browser(MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierU
   self.setup_windows_ui12(bar)
   self.setup_chrome14(lay,bar)
   self.restore_startup_session()
-  QShortcut(QKeySequence("Meta+L"),self,activated=lambda:self.address.setFocus())
-  QShortcut(QKeySequence("Meta+T"),self,activated=self.new_tab)
+  self.setup_desktop15()
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -112,6 +111,7 @@ class Browser(MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierU
  def close_tab(self,i):
   v=self.tabs.widget(i)
   if v is None:return
+  self.remember_recent15(v.url().toString())
   self.remember_closed_tab(v.url().toString())
   self.cleanup_closed13(v)
   self.tabs.removeTab(i);v.deleteLater()
@@ -130,6 +130,7 @@ class Browser(MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierU
   self.current().setUrl(QUrl(url))
  def closeEvent(self,event):
   self.close_satellite_windows()
+  self._autosave_timer15.stop()
   self.session_timer.stop();self.save_session()
   if self.proc and self.proc.poll() is None:self.proc.terminate()
   try:(appdir()/"runtime.json").unlink(missing_ok=True)
