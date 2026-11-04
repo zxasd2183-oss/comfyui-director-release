@@ -38,8 +38,29 @@ def get_power_service_health() -> dict:
         return {"ok": False, "stage": "configuration", "reason": "credential_file_not_found"}
     except PermissionError:
         return {"ok": False, "stage": "configuration", "reason": "credential_file_access_denied"}
-    except PowerError:
-        return {"ok": False, "stage": "configuration", "reason": "credential_file_invalid_or_incomplete"}
+    except PowerError as exc:
+        # PowerError messages from read_env_file are fixed strings or
+        # required field NAMES; never include secret values.
+        message = str(exc)
+        if message.startswith("Credential file permissions"):
+            reason = "credential_file_permissions_too_open"
+        elif message.startswith("Power configuration incomplete:"):
+            reason = "credential_required_fields_missing"
+        elif message == "Invalid region":
+            reason = "credential_region_invalid"
+        elif message == "Invalid zone":
+            reason = "credential_zone_invalid"
+        elif message in ("Invalid config line", "Invalid config value"):
+            reason = "credential_format_invalid"
+        else:
+            reason = "credential_file_invalid_or_incomplete"
+        result = {"ok": False, "stage": "configuration", "reason": reason}
+        if reason == "credential_required_fields_missing":
+            names = message.split(":", 1)[1].strip().split(", ")
+            allowed = {"COMP_PUBLIC_KEY", "COMP_PRIVATE_KEY", "COMP_UHOST_ID",
+                       "COMP_REGION", "COMP_ZONE"}
+            result["missing_field_names"] = [name for name in names if name in allowed]
+        return result
     except Exception:
         return {"ok": False, "stage": "configuration", "reason": "credential_read_unavailable"}
     try:
