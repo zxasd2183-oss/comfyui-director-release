@@ -13,6 +13,7 @@ from ui08 import GlacierUI08, GlacierPrefs
 from ui09 import GlacierUI09
 from update_ui import GlacierUpdateUI
 from ui12 import GlacierUI12
+from tabtools13 import GlacierTabTools13
 
 APP = "Glacier Browser"
 def appdir():
@@ -106,7 +107,7 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -125,21 +126,22 @@ class Browser(GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFea
   self.address=QLineEdit();self.address.setPlaceholderText("输入网址或搜索");self.address.returnPressed.connect(self.navigate);bar.addWidget(self.address,1)
   self.init_features(bar)
   self.init_ui09(bar, lambda data: dpapi(data), lambda data: dpapi(data, True), appdir())
+  self.setup_tabtools13(lay,bar)
   self.proxy_label=QLabel("● 核心运行中（尚未联网验证）" if process else "● 未连接（禁止直连）");bar.addWidget(self.proxy_label)
   self.tabs=QTabWidget();self.tabs.setTabsClosable(True);self.tabs.tabCloseRequested.connect(self.close_tab);self.tabs.currentChanged.connect(self.sync_url);self.tabs.currentChanged.connect(lambda _idx:self.queue_session_save())
-  lay.addWidget(self.tabs);self.new_tab()
+  lay.addWidget(self.tabs);self.connect_tabbar13();self.new_tab()
   self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
   self.setup_ui08(lay,bar)
   self.setup_updater(bar, appdir())
   self.setup_windows_ui12(bar)
-  self.setWindowTitle('❄ Glacier Browser · v0.12 · 多窗口与无痕')
+  self.setWindowTitle('❄ Glacier Browser · v0.13 · 标签页体验升级')
   self.restore_startup_session()
   QShortcut(QKeySequence("Ctrl+L"),self,activated=lambda:self.address.setFocus())
   QShortcut(QKeySequence("Ctrl+T"),self,activated=self.new_tab)
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
-  v.titleChanged.connect(lambda title,view=v:self.tabs.setTabText(self.tabs.indexOf(view),title[:18] or "新标签") if self.tabs.indexOf(view)>=0 else None)
+  self.attach_tab13(v)
   v.urlChanged.connect(lambda _url,view=v:self.sync_url() if view is self.current() else None)
   v.loadFinished.connect(lambda ok,view=v:self.on_page_loaded(view,ok))
   self.attach_page_security(v)
@@ -149,6 +151,7 @@ class Browser(GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFea
   v=self.tabs.widget(i)
   if v is None:return
   self.remember_closed_tab(v.url().toString())
+  self.cleanup_closed13(v)
   self.tabs.removeTab(i);v.deleteLater()
   if not self.tabs.count():self.new_tab()
  def sync_url(self):
