@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 
 VALID_ACTIONS = {"start", "stop"}
 ENV_KEYS = {"COMP_PUBLIC_KEY", "COMP_PRIVATE_KEY", "COMP_UHOST_ID",
-            "COMP_REGION", "COMP_ZONE", "DIRECTOR_GPU_QUEUE_URL",
+            "COMP_REGION", "COMP_ZONE", "DIRECTOR_GPU_MCP_URL", "DIRECTOR_GPU_QUEUE_URL",
             "DIRECTOR_GPU_QUEUE_BEARER"}
 QUEUE_LIMIT_BYTES = 65536
 
@@ -99,36 +99,68 @@ def get_provider_state(config: dict, client=None) -> dict:
 
 
 def get_queue_state(config: dict, opener=urlopen) -> dict:
-    url = config.get("DIRECTOR_GPU_QUEUE_URL", "")
+    """Use the existing read-only H3 Director V3 MCP tool if configured.
+
+    A URL here is a bearer credential and MUST be in the root-only VPS env file.
+    Fall back to a separately authenticated HTTPS ComfyUI /queue endpoint.
+    """
+    mcp_url = config.get("DIRECTOR_GPU_MCP_URL", "")
+    url = mcp_url or config.get("DIRECTOR_GPU_QUEUE_URL", "")
     if not url:
-        return {"verified": False, "reason": "queue_url_not_configured"}
+        return {"verified": False, "reason": "queue_endpoint_not_configured"}
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         return {"verified": False, "reason": "queue_endpoint_must_use_https"}
-    if parsed.fragment:
+    if parsed.query or parsed.fragment:
         return {"verified": False, "reason": "queue_endpoint_invalid"}
     headers = {"Accept": "application/json"}
-    if config.get("DIRECTOR_GPU_QUEUE_BEARER"):
+    data = None
+    if mcp_url:
+        headers["Content-Type"] = "application/json"
+        import json
+        data = json.dumps({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "get_queue_summary", "arguments": {}}
+        }).encode("utf-8")
+    elif config.get("DIRECTOR_GPU_QUEUE_BEARER"):
         headers["Authorization"] = "Bearer " + config["DIRECTOR_GPU_QUEUE_BEARER"]
     try:
-        req = Request(url, headers=headers, method="GET")
+        req = Request(url, data=data, headers=headers,
+                      method="POST" if mcp_url else "GET")
         with opener(req, timeout=8) as response:
             final_url = urlparse(response.geturl())
-            if final_url.scheme != "https" or final_url.hostname != parsed.hostname:
+            if (final_url.scheme != "https" or final_url.hostname != parsed.hostname
+                    or final_url.path != parsed.path):
                 return {"verified": False, "reason": "queue_endpoint_redirected"}
-            data = response.read(QUEUE_LIMIT_BYTES + 1)
-        if len(data) > QUEUE_LIMIT_BYTES:
+            payload_bytes = response.read(QUEUE_LIMIT_BYTES + 1)
+        if len(payload_bytes) > QUEUE_LIMIT_BYTES:
             return {"verified": False, "reason": "queue_response_too_large"}
         import json
-        payload = json.loads(data)
-        running, pending = payload["queue_running"], payload["queue_pending"]
-        if not isinstance(running, list) or not isinstance(pending, list):
-            raise TypeError("Invalid queue")
-        return {"verified": True, "running": len(running), "pending": len(pending),
-                "empty": not running and not pending}
+        payload = json.loads(payload_bytes)
+        if mcp_url:
+            result = payload["result"]
+            if result.get("isError"):
+                return {"verified": False, "reason": "mcp_queue_tool_error"}
+            data = result.get("structuredContent")
+            if not isinstance(data, dict):
+                text_parts = [x.get("text") for x in result.get("content", [])
+                              if isinstance(x, dict) and x.get("type") == "text"]
+                data = json.loads(text_parts[0]) if text_parts else None
+            if not isinstance(data, dict) or data.get("ok") is not True:
+                return {"verified": False, "reason": "mcp_queue_unavailable"}
+            running, pending = data["running"], data["pending"]
+            if (type(running) is not int or type(pending) is not int
+                    or running < 0 or pending < 0):
+                raise ValueError("Invalid queue counts")
+        else:
+            running, pending = payload["queue_running"], payload["queue_pending"]
+            if not isinstance(running, list) or not isinstance(pending, list):
+                raise ValueError("Invalid queue values")
+            running, pending = len(running), len(pending)
+        return {"verified": True, "running": running, "pending": pending,
+                "empty": running == 0 and pending == 0}
     except Exception:
         return {"verified": False, "reason": "queue_unreachable_or_invalid"}
-
 
 def evaluate_action(action: str, state: dict, queue: dict | None) -> dict:
     if action not in VALID_ACTIONS:
