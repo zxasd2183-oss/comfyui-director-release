@@ -35,3 +35,4 @@ jobs:
           bash -n install-vps-named-tunnel.sh
           bash -n install-mobile-v06.sh
           bash -n deploy-jipite-mobile-v08.sh
+          bash -n wait-jipite-mobile-health.sh
