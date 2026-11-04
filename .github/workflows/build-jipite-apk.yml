@@ -1,5 +1,5 @@
 name: Build Jipite APK on GitHub
-run-name: Jipite V0.8.1 signed and preview (${{ github.event_name }})
+run-name: Jipite Microsoft Fluent v0.9.0 (${{ github.event_name }})
 
 on:
   push:
@@ -116,7 +116,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.mode == 'preview'
         uses: actions/upload-artifact@v4
         with:
-          name: Jipite-V0.8.1-MuMu-safe-preview
+          name: Jipite-v0.9.0-MuMu-safe-preview
           path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
           retention-days: 30
           if-no-files-found: error
@@ -125,7 +125,57 @@ jobs:
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'connected')
         uses: actions/upload-artifact@v4
         with:
-          name: Jipite-V0.8.1-Microsoft-connected-signed
+          name: Jipite-v0.9.0-Microsoft-connected-signed
           path: android-jipite/app/build/outputs/apk/manual/release/app-manual-release.apk
           retention-days: 30
           if-no-files-found: error
+
+  publish:
+    name: Publish verified Jipite APK to GitHub Releases
+    # Signing material remains isolated in the build job. This job only gets
+    # the signed APK artifact and limited repository release permissions.
+    needs: apk
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Jipite-v0.9.0-Microsoft-connected-signed
+          path: dist
+      - name: Create immutable tagged release for in-app updater
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' android-jipite/app/build.gradle.kts | head -n1)"
+          [[ "$VERSION" == "0.9.0" ]] || { echo "::error::Unexpected Jipite version"; exit 2; }
+          TAG="jipite-v$VERSION"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Bump version instead of overwriting signed updates."
+            exit 3
+          fi
+          source=dist/app-manual-release.apk
+          test -s "$source"
+          binary="Jipite-v$VERSION-Microsoft-connected.apk"
+          cp "$source" "dist/$binary"
+          {
+            echo "Jipite $VERSION — Fluent UI and secure in-app updates."
+            echo ""
+            echo "Includes current version information, GitHub Releases update detection,"
+            echo "HTTPS download with SHA-256 validation, same-certificate and package checks,"
+            echo "and the Android system install confirmation."
+            echo ""
+            echo "Existing Android device binding and GPU power safeguards are unchanged."
+            echo "The old V0.8.x client requires one manual upgrade to V0.9.0."
+          } > dist/release-notes.md
+          gh release create "$TAG" "dist/$binary" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "吉皮提 v$VERSION · Fluent" \
+            --notes-file dist/release-notes.md --prerelease
+          echo "Published $TAG, SHA-256:" >> "$GITHUB_STEP_SUMMARY"
+          sha256sum "dist/$binary" >> "$GITHUB_STEP_SUMMARY"
