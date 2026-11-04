@@ -34,6 +34,8 @@ class MinimalBrowser(MacChrome14,QMainWindow):
 
     def show_mac_updates(self):pass
     def new_tab(self):self.tabs.addTab(QWidget(self),"New tab")
+    def close_tab(self,index):
+        if 0<=index<self.tabs.count():self.tabs.removeTab(index)
     def open_satellite(self,private=False):pass
     def toggle_bookmark(self):pass
     def show_history(self):pass
