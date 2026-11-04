@@ -80,16 +80,24 @@ def fcm_sender(credentials_path: str):
     return send
 
 
-def xiaomi_sender(secret_path: str):
-    """Optional Xiaomi mainland Mi Push provider. Secret is server-only."""
-    if not Path(secret_path).is_file():
+def xiaomi_sender(secret_path: str, channel_path: str):
+    """Mi Push enabled ONLY after owner installed a reviewed no-variable template."""
+    if not Path(secret_path).is_file() or not Path(channel_path).is_file():
         return None
     from mobile_v06_xiaomi import send_xiaomi
     secret = Path(secret_path).read_text(encoding="ascii").strip()
     if not 8 <= len(secret) <= 256:
         raise RuntimeError("invalid Xiaomi server credentials")
+    settings = json.loads(Path(channel_path).read_text(encoding="utf-8"))
+    if not isinstance(settings, dict) or set(settings) != {"channel_id", "template_id"}:
+        raise RuntimeError("invalid Xiaomi channel configuration")
+    channel_id, template_id = settings["channel_id"], settings["template_id"]
+    for value in (channel_id, template_id):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,20}", value):
+            raise RuntimeError("invalid Xiaomi channel configuration")
     def send(reg_id: str, request_id: str, action: str, ttl_ms: int):
-        send_xiaomi(reg_id, request_id, action, secret, ttl_ms=ttl_ms)
+        send_xiaomi(reg_id, request_id, action, secret, ttl_ms=ttl_ms,
+                    channel_id=channel_id, template_id=template_id)
     return send
 
 
@@ -241,7 +249,8 @@ def main():
         db.execute("SELECT 1")
     firebase_path = str(Path(directory) / "firebase")
     firebase = fcm_sender(firebase_path)
-    xiaomi = xiaomi_sender(str(Path(directory) / "xiaomi"))
+    xiaomi = xiaomi_sender(str(Path(directory) / "xiaomi"),
+                           str(Path(directory) / "xiaomicfg"))
     sender = push_dispatcher(firebase, xiaomi)
     stop = threading.Event()
     worker = threading.Thread(target=notify_worker,
