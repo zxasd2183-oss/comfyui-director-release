@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/ci-jipite-public-api-probe.yml'
+      - 'vps-control/**'
   workflow_dispatch:
 
 permissions:
