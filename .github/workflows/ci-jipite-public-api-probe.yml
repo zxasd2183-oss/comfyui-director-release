@@ -1,0 +1,60 @@
+name: Diagnose Jipite mobile API public HTTPS (no credentials)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ci-jipite-public-api-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-api-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Check public DNS, HTTPS and anonymous Microsoft-auth challenge
+        shell: bash
+        run: |
+          set -u
+          host=jipite.borealos.cn
+          url="https://$host/api/v1/mobile/pending"
+          echo "DNS addresses (public GitHub runner):"
+          getent ahostsv4 "$host" | awk '{print $1}' | sort -u | head -n 5 || true
+          headers="$RUNNER_TEMP/jipite_headers"
+          body="$RUNNER_TEMP/jipite_body"
+          stderr="$RUNNER_TEMP/jipite_stderr"
+          http_code=$(curl --silent --show-error --max-time 15 \
+            --request POST --header 'Content-Type: application/json' \
+            --header 'Accept: application/json' --data '{}' \
+            --dump-header "$headers" --output "$body" \
+            --write-out '%{http_code}' "$url" 2>"$stderr")
+          rc=$?
+          echo "curl_exit=$rc http_status=$http_code"
+          if [ "$rc" -ne 0 ]; then
+            echo "Network or TLS error (no secret data involved):"
+            sed -E 's/[^[:print:][:space:]]//g' "$stderr" | head -n 4
+            verdict="NETWORK_OR_DNS_OR_TLS_FAILURE"
+          elif [ "$http_code" = "401" ] && grep -q '"reason":"microsoft_login_required"' "$body"; then
+            verdict="OK_AUTH_REQUIRED"
+          elif [ "$http_code" = "404" ]; then
+            verdict="NGINX_ROUTE_MISSING_OR_NOT_MATCHING"
+          elif [ "$http_code" = "502" ] || [ "$http_code" = "503" ] || [ "$http_code" = "504" ]; then
+            verdict="UPSTREAM_API_UNAVAILABLE"
+          else
+            verdict="UNEXPECTED_HTTP_RESPONSE_$http_code"
+          fi
+          echo "VERDICT=$verdict"
+          {
+            echo "## Jipite public Android API probe"
+            echo ""
+            echo "- **Target:** \`$url\`"
+            echo "- **HTTP status:** \`$http_code\`"
+            echo "- **Verdict:** \`$verdict\`"
+            echo "- **Expected:** \`401\` plus \`microsoft_login_required\`"
+            echo ""
+            echo "No credentials, login tokens, pairing secrets, device IDs or cloud operations were used."
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Report the diagnostic result without breaking source CI.
