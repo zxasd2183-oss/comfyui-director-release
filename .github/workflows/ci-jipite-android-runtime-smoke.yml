@@ -28,9 +28,9 @@ jobs:
           set -euo pipefail
           curl -fL --retry 3 --max-time 60 \
             -o /tmp/jipite.apk \
-            https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/jipite-v0.9.5/Jipite-v0.9.5-Microsoft-connected.apk
+            https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/jipite-v0.10.0/Jipite-v0.10.0-Microsoft-connected.apk
           sha256sum /tmp/jipite.apk
-          test "$(sha256sum /tmp/jipite.apk | cut -d' ' -f1)" = "472a12b02448566fd80f8cfbece87f99a4749208f90ced5658d3464ee4b27f50"
+          test "$(sha256sum /tmp/jipite.apk | cut -d' ' -f1)" = "2223b86eda4339f737c3909197479251bafb75186daa8d4560292ece131949a0"
       - name: Launch Android app without any Microsoft credentials
         uses: reactivecircus/android-emulator-runner@v2
         with:
