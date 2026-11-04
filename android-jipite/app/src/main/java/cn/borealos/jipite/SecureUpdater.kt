@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import org.json.JSONArray
 import java.io.File
 import java.net.URL
 import java.security.MessageDigest
@@ -14,25 +13,23 @@ import java.util.concurrent.Executors
 import javax.net.ssl.HttpsURLConnection
 
 /**
- * Explicit, user-initiated in-app updates from the owner's GitHub Releases.
+ * User-initiated updates from the owner's HTTPS VPS mirror.
  *
- * Security gates: HTTPS + allowed redirect hosts, exact repository and asset
- * names, GitHub asset SHA-256, installed package ID, monotonically increasing
+ * Security gates: pinned host, manifest version/asset/digest, APK SHA-256,
+ * installed package ID, monotonically increasing
  * Android version code and matching APK signing certificate.
  *
  * Never downloads from user-supplied URLs, never auto-installs, and never
  * performs any GPU or Microsoft credential action.
  */
 object SecureUpdater {
-    private const val API =
-        "https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/releases?per_page=100"
-    private const val DOWNLOAD_PREFIX =
-        "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/"
+    private const val API = "https://jipite.borealos.cn/app-updates/latest.json"
+    private const val DOWNLOAD_PREFIX = "https://jipite.borealos.cn/app-updates/"
     private const val MAX_APK_BYTES = 100_000_000L
     private const val MIN_APK_BYTES = 100_000L
     private val worker = Executors.newSingleThreadExecutor()
-    private val versionPattern = Regex("^jipite-v([0-9]+\\.[0-9]+\\.[0-9]+)$")
-    private val shaPattern = Regex("^sha256:([0-9a-fA-F]{64})$")
+    private val versionPattern = Regex("^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    private val shaPattern = Regex("^[0-9a-fA-F]{64}$")
 
     data class Release(
         val version: String,
@@ -59,32 +56,23 @@ object SecureUpdater {
         return false
     }
 
-    private fun parseLatest(json: JSONArray): Release? {
-        var best: Release? = null
-        for (i in 0 until json.length()) {
-            val release = json.optJSONObject(i) ?: continue
-            if (release.optBoolean("draft")) continue
-            val tag = release.optString("tag_name")
-            val version = versionPattern.matchEntire(tag)?.groupValues?.get(1) ?: continue
-            if (!isNewer(version, installedVersion())) continue
-            val expectedName = "Jipite-v$version-Microsoft-connected.apk"
-            val assets = release.optJSONArray("assets") ?: continue
-            for (j in 0 until assets.length()) {
-                val asset = assets.optJSONObject(j) ?: continue
-                if (asset.optString("name") != expectedName ||
-                    asset.optString("state") != "uploaded") continue
-                val digest = shaPattern.matchEntire(asset.optString("digest"))
-                    ?.groupValues?.get(1) ?: continue
-                val size = asset.optLong("size", -1)
-                val url = asset.optString("browser_download_url")
-                if (size !in MIN_APK_BYTES..MAX_APK_BYTES ||
-                    url != "$DOWNLOAD_PREFIX$tag/$expectedName") continue
-                if (best == null || isNewer(version, best.version)) {
-                    best = Release(version, tag, url, digest.lowercase(), size)
-                }
-            }
-        }
-        return best
+    private fun parseLatest(metadata: JSONObject): Release? {
+        // Manifest is served as a static public JSON file from the owner's VPS.
+        // Do not allow the server to supply an arbitrary download URL.
+        require(metadata.optInt("schema", -1) == 1) { "更新清单格式不受支持" }
+        val version = metadata.optString("version")
+        require(versionPattern.matches(version)) { "更新版本号格式无效" }
+        val filename = "Jipite-v$version-Microsoft-connected.apk"
+        require(metadata.optString("asset") == filename) { "更新 APK 文件名不匹配" }
+        val hash = metadata.optString("sha256")
+        require(shaPattern.matches(hash)) { "更新校验信息无效" }
+        val size = metadata.optLong("size", -1L)
+        require(size in MIN_APK_BYTES..MAX_APK_BYTES) { "更新文件大小异常" }
+        if (!isNewer(version, installedVersion())) return null
+        return Release(
+            version, "jipite-v$version", DOWNLOAD_PREFIX + filename,
+            hash.lowercase(), size
+        )
     }
 
     fun check(context: android.content.Context, callback: (Result<Release?>) -> Unit) {
@@ -103,12 +91,12 @@ object SecureUpdater {
                         while (true) {
                             val length = input.read(chunk)
                             if (length < 0) break
-                            if (output.size() + length > 3_000_000) error("更新信息超出大小限制")
+                            if (output.size() + length > 16_384) error("更新信息超出大小限制")
                             output.write(chunk, 0, length)
                         }
                         output.toString("UTF-8")
                     }
-                    parseLatest(JSONArray(data))
+                    parseLatest(JSONObject(data))
                 } finally {
                     conn.disconnect()
                 }
@@ -235,37 +223,31 @@ object SecureUpdater {
     }
 
     private fun openHttps(url: String): HttpsURLConnection {
-        var next = URL(url)
-        repeat(5) {
-            require(next.protocol == "https" && next.port in setOf(-1, 443)) {
-                "不允许使用非 HTTPS 更新地址"
-            }
-            require(next.host in setOf(
-                "api.github.com", "github.com",
-                "release-assets.githubusercontent.com", "objects.githubusercontent.com"
-            )) { "更新链接跳转至非可信域名" }
-            val conn = next.openConnection() as HttpsURLConnection
-            conn.instanceFollowRedirects = false
-            conn.connectTimeout = 10000
-            conn.readTimeout = 20000
-            conn.setRequestProperty("User-Agent", "Jipite-Android-Updater")
-            conn.setRequestProperty("Accept",
-                if (next.host == "api.github.com") "application/vnd.github+json"
-                else "application/octet-stream")
-            val status = conn.responseCode
-            if (status == 200) return conn
-            if (status in setOf(301, 302, 303, 307, 308)) {
-                val location = conn.getHeaderField("Location")
-                    ?: error("下载跳转缺少地址")
-                val target = URL(next, location)
-                conn.disconnect()
-                next = target
-            } else {
-                conn.disconnect()
-                error("更新服务器返回 HTTP $status")
-            }
+        val requested = URL(url)
+        require(requested.protocol == "https" &&
+            requested.host == "jipite.borealos.cn" &&
+            requested.port in setOf(-1, 443) &&
+            requested.userInfo == null &&
+            (url == API || (
+                requested.path.matches(
+                    Regex("^/app-updates/Jipite-v[0-9]+\\.[0-9]+\\.[0-9]+-Microsoft-connected\\.apk$")
+                ) && requested.query == null && requested.ref == null
+            ))) {
+            "更新请求仅允许访问吉皮提 VPS 上固定的 HTTPS 下载目录"
         }
-        error("下载跳转次数过多")
+        val conn = requested.openConnection() as HttpsURLConnection
+        conn.instanceFollowRedirects = false
+        conn.connectTimeout = 10000
+        conn.readTimeout = 25000
+        conn.setRequestProperty("User-Agent", "Jipite-Android-Updater")
+        conn.setRequestProperty("Accept",
+            if (url == API) "application/json" else "application/vnd.android.package-archive")
+        val status = conn.responseCode
+        if (status != 200) {
+            conn.disconnect()
+            error("VPS 更新接口返回 HTTP $status")
+        }
+        return conn
     }
 
     private fun postToMain(context: android.content.Context, callback: () -> Unit) {

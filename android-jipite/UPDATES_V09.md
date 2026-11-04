@@ -1,5 +1,11 @@
 # 吉皮提 · Fluent 风格与应用内更新
 
+## V0.9.3 VPS 专属更新源
+
+已将 Android 应用内更新源切换为 `https://jipite.borealos.cn/app-updates/latest.json`，不再需要手机连接 GitHub。VPS 定时镜像官方签名 APK；仍保留 SHA-256、包名、版本与签名验证。**部署镜像前，VPS 下载地址不一定可用。** 完整安装说明见 [VPS_UPDATES_V093.md](./VPS_UPDATES_V093.md)。
+
+
+
 ## V0.9.2 · 紧凑 Fluent 风格与三栏导航
 
 - 将之前的一页长列表拆分为**固定底部导航：首页 / 审批 / 设置**。账号登录与 VPS 健康检查在「首页」；GPU 申请、二次确认与真机设备绑定在「审批」；版本信息、更新检查/下载/安装、设备诊断放到「设置」。

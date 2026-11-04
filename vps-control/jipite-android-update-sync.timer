@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically mirror signed Jipite Android updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+Unit=jipite-android-update-sync.service
+
+[Install]
+WantedBy=timers.target

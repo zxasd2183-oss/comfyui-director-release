@@ -434,7 +434,7 @@ class MainActivity : FragmentActivity() {
             "下载验证通过后，由 Android 系统确认安装")
         updateStatus = caption(updates,
             if (isOfflinePreview) "离线预览版不访问在线更新源。"
-            else "可手动检查最新版，或开启启动时自动检查。",
+            else "更新来源：吉皮提 VPS · 可手动检查，或开启启动时自动检查。",
             12.5f, secondary)
         space(updates, 10)
         updateProgress = android.widget.ProgressBar(this, null,
@@ -551,7 +551,7 @@ class MainActivity : FragmentActivity() {
     private fun checkForAppUpdates() {
         if (BuildConfig.DEBUG) return
         updateCheckButton.isEnabled = false
-        updateStatus.text = "正在从官方发布仓库获取版本信息……"
+        updateStatus.text = "正在从吉皮提 VPS 检查新版本……"
         SecureUpdater.check(this) { result ->
             updateCheckButton.isEnabled = true
             result.fold(
