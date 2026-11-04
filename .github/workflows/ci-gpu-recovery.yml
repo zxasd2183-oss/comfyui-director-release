@@ -1,0 +1,26 @@
+name: Validate GPU Director V3 recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/recover_gpu_v3.py'
+      - 'scripts/test_recover_gpu_v3.py'
+      - '.github/workflows/ci-gpu-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and test GPU boot recovery (offline, no GPU commands)
+        run: |
+          python -m py_compile scripts/recover_gpu_v3.py scripts/test_recover_gpu_v3.py
+          python -m unittest scripts.test_recover_gpu_v3 -v
