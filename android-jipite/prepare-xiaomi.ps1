@@ -24,7 +24,8 @@ $MiResource = Join-Path $Root 'app\src\xiaomi\res\values\mipush.xml'
 if (-not (Test-Path -LiteralPath $AarPath -PathType Leaf)) {
   throw 'Official mainland Mi Push SDK AAR not found; download it from Xiaomi developer console.'
 }
-if (-not [guid]::TryParse($MicrosoftClientId, [ref]([guid]::Empty))) {
+$parsedClientId = [guid]::Empty
+if (-not [guid]::TryParse($MicrosoftClientId, [ref]$parsedClientId)) {
   throw 'Microsoft ClientId must be a GUID from your app registration.'
 }
 if ($MicrosoftSigningHash -notmatch '^[A-Za-z0-9+/]{20,128}={0,2}$') {
