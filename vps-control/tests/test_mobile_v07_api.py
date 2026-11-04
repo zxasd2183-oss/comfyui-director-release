@@ -40,11 +40,11 @@ class MobileHttpSecurityTests(unittest.TestCase):
                 "VALUES(?,?,'pending',strftime('%s','now'),strftime('%s','now')+300,strftime('%s','now'))",
                 (REQUEST_ID, "stop")
             )
-        def inert_config():
-            return {"offline_test_only": True}
+        def config_must_not_run():
+            raise AssertionError("GPU provider configuration must not load on deny")
         self.server = ThreadingHTTPServer(
             ("127.0.0.1", 0),
-            build_handler(TestIdentity(), inert_config, PAIR, self.db_path)
+            build_handler(TestIdentity(), config_must_not_run, PAIR, self.db_path)
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
