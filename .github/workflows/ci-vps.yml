@@ -31,3 +31,4 @@ jobs:
           bash -n install-bridge.sh
           bash -n install-powerctl.sh
           bash -n install-power-v03.sh
+          bash -n install-vps-named-tunnel.sh
