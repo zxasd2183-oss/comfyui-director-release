@@ -1,8 +1,10 @@
 {
-  "size": 170630680,
-  "notes": "v0.10.1：软件内升级通道验证；修复发布流程，保持原有 VLESS 和浏览数据。",
-  "version": "0.10.1",
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.10.1/GlacierBrowser-v0.10.1-Windows-Setup-x64.exe",
-  "sha256": "b6eb4b4ac2b0aa2e1d1d2ef63c367c6abac0bd0a2abef24f900467291a04d265",
-  "channel": "windows-x64"
+  "channel": "windows-x64",
+  "version": "0.11.0",
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.11.0/GlacierBrowser-v0.11.0-Windows-Setup-x64.exe",
+  "sha256": "e458f0b9e0323af7b90e4b4f1a279ec12727c66145f589b991f85f8eb5f6f628",
+  "size": 173067923,
+  "notes": "v0.11：独立 Ed25519 签名更新清单、拒绝伪造/降级；保留内置 VLESS、书签、历史和软件内确认安装。",
+  "key_id": "cf9452226375ff7d",
+  "signature": "zr6VNaqEbSMoT/4CofCAWODom9SgijlEddrR/jPs85F5CYTZkCO4jheLT5dU7iLwCQMgfHVFeQJ27Ip9caW0AA=="
 }
