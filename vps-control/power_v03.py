@@ -52,9 +52,9 @@ def _audit(db, req_id: str, action: str, event: str, now: float):
                (req_id, action, event, now))
 
 
-def _public(row) -> dict:
+def _public(row, now: float | None = None) -> dict:
     state = row["state"]
-    if state == "pending" and row["expires"] <= time.time():
+    if state == "pending" and row["expires"] <= (time.time() if now is None else now):
         state = "expired"
     return {"ok": True, "request_id": row["id"], "action": row["action"],
             "state": state, "expires_at": int(row["expires"]),
@@ -102,7 +102,7 @@ def request_status(request_id: str, db_path: str = DB_DEFAULT,
         row = db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
     if row is None:
         return {"ok": False, "reason": "request_not_found"}
-    result = _public(row)
+    result = _public(row, now)
     if row["state"] == "pending":
         current = time.time() if now is None else now
         if row["expires"] <= current:
