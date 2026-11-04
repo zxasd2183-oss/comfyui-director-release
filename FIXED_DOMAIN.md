@@ -1,83 +1,97 @@
-# Director V0.4 — borealos.cn 固定域名 + GPU 开机自动恢复
+# Director V0.4 - borealos.cn: AliDNS + self-owned VPS (NO Cloudflare)
 
-目标域名：`borealos.cn`。本文件已替换为真实的四个子域名；**这不代表 DNS 或 Cloudflare Tunnel 已创建**，需在域名控制台核验生效。
+THIS SUPERSEDES the previous Cloudflare Named Tunnel idea. Do NOT run the old install-vps-named-tunnel.sh or install_gpu_named_tunnel.sh scripts for the current design. This file is a proposed deployment, NOT confirmation that DNS, proxies, SSH access or certificates have been installed.
 
-One-time setup, no repeated temporary Cloudflare URLs.
+## Target architecture
 
-## Cloudflare configuration (Dashboard → Networking → Tunnels)
+- Domain borealos.cn stays at Alibaba Cloud DNS; do not move nameservers.
+- All public hostnames resolve to the OWNED Guangzhou VPS public IPv4, never the rented RTX 5090 IP.
+- VPS terminates HTTPS and serves existing Director VPS read-only MCP, Power Requests MCP, and independent TOTP approval web page.
+- GPU establishes an OUTBOUND SSH reverse tunnel into its owner VPS: GPU 127.0.0.1:8790 (Director V3) -> VPS 127.0.0.1:18790.
+- When GPU shuts down, the reverse SSH channel drops. GPU startup recovers local V3 and SSH tunnel, WITHOUT DNS changes or ChatGPT plugin updates.
+- Never make GPU ComfyUI 8188 or the VPS internal ports accessible from the public Internet.
 
-Prerequisite: borealos.cn is added to Cloudflare and zone status is Active. Before changing authoritative nameservers, back up all existing A/AAAA/CNAME/MX/TXT/SRV records, including website and email records. Do not replace existing DNS entries blindly. If nameservers are not on Cloudflare, determine the correct DNS hosting arrangement before deployment. Create **two remotely managed Named Tunnels**, not Quick Tunnels.
+## A. ICP filing and current DNS check - BEFORE deployment
 
-| Tunnel | Published hostname | Origin |
-|---|---|---|
-| director-gpu | director.borealos.cn | http://127.0.0.1:8790 |
-| director-vps | status.borealos.cn | http://127.0.0.1:8891 |
-| director-vps | power.borealos.cn | http://127.0.0.1:8894 |
-| director-vps | approve.borealos.cn | http://127.0.0.1:8893 |
+VPS is located in Guangzhou, Chinese mainland. According to Alibaba Cloud ICP official guidance, even API and tunnel services serving publicly through a domain resolving to a Chinese mainland server generally require corresponding ICP filing / access filing. Do NOT publish the domain records until you have confirmed the appropriate备案 status with your VPS provider. Domain registration at Alibaba and authoritative DNS hosting are distinct; confirm current name servers. Preserve all existing website/email DNS records. No Cloudflare account is needed.
 
-Cloudflare will configure DNS CNAME routes. Do not expose ComfyUI 8188. Each tunnel has its own private TOKEN (see Dashboard → Install connector / Add replica). **Never share tokens in ChatGPT/GitHub**.
+Documentation:
+https://help.aliyun.com/zh/dns/pubz-add-parsing-record
+https://help.aliyun.com/zh/icp-filing/basic-icp-service/support/faq-about-icp-filing-preparations
 
-Protect approve.borealos.cn with Cloudflare Access restricted to the owner, on top of the existing independent mobile TOTP and typed confirmation phrase. For long-term MCP use, also implement proper OAuth; a fixed hostname does NOT by itself authenticate callers. A generic browser Access login in front of MCP can interfere with ChatGPT MCP handshakes, so verify auth integration separately. Existing secret MCP paths are transitional.
+## B. Add four records in Alibaba Cloud DNS (after confirming ICP)
 
-## GPU: prepare once in CompShare root shell
+At AliDNS console > borealos.cn > DNS Records, add only these A records, if the names are unused:
 
-CompShare's official GPU FAQ documents executable startup hooks in /start.d/ for GPU containers. The helper below is tailored to the current GPU running V3 under /root/.comfyui-director, and requires cloudflared version 2025.4.0+.
+| Host record | Type | Value |
+| --- | --- | --- |
+| director | A | OWNER_VPS_PUBLIC_IPV4 |
+| status | A | OWNER_VPS_PUBLIC_IPV4 |
+| power | A | OWNER_VPS_PUBLIC_IPV4 |
+| approve | A | OWNER_VPS_PUBLIC_IPV4 |
 
-Commands:
+Do NOT point DNS at the rented GPU, edit @ or www, change NS records, or delete existing MX/TXT records. If borealos.cn currently uses other authoritative DNS, configure at the actual DNS provider instead.
 
-    mkdir -p ~/director-fixed
-    curl -fsSL https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-release/main/scripts/gpu-named-tunnel-boot.sh -o ~/director-fixed/gpu-named-tunnel-boot.sh
-    curl -fsSL https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-release/main/scripts/install_gpu_named_tunnel.sh -o ~/director-fixed/install_gpu_named_tunnel.sh
-    less ~/director-fixed/install_gpu_named_tunnel.sh
-    bash ~/director-fixed/install_gpu_named_tunnel.sh
-    bash /start.d/90-comfyui-director-v3.sh
-    curl -fsS http://127.0.0.1:8790/health
+## C. VPS HTTPS front end (Caddy example)
 
-When prompted, paste the GPU tunnel TOKEN into the local terminal (input hidden). Installer stores it as root-only 0600 in /etc/comfyui-director/gpu-named-tunnel.token; startup hook starts the previously installed Director V3 and named cloudflared without opening incoming ports.
+Before installing a reverse proxy, check if ports 80 and 443 are already used by a website or nginx. NEVER overwrite an existing Caddyfile/nginx configuration. For a fresh VPS Caddy installation after ICP approval, see vps-control/Caddyfile.alidns.example for an example (requires Caddy 2.8+).
 
-This hook does NOT start a second ComfyUI process or submit video jobs. Check whether the existing GPU image already starts ComfyUI 8188; do not blindly start a duplicate.
+Host -> local origin:
 
-## Guangzhou VPS: prepare once
+- director.borealos.cn -> 127.0.0.1:18790 (VPS loopback SSH reverse-forward; rewrite Host to 127.0.0.1:8790)
+- status.borealos.cn -> 127.0.0.1:8891 (existing read-only MCP bridge)
+- power.borealos.cn -> 127.0.0.1:8894 (existing V0.3 application-only bridge)
+- approve.borealos.cn -> 127.0.0.1:8893 (existing human OTP approval, additionally gate with HTTPS browser basic_auth)
 
-    cd ~/comfyui-director-release
-    git pull --ff-only
-    cd vps-control
-    sudo bash install-vps-named-tunnel.sh
-    sudo systemctl is-active director-vps-named-tunnel.service
+Caddy's automatic HTTPS normally needs working DNS, inbound 80/443 and valid issuance. Use an interactive secure local terminal to run caddy hash-password and put the password HASH in the config; NEVER send the password or approval path to ChatGPT. Do not enable access logging of URLs with private MCP path tokens.
 
-Paste ONLY the VPS tunnel TOKEN in the secure local prompt. A new systemd service keeps the tunnel online, automatically restarts it, and leaves read-only and power-approval services unchanged.
+Caddy reference:
+https://caddyserver.com/docs/caddyfile/directives/basic_auth
+https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
 
-## ChatGPT: update plugin Server URL only once
+## D. GPU connects outward to VPS via SSH - one-time setup
 
-Preserve the private MCP path component exactly as before; change only the temporary hostname:
+On VPS, provision a dedicated unprivileged SSH account named directorlink with NO sudo, NO interactive shell and public-key-only authentication. Limit the GPU's SSH public key in authorized_keys to a single remote forwarding bind: 127.0.0.1:18790. For defense in depth, an sshd Match User directorlink section can set:
 
-- ComfyUI Director V3: https://director.borealos.cn/mcp/GPU_PRIVATE_TOKEN
-- Director VPS: https://status.borealos.cn/mcp/VPS_READONLY_PRIVATE_TOKEN
-- Director Power Requests: https://power.borealos.cn/mcp/VPS_POWER_PRIVATE_TOKEN
+    AllowTcpForwarding remote
+    PermitListen 127.0.0.1:18790
+    GatewayPorts no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitTTY no
+    PasswordAuthentication no
 
-Do not paste full URLs into ChatGPT messages. If the existing plugin URL cannot be edited, connect a new plugin and disable the old temporary one.
+Never edit the live sshd config without first validating with sshd -t and preserving an active administrative session. Public-key restrictions can include restrict,port-forwarding,permitlisten="127.0.0.1:18790"; review OpenSSH server version for support. Do not expose 18790 publicly.
 
-Independent approval page remains at https://approve.borealos.cn/approve/ORIGINAL_APPROVAL_ROUTE_SECRET with no secret changes needed. Do not share the route secret.
+On GPU, generate a dedicated Ed25519 key pair for this ONE tunnel, protect the private key with 0600 permissions, and add ONLY the public key to the above VPS account. Pin and verify the VPS's SSH host key fingerprint, rather than disabling StrictHostKeyChecking. The GPU does NOT need domain DNS, TLS, or Cloudflare credentials.
 
-## VPS shutdown safety preflight must be updated once
+Test reverse port forwarding on GPU after the keys and host verification are configured:
 
-On Guangzhou VPS, edit /etc/comfyui-director-control.env with sudoedit and replace DIRECTOR_GPU_MCP_URL with the permanent GPU Director MCP HTTPS URL above. Retain root ownership + mode 0600, then run:
+    ssh -F /root/.ssh/director_backhaul_config -NT \
+      -o ExitOnForwardFailure=yes \
+      -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+      -R 127.0.0.1:18790:127.0.0.1:8790 director-backhaul
 
-    sudo systemctl restart director-power-mcp director-power-approval
+The SSH Host alias must use a known VPS IP, trusted host key, directorlink user and dedicated GPU private key. A reconnect loop should start from the CompShare GPU's officially documented /start.d boot hook, along with the previously installed Director V3. Never launch a duplicate ComfyUI process. GPU instance deletion/rebuild invalidates stored keys/startup config; revoke old SSH public keys.
 
-Otherwise the safety gate will not be able to read the ComfyUI queue before a stop; do NOT bypass fail-closed checks.
+OpenSSH reference:
+https://man.openbsd.org/sshd_config
 
-Once complete, GPU power-off/on makes its Named Tunnel disconnect and later reconnect to the SAME hostname. No repeat edits to ChatGPT plugin URLs or VPS queue URL.
+## E. ChatGPT and VPS safety preflight: one-time URL change
 
-## Limitations
+ChatGPT custom MCP Server URLs (the secret path from existing connections stays the same):
 
-- This does not guarantee recovery after GPU instance deletion, reimaging, or loss of /start.d and /etc/comfyui-director. Verify those paths persist through normal stop/start.
-- The GPU /start.d hook launches cloudflared in the background; cloudflared reconnects to the network, but if its process crashes and the GPU stays running, an additional in-container supervisor is required to restart it. VPS uses systemd for automatic restart.
-- Stable DNS does not itself mean secured MCP: implement ChatGPT-compatible OAuth for production; Cloudflare Access can secure the human approval page.
-- GPU is already Running and may incur rental charges. These installation scripts do not stop or start the GPU, and never touch video jobs.
+- ComfyUI Director V3: https://director.borealos.cn/mcp/GPU_EXISTING_SECRET
+- Director VPS: https://status.borealos.cn/mcp/VPS_READONLY_EXISTING_SECRET
+- Director Power Requests: https://power.borealos.cn/mcp/VPS_POWER_EXISTING_SECRET
+- Approval browser: https://approve.borealos.cn/approve/VPS_APPROVAL_EXISTING_SECRET
 
-References:
-- https://developers.cloudflare.com/tunnel/get-started/
-- https://developers.cloudflare.com/tunnel/concepts/routing/
-- https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/
-- https://compshare.cn/docs/operation/gpufaq
+DO NOT put these real secret strings in GitHub, chats, screenshots or shell history. The existing random MCP paths are transitional security; for long-term use deploy proper authenticated MCP/OAuth, NOT a plain public unauthenticated endpoint.
+
+On VPS, update root-owned, 0600 permissions file /etc/comfyui-director-control.env: set DIRECTOR_GPU_MCP_URL to the GPU's fixed HTTPS MCP URL, then restart director-power-mcp and director-power-approval. The shutdown preflight MUST still fail closed if ComfyUI queue isn't verifiably empty. A fixed domain by itself does not grant or change power control permissions.
+
+## F. Status
+
+The old V0.3 approved GPU start is real; this new AliDNS + outbound SSH architecture is NOT yet deployed, and it has NOT been tested on the user's servers. We still need ICP/port 80/443/SSH access checks and to verify the GPU container preserves /start.d and the dedicated key across stop/start. Keep current live remote control plugins operational until the new fixed-domain endpoints are verified independently.
+
+GPU is currently Running and may be billed. These architecture steps never call StartCompShareInstance or StopCompShareInstance.
