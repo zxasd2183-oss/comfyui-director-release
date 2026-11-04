@@ -1,0 +1,10 @@
+{
+  "channel": "macos-arm64",
+  "version": "0.14.0",
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v0.14.0/GlacierBrowser-v0.14.0-macOS-AppleSilicon.dmg",
+  "sha256": "b0d8d07f222bc516f4e16e84cd89d1a9bda8391fab1a2cc9651d638590d994e9",
+  "size": 281103604,
+  "notes": "v0.14.0 macOS Apple Silicon 首发：Chrome 风格、内置 VLESS、macOS 钥匙串和软件内安全更新。",
+  "key_id": "cf9452226375ff7d",
+  "signature": "jimPyRBL8Qsgn28PusgS7SXeF01hx9O6ZVeco3HyOYnx+P2+RPozQeRBLEenb7IUlHdXiaOARHMx4wnigptYCA=="
+}
