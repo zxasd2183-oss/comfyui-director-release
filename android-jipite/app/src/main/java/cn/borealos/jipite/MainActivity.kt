@@ -176,9 +176,6 @@ class MainActivity : FragmentActivity() {
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
         window.statusBarColor = canvas
         window.navigationBarColor = paper
-        val lightBars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-            android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-        window.insetsController?.setSystemBarsAppearance(lightBars, lightBars)
 
         fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
         fun surface(color: Int, border: Int? = null, round: Int = 14) =
@@ -523,6 +520,16 @@ class MainActivity : FragmentActivity() {
         settingsTab = tab("设置", "settings")
         shell.addView(navigation)
         setContentView(shell)
+        // API 30 PhoneWindow.getInsetsController() can crash before DecorView
+        // exists. Defer styling until after setContentView and attachment.
+        window.decorView.post {
+            val lightBars =
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.decorView.windowInsetsController?.setSystemBarsAppearance(
+                lightBars, lightBars
+            )
+        }
         showPage(if (hintRequestId != null) "requests" else "home")
     }
 
