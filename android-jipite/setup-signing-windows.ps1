@@ -51,8 +51,17 @@ function Set-GitHubSecret([string] $Gh, [string] $Name, [string] $Value, [string
 
 $keytool = Require-Command 'keytool' 'Install JDK 17 or later and reopen PowerShell.'
 $gh = Require-Command 'gh' 'Install GitHub CLI, then reopen PowerShell.'
-& $gh auth status --hostname github.com *> $null
-if ($LASTEXITCODE -ne 0) {
+# gh auth status writes a normal "not logged in" message to stderr.
+# With $ErrorActionPreference='Stop', PowerShell 5.1 turns that into a
+# terminating NativeCommandError. Catch it so first-run login can proceed.
+$githubLoggedIn = $false
+try {
+    & $gh auth status --hostname github.com 2>$null | Out-Null
+    $githubLoggedIn = ($LASTEXITCODE -eq 0)
+} catch {
+    $githubLoggedIn = $false
+}
+if (-not $githubLoggedIn) {
     Write-Host 'Please sign in to your GitHub account in the browser.'
     & $gh auth login --hostname github.com --web
     Check-LastExit 'GitHub sign-in'
