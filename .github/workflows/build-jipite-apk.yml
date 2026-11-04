@@ -1,4 +1,5 @@
 name: Build Jipite APK on GitHub
+run-name: Jipite V0.6 APK rebuild (${{ github.event_name }})
 
 on:
   push:
@@ -107,7 +108,7 @@ jobs:
         with:
           name: Jipite-V0.6-manual-UI-only
           path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: error
 
       - name: Upload Microsoft-connected signed APK
@@ -116,5 +117,5 @@ jobs:
         with:
           name: Jipite-V0.6-manual-Microsoft-signed
           path: android-jipite/app/build/outputs/apk/manual/release/app-manual-release.apk
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: error
