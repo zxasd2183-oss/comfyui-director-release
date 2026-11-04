@@ -11,6 +11,7 @@ CLIENT="/etc/comfyui-director-mobile-clientid"
 PAIR="/etc/comfyui-director-mobile-pairing"
 FCM="/etc/comfyui-director-firebase-service-account.json"
 XIAOMI="/etc/comfyui-director-xiaomi-appsecret"
+XIAOMI_CONFIG="/etc/comfyui-director-xiaomi-channel.json"
 
 [[ -x "$VENV/bin/python" && -f /etc/comfyui-director-control.env ]] || {
   echo "V0.3 controller must be installed first" >&2; exit 2;
@@ -69,14 +70,29 @@ else
   rm -f /etc/systemd/system/director-mobile-v06.service.d/firebase.conf
   echo "FCM credential not installed. App polling works; automatic push is disabled."
 fi
-if [[ -e "$XIAOMI" ]]; then
-  [[ -f "$XIAOMI" && ! -L "$XIAOMI" ]] || { echo "Refusing unsafe Xiaomi credential file"; exit 4; }
-  chown root:root "$XIAOMI"; chmod 0600 "$XIAOMI"
-  printf '[Service]\nLoadCredential=xiaomi:%s\n' "$XIAOMI" > /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
-  echo "Xiaomi Mi Push will be enabled with existing server-only credential."
+if [[ -e "$XIAOMI" && -e "$XIAOMI_CONFIG" ]]; then
+  for secretfile in "$XIAOMI" "$XIAOMI_CONFIG"; do
+    [[ -f "$secretfile" && ! -L "$secretfile" ]] || {
+      echo "Refusing unsafe Xiaomi credential file"; exit 4;
+    }
+    chown root:root "$secretfile"; chmod 0600 "$secretfile"
+  done
+  python3 - "$XIAOMI_CONFIG" <<'PY'
+import json,re,sys
+with open(sys.argv[1], encoding="utf-8") as file:
+    data=json.load(file)
+if set(data) != {"channel_id", "template_id"} or any(
+    not isinstance(data[k],str) or not re.fullmatch(r"[0-9]{1,20}",data[k])
+    for k in ("channel_id","template_id")):
+    raise SystemExit("Invalid Xiaomi channel/template configuration")
+PY
+  printf '[Service]\nLoadCredential=xiaomi:%s\nLoadCredential=xiaomicfg:%s\n' \
+    "$XIAOMI" "$XIAOMI_CONFIG" \
+    > /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
+  echo "Mi Push enabled ONLY using approved no-variable template and channel."
 else
   rm -f /etc/systemd/system/director-mobile-v06.service.d/xiaomi.conf
-  echo "Xiaomi Mi Push appSecret not configured yet. Device polling remains available."
+  echo "Mi Push disabled until both AppSecret and approved channel/template exist."
 fi
 systemctl daemon-reload
 systemctl enable --now director-mobile-v06
