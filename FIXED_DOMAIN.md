@@ -1,6 +1,6 @@
 # Director V0.4 - borealos.cn: AliDNS + self-owned VPS (NO Cloudflare)
 
-THIS SUPERSEDES the previous Cloudflare Named Tunnel idea. Do NOT run the old install-vps-named-tunnel.sh or install_gpu_named_tunnel.sh scripts for the current design. This file is a proposed deployment, NOT confirmation that DNS, proxies, SSH access or certificates have been installed.
+THIS SUPERSEDES the previous Cloudflare Named Tunnel or Caddy ideas. Do NOT run the old install-vps-named-tunnel.sh or install_gpu_named_tunnel.sh scripts for the current design. This file is a proposed deployment, NOT confirmation that DNS, proxies, SSH access or certificates have been installed.
 
 ## Target architecture
 
@@ -32,22 +32,30 @@ At AliDNS console > borealos.cn > DNS Records, add only these A records, if the 
 
 Do NOT point DNS at the rented GPU, edit @ or www, change NS records, or delete existing MX/TXT records. If borealos.cn currently uses other authoritative DNS, configure at the actual DNS provider instead.
 
-## C. VPS HTTPS front end (Caddy example)
+## C. VPS HTTPS front end: reuse the owner's EXISTING Nginx
 
-Before installing a reverse proxy, check if ports 80 and 443 are already used by a website or nginx. NEVER overwrite an existing Caddyfile/nginx configuration. For a fresh VPS Caddy installation after ICP approval, see vps-control/Caddyfile.alidns.example for an example (requires Caddy 2.8+).
+The owner has ALREADY configured five active HTTPS placeholder domains:
+- director.borealos.cn
+- status.borealos.cn
+- power.borealos.cn
+- approve.borealos.cn
+- jipite.borealos.cn
 
-Host -> local origin:
+All return 200 on the generic root page; HTTP redirects 301 to HTTPS. The current valid 5-host Let's Encrypt certificate is installed at /etc/nginx/certs/borealos-new/ and acme.sh renewal cron is enabled.
 
-- director.borealos.cn -> 127.0.0.1:18790 (VPS loopback SSH reverse-forward; rewrite Host to 127.0.0.1:8790)
-- status.borealos.cn -> 127.0.0.1:8891 (existing read-only MCP bridge)
-- power.borealos.cn -> 127.0.0.1:8894 (existing V0.3 application-only bridge)
-- approve.borealos.cn -> 127.0.0.1:8893 (existing human OTP approval, additionally gate with HTTPS browser basic_auth)
+**DO NOT install Caddy, replace or reissue these certificates, overwrite nginx.conf, or disable any existing 301 redirects.** The old Caddy example is obsolete for this user's setup.
 
-Caddy's automatic HTTPS normally needs working DNS, inbound 80/443 and valid issuance. Use an interactive secure local terminal to run caddy hash-password and put the password HASH in the config; NEVER send the password or approval path to ChatGPT. Do not enable access logging of URLs with private MCP path tokens.
+Instead deploy only the four isolated Nginx location snippets from vps-control/nginx-alidns/. Read vps-control/nginx-alidns/README.md for the exact copy, Basic Auth, include, nginx -t and reload instructions.
 
-Caddy reference:
-https://caddyserver.com/docs/caddyfile/directives/basic_auth
-https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
+- director hostname + existing private MCP path -> VPS loopback 127.0.0.1:18790 (not yet connected until GPU outbound SSH).
+- status hostname + existing private MCP path -> VPS loopback 127.0.0.1:8891.
+- power hostname + existing private MCP path -> VPS loopback 127.0.0.1:8894.
+- approve hostname + existing private route path -> VPS loopback 127.0.0.1:8893, protected with new Nginx HTTP Basic Auth and existing independent TOTP.
+- jipite hostname stays at the 200 placeholder. Later it can become a private AI-studio control panel.
+
+The root / of all five sites can keep returning 200; the functionality is carried by private API paths, not the root landing page. This means placeholder 200 does not confirm MCP application connectivity.
+
+Check that the existing acme.sh --install-cert wiring includes the Nginx reload command so that renewed certs are loaded. Do not recreate certs needlessly.
 
 ## D. GPU connects outward to VPS via SSH - one-time setup
 
