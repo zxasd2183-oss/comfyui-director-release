@@ -114,3 +114,45 @@ jobs:
               --prerelease
           fi
           gh release view "$tag" --json tagName,assets
+
+  emulator_smoke:
+    name: Android 15 x86_64 real-APK UI smoke (bounded ADB + evidence)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the exact APK built by this run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Configure KVM access for emulator
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Test original APK on Android API 35 (no GPU, no VLESS secrets)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            set -euo pipefail
+            export GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk"
+            export GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-evidence"
+            python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/emulator_smoke_v012.py"
+      - name: Preserve screenshots and ADB/logcat evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.2-Android15-emulator-evidence
+          path: emulator-evidence/
+          if-no-files-found: warn
+          retention-days: 30
