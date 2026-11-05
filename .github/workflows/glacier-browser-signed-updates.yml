@@ -54,7 +54,7 @@ jobs:
         if: steps.signer.outputs.enabled == 'true'
         uses: actions/checkout@v4
         with:
-          ref: glacier-browser-updates
+          ref: glacier-browser-updates-v2
           path: feed
           persist-credentials: true
 
@@ -97,6 +97,6 @@ jobs:
             exit 0
           fi
           git commit -m 'Publish pinned-key signed Glacier dual-platform updates'
-          git push origin HEAD:glacier-browser-updates
+          git push origin HEAD:glacier-browser-updates-v2
           echo "Windows: signed GitHub channel is published."
           echo "macOS: signed channel published; owner VPS mirror verifies and syncs it."
