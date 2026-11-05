@@ -51,7 +51,7 @@ SAFE_EXCEPTION_CLASSES = frozenset({
     "PyJWKClientConnectionError", "PyJWKClientError", "PyJWKSetError",
     "MissingCryptographyError", "ConnectionError", "ConnectTimeout",
     "ReadTimeout", "TimeoutError", "ValueError", "KeyError",
-    "TypeError", "RuntimeError", "IdentityError",
+    "TypeError", "RuntimeError", "IdentityError", "OtherVerificationError",
 })
 
 
