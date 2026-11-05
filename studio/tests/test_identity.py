@@ -191,7 +191,8 @@ class IdentityTests(unittest.TestCase):
         self.assertNotIn("sensitive-",str(caught.exception))
 
     def test_jwt_invalid_issuer_category_and_no_token_data(self):
-        from jwt.exceptions import InvalidIssuerError
+        class InvalidIssuerError(Exception):
+            pass  # class-only diagnostic contract; works without system PyJWT
         self.id.validate=lambda token:(_ for _ in ()).throw(
             InvalidIssuerError("secret-token-value-should-not-appear"))
         _,state=self.id.start()
@@ -373,7 +374,8 @@ class SSOHttpTests(unittest.TestCase):
         self.assertEqual(self.ask("GET","/login",headers=headers)["status"],404)
 
     def test_real_jwt_exception_is_logged_as_class_only(self):
-        from jwt.exceptions import InvalidIssuerError
+        class InvalidIssuerError(Exception):
+            pass  # class-only diagnostic contract; works without system PyJWT
         self.id.validate=lambda token:(_ for _ in ()).throw(
             InvalidIssuerError("DO-NOT-LOG-ID-TOKEN OR EMAIL"))
         self.ask("GET","/auth/start")
