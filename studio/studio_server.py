@@ -26,6 +26,10 @@ from production_core import (
     episode_detail_from_path, ProductionError
 )
 from production_web import create_from_web, ProductionWebError
+from studio_brain import (
+    BrainAuthenticator, BrainError, systemd_secret,
+    execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
+)
 
 BASE = Path(__file__).resolve().parent
 HOSTS = {"127.0.0.1:8900", "localhost:8900"}
@@ -112,6 +116,8 @@ class StudioServer(ThreadingHTTPServer):
         self.poller = poller if poller is not None else Poller()
         self.csrf_token = secrets.token_urlsafe(32)
         self.identity = from_systemd()
+        # Private signed Hub->Studio channel, independent from browser OIDC.
+        self.brain_auth = BrainAuthenticator(systemd_secret())
         self.is_running = True
         with closing(connect(self.db_path)):
             pass
@@ -340,8 +346,50 @@ class StudioHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
+    def handle_brain_post(self):
+        # This route must never accept a public reverse-proxy request, browser
+        # cookies, Origin or arbitrary upstream forwarding headers.
+        auth=self.server.brain_auth
+        if auth.secret is None:
+            return self.reply(503,{"ok":False,"reason":"brain_link_not_configured"})
+        if self.path != BRAIN_PATH:
+            return self.reply(403,{"ok":False,"reason":"brain_link_denied"})
+        if self.headers.get("Content-Type","").split(";")[0].strip()!="application/json":
+            return self.reply(415,{"ok":False,"reason":"json_only"})
+        if self.headers.get("Transfer-Encoding") is not None:
+            return self.reply(400,{"ok":False,"reason":"unsupported_request_encoding"})
+        raw_length=self.headers.get("Content-Length","")
+        if not raw_length.isascii() or not raw_length.isdigit() or len(raw_length)>8:
+            return self.reply(400,{"ok":False,"reason":"invalid_content_length"})
+        length=int(raw_length)
+        if length<2 or length>MAX_BRAIN_BODY:
+            return self.reply(413,{"ok":False,"reason":"brain_request_too_large"})
+        body=self.rfile.read(length)
+        if len(body)!=length:
+            return self.reply(400,{"ok":False,"reason":"incomplete_request"})
+        if not auth.check(self.headers,"POST",BRAIN_PATH,body,self.client_address[0]):
+            return self.reply(403,{"ok":False,"reason":"brain_link_denied"})
+        try:
+            data=json.loads(body)
+            if not isinstance(data,dict) or set(data)!={"tool","arguments"}:
+                raise BrainError("invalid_brain_request")
+            result=execute_brain(self.server.production_db_path,
+                                 data["tool"],data["arguments"])
+            return self.reply(200,result)
+        except BrainError as exc:
+            return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+        except (ValueError,TypeError,UnicodeError):
+            return self.reply(400,{"ok":False,"reason":"invalid_brain_request"})
+        except Exception:
+            # Do not emit private creative text or database content in logs.
+            return self.reply(503,{"ok":False,"reason":"studio_brain_unavailable"})
+
     def do_POST(self):
-        if not self.headers_safe() or self.public_mode_mismatch():
+        if not self.headers_safe():
+            return self.reply(403, {"ok": False, "reason": "invalid_host"})
+        if urlsplit(self.path).path==BRAIN_PATH:
+            return self.handle_brain_post()
+        if self.public_mode_mismatch():
             return self.reply(403, {"ok": False, "reason": "invalid_host"})
         path = urlsplit(self.path).path
         secured = self.microsoft_proxy()
