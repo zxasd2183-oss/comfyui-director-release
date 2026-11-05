@@ -1,0 +1,71 @@
+# Director Studio V0.9.1 — Microsoft 个人账号网页登录
+
+状态：代码与 CI 自动测试已完成；需要 VPS 所有者在 Microsoft 应用注册中添加 Web 平台、创建客户端凭据，并在 VPS 私人终端执行升级后才算上线。
+
+正式地址：https://jipite.borealos.cn/studio/
+
+## 安全机制
+
+- 复用吉皮提现有 Microsoft 应用的 Client ID。安装器从已有安卓审批设备绑定数据库中只读读取唯一所有者身份标识，将 Studio 权限绑定到同一个 Microsoft 用户。其他 Microsoft 账号一律拒绝。
+- 使用 MSAL 授权码流程及 PKCE、state、nonce；使用 Microsoft consumers JWKS 独立验证 ID Token 的 RSA 签名、固定 issuer、audience、tenant ID、nonce、exp 等。不能信任未经签名校验的身份内容。
+- 不请求 Graph API 权限，也不请求长期 offline_access 权限。浏览器只有不透明 session Cookie，Secure、HttpOnly、SameSite=Lax、Path=/studio/，不存取微软令牌。Session 2 小时绝对超时，30 分钟空闲超时，重启失效。
+- 页面、CSS/JS、生产 API、实时 SSE 全部受保护；会话 POST 有 CSRF 与 Origin 校验。
+- Microsoft 不可用或没有配置时，新的公网代理接口只返回拒绝访问/服务不可用，不会自动变成匿名站点。
+- 原有 /mcp/、/api/v1/mobile/、/app-updates/、手机指纹电源审批和 GPU 状态系统保持独立。
+
+## 第一步：微软注册设置
+
+在你用于吉皮提的 Microsoft Entra / Azure 应用注册中，找到**原来的应用**（不是重新注册一个不同 Client ID 的应用）：
+
+1. Authentication（身份验证） → Add a platform（添加平台） → Web。
+2. 增加精确 Redirect URI：
+
+       https://jipite.borealos.cn/studio/auth/callback
+
+3. 保留原先的个人 Microsoft 账号类型、安卓平台及其回调。
+4. Certificates & secrets → New client secret，创建给 Studio 使用的 Web secret。
+5. 保留刚显示的 Secret **Value**（不是 Secret ID），只在 VPS 私人终端输入，绝对不要发送到聊天、截图或 GitHub。
+
+这是服务器端 Web 应用，不要把回调配置成 Single-page application (SPA)。
+
+微软官方资料：
+https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow
+https://learn.microsoft.com/en-us/entra/identity-platform/reply-url
+
+## 第二步：在 VPS 安装
+
+如果你还没有安装 V0.8.1 的临时 Basic Auth /studio/ 路由，请先：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/enable-jipite-domain.sh
+
+已有 Basic Auth 站点的可以跳过这一步。然后运行：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/install-microsoft-web.sh
+
+升级器会先运行所有测试、备份旧工作台、安装独立 MSAL/PyJWT 虚拟环境，并在终端不回显地询问 Web Secret Value。凭据由 root 独占文件保存，systemd LoadCredential 只向 Studio 服务提供私有副本。
+
+只有在本地探测确认：未经认证的制作 API 返回 HTTP 401，授权入口正确跳转到 Microsoft 可信服务，并且 Nginx 语法验证通过之后，安装器才会撤掉 /studio/ 的临时 Basic Auth，切到 Microsoft 账号登录。失败则尝试恢复原 Basic Auth，不会开放匿名工作台。
+
+## 第三步：验收
+
+在浏览器打开 https://jipite.borealos.cn/studio/；网页应要求使用你之前绑定吉皮提的同一个 Microsoft 个人账号，登录后看到原来的 GPU 监控和 V0.9 全剧视听工程。错误 Microsoft 账号不得访问。
+
+不需要任何凭据的 VPS 检查：
+
+    curl -sS -o /dev/null -w '%{http_code}\n' https://jipite.borealos.cn/studio/api/v1/production
+    sudo systemctl is-active director-studio
+    sudo nginx -t
+    sudo ss -ltn | grep ':8900'
+
+第一项应是 401，服务应 active，8900 仍只绑定 127.0.0.1。退出登录以后必须失去访问权限；服务重启也应使旧会话失效。
+
+## 重要限制
+
+- 目前网站只读展示制作工程。导演艺术例外批准仍需在 VPS 本地 CLI 进行，不会由网页登录直接执行 GPU 任务。
+- 同域不同路径并不隔离 JavaScript origin。如果将来允许直接取消/中断 GPU 工作，应考虑独立管理子域名与额外的操作级确认。
+- 真实 Microsoft 网页端到端登录只有在你配置好 App registration 并完成浏览器登录后才能验证；CI 的模拟登录及真实 JWT 签名测试不能代替它。
+- 如果 Microsoft JWKS 端点因为网络无法访问，则宁可登录失败，也不禁用签名验证。
