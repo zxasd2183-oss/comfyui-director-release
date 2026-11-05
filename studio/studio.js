@@ -10,6 +10,7 @@
   const stages = {planned:"待制作",queued:"已排队",rendering:"生成中",
     review:"待审片",approved:"审核通过",failed:"生成失败",done:"已完成"};
   let latest = null, selectedId = null, csrf = null, pending = null;
+  let microsoftOwner = false, selectedProductionEpisode = null, productionAction = null;
   const clock = () => {
     $("clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false});
   };
@@ -70,7 +71,9 @@
     $("productionAssetKinds").textContent = Object.keys(kinds).length ?
       "资产类型："+Object.keys(kinds).sort().join(" · ") : "资产类型：尚无已登记资产";
     $("productionMode").textContent=production?.mode==="read_only_production_summary" ?
-      "正式制作台账 · 只读" : "制作数据不可用";
+      (microsoftOwner?"已验证所有者 · 可编辑项目":"制作数据 · 只读") : "制作数据不可用";
+    $("createEpisodeBtn").disabled=!microsoftOwner ||
+      !(production?.projects||[]).length;
 
     const list=$("projectList");
     list.replaceChildren();
@@ -78,21 +81,175 @@
     const episodes=production?.episodes || [];
     if(!projects.length) {
       list.appendChild(el("div","production-empty",
-        "尚未建立项目。可通过 VPS 本地管理命令创建项目和剧集。"));
+        microsoftOwner?"尚未建立项目。点击「新建项目」，开始第一部作品。":
+        "尚未建立项目。请使用受保护的 Microsoft 网页登录创建。"));
       return;
     }
     for(const p of projects) {
+      const wrap=el("div","project-entry");
       const row=el("div","project-item");
       const info=el("div","");
       info.appendChild(el("strong","",p.title));
       const related=episodes.filter(x=>x.project_id===p.project_id);
-      const names=related.map(e=>e.episode_id+" "+e.title).join(" · ");
-      info.appendChild(el("small","",names||"尚未建立剧集"));
+      info.appendChild(el("small","",related.length+" 集已登记 · 点击剧集查看分镜与资产"));
       row.appendChild(info);
       row.appendChild(el("span","project-id",p.project_id));
-      list.appendChild(row);
+      wrap.appendChild(row);
+      if(related.length) {
+        const group=el("div","project-episodes");
+        for(const e of related) {
+          const button=el("button","project-episode-button",e.episode_id+" · "+e.title);
+          button.type="button";
+          button.setAttribute("aria-label","查看剧集 "+e.title);
+          button.addEventListener("click",()=>loadEpisode(p.project_id,e.episode_id));
+          group.appendChild(button);
+        }
+        wrap.appendChild(group);
+      }
+      list.appendChild(wrap);
     }
   }
+  async function loadEpisode(projectId,episodeId) {
+    const panel=$("episodeExplorer");
+    panel.hidden=false;
+    $("episodeExplorerTitle").textContent=episodeId+" · 读取中";
+    $("episodeExplorerInfo").replaceChildren();
+    $("episodeShotGrid").replaceChildren();
+    $("episodeAssetSummary").replaceChildren();
+    try {
+      const url="./api/v1/production/episode?project="+encodeURIComponent(projectId)
+        +"&episode="+encodeURIComponent(episodeId);
+      const response=await fetch(url,{cache:"no-store"});
+      if(!response.ok)throw Error(response.status===401?
+        "登录会话已过期，请重新登录":"剧集数据无法读取");
+      const data=await response.json();
+      selectedProductionEpisode={projectId,episodeId};
+      const episode=data.episode||{};
+      $("episodeExplorerTitle").textContent=(episode.title||episodeId)
+        +" · "+episodeId;
+      $("episodeExplorerStage").textContent=episode.stage==="planning"?
+        "策划中":episode.stage||"制作中";
+      const summary=$("episodeExplorerInfo");
+      const duration=(data.shots||[]).reduce((acc,s)=>acc+s.duration_ms,0);
+      summary.appendChild(el("span","", "镜头 "+data.shot_count));
+      summary.appendChild(el("span","", "已登记时长 "+(duration/1000).toFixed(1)+" 秒"
+        +(data.shots_truncated?"（部分展示）":"")));
+      summary.appendChild(el("span","", "关联资产 "+data.assets.length
+        +(data.assets_truncated?"+":"")));
+      summary.appendChild(el("span","", "连续性异常 "+data.finding_count));
+      const shotGrid=$("episodeShotGrid");
+      if(!data.shots.length)shotGrid.appendChild(
+        el("div","production-empty","尚未导入分镜。可以在 VPS 使用审核后的 V0.7 计划安全导入。"));
+      for(const shot of data.shots) {
+        const tile=el("div","episode-shot-tile");
+        tile.setAttribute("role","listitem");
+        tile.appendChild(el("strong","","#"+shot.shot_id));
+        tile.appendChild(el("span","", (shot.duration_ms/1000).toFixed(1)+"秒"));
+        tile.appendChild(el("small","", stages[shot.stage]||shot.stage));
+        shotGrid.appendChild(tile);
+      }
+      const assets=$("episodeAssetSummary");
+      assets.appendChild(el("strong","", "已绑定视听资产版本"));
+      if(!data.assets.length)assets.appendChild(
+        el("span","","尚无角色、声线或场景资产绑定"));
+      for(const asset of data.assets) {
+        assets.appendChild(el("span","asset-chip",
+          asset.kind+" · "+asset.subject_id+" · V"+asset.version));
+      }
+    } catch(err) {
+      $("episodeExplorerTitle").textContent="无法读取剧集";
+      $("episodeExplorerInfo").textContent=err.message;
+    }
+  }
+
+  function openProductionEditor(action,projectId=null) {
+    if(!microsoftOwner||!csrf)return;
+    productionAction=action;
+    const episode=action==="create_episode";
+    const projects=latest?.production?.projects||[];
+    if(episode&&!projects.length)return;
+    $("productionDialogTitle").textContent=episode?"添加剧集":"创建新项目";
+    $("productionDialogDescription").textContent=episode?
+      "为现有短剧项目建立一集。你可以之后安全导入已审核分镜计划。":
+      "创建正式项目档案。所有项目和剧集更改都会写入审计链。";
+    $("productionIdLabel").textContent=episode?"剧集编号":"项目编号";
+    $("productionIdInput").value=episode?"EP01":"";
+    $("productionIdInput").placeholder=episode?"例如 EP01":"例如 WaitingOffice";
+    $("productionTitleInput").value="";
+    $("productionTitleInput").placeholder=episode?"例如 第一集":"例如 待回答事务所";
+    $("productionParentFields").hidden=!episode;
+    $("productionFormError").textContent="";
+    const selector=$("productionProjectSelect");
+    selector.replaceChildren();
+    for(const p of projects) {
+      const option=document.createElement("option");
+      option.value=p.project_id;option.textContent=p.title+" ("+p.project_id+")";
+      selector.appendChild(option);
+    }
+    if(projectId&&projects.some(x=>x.project_id===projectId))
+      selector.value=projectId;
+    $("productionOrdinalInput").value=episode?
+      String((latest?.production?.episodes||[]).filter(
+        e=>e.project_id===selector.value).length+1):"";
+    $("productionSubmit").disabled=false;
+    $("productionDialog").showModal();
+    $("productionIdInput").focus();
+  }
+  $("createProjectBtn").addEventListener("click",()=>openProductionEditor("create_project"));
+  $("createEpisodeBtn").addEventListener("click",()=>openProductionEditor("create_episode"));
+  $("productionCancel").addEventListener("click",()=>$("productionDialog").close());
+  $("productionProjectSelect").addEventListener("change",()=>{
+    $("productionOrdinalInput").value=String((latest?.production?.episodes||[])
+      .filter(e=>e.project_id===$("productionProjectSelect").value).length+1);
+  });
+  $("productionForm").addEventListener("submit",async event=>{
+    event.preventDefault();
+    if(!microsoftOwner||!productionAction||!csrf)return;
+    const inputId=$("productionIdInput").value.trim();
+    const title=$("productionTitleInput").value.trim();
+    const error=$("productionFormError");
+    const validId=/^[A-Za-z][A-Za-z0-9_-]{1,47}$/;
+    if(!validId.test(inputId)) {
+      error.textContent="编号必须以英文字母开头，且为 2–48 位字母、数字、下划线或连字符";
+      return;
+    }
+    if(!title||title.length>160||/[\\u0000-\\u001f]/.test(title)) {
+      error.textContent="请输入 1–160 字的项目或剧集名称";return;
+    }
+    let data={action:productionAction,csrf,title};
+    if(productionAction==="create_project")data.project_id=inputId;
+    else {
+      const ordinal=Number($("productionOrdinalInput").value);
+      if(!Number.isInteger(ordinal)||ordinal<1||ordinal>1000) {
+        error.textContent="剧集序号必须在 1–1000 之间";return;
+      }
+      data={...data,project_id:$("productionProjectSelect").value,
+            episode_id:inputId,ordinal};
+    }
+    $("productionSubmit").disabled=true;
+    error.textContent="";
+    try {
+      const response=await fetch("./api/v1/production/action",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(data),cache:"no-store"
+      });
+      const result=await response.json();
+      if(!response.ok)throw Error(response.status===401?"会话已过期，请重新登录":
+        ({already_exists_or_invalid_parent:"编号或剧集序号已存在，请更换",
+          invalid_identifier:"编号不符合要求",
+          invalid_text:"名称不能为空",
+          audit_integrity_failure:"审计链校验失败，已禁止写入；需要管理员检查备份"
+        }[result.reason]||result.reason||"无法保存制作工程"));
+      $("productionDialog").close();
+      await refresh();
+      if(productionAction==="create_project")
+        openProductionEditor("create_episode",result.project_id);
+      else await loadEpisode(result.project_id,result.episode_id);
+    }catch(err) {
+      error.textContent=err.message;
+    }finally {$("productionSubmit").disabled=false;}
+  });
+
   function renderShots(shots) {
     const parent=$("shotList");
     parent.replaceChildren();
@@ -201,7 +358,10 @@
       const r=await fetch("./api/v1/bootstrap",{cache:"no-store"});
       if(!r.ok)throw Error("No operator access");
       const b=await r.json(); csrf=b.csrf;
-      if(b.mode==="microsoft_owner"){
+      microsoftOwner=b.mode==="microsoft_owner";
+      $("createProjectBtn").hidden=!microsoftOwner;
+      $("createEpisodeBtn").hidden=!microsoftOwner;
+      if(microsoftOwner){
         $("logoutMicrosoft").hidden=false;
         $("logoutMicrosoft").addEventListener("click",async()=>{
           if(!csrf)return;
