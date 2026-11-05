@@ -14,10 +14,12 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import closing
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qsl
 
 from studio_core import StudioError, connect, decide, snapshot
 from studio_backend import query
+from studio_identity import (from_systemd, cookies, COOKIE_SID, COOKIE_STATE,
+    state_cookie, session_cookie, clear_cookie, IdentityError)
 from production_core import open_db as open_production, dashboard_from_path
 
 BASE = Path(__file__).resolve().parent
@@ -74,6 +76,7 @@ class StudioServer(ThreadingHTTPServer):
         self.production_db_path = str(Path(db_path).with_name("production.sqlite"))
         self.poller = poller if poller is not None else Poller()
         self.csrf_token = secrets.token_urlsafe(32)
+        self.identity = from_systemd()
         self.is_running = True
         with closing(connect(self.db_path)):
             pass
@@ -99,6 +102,32 @@ class StudioHandler(BaseHTTPRequestHandler):
     def headers_safe(self):
         host = self.headers.get("Host", "")
         return host in HOSTS and self.client_address[0] == "127.0.0.1"
+
+    def microsoft_proxy(self):
+        return (self.headers.get("X-Director-Studio-Auth-Mode") == "microsoft"
+                and self.headers.get("X-Forwarded-Proto") == "https"
+                and self.headers.get("X-Forwarded-Host") == "jipite.borealos.cn")
+
+    def public_mode_mismatch(self):
+        # If Nginx advertises Microsoft auth but transport markers differ,
+        # reject, rather than silently treating it as SSH local mode.
+        return (self.headers.get("X-Director-Studio-Auth-Mode") == "microsoft"
+                and not self.microsoft_proxy())
+
+    def authenticated(self):
+        if self.server.identity is None:
+            return None
+        sid = cookies(self.headers.get("Cookie","")).get(COOKIE_SID)
+        return self.server.identity.check(sid)
+
+    def redirect(self, url, *, set_cookies=()):
+        self.send_response(302)
+        self.common_headers("text/plain; charset=utf-8")
+        self.send_header("Location", url)
+        for cookie in set_cookies:
+            self.send_header("Set-Cookie", cookie)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def common_headers(self, mime):
         self.send_header("Content-Type", mime)
@@ -138,7 +167,40 @@ class StudioHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.headers_safe():
             return self.reply(403, {"ok": False, "reason": "invalid_host"})
-        path = urlsplit(self.path).path
+        if self.public_mode_mismatch():
+            return self.reply(403, {"ok":False,"reason":"proxy_auth_mode_invalid"})
+        url = urlsplit(self.path)
+        path = url.path
+        secured = self.microsoft_proxy()
+        if secured:
+            if self.server.identity is None:
+                return self.reply(503, {"ok":False,"reason":"microsoft_login_not_configured"})
+            if path == "/auth/start":
+                try:
+                    auth_uri, state = self.server.identity.start()
+                    return self.redirect(auth_uri, set_cookies=(state_cookie(state),))
+                except Exception:
+                    return self.reply(503, {"ok":False,"reason":"microsoft_login_unavailable"})
+            if path == "/auth/callback":
+                try:
+                    pairs=parse_qsl(url.query, keep_blank_values=True, max_num_fields=4)
+                    if len(pairs)!=2 or len({k for k,v in pairs})!=2:
+                        raise IdentityError("invalid_callback")
+                    query=dict(pairs)
+                    state=cookies(self.headers.get("Cookie","")).get(COOKIE_STATE)
+                    sid=self.server.identity.finish(query,state)
+                    return self.redirect("/studio/",set_cookies=(
+                        session_cookie(sid),clear_cookie(COOKIE_STATE)))
+                except Exception:
+                    return self.reply(403, {"ok":False,"reason":"microsoft_login_failed"})
+            session=self.authenticated()
+            if path == "/auth/status":
+                return self.reply(200,{"authenticated":bool(session),
+                                      "mode":"microsoft_personal_owner"})
+            if session is None:
+                if path == "/":
+                    return self.redirect("/studio/auth/start")
+                return self.reply(401,{"ok":False,"reason":"microsoft_login_required"})
         if path == "/":
             return self.file("index.html", "text/html; charset=utf-8")
         if path == "/studio.css":
@@ -146,8 +208,10 @@ class StudioHandler(BaseHTTPRequestHandler):
         if path == "/studio.js":
             return self.file("studio.js", "application/javascript; charset=utf-8")
         if path == "/api/v1/bootstrap":
-            return self.reply(200, {"ok": True, "csrf": self.server.csrf_token,
-                                    "mode": "ssh_only_local_supervisor"})
+            csrf = session["csrf"] if secured else self.server.csrf_token
+            return self.reply(200, {"ok": True, "csrf": csrf,
+                                    "mode": "microsoft_owner" if secured else
+                                    "ssh_only_local_supervisor"})
         if path == "/api/v1/snapshot":
             return self.reply(200, self.fresh_snapshot())
         if path == "/api/v1/production":
@@ -159,7 +223,10 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.end_headers()
         try:
+            sid = cookies(self.headers.get("Cookie","")).get(COOKIE_SID) if secured else None
             while self.server.is_running:
+                if secured and self.server.identity.check(sid) is None:
+                    break
                 data = json.dumps(self.fresh_snapshot(), ensure_ascii=False,
                                   separators=(",", ":"))
                 self.wfile.write(("event: snapshot\ndata: " + data + "\n\n").encode("utf-8"))
@@ -169,9 +236,19 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
 
     def do_POST(self):
-        if not self.headers_safe():
+        if not self.headers_safe() or self.public_mode_mismatch():
             return self.reply(403, {"ok": False, "reason": "invalid_host"})
-        if urlsplit(self.path).path != "/api/v1/action":
+        path = urlsplit(self.path).path
+        secured = self.microsoft_proxy()
+        if secured:
+            if self.server.identity is None:
+                return self.reply(503, {"ok":False,"reason":"microsoft_login_not_configured"})
+            session=self.authenticated()
+            if session is None:
+                return self.reply(401,{"ok":False,"reason":"microsoft_login_required"})
+        if path not in ("/api/v1/action", "/auth/logout"):
+            return self.reply(404, {"ok": False, "reason": "not_found"})
+        if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
         origin = self.headers.get("Origin", "")
         via_tls_proxy = (
@@ -183,6 +260,18 @@ class StudioHandler(BaseHTTPRequestHandler):
         )
         if origin not in permitted:
             return self.reply(403, {"ok": False, "reason": "invalid_origin"})
+        if path == "/auth/logout":
+            if not secrets.compare_digest(
+                    self.headers.get("X-CSRF-Token",""), session["csrf"]):
+                return self.reply(403,{"ok":False,"reason":"csrf_denied"})
+            sid=cookies(self.headers.get("Cookie","")).get(COOKIE_SID)
+            self.server.identity.logout(sid)
+            self.send_response(204)
+            self.common_headers("application/json; charset=utf-8")
+            self.send_header("Set-Cookie", clear_cookie(COOKIE_SID))
+            self.send_header("Content-Length","0")
+            self.end_headers()
+            return
         if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
             return self.reply(415, {"ok": False, "reason": "json_only"})
         try:
@@ -198,7 +287,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 raise ValueError
         except (ValueError, UnicodeDecodeError):
             return self.reply(400, {"ok": False, "reason": "invalid_json"})
-        if not secrets.compare_digest(str(data.get("csrf", "")), self.server.csrf_token):
+        expected_csrf=session["csrf"] if secured else self.server.csrf_token
+        if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
         try:
             with connect(self.server.db_path) as db:
