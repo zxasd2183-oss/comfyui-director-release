@@ -128,6 +128,25 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
+        // Android 15 enforces edge-to-edge for apps targeting API 35. Without
+        // explicit system-bar insets, the status bar covers the profile chip
+        // and the 3-button navigation area intercepts tab/menu taps.
+        if (android.os.Build.VERSION.SDK_INT >= 35) {
+            root.setOnApplyWindowInsetsListener((view, insets) -> {
+                android.graphics.Insets bars = insets.getInsets(
+                        android.view.WindowInsets.Type.systemBars());
+                // Keep both the top browser toolbar and bottom actions inside
+                // the actual tappable application area.
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                if ((getApplicationInfo().flags
+                        & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    android.util.Log.i("GlacierSmoke",
+                            "SYSTEM_BAR_INSETS top=" + bars.top
+                            + " bottom=" + bars.bottom);
+                }
+                return insets;
+            });
+        }
         setContentView(root);
 
         LinearLayout header = horizontal();
