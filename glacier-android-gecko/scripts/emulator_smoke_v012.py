@@ -108,14 +108,20 @@ def main():
     tap(text="明确使用直连")
     await_ui(desc="内核测试菜单",timeout=120)
     record("browser_start","UI present; Gecko page content NOT proven")
+    insets_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=25)
+    if not re.search(r"SYSTEM_BAR_INSETS top=[1-9]\\d* bottom=[1-9]\\d*",insets_log):
+        raise RuntimeError("ANDROID_15_SYSTEM_BAR_INSETS_NOT_APPLIED")
+    record("system_bar_insets","nonzero top and bottom reported by Android app")
     shot("01-start")
     urlbar("https://example.com")
     page_event("example")
     record("example_navigation","Gecko PAGE_STOP true; HTTP content not verified")
+    shot("01-example-loaded")
     # Keep UI controls, background restore and identity switching ahead of
     # heavy external pages, so one emulator stall does not hide their results.
     tap(desc="新建标签页")
     await_ui(text="2")
+    shot("02-tabs")
     record("new_tab","tab counter observed; tab persistence not verified")
     tap(text="私人空间  ▾")
     tap(text="工作空间 · 独立 Cookie")
