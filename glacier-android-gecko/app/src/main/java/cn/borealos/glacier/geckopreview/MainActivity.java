@@ -18,6 +18,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.mozilla.geckoview.GeckoResult;
+import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
@@ -29,8 +30,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Glacier Gecko Engine Lab v0.1, a REAL GeckoView embedding, not a WebView.
- * No credential vault, automatic login, data sync or VLESS proxy exists yet.
+ * Glacier GeckoView network experiment v0.1.2.
+ * A REAL, app-bundled VLESS core may feed Gecko through a loopback SOCKS5 proxy.
+ * No credential vault, automatic login or cloud sync exists yet.
  *
  * Profile isolation is provided by GeckoSessionSettings.contextId, NOT UI only.
  * Each tab retains the contextId with which it was created for its entire life.
@@ -45,6 +47,7 @@ public final class MainActivity extends Activity {
 
     // GeckoRuntime is process-scoped, and must only be created once.
     private static GeckoRuntime runtime;
+    private static boolean proxyMode = false;
 
     private final List<Tab> tabs = new ArrayList<>();
     private GeckoView web;
@@ -78,11 +81,15 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.rgb(248, 251, 253));
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
                 | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        // Do not let Gecko create network requests until the user has chosen
+        // an explicit mode and its runtime preferences are in place.
         if (runtime == null) {
-            runtime = GeckoRuntime.create(getApplicationContext());
+            NativeProxy.deleteStaleFiles(this);
+            showNetworkGate();
+        } else {
+            buildChrome();
+            openTab(PRIVATE, START_URL);
         }
-        buildChrome();
-        openTab(PRIVATE, START_URL);
     }
 
     private int dp(float size) {
@@ -186,7 +193,9 @@ public final class MainActivity extends Activity {
 
         // Testing banner makes the network security limitation explicit.
         engineLabel = new TextView(this);
-        engineLabel.setText("GeckoView 真内核测试版 · 尚未接入 VLESS");
+        engineLabel.setText(proxyMode
+                ? "VLESS → 本地 SOCKS5 → GeckoView · 实验连接"
+                : "直连网络 · 已明确选择（无代理保护）");
         engineLabel.setTextColor(Color.rgb(111, 91, 49));
         engineLabel.setTextSize(11);
         engineLabel.setGravity(Gravity.CENTER);
@@ -236,13 +245,14 @@ public final class MainActivity extends Activity {
                 .setTitle("Glacier · GeckoView 内核")
                 .setItems(new String[]{
                     "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
-                    "切换账号空间", "测试说明"
+                    "切换账号空间", "网络连接信息", "测试说明"
                 }, (dialog, index) -> {
                     if (index == 0) navigate("about:buildconfig");
                     if (index == 1) navigate("https://chatgpt.com/");
                     if (index == 2) navigate("https://github.com/");
                     if (index == 3) chooseProfile();
-                    if (index == 4) showLabWarning();
+                    if (index == 4) showNetworkStatus();
+                    if (index == 5) showLabWarning();
                 }).show());
         LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(43), dp(44));
         dots.setMargins(dp(8), 0, 0, 0);
@@ -335,6 +345,14 @@ public final class MainActivity extends Activity {
         if (address == null) return;
         identity.setText(WORK.equals(selectedProfile) ? "工作空间  ▾" : "私人空间  ▾");
         tabCounter.setText(Integer.toString(tabs.size()));
+        if (engineLabel != null) {
+            if (proxyMode) {
+                boolean connected = NativeProxy.alive();
+                engineLabel.setText(connected
+                        ? "VLESS 本地代理运行中 · 可测试出口 IP"
+                        : "代理已断开 · Gecko SOCKS 不会自动改为直连");
+            }
+        }
         if (active != null) {
             if (!address.hasFocus()) address.setText(active.url);
             backButton.setEnabled(active.canBack);
@@ -432,12 +450,135 @@ public final class MainActivity extends Activity {
         if (imm != null) imm.hideSoftInputFromWindow(address.getWindowToken(), 0);
     }
 
+    /**
+     * Safety gate. The browser never implicitly chooses DIRECT when node
+     * configuration fails. Starting a DIRECT test requires a deliberate tap.
+     */
+    private void showNetworkGate() {
+        new AlertDialog.Builder(this)
+                .setTitle("Glacier · 选择网络测试方式")
+                .setMessage("内核测试版支持导入 VLESS（TLS/REALITY），经内置 sing-box 和本地 SOCKS5 访问网页。\n\n也可以明确选择直连模式进行基础对照。\n\nVLESS 配置失败时不会自动切换直连。")
+                .setCancelable(false)
+                .setPositiveButton("导入 VLESS 节点", (d, w) -> askForNode())
+                .setNegativeButton("明确使用直连", (d, w) -> startDirectMode())
+                .show();
+    }
+
+    private void askForNode() {
+        final EditText input = new EditText(this);
+        input.setSingleLine(false);
+        input.setLines(3);
+        input.setTextSize(14);
+        input.setHint("粘贴 vless://UUID@服务器:端口?... ");
+        input.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setPadding(dp(20), dp(8), dp(20), dp(8));
+        wrapper.addView(input, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        new AlertDialog.Builder(this)
+                .setTitle("导入 VLESS · 仅本次运行")
+                .setMessage("支持 TLS / REALITY、TCP / WS。节点链接不会上传或写入日志；代理运行时会创建应用私有临时配置。")
+                .setView(wrapper)
+                .setNegativeButton("返回", (d, w) -> showNetworkGate())
+                .setPositiveButton("启动代理", (d, w) -> {
+                    String value = input.getText().toString().trim();
+                    input.setText("");
+                    startVlessMode(value);
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    private void startDirectMode() {
+        try {
+            proxyMode = false;
+            String yaml = NativeProxy.prepareGecko(this, false);
+            initializeEngine(yaml);
+        } catch (Exception e) {
+            showNetworkError("无法初始化直连 GeckoView 内核");
+        }
+    }
+
+    private void startVlessMode(String value) {
+        final VlessLink node;
+        try {
+            node = VlessLink.parse(value);
+        } catch (Exception e) {
+            showNetworkError(e.getMessage());
+            return;
+        }
+        android.app.ProgressDialog loading = android.app.ProgressDialog.show(this,
+                "Glacier 网络实验", "正在初始化 sing-box 核心和 SOCKS5 代理...",
+                true, false);
+        new Thread(() -> {
+            try {
+                NativeProxy.start(getApplicationContext(), node);
+                String yaml = NativeProxy.prepareGecko(getApplicationContext(), true);
+                runOnUiThread(() -> {
+                    loading.dismiss();
+                    proxyMode = true;
+                    initializeEngine(yaml);
+                });
+            } catch (Exception e) {
+                NativeProxy.stop();
+                runOnUiThread(() -> {
+                    loading.dismiss();
+                    // Errors must not include node UUID, host, keys, or URL.
+                    String detail = e.getMessage();
+                    if (detail == null || detail.length() > 120) detail = "代理启动失败";
+                    showNetworkError(detail);
+                });
+            }
+        }, "glacier-vless-start").start();
+    }
+
+    private void initializeEngine(String configPath) {
+        try {
+            if (runtime == null) {
+                GeckoRuntimeSettings settings = new GeckoRuntimeSettings.Builder()
+                        .configFilePath(configPath)
+                        .build();
+                runtime = GeckoRuntime.create(getApplicationContext(), settings);
+            }
+            buildChrome();
+            openTab(PRIVATE, START_URL);
+        } catch (Exception ex) {
+            NativeProxy.stop();
+            showNetworkError("GeckoView 无法使用当前网络配置初始化");
+        }
+    }
+
+    private void showNetworkError(String message) {
+        new AlertDialog.Builder(this)
+                .setTitle("网络未连接")
+                .setMessage(message + "\n\n网页未启动，不会自动回退到直连。")
+                .setCancelable(false)
+                .setPositiveButton("重新配置", (d, w) -> showNetworkGate())
+                .show();
+    }
+
+    private void showNetworkStatus() {
+        new AlertDialog.Builder(this)
+                .setTitle("Glacier 网络诊断")
+                .setMessage(proxyMode
+                        ? ("内置 sing-box: " + (NativeProxy.alive() ? "本地 SOCKS5 正在运行" : "已断开")
+                           + "\n网页代理：127.0.0.1:" + NativeProxy.PORT
+                           + "\nDNS：SOCKS5 远端解析"
+                           + "\nWebRTC：暂时关闭（降低 IP 泄漏风险）"
+                           + "\n\n本地 SOCKS5 启动不代表远端 VLESS 已验证。请在网页里测试出口 IP、断网后是否失败以及 DNS。")
+                        : "当前是主动选择的直连测试模式，没有 VLESS 保护。")
+                .setPositiveButton("知道了", null).show();
+    }
+
     private void showLabWarning() {
         new AlertDialog.Builder(this)
                 .setTitle("这是内核实验版")
                 .setMessage("已集成 GeckoView 真正的网页内核，可比较网页显示、导航、账号空间隔离和兼容性。"
-                        + "\n\n尚未接入 VLESS、账号保险箱、验证码 API、数据同步或安全权限管理。"
-                        + "\n\n当前网页走手机默认网络，不保证代理。请勿使用关键账号测试。")
+                        + "\n\n已接入内置 VLESS/本地 SOCKS5 实验网络；该模式不是 Android 系统级 VPN，也未经过独立审计。"
+                        + "\n\n目前尚未提供账号保险箱、验证码 API、云同步、完整权限管理。"
+                        + "\n\n直连模式仅用于对照测试；VLESS 模式必须验证真实出口。请勿输入关键账号。")
                 .setPositiveButton("知道了", null)
                 .show();
     }
@@ -459,5 +600,13 @@ public final class MainActivity extends Activity {
             tabs.clear();
         }
         super.onDestroy();
+        if (isFinishing()) {
+            NativeProxy.stop();
+            // GeckoRuntime is single-instance per process. For experimental
+            // proxy-vs-direct comparisons, a clean restart is essential.
+            if (runtime != null) runtime.shutdown();
+            runtime = null;
+            android.os.Process.killProcess(android.os.Process.myPid());
+        }
     }
 }
