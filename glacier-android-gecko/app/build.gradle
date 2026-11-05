@@ -10,8 +10,8 @@ android {
         applicationId 'cn.borealos.glacier.geckopreview'
         minSdk 26
         targetSdk 35
-        versionCode 2
-        versionName '0.1.1-gecko-emulator'
+        versionCode 3
+        versionName '0.1.2-gecko-vless'
         ndk {
             abiFilters 'arm64-v8a', 'x86_64'
         }
@@ -33,6 +33,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols.add('**/libsingbox.so')
         }
     }
 }
@@ -40,4 +41,5 @@ android {
 dependencies {
     // Pin the verified October 2026 stable GeckoView build, not a moving nightly.
     implementation 'org.mozilla.geckoview:geckoview:159.0.20261022150525'
+    testImplementation 'junit:junit:4.13.2'
 }
