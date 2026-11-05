@@ -166,7 +166,14 @@ class StudioHandler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path != "/api/v1/action":
             return self.reply(404, {"ok": False, "reason": "not_found"})
         origin = self.headers.get("Origin", "")
-        if origin not in ("http://127.0.0.1:8900", "http://localhost:8900"):
+        via_tls_proxy = (
+            self.headers.get("X-Forwarded-Proto") == "https"
+            and self.headers.get("X-Forwarded-Host") == "jipite.borealos.cn"
+        )
+        permitted = ("https://jipite.borealos.cn",) if via_tls_proxy else (
+            "http://127.0.0.1:8900", "http://localhost:8900"
+        )
+        if origin not in permitted:
             return self.reply(403, {"ok": False, "reason": "invalid_origin"})
         if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
             return self.reply(415, {"ok": False, "reason": "json_only"})
