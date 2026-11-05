@@ -105,7 +105,7 @@ systemctl is-active --quiet director-hub-mcp director-hub-bridge \
 import json
 from urllib.request import Request, urlopen
 data = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}).encode()
-req = Request("http://127.0.0.1:8896/mcp", data=data, method="POST", headers={
+req = Request("http://127.0.0.1:8898/mcp", data=data, method="POST", headers={
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
     "Mcp-Protocol-Version": "2025-03-26",
@@ -127,7 +127,7 @@ PY
 
 # Nginx routing is applied only if target HTTPS vhost is unambiguous.
 python3 "$SRC/configure_director_hub_nginx.py"
-echo "Director Hub V0.5 installed on VPS loopback (8896/8897)."
+echo "Director Hub installed on VPS loopback (8898/8897)."
 echo "Existing GPU / VPS / mobile approval services unchanged."
 echo "Retrieve private connection URL ONLY in VPS private SSH terminal:"
 echo "sudo sh -c 'printf https://jipite.borealos.cn/mcp/; cat /etc/comfyui-director-hub.token'"
