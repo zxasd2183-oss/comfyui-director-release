@@ -158,9 +158,9 @@ PY
 import json,time,urllib.request
 from urllib.request import Request,build_opener,ProxyHandler
 opener=build_opener(ProxyHandler({}))
-req=Request("http://127.0.0.1:8896/mcp",method="POST",
+req=Request("http://127.0.0.1:8898/mcp",method="POST",
     data=json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}).encode(),
-    headers={"Host":"127.0.0.1:8896","Content-Type":"application/json",
+    headers={"Host":"127.0.0.1:8898","Content-Type":"application/json",
              "Accept":"application/json, text/event-stream",
              "Mcp-Protocol-Version":"2025-03-26"})
 for attempt in range(8):
