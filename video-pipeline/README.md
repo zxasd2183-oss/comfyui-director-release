@@ -32,6 +32,20 @@ GPU 开机、ComfyUI 可用后，在 UI 中载入原来的 T2V/I2V/R2V 工作流
 
 **GPU 关机期间**只能执行 prepare/status；preflight 以及带 --execute 的 submit 必须在 GPU 开机、ComfyUI 已响应、H3 节点加载后运行。不应为了验证 CI 自动开机。
 
+## V0.7 GPU 安装（不会启动或计费）
+
+GPU 已关机时只需从 GitHub 拉取代码，**真正的安装应在 GPU 下次正常开机后执行**。把下述 /持久化目录/director-video 换成优云智算中已确认能跨开关机保存的路径，不要假定 /root 或容器临时盘会持久化。
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    bash video-pipeline/install-on-gpu.sh /持久化目录/director-video
+
+安装器运行离线测试、复制本地 Python 执行器，不启动 ComfyUI、GPU、电源服务，也不开放任何端口。首次安装后用 GPU 本地文件导出 H3 的 API JSON，再执行 inspect 识别节点类型与映射字段：
+
+    python3 /持久化目录/director-video/director_video.py inspect --workflow h3-api.json
+
+inspect 只显示节点 ID、节点类型、输入字段名称和 link/literal 类型，自动隐藏实际提示词、种子和文件路径等字段值，不需要 GPU 在线。然后用真实节点 ID 填好 bindings.json，再运行下列 prepare、preflight、submit、collect、assemble 命令。
+
 ## 命令
 
 规划已有 31 镜头（不联网）：
