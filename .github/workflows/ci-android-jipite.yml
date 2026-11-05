@@ -11,9 +11,21 @@ on:
 permissions:
   contents: read
 
+# Rapid changes should test the newest main rather than queue redundant stale CI.
+# This is independent of the protected production APK signing/publish workflow.
+concurrency:
+  group: jipite-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  assemble:
+  android:
+    name: Android CI · ${{ matrix.lane }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [manual, google, signing]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -26,7 +38,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Prepare non-production placeholder Firebase project for compilation ONLY
+
+      - name: Test Microsoft Android signing/configuration helper
+        if: matrix.lane == 'manual'
+        working-directory: android-jipite
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
+      - name: Compile UI-only manual APK and test biometric-only policy
+        if: matrix.lane == 'manual'
+        working-directory: android-jipite
+        run: |
+          gradle :app:assembleManualDebug :app:testManualDebugUnitTest --no-daemon --stacktrace
+
+      - name: Upload offline UI-only APK (never a connected/signed build)
+        if: matrix.lane == 'manual'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jipite-v06-manual-debug-UI-only
+          path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Prepare dummy Firebase config for compilation only
+        if: matrix.lane == 'google'
         shell: bash
         run: |
           cat > android-jipite/app/google-services.json <<'EOF'
@@ -50,34 +84,14 @@ jobs:
             "configuration_version": "1"
           }
           EOF
-      - name: Test Microsoft Android signing/configuration helper
-        shell: bash
-        working-directory: android-jipite
-        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
-      - name: Compile manual Android APK (no Xiaomi/Google SDK)
-        shell: bash
-        working-directory: android-jipite
-        run: |
-          gradle :app:assembleManualDebug --no-daemon --stacktrace
-      - name: Test per-operation biometric-only key authorization policy
-        shell: bash
-        working-directory: android-jipite
-        run: |
-          gradle :app:testManualDebugUnitTest --no-daemon --stacktrace
-      - name: Publish manual UI test APK (placeholder Microsoft identity)
-        uses: actions/upload-artifact@v4
-        with:
-          name: jipite-v06-manual-debug-UI-only
-          path: android-jipite/app/build/outputs/apk/manual/debug/app-manual-debug.apk
-          retention-days: 7
-          if-no-files-found: error
-      - name: Compile Google Android source (NOT a deployable authenticated APK)
-        shell: bash
-        working-directory: android-jipite
-        run: |
-          gradle :app:assembleGoogleDebug -PenableFirebase=true --no-daemon --stacktrace
 
-      - name: Rehearse signed Android release with disposable identity (never published)
+      - name: Compile Google Android source (not an authenticated APK)
+        if: matrix.lane == 'google'
+        working-directory: android-jipite
+        run: gradle :app:assembleGoogleDebug -PenableFirebase=true --no-daemon --stacktrace
+
+      - name: Rehearse signed release with disposable identity (never published)
+        if: matrix.lane == 'signing'
         working-directory: android-jipite
         shell: bash
         run: |
@@ -102,4 +116,4 @@ jobs:
           gradle :app:assembleManualRelease --no-daemon --stacktrace
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose \
             app/build/outputs/apk/manual/release/app-manual-release.apk
-          # No release artifact upload: Microsoft ID and signing key above are fake.
+          # No release upload: ID and signing key above are fake.
