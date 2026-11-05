@@ -18,7 +18,7 @@ id directorpower >/dev/null || fail "Existing directorpower service account miss
 for name in director-vps-control director-power-mcp director-mobile-v06; do
     systemctl is-active --quiet "$name" || fail "Required service $name is not active"
 done
-for name in hub_rpc.py hub_app.py hub_bridge.py bridge.py \
+for name in hub_rpc.py hub_brain.py hub_app.py hub_bridge.py bridge.py \
             director-hub-mcp.service director-hub-bridge.service \
             configure_director_hub_nginx.py nginx-alidns/jipite-hub.conf; do
     [[ -f "$SRC/$name" && ! -L "$SRC/$name" ]] || fail "Missing trusted source: $name"
@@ -85,7 +85,7 @@ PY
 
 [[ ! -L "$DEST" ]] || fail "Hub install path cannot be a symlink"
 install -d -o root -g root -m 0755 "$DEST"
-for name in hub_rpc.py hub_app.py hub_bridge.py bridge.py; do
+for name in hub_rpc.py hub_brain.py hub_app.py hub_bridge.py bridge.py; do
     install -o root -g root -m 0644 "$SRC/$name" "$DEST/$name"
 done
 "$PYTHON" -m py_compile "$DEST"/hub_*.py "$DEST"/bridge.py
@@ -119,10 +119,13 @@ expected = {
     "audit_h3_workflow","get_h3_node_inputs","get_upgrade_readiness",
     "get_control_center_status","get_gpu_power_status",
     "request_gpu_start","request_gpu_stop","get_power_request_status",
+    "get_production_dashboard","get_production_episode",
+    "create_production_project","create_production_episode",
+    "add_production_shot","save_production_outline",
 }
 if names != expected:
     raise SystemExit("Hub MCP registry mismatch; expected exactly 13 tools")
-print("Hub MCP tools/list: 13/13 declared, NO POWER OPERATION")
+print("Hub MCP tools/list: 19/19 declared, NO POWER OPERATION")
 PY
 
 # Nginx routing is applied only if target HTTPS vhost is unambiguous.
