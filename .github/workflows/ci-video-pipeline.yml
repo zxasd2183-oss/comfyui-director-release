@@ -25,6 +25,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install FFmpeg to exercise actual MP4 stitching
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
       - name: Compile Python source without GPU
         run: python -m compileall -q video-pipeline
       - name: Validate GPU installer shell syntax
