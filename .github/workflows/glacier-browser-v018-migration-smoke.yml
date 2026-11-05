@@ -1,0 +1,74 @@
+name: Glacier v0.18 migration safety smoke (no release)
+
+on:
+  push:
+    branches: [build/glacier-browser-v0-18-key-migration]
+    paths:
+      - 'glacier-macos/**'
+      - 'glacier-windows/**'
+      - 'scripts/glacier_prepare_rotated_update.py'
+      - '.github/workflows/glacier-browser-v018-migration-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-security-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python requirements for update verifier tests
+        run: |
+          set -euo pipefail
+          python -m pip install 'cryptography>=43,<47' 'requests[socks]>=2.32,<3'
+      - name: Generate disposable TEST-only public key and verify v0.18 pinning
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_ENV"
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          pub = Ed25519PrivateKey.generate().public_key().public_bytes(
+              serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+          print("GLACIER_UPDATE_SIGNING_PUBLIC_HEX=" + pub)
+          PY
+      - name: Windows signed manifest verification and source compile
+        working-directory: glacier-windows
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64,lzma
+          src=Path("update_core.py.xz.b64").read_text(encoding="ascii").strip()
+          Path("update_core.py").write_bytes(lzma.decompress(base64.b64decode(src)))
+          PY
+          python ../scripts/glacier_prepare_rotated_update.py windows .
+          python -m py_compile secure_update.py main.py
+          python -m unittest -v test_update_security
+      - name: Mac signed release URL and VLESS proxy verification
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          python ../scripts/glacier_prepare_rotated_update.py macos .
+          python -m py_compile mac_update_core.py mac_update.py main.py
+          python -m unittest -v test_mac_update
+      - name: Confirm Windows and Mac use identical new public key and key id
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,"glacier-windows")
+          import secure_update as w
+          sys.path.insert(0,"glacier-macos")
+          import mac_update_core as m
+          assert w.PUBLIC_KEY==m.PUBLIC_KEY
+          assert w.KEY_ID==m.KEY_ID
+          assert w.KEY_ID.startswith("v2-")
+          assert w.CURRENT_VERSION==m.CURRENT_VERSION=="0.18.0"
+          assert "raw.githubusercontent.com" in m.FEED_URL
+          print("v0.18 migration smoke PASS: key pinning, signed URLs, fail-closed VLESS transport.")
+          PY
