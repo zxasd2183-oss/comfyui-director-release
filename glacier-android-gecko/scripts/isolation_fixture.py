@@ -42,13 +42,49 @@ HTML = r"""<!doctype html>
 </script>
 </body>"""
 
+TRANSFER_HTML = r"""<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GLACIER_TEST_TRANSFER_READY</title>
+<style>
+body {font:24px sans-serif;margin:20px;background:#fff}
+button {display:block;font-size:24px;margin:20px 0;padding:24px;min-height:70px}
+</style>
+<h1>Glacier transfer fixture</h1>
+<input id="upload" type="file" accept="text/plain" style="display:none">
+<button id="upload-btn" onclick="document.querySelector('#upload').click()">选择测试文件</button>
+<button id="download-btn" onclick="location.href='/test-attachment'">保存测试下载</button>
+<script>
+document.querySelector('#upload').addEventListener('change',async (event)=>{
+ const file=event.target.files[0];
+ if(!file){document.title='GLACIER_TEST_UPLOAD_CANCELLED';return;}
+ const text=await file.text();
+ document.title=(file.name==='glacier-upload-test.txt' && text.trim()==='GLACIER_UPLOAD_TEST')
+    ? 'GLACIER_TEST_UPLOAD_OK':'GLACIER_TEST_UPLOAD_WRONG_FILE';
+});
+</script>
+"""
+DOWNLOAD_BODY = b"GLACIER_DOWNLOAD_TEST\n"
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlsplit(self.path)
-        if parsed.path != '/profile' or parse_qs(parsed.query).get('phase', [''])[0] not in ('seed', 'work', 'return'):
+        if parsed.path == '/test-attachment':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename="glacier-download-test.txt"')
+            self.send_header('Content-Length', str(len(DOWNLOAD_BODY)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(DOWNLOAD_BODY)
+            return
+        if parsed.path == '/transfer':
+            page = TRANSFER_HTML
+        elif parsed.path == '/profile' and parse_qs(parsed.query).get('phase', [''])[0] in ('seed', 'work', 'return'):
+            page = HTML
+        else:
             self.send_error(404)
             return
-        encoded = HTML.encode('utf-8')
+        encoded = page.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Cache-Control', 'no-store')
