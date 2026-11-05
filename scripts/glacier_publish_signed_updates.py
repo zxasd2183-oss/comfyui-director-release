@@ -51,8 +51,18 @@ def canonical(payload):
 def signing_key(raw=None):
     if raw is None:
         raw = os.environ.get("GLACIER_UPDATE_SIGNING_PRIVATE_HEX", "")
+    if not raw:
+        raise ValueError(
+            "GLACIER_UPDATE_SIGNING_PRIVATE_HEX is missing. "
+            "Do not create a replacement signing key."
+        )
     if not re.fullmatch(r"[0-9a-fA-F]{64}", raw):
-        raise ValueError("Existing Glacier signing secret is not configured")
+        raise ValueError(
+            "GLACIER_UPDATE_SIGNING_PRIVATE_HEX has an invalid format: "
+            "expected the original 32-byte Ed25519 private key encoded as "
+            "exactly 64 hexadecimal characters, with no prefix, quotes or spaces. "
+            "Do not paste the public key or generate a new private key."
+        )
     key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(raw))
     derived = key.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw
