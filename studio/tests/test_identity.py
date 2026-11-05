@@ -161,7 +161,7 @@ class SSOHttpTests(unittest.TestCase):
         resp=conn.getresponse()
         raw=resp.read()
         out={"status":resp.status,"location":resp.getheader("Location"),
-             "cookies":resp.getheaders("Set-Cookie"),
+             "cookies":[value for key,value in resp.getheaders() if key.lower()=="set-cookie"],
              "json":json.loads(raw) if raw and "application/json" in resp.getheader("Content-Type","") else None}
         conn.close()
         return out
