@@ -11,6 +11,8 @@ on:
       - 'scripts/test_glacier_signed_updates.py'
       - 'scripts/glacier_prepare_rotated_update.py'
       - 'scripts/test_glacier_prepare_rotated_update.py'
+      - 'scripts/glacier_rotate_update_key.py'
+      - 'scripts/test_glacier_rotate_update_key.py'
   schedule:
     - cron: '37 * * * *'
   workflow_dispatch:
@@ -62,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'cryptography>=43,<47'
-          python -m unittest -v source/scripts/test_glacier_signed_updates.py source/scripts/test_glacier_prepare_rotated_update.py
+          python -m unittest -v source/scripts/test_glacier_signed_updates.py source/scripts/test_glacier_prepare_rotated_update.py source/scripts/test_glacier_rotate_update_key.py
 
       - name: Read both actual GitHub Releases
         if: steps.signer.outputs.enabled == 'true'
