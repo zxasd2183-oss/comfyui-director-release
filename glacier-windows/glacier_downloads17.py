@@ -15,8 +15,8 @@ from pathlib import Path, PureWindowsPath
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton,
-    QToolButton, QVBoxLayout,
+    QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QMessageBox, QPushButton, QToolButton, QVBoxLayout,
 )
 
 
@@ -30,6 +30,23 @@ STATE_NAMES17 = {
     "DownloadInterrupted": "已中断",
 }
 ACTIVE_STATES17 = {"requested", "in_progress", "paused"}
+
+
+def _download_matches19(item, text, category):
+    """Pure filtering: never changes downloads or their encrypted history."""
+    query = str(text).strip().casefold()
+    name = str(item.get("name", "")).casefold()
+    folder = str(item.get("directory", "")).casefold()
+    state = item.get("state", "")
+    if query and query not in name and query not in folder:
+        return False
+    if category == "active":
+        return state in ACTIVE_STATES17
+    if category == "completed":
+        return state == "completed"
+    if category == "other":
+        return state in {"cancelled", "interrupted"}
+    return category == "all"
 
 
 def _state_name17(value):
@@ -238,7 +255,11 @@ QToolButton#GlacierDownloadButton17:hover { background:#d3e9f8; }
         view = self._downloads_list17
         view.clear()
         self._downloads_visible17 = []
+        query = self._download_search19.text()
+        category = self._download_category19.currentData() or "all"
         for row in self._downloads_items17[:HISTORY_LIMIT17]:
+            if not _download_matches19(row, query, category):
+                continue
             done = row["received"]
             total = row["total"]
             percentage = f"{min(100, int(done * 100 / total))}%" if total else "未知"
@@ -249,6 +270,8 @@ QToolButton#GlacierDownloadButton17:hover { background:#d3e9f8; }
             self._downloads_visible17.append(row["id"])
             view.addItem(f"{row['name']}   ·   {state}   ·   {percentage}"
                          f"   ({done // 1024} KB)")
+        self._download_count19.setText(
+            f"显示 {len(self._downloads_visible17)} 项 / 共 {len(self._downloads_items17)} 项")
         if chosen_id in self._downloads_visible17:
             view.setCurrentRow(self._downloads_visible17.index(chosen_id))
         elif self._downloads_visible17:
@@ -260,8 +283,28 @@ QToolButton#GlacierDownloadButton17:hover { background:#d3e9f8; }
         dlg.resize(660, 450)
         layout = QVBoxLayout(dlg)
         layout.addWidget(QLabel("下载任务与历史（仅在本机加密保存）", dlg))
+        controls = QHBoxLayout()
+        search = QLineEdit(dlg)
+        search.setPlaceholderText("搜索文件名或保存目录")
+        search.setObjectName("GlacierDownloadSearch19")
+        controls.addWidget(search, 1)
+        filter_state = QComboBox(dlg)
+        filter_state.setObjectName("GlacierDownloadFilter19")
+        for title, value in (("全部", "all"), ("进行中", "active"),
+                             ("已完成", "completed"), ("中断或取消", "other")):
+            filter_state.addItem(title, value)
+        controls.addWidget(filter_state)
+        layout.addLayout(controls)
+        self._download_search19 = search
+        self._download_category19 = filter_state
+        count = QLabel("", dlg)
+        self._download_count19 = count
+        layout.addWidget(count)
         records = QListWidget(dlg)
         layout.addWidget(records, 1)
+        search.textChanged.connect(lambda _text: self._refresh_download_ui17())
+        filter_state.currentIndexChanged.connect(
+            lambda _index: self._refresh_download_ui17())
         self._downloads_list17 = records
         self._downloads_visible17 = []
         row1 = QHBoxLayout()
