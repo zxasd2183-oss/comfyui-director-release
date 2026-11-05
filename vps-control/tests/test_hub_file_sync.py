@@ -69,6 +69,24 @@ class TestHubFileTransfer(unittest.TestCase):
         self.assertNotIn(imported["file_id"],source)
         self.assertEqual(source,fs.validate_file_ref(imported)[1])
 
+    def test_chatgpt_hostname_allowed_with_https_only(self):
+        for host in ("chatgpt.com","files.chatgpt.com",
+                     "files.openaiusercontent.com","openai.com",
+                     "files.oaiusercontent.com"):
+            with self.subTest(host=host):
+                out,_=fs.validate_file_ref(
+                    {**REF,"download_url":"https://"+host+"/secure/file?token=SECRET"})
+                self.assertEqual(out.split("/")[2],host)
+        for host in ("chatgpt.com.evil.test","evilopenaiusercontent.com",
+                     "openai.com.attacker.net"):
+            with self.subTest(host=host):
+                result=fs.sync_chatgpt_visual("WaitingOffice","EP01",
+                    "character","CHAR_GEM",
+                    {**REF,"download_url":"https://"+host+"/f?token=SECRET"})
+                self.assertEqual(result["reason"],"untrusted_chatgpt_file_host")
+                self.assertEqual(result.get("download_host"),host)
+                self.assertNotIn("SECRET",str(result))
+
     def test_no_http_access_with_invalid_project(self):
         result=fs.sync_chatgpt_visual("bad/project","EP01",
                                       "character","CHAR_GEM",REF)
