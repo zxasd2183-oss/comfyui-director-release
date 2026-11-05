@@ -1,0 +1,100 @@
+name: Glacier Browser signed Windows + macOS auto updates
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-browser-signed-updates.yml'
+      - 'scripts/glacier_publish_signed_updates.py'
+      - 'scripts/test_glacier_signed_updates.py'
+  schedule:
+    - cron: '37 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: glacier-dual-signed-update-feed
+  cancel-in-progress: false
+
+jobs:
+  signed-update-feeds:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check whether original Ed25519 signing key has been provisioned
+        id: signer
+        env:
+          SIGNING_KEY: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Glacier signing key not configured; existing signed update feeds remain unchanged."
+            echo "Configure the original trusted signing key as GLACIER_UPDATE_SIGNING_PRIVATE_HEX."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "An update signing key is configured. The Python publisher will verify its public key."
+          fi
+
+      - name: Checkout trusted publisher from main
+        if: steps.signer.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: source
+          persist-credentials: false
+
+      - name: Checkout existing signed feed branch
+        if: steps.signer.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: glacier-browser-updates
+          path: feed
+          persist-credentials: true
+
+      - name: Install signer and execute security regression tests
+        if: steps.signer.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install 'cryptography>=43,<47'
+          python -m unittest -v source/scripts/test_glacier_signed_updates.py
+
+      - name: Read both actual GitHub Releases
+        if: steps.signer.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          test -s releases.json
+
+      - name: Generate and verify signed Windows and macOS manifests
+        if: steps.signer.outputs.enabled == 'true'
+        env:
+          GLACIER_UPDATE_SIGNING_PRIVATE_HEX: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
+        run: |
+          set -euo pipefail
+          python source/scripts/glacier_publish_signed_updates.py \
+            releases.json feed/channels
+
+      - name: Atomically publish both update channels
+        if: steps.signer.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          cd feed
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add channels/windows-x64.json channels/macos-arm64.json
+          if git diff --cached --quiet; then
+            echo "Both signed update channels are already current."
+            exit 0
+          fi
+          git commit -m 'Publish pinned-key signed Glacier dual-platform updates'
+          git push origin HEAD:glacier-browser-updates
+          echo "Windows: signed GitHub channel is published."
+          echo "macOS: signed channel published; owner VPS mirror verifies and syncs it."
