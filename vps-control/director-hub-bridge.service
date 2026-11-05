@@ -1,5 +1,5 @@
 [Unit]
-Description=Director Hub V0.5 private route bridge
+Description=Director Hub private route bridge (8899 to MCP 8898)
 After=network-online.target director-hub-mcp.service
 Requires=director-hub-mcp.service
 
