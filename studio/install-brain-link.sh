@@ -26,9 +26,9 @@ cmp -s /etc/nginx/snippets/director-studio.conf \
     || die "Studio Nginx auth gate does not match the reviewed Microsoft template"
 [[ -f "$SRC/studio_brain.py" && -f "$SRC/production_core.py" &&
    -f "$VPS/hub_rpc.py" && -f "$VPS/hub_brain.py" &&
-   -f "$VPS/hub_app.py" && -f "$SRC/brain-link-studio.service.conf" &&
+   -f "$VPS/hub_app.py" && -f "$VPS/hub_bridge.py" && -f "$SRC/brain-link-studio.service.conf" &&
    -f "$VPS/brain-link-hub.service.conf" ]] || die "Brain-link source files missing"
-for f in "$HUB/hub_rpc.py" "$HUB/hub_app.py"; do
+for f in "$HUB/hub_rpc.py" "$HUB/hub_app.py" "$HUB/hub_bridge.py"; do
     [[ -f "$f" && ! -L "$f" ]] || die "Installed Hub file unsafe: $f"
 done
 for target in "$SDROP" "$HDROP"; do
@@ -48,7 +48,7 @@ fi
 # against a production VPS. Never issue provider start/stop calls in preflight.
 python3 -m unittest discover -s "$SRC/tests" -p 'test_*.py' -q
 "$PYTHON" "$VPS/tests/test_studio_brain_route.py" -q
-"$PYTHON" -m py_compile "$VPS/hub_app.py" "$VPS/hub_rpc.py" \
+"$PYTHON" -m py_compile "$VPS/hub_app.py" "$VPS/hub_bridge.py" "$VPS/hub_rpc.py" \
     "$VPS/hub_brain.py" "$SRC/studio_server.py" "$SRC/studio_brain.py"
 
 # Studio uses its existing backup+rollback installer. This may invalidate
@@ -86,6 +86,7 @@ BACKUP="$(mktemp -d /var/tmp/director-brain-link-backup-XXXXXXXX)"
 chmod 0700 "$BACKUP"
 cp -p "$HUB/hub_app.py" "$BACKUP/hub_app.py"
 cp -p "$HUB/hub_rpc.py" "$BACKUP/hub_rpc.py"
+cp -p "$HUB/hub_bridge.py" "$BACKUP/hub_bridge.py"
 HAD_HUB_BRAIN=0
 if [[ -f "$HUB/hub_brain.py" && ! -L "$HUB/hub_brain.py" ]]; then
     HAD_HUB_BRAIN=1
@@ -102,6 +103,7 @@ restore(){
         echo "Brain-link deployment blocked; attempting to restore previous Hub." >&2
         cp -p "$BACKUP/hub_app.py" "$HUB/hub_app.py" || :
         cp -p "$BACKUP/hub_rpc.py" "$HUB/hub_rpc.py" || :
+        cp -p "$BACKUP/hub_bridge.py" "$HUB/hub_bridge.py" || :
         if (( HAD_HUB_BRAIN )); then
             cp -p "$BACKUP/hub_brain.py" "$HUB/hub_brain.py" || :
         else
@@ -112,6 +114,7 @@ restore(){
         systemctl daemon-reload || :
         systemctl restart director-studio || :
         systemctl restart director-hub-mcp || :
+        systemctl restart director-hub-bridge || :
         echo "Private backup: $BACKUP" >&2
     fi
     exit "$rc"
@@ -121,12 +124,17 @@ trap 'restore $?' EXIT
 install -o root -g root -m 0644 "$VPS/hub_rpc.py" "$HUB/hub_rpc.py"
 install -o root -g root -m 0644 "$VPS/hub_brain.py" "$HUB/hub_brain.py"
 install -o root -g root -m 0644 "$VPS/hub_app.py" "$HUB/hub_app.py"
+install -o root -g root -m 0644 "$VPS/hub_bridge.py" "$HUB/hub_bridge.py"
 mkdir -p "$(dirname "$SDROP")" "$(dirname "$HDROP")"
 install -o root -g root -m 0644 "$SRC/brain-link-studio.service.conf" "$SDROP"
 install -o root -g root -m 0644 "$VPS/brain-link-hub.service.conf" "$HDROP"
 systemctl daemon-reload
 systemctl restart director-studio
 systemctl restart director-hub-mcp
+# Port 8897 bridge proxies into Hub MCP 8898; reload its upstream only
+# after the new Hub is active, never touch the unrelated 8896 OIDC service.
+systemctl is-active --quiet director-hub-mcp || die "Hub MCP did not recover"
+systemctl restart director-hub-bridge
 for name in director-studio director-hub-mcp director-hub-bridge director-power-mcp director-mobile-v06; do
     systemctl is-active --quiet "$name" || die "Service did not recover: $name"
 done
