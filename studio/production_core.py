@@ -439,6 +439,55 @@ def dashboard(db):
                         "public_asset_mutations":False}}
 
 
+def episode_detail(db, project_id, episode_id):
+    """Private, bounded projection. Never return prompts, file paths or rights data."""
+    pid,eid = _ident(project_id),_ident(episode_id)
+    row=db.execute(
+        "SELECT e.project_id,e.episode_id,e.title,e.ordinal,e.stage,p.title AS project_title "
+        "FROM episodes e JOIN projects p ON p.project_id=e.project_id "
+        "WHERE e.project_id=? AND e.episode_id=?",
+        (pid,eid)).fetchone()
+    if row is None:
+        raise ProductionError("episode_not_found")
+    shots=db.execute(
+        "SELECT shot_id,ordinal,duration_ms,stage FROM production_shots "
+        "WHERE project_id=? AND episode_id=? ORDER BY ordinal LIMIT 501",
+        (pid,eid)).fetchall()
+    assets=db.execute(
+        "SELECT DISTINCT a.asset_id,a.kind,a.subject_id,a.version "
+        "FROM shot_assets sa JOIN assets a ON a.asset_id=sa.asset_id "
+        "WHERE sa.project_id=? AND sa.episode_id=? "
+        "ORDER BY a.kind,a.subject_id,a.version LIMIT 151",
+        (pid,eid)).fetchall()
+    findings=db.execute(
+        "SELECT COUNT(*) FROM findings WHERE project_id=? AND episode_id=?",
+        (pid,eid)).fetchone()[0]
+    exceptions=db.execute(
+        "SELECT x.status,COUNT(*) AS count FROM exceptions x "
+        "JOIN findings f ON f.finding_id=x.finding_id "
+        "WHERE f.project_id=? AND f.episode_id=? GROUP BY x.status",
+        (pid,eid)).fetchall()
+    return {
+        "ok":True,"mode":"read_only_episode_detail",
+        "episode":dict(row),
+        "shot_count":db.execute(
+            "SELECT COUNT(*) FROM production_shots WHERE project_id=? AND episode_id=?",
+            (pid,eid)).fetchone()[0],
+        "shots":[dict(r) for r in shots[:500]],
+        "shots_truncated":len(shots)>500,
+        "assets":[dict(r) for r in assets[:150]],
+        "assets_truncated":len(assets)>150,
+        "finding_count":findings,
+        "exceptions_by_status":{r["status"]:r["count"] for r in exceptions},
+    }
+
+
+def episode_detail_from_path(path,project_id,episode_id):
+    from contextlib import closing
+    with closing(open_db(path,initialize=False)) as db:
+        return episode_detail(db,project_id,episode_id)
+
+
 def dashboard_from_path(path):
     from contextlib import closing
     with closing(open_db(path,initialize=False)) as db:
