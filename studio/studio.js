@@ -43,9 +43,55 @@
     $("dispatchToggle").disabled=false;
     $("shotsTotal").textContent=shots.length+" SHOTS";
     renderShots(shots); renderInspector(shots); renderEvents(data.events||[]);
+    renderProduction(data.production);
     $("streamLabel").textContent=(data.sample_age_seconds!==null&&data.sample_age_seconds>30)?
       "GPU 状态延迟 "+data.sample_age_seconds+"s":"实时已连接";
     $("streamDot").className="dot "+((data.sample_age_seconds===null||data.sample_age_seconds>30)?"bad":"good");
+  }
+  function renderProduction(production) {
+    const counts = production?.counts || {};
+    const num = key => Number.isSafeInteger(counts[key]) && counts[key] >= 0 ? counts[key] : 0;
+    const totalAssets = num("assets");
+    const audio = Number.isSafeInteger(production?.audio_asset_count) ?
+      production.audio_asset_count : 0;
+    $("productionCount").textContent = [
+      num("projects"), num("episodes"), num("production_shots")
+    ].join(" / ");
+    $("visualAssets").textContent = String(Math.max(0, totalAssets-audio));
+    $("audioAssets").textContent = String(audio);
+    $("continuityCount").textContent = num("findings")+" / "+num("exceptions");
+    const exceptionCounts = production?.exception_status || {};
+    $("exceptionBrief").textContent = "待审 "+(exceptionCounts.draft||0)+
+      " · 已批准 "+(exceptionCounts.approved||0)+
+      " · 已过期 "+(exceptionCounts.stale||0);
+    $("productionAudit").textContent = production?.audit_chain_verified === true ?
+      "✓ 审计事件链校验通过" : "⚠ 审计链未通过验证或尚未加载";
+    const kinds = production?.asset_kinds || {};
+    $("productionAssetKinds").textContent = Object.keys(kinds).length ?
+      "资产类型："+Object.keys(kinds).sort().join(" · ") : "资产类型：尚无已登记资产";
+    $("productionMode").textContent=production?.mode==="read_only_production_summary" ?
+      "正式制作台账 · 只读" : "制作数据不可用";
+
+    const list=$("projectList");
+    list.replaceChildren();
+    const projects=production?.projects || [];
+    const episodes=production?.episodes || [];
+    if(!projects.length) {
+      list.appendChild(el("div","production-empty",
+        "尚未建立项目。可通过 VPS 本地管理命令创建项目和剧集。"));
+      return;
+    }
+    for(const p of projects) {
+      const row=el("div","project-item");
+      const info=el("div","");
+      info.appendChild(el("strong","",p.title));
+      const related=episodes.filter(x=>x.project_id===p.project_id);
+      const names=related.map(e=>e.episode_id+" "+e.title).join(" · ");
+      info.appendChild(el("small","",names||"尚未建立剧集"));
+      row.appendChild(info);
+      row.appendChild(el("span","project-id",p.project_id));
+      list.appendChild(row);
+    }
   }
   function renderShots(shots) {
     const parent=$("shotList");
