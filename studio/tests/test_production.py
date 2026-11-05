@@ -164,6 +164,43 @@ class ProductionTests(unittest.TestCase):
                          "--i-reviewed-evidence"])
         self.assertEqual(result,0)
 
+    def test_import_full_episode_plan_without_prompt_or_workflow_leak(self):
+        p.create_project(self.db,"SHOW01","短剧测试项目")
+        p.create_episode(self.db,"SHOW01","EP01","第一集",1)
+        plan = Path(self.temporary.name)/"plan.json"
+        jobs = [{"shot_id":f"{i:02d}","seconds":5,
+                 "graph":{"9":{"class_type":"SecretNode",
+                                "inputs":{"prompt":"PRIVATE_PROMPT_NEVER_STORE"}}}}
+                for i in range(1,32)]
+        plan.write_text(json.dumps({"schema":1,"jobs":jobs}),encoding="utf-8")
+        result=p.import_video_plan(self.db,"SHOW01","EP01",plan)
+        self.assertEqual(result["shots"],31)
+        self.assertFalse(result["unchanged"])
+        self.assertEqual(p.dashboard(self.db)["counts"]["production_shots"],31)
+        self.assertEqual(self.db.execute(
+            "SELECT shot_id FROM production_shots ORDER BY ordinal LIMIT 1").fetchone()[0],"01")
+        self.assertTrue(p.import_video_plan(self.db,"SHOW01","EP01",plan)["unchanged"])
+        self.assertNotIn("PRIVATE_PROMPT_NEVER_STORE",self.path.read_bytes().decode(
+            "utf-8","ignore"))
+        jobs[0]["seconds"]=7
+        plan.write_text(json.dumps({"schema":1,"jobs":jobs}),encoding="utf-8")
+        with self.assertRaisesRegex(p.ProductionError,"episode_plan_changed"):
+            p.import_video_plan(self.db,"SHOW01","EP01",plan)
+        self.assertEqual(p.dashboard(self.db)["counts"]["production_shots"],31)
+        self.assertTrue(p.verify_chain(self.db))
+
+    def test_plan_import_rejects_bad_timing_atomically(self):
+        p.create_project(self.db,"SHOW01","项目")
+        p.create_episode(self.db,"SHOW01","EP01","第一集",1)
+        plan=Path(self.temporary.name)/"bad-plan.json"
+        plan.write_text(json.dumps({"schema":1,"jobs":[
+            {"shot_id":"01","seconds":2.5},
+            {"shot_id":"02","seconds":float("nan")}
+        ]}),encoding="utf-8")
+        with self.assertRaisesRegex(p.ProductionError,"invalid_video_plan_shot"):
+            p.import_video_plan(self.db,"SHOW01","EP01",plan)
+        self.assertEqual(p.dashboard(self.db)["counts"]["production_shots"],0)
+
     def test_invalid_project_identifier_or_control_fields_rejected(self):
         with self.assertRaisesRegex(p.ProductionError,"invalid_identifier"):
             p.create_project(self.db,"../../etc/passwd","Unsafe")
