@@ -166,10 +166,20 @@ class MicrosoftStudioIdentity:
         return flow["auth_uri"],state
 
     def finish(self, query, state_cookie_value):
-        if (not isinstance(query,dict) or set(query) != {"state","code"}
+        # Microsoft can append an optional session_state to an otherwise valid
+        # authorization-code response. It is informational only, NOT evidence
+        # of authentication. The actual OAuth state and browser-bound state
+        # cookie remain mandatory; all other callback keys are rejected.
+        allowed = {"state", "code", "session_state"}
+        if (not isinstance(query,dict) or not {"state","code"}.issubset(query)
+                or set(query) - allowed
                 or not _STATE_ID.fullmatch(str(query.get("state","")))
                 or not isinstance(query.get("code"),str)
                 or not 12 <= len(query["code"]) <= 8192
+                or ("session_state" in query and (
+                    not isinstance(query["session_state"],str)
+                    or not 8 <= len(query["session_state"]) <= 256
+                    or not re.fullmatch(r"[A-Za-z0-9._-]+",query["session_state"])))
                 or state_cookie_value != query["state"]):
             raise IdentityError("oidc_state_invalid")
         state=query["state"]
