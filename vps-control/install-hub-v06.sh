@@ -150,7 +150,7 @@ hub={"get_studio_status","get_queue_summary","list_h3_nodes","list_h3_workflows"
      "request_gpu_start","request_gpu_stop","get_power_request_status"}
 for attempt in range(8):
     try:
-        for port,expected in ((8892,core),(8896,hub)):
+        for port,expected in ((8892,core),(8898,hub)):
             actual={item["name"] for item in rpc(port,"tools/list",{})["tools"]}
             if actual!=expected: raise RuntimeError("Unexpected registry at "+str(port))
             stat=read(port,"get_gpu_power_status")
