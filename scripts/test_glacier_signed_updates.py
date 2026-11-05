@@ -118,8 +118,15 @@ class SignedFeedTests(unittest.TestCase):
             publisher.signing_key(other)
 
     def test_missing_signature_key_refused(self):
-        with self.assertRaisesRegex(ValueError, "not configured"):
+        with self.assertRaisesRegex(ValueError, "is missing"):
             publisher.signing_key("")
+
+    def test_malformed_signing_secret_refused_without_echoing_it(self):
+        bad = "not-the-existing-private-key"
+        with self.assertRaisesRegex(ValueError, "invalid format") as result:
+            publisher.signing_key(bad)
+        self.assertNotIn(bad, str(result.exception))
+        self.assertNotIn(self.pub.hex(), str(result.exception))
 
     def test_invalid_asset_metadata_refused(self):
         win, mac = fixture()
