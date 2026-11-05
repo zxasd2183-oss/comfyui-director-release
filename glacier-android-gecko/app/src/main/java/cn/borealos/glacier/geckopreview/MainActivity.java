@@ -264,24 +264,46 @@ public final class MainActivity extends Activity {
 
         Button menu = button("⋮");
         menu.setContentDescription("内核测试菜单");
-        menu.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("Glacier · GeckoView 内核")
-                .setItems(new String[]{
+        menu.setOnClickListener(v -> showBrowserMenu());
+        LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(43), dp(44));
+        dots.setMargins(dp(8), 0, 0, 0);
+        bottom.addView(menu, dots);
+        root.addView(bottom);
+        updateChrome();
+    }
+
+    private boolean debugBuild() {
+        return (getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
+    private void showBrowserMenu() {
+        final String[] choices = debugBuild() && !proxyMode
+                ? new String[]{
+                    "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
+                    "切换账号空间", "网络连接信息", "测试说明",
+                    "隔离自测：私人写入", "隔离自测：工作检查", "隔离自测：私人复查"
+                }
+                : new String[]{
                     "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
                     "切换账号空间", "网络连接信息", "测试说明"
-                }, (dialog, index) -> {
+                };
+        new AlertDialog.Builder(this)
+                .setTitle("Glacier · GeckoView 内核")
+                .setItems(choices, (dialog, index) -> {
                     if (index == 0) navigate("about:buildconfig");
                     if (index == 1) navigate("https://chatgpt.com/");
                     if (index == 2) navigate("https://github.com/");
                     if (index == 3) chooseProfile();
                     if (index == 4) showNetworkStatus();
                     if (index == 5) showLabWarning();
-                }).show());
-        LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(43), dp(44));
-        dots.setMargins(dp(8), 0, 0, 0);
-        bottom.addView(menu, dots);
-        root.addView(bottom);
-        updateChrome();
+                    // Only artificial CI data on loopback and only in direct
+                    // debug mode. Never mix localhost diagnostics into VLESS.
+                    if (index >= 6 && debugBuild() && !proxyMode && active != null) {
+                        String phase = index == 6 ? "seed" : index == 7 ? "work" : "return";
+                        active.session.loadUri("http://127.0.0.1:18765/profile?phase=" + phase);
+                    }
+                }).show();
     }
 
     private GeckoSession createSession(final String profile) {
@@ -291,6 +313,15 @@ public final class MainActivity extends Activity {
                 .build();
         GeckoSession session = new GeckoSession(settings);
         session.setContentDelegate(new GeckoSession.ContentDelegate() {
+            @Override
+            public void onTitleChange(GeckoSession source, String title) {
+                if (!debugBuild() || title == null || !title.startsWith("GLACIER_TEST_")) return;
+                Tab tab = findBySession(source);
+                if (tab != null && tab.url.startsWith("http://127.0.0.1:18765/profile")) {
+                    // The value is a fixed fixture marker, never account data.
+                    android.util.Log.i("GlacierSmoke", "ISOLATION_STATE=" + title);
+                }
+            }
             @Override
             public void onExternalResponse(GeckoSession source, WebResponse response) {
                 transfers.onExternalResponse(response);
