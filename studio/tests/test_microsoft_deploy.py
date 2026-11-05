@@ -32,7 +32,15 @@ class SetupTests(unittest.TestCase):
         client,subject=setup.owner_binding(self.client,self.db)
         self.assertEqual(client,"12345678-1234-1234-1234-123456789abc")
         self.assertEqual(subject,"owner_subject_fixed_1234")
-        with patch.object(setup.os,"geteuid",return_value=0):
+        # Simulate only the root-owned /etc parent on the unprivileged CI runner.
+        from types import SimpleNamespace
+        real_stat=Path.stat
+        def root_parent(path,*args,**kwargs):
+            if path == self.destination.parent:
+                return SimpleNamespace(st_uid=0)
+            return real_stat(path,*args,**kwargs)
+        with patch.object(setup.os,"geteuid",return_value=0), patch.object(
+                setup.Path,"stat",root_parent):
             result=setup.provision(client_file=self.client,power_db=self.db,
                 destination=self.destination,
                 read_secret=lambda:"a-private-studio-web-credential")
@@ -112,7 +120,7 @@ server {listen 8443 ssl; server_name director.borealos.cn;}
 
     def test_deployment_has_fail_closed_order(self):
         script=(Path(__file__).resolve().parents[1]/"install-microsoft-web.sh").read_text()
-        self.assertLess(script.index("upgrade-v09.sh"),script.index("promote_microsoft_nginx.py"))
+        self.assertLess(script.index("upgrade-v09.sh"),script.index('python3 "$SRC/promote_microsoft_nginx.py"'))
         self.assertIn("LoadCredential",(
             Path(__file__).resolve().parents[1]/"director-studio-microsoft.service.conf").read_text())
         self.assertIn("systemctl is-active --quiet director-mobile-v06",script)
