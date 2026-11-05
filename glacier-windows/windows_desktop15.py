@@ -73,7 +73,7 @@ class WindowsDesktop15:
         add("收藏此页面                  Ctrl+D", self.toggle_bookmark)
         menu.addMenu(self.bookmarks_menu)
         add("历史记录                      Ctrl+H", self.show_history)
-        add("下载内容                      Ctrl+J", self.show_downloads)
+        add("下载中心                      Ctrl+J", lambda: self.show_download_center17() if hasattr(self, "show_download_center17") else self.show_downloads())
         add("在网页中查找               Ctrl+F", self.open_find13)
         menu.addSeparator()
         add("检测 VLESS 连接", self.start_connection_check)
@@ -98,7 +98,7 @@ class WindowsDesktop15:
             "Ctrl+Shift+N": lambda: self.open_satellite(private=True),
             "Ctrl+D": lambda: self.toggle_bookmark(),
             "Ctrl+F": lambda: self.open_find13(),
-            "Ctrl+J": lambda: self.show_downloads(),
+            "Ctrl+J": lambda: self.show_download_center17() if hasattr(self, "show_download_center17") else self.show_downloads(),
             "Ctrl+H": lambda: self.show_history(),
         }
         for index in range(1, 9):
