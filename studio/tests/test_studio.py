@@ -229,6 +229,25 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status,200)
         self.assertFalse(result["executed_on_gpu"])
         self.assertEqual(result["effect"],"operator_ledger_only")
+    def test_public_https_post_requires_pinned_proxy_origin(self):
+        _, _, boot = self.call("GET", "/api/v1/bootstrap")
+        req = {"csrf": boot["csrf"], "action": "pause_dispatch"}
+        base = {"Content-Type": "application/json",
+                "Origin": "https://jipite.borealos.cn"}
+        status, _, _ = self.call("POST", "/api/v1/action", req, base)
+        self.assertEqual(status, 403)
+        status, _, _ = self.call("POST", "/api/v1/action", req, {
+            **base, "X-Forwarded-Proto": "http",
+            "X-Forwarded-Host": "jipite.borealos.cn",
+        })
+        self.assertEqual(status, 403)
+        status, _, result = self.call("POST", "/api/v1/action", req, {
+            **base, "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "jipite.borealos.cn",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(result["effect"], "operator_ledger_only")
+
     def test_static_frontend_has_no_remote_scripts(self):
         for path in ("/","/studio.css","/studio.js"):
             code,_,content=self.call("GET",path)
