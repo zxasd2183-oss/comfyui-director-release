@@ -41,7 +41,6 @@ jobs:
           fi
 
       - name: Checkout trusted publisher from main
-        if: steps.signer.outputs.enabled == 'true'
         uses: actions/checkout@v4
         with:
           ref: main
@@ -57,7 +56,6 @@ jobs:
           persist-credentials: true
 
       - name: Install signer and execute security regression tests
-        if: steps.signer.outputs.enabled == 'true'
         run: |
           set -euo pipefail
           python -m pip install 'cryptography>=43,<47'
