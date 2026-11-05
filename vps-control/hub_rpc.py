@@ -141,7 +141,9 @@ def call(tool, params=None, path_file=None, opener=None):
             headers={"Content-Type": "application/json",
                      "Accept": "application/json, text/event-stream",
                      "Mcp-Protocol-Version": "2025-03-26",
-                     "Host": "127.0.0.1"},
+                     "Host": "127.0.0.1:" + str(
+                         8790 if tool in GPU_TOOLS else
+                         VPS_PORT if tool in VPS_TOOLS else POWER_PORT)},
         )
         backend = opener or _OPENER
         with backend.open(request, timeout=15) as stream:
