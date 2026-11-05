@@ -75,8 +75,12 @@ def probe_backend():
         opener.open(req,timeout=10)
         raise RuntimeError("Microsoft authorization redirect absent")
     except urllib.error.HTTPError as exc:
-        if exc.code!=302 or not exc.headers.get("Location","").startswith(
-                "https://login.microsoftonline.com/consumers/"):
+        redirect=exc.headers.get("Location","")
+        trusted=(
+            "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?",
+            "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/oauth2/v2.0/authorize?",
+        )
+        if exc.code!=302 or not any(redirect.startswith(prefix) for prefix in trusted):
             raise RuntimeError("Microsoft authorization flow not available")
 
 
