@@ -95,7 +95,7 @@ def type_url(value):
     adb("shell","input","tap",str(pos[0]),str(pos[1]))
     time.sleep(0.3)
     # URL input is ASCII and does not rely on keyboard IME.
-    adb("shell","input","text",value)
+    adb("shell","input","text",value,timeout=18)
     adb("shell","input","keyevent","KEYCODE_ENTER")
     time.sleep(5)
     alive()
@@ -115,12 +115,6 @@ def main():
     snapshot("01-home")
     print("PASS: native GeckoView UI initialized after explicit DIRECT gate",flush=True)
 
-    for i,url in enumerate(("https://example.com/","https://github.com/","https://chatgpt.com/")):
-        print("Navigating",url,flush=True)
-        type_url(url)
-        snapshot("02-navigation-"+str(i))
-    print("PASS: navigation entered and GeckoView app stayed alive",flush=True)
-
     tap("新建标签页")
     # content description in bottom plus may be detected by accessibility.
     if locate("2",mode="exact") is None:
@@ -129,6 +123,7 @@ def main():
     alive()
     snapshot("03-second-tab")
     print("PASS: new GeckoView tab survived",flush=True)
+    print(adb("shell","dumpsys","meminfo",PKG,timeout=20,checked=False)[-2200:],flush=True)
 
     tap("私人空间")
     tap("工作空间 · 独立 Cookie")
@@ -152,6 +147,14 @@ def main():
     alive()
     snapshot("06-after-background")
     print("PASS: background-to-foreground process survival",flush=True)
+
+    # Navigate AFTER the UI/session checks so a heavy website cannot mask
+    # independently verified tab/profile functionality.
+    for i,url in enumerate(("https://example.com/","https://github.com/","https://chatgpt.com/")):
+        print("Navigating",url,flush=True)
+        type_url(url)
+        snapshot("07-navigation-"+str(i))
+        print("PASS: browser survived navigation command for "+url,flush=True)
 
     # Strict no-silent-direct policy is unit-tested separately;
     # actual proxy egress and DNS leak require an accessible VLESS test node.
