@@ -17,6 +17,7 @@ from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
 from mac_chrome_adapter import MacChrome14
 from mac_desktop15 import MacDesktop15
+from glacier_productivity16 import GlacierProductivity16
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -66,13 +67,13 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.15.0")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.16.0")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -96,6 +97,7 @@ class Browser(MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpda
   self.setup_chrome14(lay,bar)
   self.restore_startup_session()
   self.setup_desktop15()
+  self.setup_productivity16(bar,mac=True)
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
