@@ -11,9 +11,12 @@ import copy
 import csv
 import hashlib
 import json
+import os
 import re
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -424,6 +427,142 @@ def collect(con, plan, outdir, download=False):
     return collected
 
 
+
+VIDEO_SUFFIXES = frozenset({".mp4"})
+HASH = re.compile(r"^[a-f0-9]{64}$")
+
+
+def file_checksum(path):
+    digest = hashlib.sha256()
+    total = 0
+    with Path(path).open("rb") as src:
+        for chunk in iter(lambda: src.read(1024 * 1024), b""):
+            total += len(chunk)
+            if total > MAX_ASSET:
+                raise PlanError("Video asset exceeds configured maximum")
+            digest.update(chunk)
+    return digest.hexdigest(), total
+
+
+def archived_clips(plan, results_dir):
+    """Resolve exactly one verified downloaded MP4 per shot, in shot order."""
+    root = Path(results_dir).resolve(strict=True)
+    if not root.is_dir():
+        raise PlanError("Output archive directory missing")
+    clips = []
+    for job in plan["jobs"]:
+        sid = job["shot_id"]
+        directory = Path(results_dir) / sid
+        if directory.is_symlink() or not directory.is_dir():
+            raise PlanError("Shot output directory missing or unsafe: " + sid)
+        manifest_path = directory / "manifest.json"
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise PlanError("Downloaded manifest missing: " + sid)
+        manifest = read_json(manifest_path)
+        if not isinstance(manifest, dict) or manifest.get("shot_id") != sid:
+            raise PlanError("Manifest does not match the video plan")
+        downloads = manifest.get("downloaded")
+        if not isinstance(downloads, list):
+            raise PlanError("Manifest does not contain downloaded outputs")
+        videos = [
+            info for info in downloads
+            if isinstance(info, dict) and isinstance(info.get("file"), str)
+            and Path(info["file"]).suffix.lower() in VIDEO_SUFFIXES
+        ]
+        if len(videos) != 1:
+            raise PlanError("Exactly one downloaded MP4 is required per shot: " + sid)
+        info = videos[0]
+        name = info["file"]
+        if not safe_asset_name(name) or not HASH.fullmatch(str(info.get("sha256", ""))):
+            raise PlanError("Unsafe or missing archived checksum")
+        video = directory / name
+        if video.is_symlink() or not video.is_file() or not video.resolve().is_relative_to(root):
+            raise PlanError("Archived video path is invalid")
+        actual_hash, total = file_checksum(video)
+        if (actual_hash != info["sha256"] or
+                type(info.get("bytes")) is not int or
+                total != info["bytes"] or total == 0):
+            raise PlanError("Archived video checksum/size mismatch: " + sid)
+        clips.append(video.resolve())
+    return clips
+
+
+def video_stream_signature(path, runner=None):
+    """Require identical stream layouts before -c copy; never run a shell."""
+    runner = subprocess.run if runner is None else runner
+    result = runner([
+        "ffprobe", "-v", "error", "-show_entries",
+        "stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,sample_rate,channels",
+        "-of", "json", str(path)
+    ], capture_output=True, check=False, timeout=20)
+    if result.returncode or len(result.stdout) > 64_000:
+        raise PlanError("ffprobe cannot inspect one of the downloaded videos")
+    try:
+        streams = json.loads(result.stdout)["streams"]
+    except (ValueError, TypeError, KeyError):
+        raise PlanError("ffprobe returned invalid stream metadata") from None
+    if not isinstance(streams, list) or not streams:
+        raise PlanError("No video streams found")
+    fields = ("codec_type", "codec_name", "width", "height", "pix_fmt",
+              "avg_frame_rate", "sample_rate", "channels")
+    signature = tuple(tuple(item.get(k) for k in fields) for item in streams
+                      if isinstance(item, dict))
+    video_count = sum(row[0] == "video" for row in signature)
+    if video_count != 1 or len(signature) != len(streams):
+        raise PlanError("Each clip must contain exactly one video stream")
+    return signature
+
+
+def quote_ffconcat(path):
+    # ffconcat quoting (not a shell): quoted absolute paths, no command expansion.
+    return "'" + str(path).replace("'", "'\\''") + "'"
+
+
+def assemble_movie(plan, results_dir, movie_path, runner=None):
+    """Join verified, compatible MP4 clips without transcoding or GPU calls."""
+    runner = subprocess.run if runner is None else runner
+    clips = archived_clips(plan, results_dir)
+    movie = Path(movie_path)
+    if movie.suffix.lower() != ".mp4" or movie.exists() or movie.is_symlink():
+        raise PlanError("Choose a new .mp4 output filename")
+    if not movie.parent.is_dir():
+        raise PlanError("Movie output directory must already exist")
+    first = video_stream_signature(clips[0], runner=runner)
+    for clip in clips[1:]:
+        if video_stream_signature(clip, runner=runner) != first:
+            raise PlanError("Video/audio streams differ; refusing unsafe lossless concatenation")
+
+    concat_name = None
+    staging_name = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8",
+                prefix=".director-shots-", suffix=".ffconcat",
+                dir=str(movie.parent), delete=False) as target:
+            concat_name = target.name
+            target.write("ffconcat version 1.0\n")
+            for clip in clips:
+                target.write("file " + quote_ffconcat(clip) + "\n")
+        fd, staging_name = tempfile.mkstemp(
+            prefix=".director-joined-", suffix=".mp4", dir=str(movie.parent))
+        os.close(fd)
+        response = runner(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                 "-f", "concat", "-safe", "0", "-i", concat_name,
+                 "-map", "0", "-c", "copy", "-movflags", "+faststart",
+                 "-y", staging_name], capture_output=True, check=False,
+                 timeout=3600)
+        if response.returncode or not Path(staging_name).is_file() or Path(staging_name).stat().st_size == 0:
+            raise PlanError("ffmpeg concatenation failed; no final movie was published")
+        # Hard-link publish is atomic and refuses to overwrite an existing output.
+        os.link(staging_name, movie)
+    finally:
+        if staging_name:
+            Path(staging_name).unlink(missing_ok=True)
+        if concat_name:
+            Path(concat_name).unlink(missing_ok=True)
+    return {"ok": True, "clips": len(clips), "movie": str(movie),
+            "bytes": movie.stat().st_size, "gpu_calls": 0}
+
+
 def run_cli(argv=None):
     parser = argparse.ArgumentParser(description="Director offline-first ComfyUI shot pipeline")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -446,6 +585,10 @@ def run_cli(argv=None):
         elif cmd == "collect":
             item.add_argument("--out", required=True)
             item.add_argument("--download", action="store_true")
+    merge = sub.add_parser("assemble", help="Verify archived MP4 clips and concatenate locally")
+    merge.add_argument("--plan", required=True)
+    merge.add_argument("--results", required=True)
+    merge.add_argument("--movie", required=True)
     args = parser.parse_args(argv)
     if args.command == "prepare":
         plan = build_plan(read_json(args.workflow), read_json(args.bindings),
@@ -454,6 +597,9 @@ def run_cli(argv=None):
         print(f"Prepared {plan['shot_count']} shots, {plan['total_seconds']} seconds; NO GPU call")
         return 0
     plan = load_plan(args.plan)
+    if args.command == "assemble":
+        print(json.dumps(assemble_movie(plan, args.results, args.movie), ensure_ascii=False))
+        return 0
     if args.command == "preflight":
         print(json.dumps(preflight_plan(plan), ensure_ascii=False, sort_keys=True))
         return 0
