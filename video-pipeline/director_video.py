@@ -72,6 +72,28 @@ def validate_workflow(value):
     return graph
 
 
+def inspect_workflow(workflow):
+    """Offline node/input inventory. Never display prompt, seed, model or path values."""
+    graph = validate_workflow(workflow)
+    return {
+        "schema": 1, "node_count": len(graph), "api_format_only": True,
+        "node_inventory": [
+            {
+                "id": ident, "class_type": node["class_type"],
+                "inputs": [
+                    {"name": key,
+                     "kind": ("link" if isinstance(value, list) else
+                              "structured" if isinstance(value, dict) else "literal")}
+                    for key, value in sorted(node["inputs"].items())
+                ],
+            }
+            for ident, node in sorted(graph.items(), key=lambda x: int(x[0]))
+        ],
+        "values_redacted": True,
+        "network_calls": 0,
+    }
+
+
 def validate_bindings(mapping, graph):
     if not isinstance(mapping, dict) or "prompt" not in mapping:
         raise PlanError("bindings.json must include a prompt input mapping")
@@ -601,6 +623,8 @@ def assemble_movie(plan, results_dir, movie_path, runner=None):
 def run_cli(argv=None):
     parser = argparse.ArgumentParser(description="Director offline-first ComfyUI shot pipeline")
     sub = parser.add_subparsers(dest="command", required=True)
+    inspect = sub.add_parser("inspect", help="Print redacted workflow nodes and binding fields")
+    inspect.add_argument("--workflow", required=True)
     prepare = sub.add_parser("prepare", help="Offline validation and API plan generation")
     prepare.add_argument("--workflow", required=True)
     prepare.add_argument("--bindings", required=True)
@@ -625,6 +649,9 @@ def run_cli(argv=None):
     merge.add_argument("--results", required=True)
     merge.add_argument("--movie", required=True)
     args = parser.parse_args(argv)
+    if args.command == "inspect":
+        print(json.dumps(inspect_workflow(read_json(args.workflow)), ensure_ascii=False, indent=2))
+        return 0
     if args.command == "prepare":
         plan = build_plan(read_json(args.workflow), read_json(args.bindings),
                           load_shots(args.shots, load_prompt_notes(args.prompts)), args.fps)
