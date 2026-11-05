@@ -27,5 +27,7 @@ jobs:
           python-version: '3.11'
       - name: Compile Python source without GPU
         run: python -m compileall -q video-pipeline
+      - name: Validate GPU installer shell syntax
+        run: bash -n video-pipeline/install-on-gpu.sh
       - name: Run offline unit tests
         run: python -m unittest discover -s video-pipeline/tests -p 'test_*.py' -v
