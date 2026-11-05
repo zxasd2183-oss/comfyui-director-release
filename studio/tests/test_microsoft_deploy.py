@@ -6,6 +6,9 @@ import stat
 import sys
 import tempfile
 import unittest
+import urllib.error
+from io import StringIO
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -87,6 +90,108 @@ class SetupTests(unittest.TestCase):
         self.client.write_text("bad_app_id",encoding="ascii")
         with self.assertRaisesRegex(setup.SetupError,"client_id_invalid"):
             setup.owner_binding(self.client,self.db)
+
+
+
+class FakeGateOpener:
+    """Offline mock: Studio denies anonymous API and starts OIDC via 302."""
+    def __init__(self, transient=0, response=401, login=302):
+        self.transient,self.response,self.login=transient,response,login
+        self.read_calls=0
+        self.start_calls=0
+    def open(self,request,timeout):
+        url=request.full_url
+        if url.endswith("/api/v1/production"):
+            self.read_calls+=1
+            if self.read_calls<=self.transient:
+                if self.read_calls%2:
+                    raise urllib.error.URLError("connection refused during restart")
+                raise urllib.error.HTTPError(url,503,"Service initializing",{},None)
+            if self.response==200:
+                return object()
+            raise urllib.error.HTTPError(url,self.response,"denied",{},None)
+        if url.endswith("/auth/start"):
+            self.start_calls+=1
+            headers={
+                "Location":(
+                    "https://login.microsoftonline.com/consumers/oauth2/v2.0/"
+                    "authorize?client_id=mocked"
+                ) if self.login==302 else "https://attacker.invalid/bad"
+            }
+            raise urllib.error.HTTPError(url,self.login,"Microsoft login",headers,None)
+        raise AssertionError("Unexpected URL")
+
+
+class MicrosoftGateReliabilityTests(unittest.TestCase):
+    def test_retries_restart_race_but_requires_401_and_302(self):
+        opener=FakeGateOpener(transient=3)
+        delays=[]
+        nginx.probe_backend(opener=opener,attempts=6,delay=0.1,
+                            sleep=lambda s:delays.append(s))
+        self.assertEqual(opener.read_calls,4)
+        self.assertEqual(opener.start_calls,1)
+        self.assertEqual(len(delays),3)
+        self.assertTrue(all(delay<=2 for delay in delays))
+
+    def test_never_bypasses_anonymous_read_gate_even_if_backend_is_up(self):
+        opener=FakeGateOpener(response=200)
+        with self.assertRaisesRegex(RuntimeError,"anonymous read"):
+            nginx.probe_backend(opener=opener,attempts=5,
+                                sleep=lambda _:self.fail("Unsafe retry"))
+        self.assertEqual(opener.read_calls,1)
+        self.assertEqual(opener.start_calls,0)
+
+    def test_odd_403_does_not_retry_or_trigger_basic_promotion(self):
+        opener=FakeGateOpener(response=403)
+        with self.assertRaisesRegex(RuntimeError,"deny anonymous"):
+            nginx.probe_backend(opener=opener,attempts=5,
+                                sleep=lambda _:self.fail("Unexpected retry"))
+        self.assertEqual(opener.read_calls,1)
+
+    def test_wrong_oidc_redirect_never_becomes_success(self):
+        opener=FakeGateOpener(login=302)
+        opener.login=307
+        with self.assertRaisesRegex(RuntimeError,"authorization flow"):
+            nginx.probe_backend(opener=opener,attempts=6,
+                                sleep=lambda _:self.fail("Unsafe retry"))
+
+    def test_studio_never_ready_exits_with_bounded_safe_error(self):
+        opener=FakeGateOpener(transient=99)
+        with self.assertRaisesRegex(RuntimeError,"not_ready_after_retries"):
+            nginx.probe_backend(opener=opener,attempts=3,delay=0,
+                                sleep=lambda _:None)
+        self.assertEqual(opener.read_calls,3)
+        self.assertEqual(opener.start_calls,0)
+
+    def test_reused_microsoft_route_is_verified_but_never_mutated(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            basic=root/"basic.conf";basic.write_text("basic")
+            modern=root/"modern.conf";modern.write_text("microsoft")
+            snippet=root/"active.conf";snippet.write_text("microsoft")
+            with patch.object(nginx,"SNIPPET",snippet), \
+                 patch.object(nginx,"MS_TEMPLATE",modern), \
+                 patch.object(nginx,"BASIC_TEMPLATE",basic), \
+                 patch.object(nginx.os,"geteuid",return_value=0), \
+                 patch.object(nginx,"probe_backend") as probe, \
+                 patch.object(nginx,"run_check") as nginx_check:
+                out=StringIO()
+                with redirect_stdout(out):
+                    nginx.promote()
+            self.assertEqual(snippet.read_text(),"microsoft")
+            self.assertIn("existing Microsoft Studio route retained",out.getvalue())
+            probe.assert_called_once_with()
+            nginx_check.assert_not_called()
+
+    def test_install_script_reports_reused_route_without_unverified_commit(self):
+        script=(Path(__file__).resolve().parents[1]/"install-microsoft-web.sh").read_text()
+        self.assertIn("ROUTE_ALREADY_MODERN=1",script)
+        self.assertIn("redundant restart skipped",script)
+        self.assertIn("if ! python3",script)
+        self.assertIn('COMMITTED=1',script)
+        self.assertLess(script.index('python3 "$SRC/promote_microsoft_nginx.py"'),
+                        script.index("COMMITTED=1"))
+        self.assertIn("EXISTING Microsoft Nginx route retained",script)
 
 
 class NginxGateTests(unittest.TestCase):
