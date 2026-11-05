@@ -1,0 +1,50 @@
+name: Glacier v0.20 visual shell regression (no release)
+on:
+  push:
+    branches: [build/glacier-browser-v0-20-ui-refresh]
+    paths:
+      - 'glacier-windows/glacier_shell20.py'
+      - 'glacier-windows/test_shell20.py'
+      - 'glacier-windows/main.py'
+      - 'glacier-macos/main.py'
+      - '.github/workflows/glacier-ui-v020-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shell-qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Qt and decode existing UI
+        working-directory: glacier-windows
+        run: |
+          python -m pip install 'PySide6>=6.8,<7'
+          python - <<'PY'
+          from pathlib import Path
+          import base64,lzma
+          for name in ('chrome14','tabtools13'):
+              source=Path(name+'.py.xz.b64').read_text().strip()
+              Path(name+'.py').write_bytes(lzma.decompress(base64.b64decode(source)))
+          PY
+      - name: Validate new native shell and existing tab behavior
+        working-directory: glacier-windows
+        run: |
+          python -m py_compile glacier_shell20.py test_shell20.py main.py
+          python -m unittest -v test_shell20 test_chrome14
+      - name: Ensure new shell remains UI-only and key remains pinned at build
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('glacier-windows/glacier_shell20.py').read_text()
+          assert 'GLACIER_SHELL_QSS20' in s and 'glacier_home20' in s
+          for prohibited in ('QNetworkAccessManager','QWebEngineProfile(', 'GLACIER_UPDATE_SIGNING_PRIVATE_HEX', 'requests.get(', 'CookieStore'):
+              assert prohibited not in s, prohibited
+          print('UI-only change guard passed')
+          PY
