@@ -26,8 +26,12 @@ PUBLIC_FILE = HOME / "update-public-key.hex"
 
 
 def gh(*args, input_data=None, allow_missing=False):
+    # gh api has explicit REST endpoint URLs and does not support -R.
+    command = ["gh", *args]
+    if args[0] != "api":
+        command.extend(["-R", REPO])
     p = subprocess.run(
-        ["gh", *args, "-R", REPO],
+        command,
         input=input_data,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
