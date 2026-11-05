@@ -37,6 +37,8 @@ _CLIENT_ID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
 _OWNER_SUB = re.compile(r"^[A-Za-z0-9_-]{8,256}$")
 _TOKEN_ID = re.compile(r"^[A-Za-z0-9_-]{24,96}$")
 _STATE_ID = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+# One canonical schema shared by HTTP parsing, identity verification and diagnostics.
+ALLOWED_CALLBACK_FIELDS = frozenset({"state", "code", "session_state", "client_info"})
 
 
 class IdentityError(ValueError):
@@ -166,13 +168,11 @@ class MicrosoftStudioIdentity:
         return flow["auth_uri"],state
 
     def finish(self, query, state_cookie_value):
-        # Microsoft can append an optional session_state to an otherwise valid
-        # authorization-code response. It is informational only, NOT evidence
-        # of authentication. The actual OAuth state and browser-bound state
-        # cookie remain mandatory; all other callback keys are rejected.
-        allowed = {"state", "code", "session_state"}
+        # Microsoft can append session_state and/or client_info to a code
+        # response. Neither proves identity: state cookie, PKCE, signed ID token
+        # and pinned owner are still mandatory. No arbitrary parameters allowed.
         if (not isinstance(query,dict) or not {"state","code"}.issubset(query)
-                or set(query) - allowed
+                or set(query) - ALLOWED_CALLBACK_FIELDS
                 or not _STATE_ID.fullmatch(str(query.get("state","")))
                 or not isinstance(query.get("code"),str)
                 or not 12 <= len(query["code"]) <= 8192
@@ -180,6 +180,10 @@ class MicrosoftStudioIdentity:
                     not isinstance(query["session_state"],str)
                     or not 8 <= len(query["session_state"]) <= 256
                     or not re.fullmatch(r"[A-Za-z0-9._-]+",query["session_state"])))
+                or ("client_info" in query and (
+                    not isinstance(query["client_info"],str)
+                    or not 8 <= len(query["client_info"]) <= 4096
+                    or not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}",query["client_info"])))
                 or state_cookie_value != query["state"]):
             raise IdentityError("oidc_state_invalid")
         state=query["state"]
