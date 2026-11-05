@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from contextlib import contextmanager
 import re
 import sqlite3
@@ -16,6 +17,7 @@ import time
 from pathlib import Path
 
 IDENT = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
+SHOT_IDENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 ATTR = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){1,3}$")
 KINDS = frozenset({"character_visual", "character_voice", "costume", "location",
@@ -32,6 +34,12 @@ class ProductionError(ValueError):
 def _ident(value):
     if not isinstance(value, str) or not IDENT.fullmatch(value):
         raise ProductionError("invalid_identifier")
+    return value
+
+
+def _shot_ident(value):
+    if not isinstance(value, str) or not SHOT_IDENT.fullmatch(value):
+        raise ProductionError("invalid_shot_identifier")
     return value
 
 
@@ -87,6 +95,12 @@ def open_db(path, *, initialize=True):
       UNIQUE(project_id,episode_id,ordinal),
       FOREIGN KEY(project_id,episode_id)
         REFERENCES episodes(project_id,episode_id));
+    CREATE TABLE IF NOT EXISTS episode_plan_imports (
+      project_id TEXT NOT NULL, episode_id TEXT NOT NULL,
+      source_sha256 TEXT NOT NULL, shot_count INTEGER NOT NULL,
+      imported_at INTEGER NOT NULL,
+      PRIMARY KEY(project_id,episode_id),
+      FOREIGN KEY(project_id,episode_id) REFERENCES episodes(project_id,episode_id));
     CREATE TABLE IF NOT EXISTS assets (
       asset_id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
       kind TEXT NOT NULL, subject_id TEXT NOT NULL,
@@ -188,7 +202,7 @@ def create_episode(db, project_id, episode_id, title, ordinal, *, actor="studio_
 
 def create_shot(db, project_id, episode_id, shot_id, ordinal, duration_ms,
                 *, actor="studio_operator"):
-    pid, eid, sid = _ident(project_id), _ident(episode_id), _ident(shot_id)
+    pid, eid, sid = _ident(project_id), _ident(episode_id), _shot_ident(shot_id)
     if (type(ordinal) is not int or not 1 <= ordinal <= 10000 or
             type(duration_ms) is not int or not 1 <= duration_ms <= 120000):
         raise ProductionError("invalid_shot_timing")
@@ -197,6 +211,54 @@ def create_shot(db, project_id, episode_id, shot_id, ordinal, duration_ms,
                    " VALUES(?,?,?,?,?)", (pid,eid,sid,ordinal,duration_ms))
         _audit(db,actor,"shot.created",pid+"/"+eid+"/"+sid,
                {"ordinal":ordinal,"duration_ms":duration_ms})
+
+
+def import_video_plan(db, project_id, episode_id, file, *, actor="studio_operator"):
+    """Import an entire V0.7 plan as shot metadata only (no prompts/graphs)."""
+    pid,eid = _ident(project_id),_ident(episode_id)
+    source = Path(file)
+    if source.is_symlink() or not source.is_file() or source.stat().st_size > 4_000_000:
+        raise ProductionError("invalid_video_plan_file")
+    raw = source.read_bytes()
+    try:
+        obj = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        raise ProductionError("invalid_video_plan_json") from None
+    jobs = obj.get("jobs") if isinstance(obj,dict) and obj.get("schema")==1 else None
+    if not isinstance(jobs,list) or not 1 <= len(jobs) <= 500:
+        raise ProductionError("invalid_video_plan_schema")
+    imported, seen = [], set()
+    for i,job in enumerate(jobs,1):
+        if not isinstance(job,dict):
+            raise ProductionError("invalid_video_plan_shot")
+        sid=_shot_ident(job.get("shot_id"))
+        seconds=job.get("seconds")
+        if (sid in seen or type(seconds) not in (int,float) or
+                not math.isfinite(seconds) or not 0 < seconds <= 30):
+            raise ProductionError("invalid_video_plan_shot")
+        seen.add(sid)
+        imported.append((pid,eid,sid,i,max(1,round(seconds*1000))))
+    digest=hashlib.sha256(raw).hexdigest()
+    with transaction(db):
+        row=db.execute("SELECT source_sha256,shot_count FROM episode_plan_imports "
+                       "WHERE project_id=? AND episode_id=?", (pid,eid)).fetchone()
+        if row:
+            if row["source_sha256"] != digest:
+                raise ProductionError("episode_plan_changed_use_new_reviewed_version")
+            return {"ok":True,"unchanged":True,"shots":row["shot_count"],
+                    "source_sha256":digest}
+        if db.execute("SELECT COUNT(*) FROM production_shots WHERE project_id=? "
+                      "AND episode_id=?", (pid,eid)).fetchone()[0]:
+            raise ProductionError("episode_already_has_manual_shots")
+        db.executemany("INSERT INTO production_shots "
+                       "(project_id,episode_id,shot_id,ordinal,duration_ms)"
+                       " VALUES(?,?,?,?,?)", imported)
+        db.execute("INSERT INTO episode_plan_imports "
+                   "(project_id,episode_id,source_sha256,shot_count,imported_at) "
+                   "VALUES(?,?,?,?,?)", (pid,eid,digest,len(imported),int(time.time())))
+        _audit(db,actor,"episode.plan_imported",pid+"/"+eid,
+               {"shots":len(imported),"source_sha256":digest})
+    return {"ok":True,"unchanged":False,"shots":len(imported),"source_sha256":digest}
 
 
 def add_asset(db, asset_id, project_id, kind, subject_id, version, sha256,
@@ -238,7 +300,8 @@ def add_asset(db, asset_id, project_id, kind, subject_id, version, sha256,
 
 def attach_asset(db, project_id, episode_id, shot_id, asset_id, purpose,
                  *, actor="studio_operator"):
-    pid,eid,sid,aid = map(_ident, (project_id,episode_id,shot_id,asset_id))
+    pid,eid,aid = map(_ident, (project_id,episode_id,asset_id))
+    sid = _shot_ident(shot_id)
     purpose = _text(purpose, 60)
     with transaction(db):
         asset = db.execute("SELECT project_id FROM assets WHERE asset_id=?", (aid,)).fetchone()
@@ -252,7 +315,8 @@ def attach_asset(db, project_id, episode_id, shot_id, asset_id, purpose,
 
 def create_finding(db, finding_id, project_id, episode_id, shot_id,
                    attribute, evidence_sha256, detail, *, actor="studio_operator"):
-    fid,pid,eid,sid = map(_ident,(finding_id,project_id,episode_id,shot_id))
+    fid,pid,eid = map(_ident,(finding_id,project_id,episode_id))
+    sid = _shot_ident(shot_id)
     attribute, evidence = _attr(attribute), _sha(evidence_sha256)
     detail = _text(detail,MAX_EVIDENCE_TEXT)
     with transaction(db):
