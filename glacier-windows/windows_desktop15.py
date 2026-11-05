@@ -96,10 +96,10 @@ class WindowsDesktop15:
             "Ctrl+Shift+T": self.reopen_closed_tab15,
             "Ctrl+N": lambda: self.open_satellite(private=False),
             "Ctrl+Shift+N": lambda: self.open_satellite(private=True),
-            "Ctrl+D": self.toggle_bookmark,
-            "Ctrl+F": self.open_find13,
-            "Ctrl+J": self.show_downloads,
-            "Ctrl+H": self.show_history,
+            "Ctrl+D": lambda: self.toggle_bookmark(),
+            "Ctrl+F": lambda: self.open_find13(),
+            "Ctrl+J": lambda: self.show_downloads(),
+            "Ctrl+H": lambda: self.show_history(),
         }
         for index in range(1, 9):
             shortcuts[f"Ctrl+{index}"] = (
