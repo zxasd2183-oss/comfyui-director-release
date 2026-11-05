@@ -101,12 +101,7 @@ h1{font-weight:800;letter-spacing:-2px;font-size:clamp(43px,4.7vw,69px);
 .sign-in:hover{background:#246bbd;transform:translateY(-2px);box-shadow:0 15px 28px #387fd04f}
 .sign-in:focus-visible{outline:3px solid #82c6ff;outline-offset:3px}
 .sign-in:active{transform:translateY(0)}
-.ms-symbol{display:grid;grid-template-columns:repeat(2,7px);grid-template-rows:repeat(2,7px);gap:2px;
-  width:16px;height:16px;flex:none}
-.ms-symbol i:nth-child(1){background:#f35325}
-.ms-symbol i:nth-child(2){background:#81bc06}
-.ms-symbol i:nth-child(3){background:#05a6f0}
-.ms-symbol i:nth-child(4){background:#ffba08}
+.access-symbol{flex:none;opacity:.93}
 .button-arrow{margin-left:auto;opacity:.86}
 .signin-caption{text-align:center;color:#9cacc0;font-size:11px;margin:15px 0 0}
 .card-bottom{border-top:1px solid #eaf0f7;margin-top:35px;padding-top:21px;
