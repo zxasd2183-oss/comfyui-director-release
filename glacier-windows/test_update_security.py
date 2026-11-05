@@ -1,35 +1,85 @@
-import unittest
+"""Glacier Windows updater security regressions, with ephemeral test keys only."""
+import base64
 import copy
-from secure_update import (parse_manifest, UpdateError, newer_than, CURRENT_VERSION)
+import unittest
+from unittest.mock import patch
 
-FIXTURE = {"channel":"windows-x64","version":"0.11.0","url":"https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.11.0/GlacierBrowser-v0.11.0-Windows-Setup-x64.exe","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":170630680,"notes":"signed updater test vector","key_id":"cf9452226375ff7d","signature":"EE+XY2Vok8xdeN3tdAxDxxbH+mC3Ch6ZB4QhUKPdvYBQKidcGFtIyd0iuWDkyDDqWFHEjOPrPxfluPmjzDJABA=="}
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+import secure_update as update
+
 
 class GlacierUpdateSecurityTests(unittest.TestCase):
-    def test_signed_manifest_accepted(self):
-        self.assertEqual(parse_manifest(FIXTURE).version, '0.11.0')
-    def test_checksum_tamper_rejected(self):
-        altered = copy.deepcopy(FIXTURE)
-        altered['sha256'] = '1' * 64
-        with self.assertRaises(UpdateError): parse_manifest(altered)
-    def test_version_tamper_rejected(self):
-        altered = copy.deepcopy(FIXTURE)
-        altered['version'] = '0.11.1'
-        with self.assertRaises(UpdateError): parse_manifest(altered)
-    def test_unsigned_manifest_rejected(self):
-        altered = copy.deepcopy(FIXTURE)
-        altered.pop('signature')
-        with self.assertRaises(UpdateError): parse_manifest(altered)
-    def test_different_key_rejected(self):
-        altered = copy.deepcopy(FIXTURE)
-        altered['key_id'] = 'foreign'
-        with self.assertRaises(UpdateError): parse_manifest(altered)
-    def test_signed_rollback_is_not_newer(self):
-        self.assertFalse(newer_than(CURRENT_VERSION, '0.10.1'))
-        self.assertTrue(newer_than('0.10.1', CURRENT_VERSION))
-    def test_url_redirect_replacement_rejected(self):
-        altered = copy.deepcopy(FIXTURE)
-        altered['url'] = 'https://evil.example/setup.exe'
-        with self.assertRaises(UpdateError): parse_manifest(altered)
+    @classmethod
+    def setUpClass(cls):
+        cls.key = Ed25519PrivateKey.generate()
+        cls.pub = cls.key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+        )
 
-if __name__ == '__main__':
+    def fixture(self, version="0.18.0"):
+        payload = {
+            "channel": "windows-x64", "version": version,
+            "url": f"https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v{version}/GlacierBrowser-v{version}-Windows-Setup-x64.exe",
+            "sha256": "0" * 64, "size": 173_205_726,
+            "notes": "signed updater test vector",
+            "key_id": update.KEY_ID,
+        }
+        payload["signature"] = base64.b64encode(
+            self.key.sign(update.canonical(payload))).decode("ascii")
+        return payload
+
+    def parse(self, document):
+        with patch.object(update, "PUBLIC_KEY", self.pub):
+            return update.parse_manifest(document)
+
+    def test_signed_manifest_accepted(self):
+        self.assertEqual(self.parse(self.fixture()).version, "0.18.0")
+
+    def test_checksum_tamper_rejected(self):
+        doc = self.fixture()
+        doc["sha256"] = "1" * 64
+        with self.assertRaises(update.UpdateError):
+            self.parse(doc)
+
+    def test_version_tamper_rejected(self):
+        doc = self.fixture()
+        doc["version"] = "0.18.1"
+        with self.assertRaises(update.UpdateError):
+            self.parse(doc)
+
+    def test_unsigned_manifest_rejected(self):
+        doc = self.fixture()
+        doc.pop("signature")
+        with self.assertRaises(update.UpdateError):
+            self.parse(doc)
+
+    def test_different_key_rejected(self):
+        doc = self.fixture()
+        doc["key_id"] = "foreign"
+        with self.assertRaises(update.UpdateError):
+            self.parse(doc)
+
+    def test_signed_rollback_is_not_newer(self):
+        self.assertFalse(update.newer_than(update.CURRENT_VERSION, "0.17.0"))
+        self.assertTrue(update.newer_than("0.17.0", update.CURRENT_VERSION))
+
+    def test_url_redirect_replacement_rejected(self):
+        doc = self.fixture()
+        doc["url"] = "https://evil.example/setup.exe"
+        with self.assertRaises(update.UpdateError):
+            self.parse(doc)
+
+    def test_same_key_replay_cross_platform_rejected(self):
+        doc = self.fixture()
+        doc["channel"] = "macos-arm64"
+        doc.pop("signature")
+        doc["signature"] = base64.b64encode(
+            self.key.sign(update.canonical(doc))).decode("ascii")
+        with self.assertRaises(update.UpdateError):
+            self.parse(doc)
+
+
+if __name__ == "__main__":
     unittest.main()
