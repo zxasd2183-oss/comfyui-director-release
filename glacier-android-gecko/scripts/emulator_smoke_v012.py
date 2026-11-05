@@ -109,7 +109,7 @@ def main():
     await_ui(desc="内核测试菜单",timeout=120)
     record("browser_start","UI present; Gecko page content NOT proven")
     insets_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=25)
-    if not re.search(r"SYSTEM_BAR_INSETS top=[1-9]\\d* bottom=[1-9]\\d*",insets_log):
+    if not re.search(r"SYSTEM_BAR_INSETS top=[1-9]\d* bottom=[1-9]\d*",insets_log):
         raise RuntimeError("ANDROID_15_SYSTEM_BAR_INSETS_NOT_APPLIED")
     record("system_bar_insets","nonzero top and bottom reported by Android app")
     shot("01-start")
