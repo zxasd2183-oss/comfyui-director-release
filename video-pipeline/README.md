@@ -58,6 +58,13 @@ GPU 开机、ComfyUI 可用后，在 UI 中载入原来的 T2V/I2V/R2V 工作流
 
     python3 video-pipeline/director_video.py collect --plan work/plan.json --db work/queue.sqlite --out work/results --download
 
+校验每个镜头已下载 MP4 的 SHA-256、字节数和音视频编码/尺寸/帧率，按镜头表顺序无损拼接（不再使用 GPU）：
+
+    python3 video-pipeline/director_video.py assemble --plan work/plan.json --results work/results --movie work/final.mp4
+
+assemble 依赖本地 ffprobe/ffmpeg。每个镜头必须有且只有一个已下载 MP4；格式不兼容时**拒绝拼接**，不会默默裁剪、丢音轨或转码。最终电影文件不得预先存在，防止覆盖已有作品。所有输入必须在本机结果归档目录内，检验失败不会发布最终文件。
+
+
 ## 当前边界
 
 GPU 当前关机，因此没有真实 H3 运行、真实模型兼容性或成片验收。Director V3 MCP 仍然只读；此脚本不是已经开放生成 MCP 接口。不执行 GPU 开关机、审批或其他辅助 App 更新。现阶段没有自动审片、角色一致性优化或配音合成。
