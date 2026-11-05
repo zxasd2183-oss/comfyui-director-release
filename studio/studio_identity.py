@@ -35,6 +35,7 @@ SESSION_IDLE = 1800
 _CLIENT_ID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
 _OWNER_SUB = re.compile(r"^[A-Za-z0-9_-]{8,256}$")
 _TOKEN_ID = re.compile(r"^[A-Za-z0-9_-]{24,96}$")
+_STATE_ID = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 
 class IdentityError(ValueError):
@@ -87,7 +88,7 @@ def session_cookie(sid):
 
 
 def state_cookie(state):
-    if not _TOKEN_ID.fullmatch(state):
+    if not _STATE_ID.fullmatch(state):
         raise IdentityError("invalid_auth_state")
     return (COOKIE_STATE + "=" + state +
             "; Path=/studio/; Max-Age=300; Secure; HttpOnly; SameSite=Lax")
@@ -137,7 +138,7 @@ class MicrosoftStudioIdentity:
         flow = self.app.initiate_auth_code_flow(
             scopes=["openid", "profile"], redirect_uri=REDIRECT,
             response_mode="query", max_age=1200)
-        if (not isinstance(flow,dict) or not _TOKEN_ID.fullmatch(str(flow.get("state",""))) or
+        if (not isinstance(flow,dict) or not _STATE_ID.fullmatch(str(flow.get("state",""))) or
                 not isinstance(flow.get("code_verifier"),str) or
                 len(flow["code_verifier"]) < 43 or
                 not isinstance(flow.get("nonce"),str) or
@@ -156,7 +157,7 @@ class MicrosoftStudioIdentity:
 
     def finish(self, query, state_cookie_value):
         if (not isinstance(query,dict) or set(query) != {"state","code"}
-                or not _TOKEN_ID.fullmatch(str(query.get("state","")))
+                or not _STATE_ID.fullmatch(str(query.get("state","")))
                 or not isinstance(query.get("code"),str)
                 or not 12 <= len(query["code"]) <= 8192
                 or state_cookie_value != query["state"]):
