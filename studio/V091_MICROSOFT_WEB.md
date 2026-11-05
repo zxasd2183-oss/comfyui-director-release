@@ -123,3 +123,26 @@ VPS 已经观测到 Microsoft 回调包含 **code、state、client_info**，先�
     sudo bash studio/install-microsoft-web.sh
 
 升级完成后从 https://jipite.borealos.cn/studio/ 新建登录流程，不要重放旧 callback URL。若仍出错，只提供筛选后的 STUDIO_AUTH_CALLBACK_DENIED 分类日志，不要分享 OAuth 参数值、Cookie 或私钥。
+
+
+## Director Studio 自有冰川风格登录页（品牌入口）
+
+新版本现在将导演工作台的品牌页面与底层 Microsoft 身份认证区分开：
+
+- 未登录访问 https://jipite.borealos.cn/studio/ 时，直接显示 Director Studio 自有的浅色 Glacier 登录界面；**不会自动跳转微软**。
+- 页内“进入 Director Studio”按钮是显式认证入口，点击后才访问本机 /studio/auth/start 并向 Microsoft consumers 发起原有 OAuth 授权码验证。
+- 登录页只包含公开的品牌文案和静态样式，不加载 Studio 私有镜头、项目、GPU 监控、管理 API、实时 SSE，亦不包含客户端密钥或 OAuth 会话。
+- 登录成功后返回 /studio/，自动识别现有服务器会话并进入正常导演工作台。已登录的 /studio/login 会跳回工作台。
+- 点击工作台“退出登录”会作废服务端会话，重新显示我们自己的登录页，不会偷偷开始下一次微软登录。
+- 仍使用之前的个人 Microsoft 账号作为身份提供方，保留所有者绑定、JWT 签名校验、PKCE、state/nonce、Cookie、CSRF 和失败闭锁。
+- 旧 SSH 端口转发/本地访问路径继续直接进入原监管工作台，不向公网提供匿名业务数据。
+
+安装后的升级命令（保留原 Microsoft Web 密钥，无需重新注册）：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/install-microsoft-web.sh
+
+测试时建议先使用无痕浏览器打开正式 URL，以避免旧的已登录 Cookie 直接进入工作台而看不到登录页。正式验收必须分别检查未登录页面、点击登录、登录成功后 API 可访问、退出后业务 API 再次变为 HTTP 401。
+
+这是一张**自己的产品登录页面**，不等于另建一套不受审计的用户名/密码系统。微软仍然是认证提供方，但不再承担 Studio 的品牌入口展示。
