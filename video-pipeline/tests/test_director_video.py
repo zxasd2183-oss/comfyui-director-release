@@ -295,6 +295,27 @@ class VideoPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(dv.PlanError, "choice unavailable"):
             dv.preflight_plan(plan, client=local)
 
+
+    def test_inspect_workflow_redacts_prompt_values_and_reports_bindings(self):
+        graph = copy.deepcopy(self.workflow)
+        graph["6"]["inputs"]["text"] = "PRIVATE PROMPT SECRET"
+        graph["9"]["inputs"]["seed"] = 123456789
+        value = dv.inspect_workflow(graph)
+        self.assertTrue(value["values_redacted"])
+        self.assertEqual(value["network_calls"], 0)
+        self.assertEqual(value["node_count"], 3)
+        self.assertEqual(value["node_inventory"][0]["id"], "6")
+        self.assertEqual(value["node_inventory"][-1]["inputs"][0]["kind"], "link")
+        self.assertNotIn("PRIVATE PROMPT SECRET", json.dumps(value))
+        self.assertNotIn("123456789", json.dumps(value))
+
+    def test_inspect_cli_makes_no_network_calls(self):
+        graph = self.root / "api.json"
+        dv.atomic_json(graph, self.workflow)
+        with patch.object(dv, "comfy_json") as network:
+            self.assertEqual(dv.run_cli(["inspect", "--workflow", str(graph)]), 0)
+            network.assert_not_called()
+
     def _archive_shots(self):
         plan = self.plan()
         directory = self.root / "results"
