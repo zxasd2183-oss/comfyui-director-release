@@ -1,0 +1,81 @@
+name: Glacier Android v0.1 GeckoView real-engine APK
+
+on:
+  push:
+    branches:
+      - experiment/glacier-android-geckoview-v01
+    paths:
+      - 'glacier-android-gecko/**'
+      - '.github/workflows/glacier-android-geckoview-v01.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build arm64 GeckoView test APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android platform
+        run: |
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          yes | sdkmanager --licenses >/dev/null || true
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Build REAL GeckoView ARM64 Android APK
+        run: |
+          gradle -p glacier-android-gecko :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK and embedded GeckoView native engine
+        run: |
+          set -euo pipefail
+          apk='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$apk"
+          python - <<'PY'
+          from zipfile import ZipFile
+          path='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          with ZipFile(path) as z:
+              names=z.namelist()
+              native=[n for n in names if n.startswith('lib/arm64-v8a/') and n.endswith('.so')]
+              assert native, 'Missing GeckoView native ARM64 libraries'
+              for x in ('lib/arm64-v8a/libxul.so','classes.dex'):
+                  assert x in names, 'Missing engine class: '+x
+              assert not any(n.startswith('lib/armeabi-v7a') for n in names), 'Unexpected 32-bit library'
+              print('PASS: GeckoView real native ARM64 engine:',len(native),'native .so files')
+          PY
+          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.1.0-GeckoView-ARM64-debug.apk"
+          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.1.0-GeckoView-ARM64-debug.apk'
+      - name: Upload real installable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.0-GeckoView-ARM64-debug
+          path: glacier-android-gecko/GlacierAndroid-v0.1.0-GeckoView-ARM64-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish GeckoView engine-test preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='glacier-android-gecko-v0.1.0'
+          apk='glacier-android-gecko/GlacierAndroid-v0.1.0-GeckoView-ARM64-debug.apk'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+          else
+            gh release create "$tag" "$apk" \
+              --target experiment/glacier-android-geckoview-v01 \
+              --title 'Glacier Android v0.1 · GeckoView 真内核测试版' \
+              --notes 'ARM64 Android 原生测试 APK。实际内置 GeckoView 159 stable，支持网址搜索、前进后退刷新、标签页、私人/工作独立 Session Context。仅用于小米真机内核兼容性实验。尚无 VLESS、账号保险箱、云同步或正式安全审计，当前默认联网；请勿用关键账号测试。使用临时 Debug 签名，不是正式版；不同 CI 运行生成的调试签名可能变化。' \
+              --prerelease
+          fi
+          gh release view "$tag" --json tagName,assets
