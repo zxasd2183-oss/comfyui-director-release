@@ -130,7 +130,7 @@
     const request={...pending,reason:$("reasonInput").value.trim(),csrf};
     if(!request.shot_id){delete request.shot_id;delete request.revision;}
     try{
-      const response=await fetch("/api/v1/action",{
+      const response=await fetch("./api/v1/action",{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify(request),cache:"no-store"});
       const result=await response.json();
@@ -146,17 +146,17 @@
   });
 
   async function refresh() {
-    const res=await fetch("/api/v1/snapshot",{cache:"no-store"});
+    const res=await fetch("./api/v1/snapshot",{cache:"no-store"});
     if(!res.ok)throw Error("snapshot_unavailable");
     render(await res.json());
   }
   async function start(){
     try{
-      const r=await fetch("/api/v1/bootstrap",{cache:"no-store"});
+      const r=await fetch("./api/v1/bootstrap",{cache:"no-store"});
       if(!r.ok)throw Error("No operator access");
       const b=await r.json(); csrf=b.csrf;
       await refresh();
-      const es=new EventSource("/api/v1/stream");
+      const es=new EventSource("./api/v1/stream");
       es.addEventListener("snapshot",event=>{
         try{render(JSON.parse(event.data));}catch(_error){/* next tick will recover */}
       });
