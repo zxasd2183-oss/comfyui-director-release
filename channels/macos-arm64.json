@@ -1,10 +1,10 @@
 {
   "channel": "macos-arm64",
-  "version": "0.14.2",
-  "url": "https://jipite.borealos.cn/glacier-updates/GlacierBrowser-v0.14.2-macOS-AppleSilicon.dmg",
-  "sha256": "108c55a0ebb6729489a7a73d6bc7df47e580b9f9c9d700aa05caad21dc26330c",
-  "size": 269943174,
-  "notes": "v0.14.2：修复 macOS 冻结打包后的 HTTPS CA 根证书加载，VLESS 连通性检测继续完整验证 TLS 证书链和域名；保留 Mac VPS 软件内安全更新。",
-  "key_id": "cf9452226375ff7d",
-  "signature": "vH5pFL9Mb5WYtomTOYCkaEgRHCeC4ViVPbv+ouK8C+Z7YRLELlSEdWv1s8xtQMcIVo6QV1jokggqSh43lDV3Bw=="
+  "key_id": "v2-259ea4a7b9da4bea",
+  "notes": "Glacier Browser v0.18.0：双端工作区、标签分组、增强下载管理。经正式构建与自动测试验证。",
+  "sha256": "6db4e873101eae8ee345e7bb10aa4b255b8f0c107402c2a78e6afe9bb565961d",
+  "signature": "36hxvTIcjKA/evn9xE47BHWLDpivRtnLY69MKogddyMXULz3Wb23MV6/W77ILWnmAlL4YCqIL0+qrYNUWnnwDg==",
+  "size": 274145125,
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v0.18.0/GlacierBrowser-v0.18.0-macOS-AppleSilicon.dmg",
+  "version": "0.18.0"
 }
