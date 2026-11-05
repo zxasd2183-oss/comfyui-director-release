@@ -74,7 +74,7 @@ class BrainAuthenticator:
 
     def check(self,headers,method,path,body,client_ip):
         if (self.secret is None or client_ip!="127.0.0.1" or
-                method!="POST" or path!=BRAIN_PATH or
+                method!="POST" or path not in (BRAIN_PATH,"/api/v1/brain/visual") or
                 headers.get("Host")!="127.0.0.1:8900" or
                 headers.get("X-Forwarded-Host") is not None or
                 headers.get("X-Forwarded-Proto") is not None or
