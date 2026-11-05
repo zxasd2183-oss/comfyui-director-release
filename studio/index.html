@@ -52,6 +52,22 @@
         <div class="metric"><span class="metric-name">已导入镜头</span><strong id="shotCount">—</strong><span class="metric-sub" id="shotSub">等待制作计划</span><div class="metric-glyph">▦</div></div>
         <div class="metric"><span class="metric-name">待处理 / 已暂缓</span><strong id="reviewCount">—</strong><span class="metric-sub">人工监督工作量</span><div class="metric-glyph">◉</div></div>
       </section>
+      <section id="production" class="panel production-panel">
+        <div class="panel-header">
+          <div><div class="kicker">PRODUCTION LIBRARY · V0.9</div><h2>全剧制作工程</h2><p>统一的项目、剧集、视觉与声音资产、连续性审计</p></div>
+          <span class="small-tag" id="productionMode">只读数据总览</span>
+        </div>
+        <div class="production-grid">
+          <div class="production-block"><small>项目 / 剧集 / 镜头</small><strong id="productionCount">0 / 0 / 0</strong><div class="production-hint">独立制作工程数据库</div></div>
+          <div class="production-block"><small>视觉与其他资产版本</small><strong id="visualAssets">0</strong><div class="production-hint">角色形象、场景、服装、道具等</div></div>
+          <div class="production-block"><small>声音资产版本</small><strong id="audioAssets">0</strong><div class="production-hint">声线、对白、音效、音乐、环境音</div></div>
+          <div class="production-block"><small>异常 / 例外规则</small><strong id="continuityCount">0 / 0</strong><div class="production-hint" id="exceptionBrief">尚无艺术裁决记录</div></div>
+        </div>
+        <div class="production-lower">
+          <div><div class="production-label">项目与剧集</div><div id="projectList" class="project-list"><div class="production-empty">尚未导入制作工程</div></div></div>
+          <div><div class="production-label">视听版本与审计</div><div class="audit-indicator"><span id="productionAudit">等待读取</span><span id="productionAssetKinds">资产类型：—</span></div><p class="production-warning">真实制作数据与审计保存在独立数据库。当前版本可监看，尚不允许通过网页创建或批准艺术例外。</p></div>
+        </div>
+      </section>
       <div class="content-grid">
         <section id="shots" class="panel shots-panel">
           <div class="panel-header"><div><div class="kicker">PRODUCTION PIPELINE</div><h2>镜头生产线</h2><p>按顺序安排生产，随时选中镜头介入</p></div>
