@@ -51,7 +51,7 @@ class TestHubFileTransfer(unittest.TestCase):
         with patch.object(fs,"_check_public_resolve"):
             raw,fileid=fs.fetch_file(REF,opener=Opener())
         self.assertEqual(raw,PNG)
-        self.assertEqual(fileid,REF["file_id"])
+        self.assertEqual(fileid,"file_"+hashlib.sha256(REF["file_id"].encode()).hexdigest())
 
     def test_direct_file_url_is_never_returned_in_error(self):
         invalid={**REF,"download_url":"https://example.com/sensitive?key=SECRETTOKEN"}
@@ -59,6 +59,15 @@ class TestHubFileTransfer(unittest.TestCase):
                                       "character","CHAR_GEM",invalid)
         self.assertFalse(result["ok"])
         self.assertNotIn("SECRETTOKEN",str(result))
+
+    def test_opaque_file_reference_is_supported_without_leaking_raw_id(self):
+        imported={**REF,"file_id":"opaque-runtime-file-v4-+&id=9"}
+        url,source=fs.validate_file_ref(imported)
+        self.assertEqual(url,REF["download_url"])
+        self.assertTrue(source.startswith("file_"))
+        self.assertEqual(len(source),69)
+        self.assertNotIn(imported["file_id"],source)
+        self.assertEqual(source,fs.validate_file_ref(imported)[1])
 
     def test_no_http_access_with_invalid_project(self):
         result=fs.sync_chatgpt_visual("bad/project","EP01",
