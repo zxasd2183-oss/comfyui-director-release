@@ -76,6 +76,7 @@ class ProductionTests(unittest.TestCase):
         self.basic()
         p.add_asset(self.db,"A01","SHOW01","character_voice","VOICE01",1,HASH1,
                     "signed_voice_consent")
+        p.attach_asset(self.db,"SHOW01","EP01","S01","A01","voice_reference")
         p.create_finding(self.db,"F01","SHOW01","EP01","S01","voice.timbre",HASH2,
                          "尾声变为电子音")
         p.draft_exception(self.db,"X01","F01",3200,4200,
@@ -140,6 +141,17 @@ class ProductionTests(unittest.TestCase):
         self.assertIn("exception.approved",history)
         self.assertIn("exception.revoked",history)
         self.assertTrue(p.verify_chain(self.db))
+
+    def test_exception_rejects_asset_not_linked_to_affected_shot(self):
+        self.basic()
+        p.add_asset(self.db,"A01","SHOW01","character_voice","VOICE01",1,HASH1,
+                    "signed_voice_consent")
+        p.create_finding(self.db,"F01","SHOW01","EP01","S01","voice.timbre",HASH2,
+                         "声线异常")
+        with self.assertRaisesRegex(p.ProductionError,"not_linked_to_shot"):
+            p.draft_exception(self.db,"X01","F01",100,800,
+                              "effect","艺术原因",HASH2,"A01")
+        self.assertEqual(p.dashboard(self.db)["counts"]["exceptions"],0)
 
     def test_exception_must_match_actual_shot_duration_and_asset(self):
         self.basic()
