@@ -72,13 +72,16 @@ class TestHubFileTransfer(unittest.TestCase):
     def test_chatgpt_hostname_allowed_with_https_only(self):
         for host in ("chatgpt.com","files.chatgpt.com",
                      "files.openaiusercontent.com","openai.com",
-                     "files.oaiusercontent.com"):
+                     "files.oaiusercontent.com",
+                     "oaisdmntprcentralus.blob.core.windows.net"):
             with self.subTest(host=host):
                 out,_=fs.validate_file_ref(
                     {**REF,"download_url":"https://"+host+"/secure/file?token=SECRET"})
                 self.assertEqual(out.split("/")[2],host)
         for host in ("chatgpt.com.evil.test","evilopenaiusercontent.com",
-                     "openai.com.attacker.net"):
+                     "openai.com.attacker.net",
+                     "oaisdmntprcentralus.blob.core.windows.net.attacker.test",
+                     "someoneelse.blob.core.windows.net"):
             with self.subTest(host=host):
                 result=fs.sync_chatgpt_visual("WaitingOffice","EP01",
                     "character","CHAR_GEM",

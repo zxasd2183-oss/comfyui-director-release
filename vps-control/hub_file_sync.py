@@ -28,8 +28,11 @@ MEDIA_URL="http://127.0.0.1:8900"+MEDIA_PATH
 MAX_IMAGE=8*1024*1024
 MAX_REPLY=4096
 # Fixed OpenAI/ChatGPT-operated domains only; never follow redirects.
+# Exact ChatGPT-provided Azure Blob endpoint observed during authorized fileParams transfer.
+# Do not allow all *.blob.core.windows.net, as Azure containers are third-party-controlled.
 _ALLOWED_HOSTS=frozenset({"chatgpt.com","openai.com",
-                          "oaiusercontent.com","openaiusercontent.com"})
+                          "oaiusercontent.com","openaiusercontent.com",
+                          "oaisdmntprcentralus.blob.core.windows.net"})
 _ALLOWED_HOST_SUFFIXES=(".oaiusercontent.com",".openai.com",
                         ".chatgpt.com",".openaiusercontent.com")
 _ID=re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
