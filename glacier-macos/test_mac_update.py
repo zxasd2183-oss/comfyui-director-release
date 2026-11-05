@@ -22,7 +22,7 @@ class ManifestTests(unittest.TestCase):
         payload={
             "channel":"macos-arm64",
             "version":version,
-            "url":f"https://jipite.borealos.cn/glacier-updates/GlacierBrowser-v{version}-macOS-AppleSilicon.dmg",
+            "url":f"https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v{version}/GlacierBrowser-v{version}-macOS-AppleSilicon.dmg",
             "sha256":hashlib.sha256(b"test").hexdigest(),
             "size":2_000_000,
             "notes":"Mac build test",
@@ -47,7 +47,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_modified_url(self):
         m=self.signed()
-        m["url"]=m["url"].replace("jipite.borealos.cn","evil.example")
+        m["url"]=m["url"].replace("github.com","evil.example")
         with self.assertRaises(u.UpdateError):self.check(m)
 
     def test_wrong_channel(self):
@@ -92,11 +92,15 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(u.UpdateError):
             u._request(Session(),"https://github.com/allowed",u.TRUSTED_REDIRECT_HOSTS)
 
-    def test_first_party_vps_does_not_inherit_system_proxy(self):
-        session=u.first_party_session()
+    def test_vless_update_proxy_and_dns_fail_closed(self):
+        session=u.signed_update_session(18080)
         self.assertFalse(session.trust_env)
-        self.assertEqual(session.proxies,{})
+        self.assertEqual(session.proxies["https"],"socks5h://127.0.0.1:18080")
+        self.assertEqual(session.proxies["http"],"socks5h://127.0.0.1:18080")
+        self.assertTrue(u.FEED_URL.startswith("https://raw.githubusercontent.com/"))
         session.close()
+        for port in (0, -1, 65536, None):
+            with self.assertRaises(u.UpdateError):u.signed_update_session(port)
 
 if __name__=="__main__":
     unittest.main()
