@@ -1,4 +1,4 @@
-# Director 视频生产流水线 · 离线优先 V0
+# Director 视频生产流水线 · GPU 本地执行器 V0.7
 
 这是独立的本地 ComfyUI 视频生产工具，不是吉皮提功能更新。先做批量任务准备、断点续作与结果回收，不自动生成视频。
 
@@ -24,11 +24,23 @@ GPU 开机、ComfyUI 可用后，在 UI 中载入原来的 T2V/I2V/R2V 工作流
 
 如果 H3 没有 frames 的字面量输入，就删掉该绑定。参考图需事先处于 ComfyUI 的受控输入目录，不自动上传本地任意文件。
 
+## V0.7 增强：真实 H3 节点与队列预检查
+
+此阶段新增明确的 **只读 preflight**：在已开机的 GPU 本地调用 ComfyUI 的每个节点 /object_info/{node_class}，逐一检查导出的 API 工作流中使用的节点是否实际安装；同时读取 /queue，只有运行与等待队列都为空时才允许提交。不会请求 /prompt，也不会导出模型、密钥或上传素材。
+
+调用限制：只有 GPU 内部 127.0.0.1:8188，本工具不增加公网端口；禁用环境代理、拒绝 HTTP 重定向。不允许工作流的节点类名当作路径穿越或随意 URL。ComfyUI 队列检查和实际提交之间不是原子操作，如果其他客户端并发插入任务仍可能出现竞争，实际生产时建议同一 ComfyUI 实例只交给一个任务调度器。
+
+**GPU 关机期间**只能执行 prepare/status；preflight 以及带 --execute 的 submit 必须在 GPU 开机、ComfyUI 已响应、H3 节点加载后运行。不应为了验证 CI 自动开机。
+
 ## 命令
 
 规划已有 31 镜头（不联网）：
 
     python3 video-pipeline/director_video.py prepare --workflow h3-api.json --bindings bindings.json --shots shots.csv --prompts prompts.md --fps 24 --out work/plan.json
+
+核对 GPU 上已安装的 H3 节点和空闲队列（只读，不生成）：
+
+    python3 video-pipeline/director_video.py preflight --plan work/plan.json
 
 查看队列（本地 SQLite，不生成）：
 
@@ -38,7 +50,7 @@ GPU 开机、ComfyUI 可用后，在 UI 中载入原来的 T2V/I2V/R2V 工作流
 
     python3 video-pipeline/director_video.py submit --plan work/plan.json --db work/queue.sqlite
 
-在 GPU 已经由用户授权启动、工作流节点实际检查通过后，明确提交一个镜头（有 GPU 费用）：
+在 GPU 已经由用户授权启动、通过 preflight 且队列空闲后，明确提交一个镜头（可能产生 GPU 费用；提交时会再次自动预检查）：
 
     python3 video-pipeline/director_video.py submit --plan work/plan.json --db work/queue.sqlite --execute --acknowledge-gpu-cost --max-jobs 1
 
