@@ -29,8 +29,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Glacier Gecko Engine Lab v0.1, a REAL GeckoView embedding, not a WebView.
- * No credential vault, automatic login, data sync or VLESS proxy exists yet.
+ * Glacier Gecko Engine Lab v0.2: GeckoView with profile-separated metadata.
+ * No credential vault, automatic login, cloud sync or VLESS proxy exists yet.
  *
  * Profile isolation is provided by GeckoSessionSettings.contextId, NOT UI only.
  * Each tab retains the contextId with which it was created for its entire life.
@@ -54,6 +54,9 @@ public final class MainActivity extends Activity {
     private TextView engineLabel;
     private Button backButton;
     private Button forwardButton;
+    private Button bookmarkButton;
+    private TextView pageLabel;
+    private BrowserStore store;
     private Tab active;
     private String selectedProfile = PRIVATE;
 
@@ -64,6 +67,7 @@ public final class MainActivity extends Activity {
         String title = "新标签页";
         boolean canBack = false;
         boolean canForward = false;
+        boolean loaded = false;
 
         Tab(GeckoSession session, String profile) {
             this.session = session;
@@ -81,8 +85,9 @@ public final class MainActivity extends Activity {
         if (runtime == null) {
             runtime = GeckoRuntime.create(getApplicationContext());
         }
+        store = new BrowserStore(this);
         buildChrome();
-        openTab(PRIVATE, START_URL);
+        restoreTabs();
     }
 
     private int dp(float size) {
@@ -176,6 +181,13 @@ public final class MainActivity extends Activity {
         });
         nav.addView(address, new LinearLayout.LayoutParams(0, dp(43), 1));
 
+        bookmarkButton = button("☆");
+        bookmarkButton.setContentDescription("添加或取消书签");
+        bookmarkButton.setOnClickListener(v -> toggleCurrentBookmark());
+        LinearLayout.LayoutParams starParams = new LinearLayout.LayoutParams(dp(37), dp(43));
+        starParams.setMargins(dp(5), 0, 0, 0);
+        nav.addView(bookmarkButton, starParams);
+
         Button go = button("→");
         go.setContentDescription("打开网址");
         go.setOnClickListener(v -> navigate(address.getText().toString()));
@@ -186,7 +198,7 @@ public final class MainActivity extends Activity {
 
         // Testing banner makes the network security limitation explicit.
         engineLabel = new TextView(this);
-        engineLabel.setText("GeckoView 真内核测试版 · 尚未接入 VLESS");
+        engineLabel.setText("GeckoView 159 · v0.2 测试版 · 当前无 VLESS");
         engineLabel.setTextColor(Color.rgb(111, 91, 49));
         engineLabel.setTextSize(11);
         engineLabel.setGravity(Gravity.CENTER);
@@ -208,12 +220,14 @@ public final class MainActivity extends Activity {
         });
         bottom.addView(refresh, new LinearLayout.LayoutParams(dp(52), dp(44)));
 
-        TextView space = new TextView(this);
-        space.setText("  内核兼容性实验  ");
-        space.setGravity(Gravity.CENTER);
-        space.setTextColor(MUTED);
-        space.setTextSize(12);
-        bottom.addView(space, new LinearLayout.LayoutParams(0, dp(44), 1));
+        pageLabel = new TextView(this);
+        pageLabel.setText("Glacier 浏览器");
+        pageLabel.setGravity(Gravity.CENTER);
+        pageLabel.setSingleLine(true);
+        pageLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        pageLabel.setTextColor(MUTED);
+        pageLabel.setTextSize(12);
+        bottom.addView(pageLabel, new LinearLayout.LayoutParams(0, dp(44), 1));
 
         Button plus = button("+");
         plus.setContentDescription("新建标签页");
@@ -231,19 +245,8 @@ public final class MainActivity extends Activity {
         bottom.addView(tabCounter, countParams);
 
         Button menu = button("⋮");
-        menu.setContentDescription("内核测试菜单");
-        menu.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("Glacier · GeckoView 内核")
-                .setItems(new String[]{
-                    "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
-                    "切换账号空间", "测试说明"
-                }, (dialog, index) -> {
-                    if (index == 0) navigate("about:buildconfig");
-                    if (index == 1) navigate("https://chatgpt.com/");
-                    if (index == 2) navigate("https://github.com/");
-                    if (index == 3) chooseProfile();
-                    if (index == 4) showLabWarning();
-                }).show());
+        menu.setContentDescription("浏览器菜单");
+        menu.setOnClickListener(v -> showBrowserMenu());
         LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(43), dp(44));
         dots.setMargins(dp(8), 0, 0, 0);
         bottom.addView(menu, dots);
@@ -257,7 +260,17 @@ public final class MainActivity extends Activity {
                 .usePrivateMode(false)
                 .build();
         GeckoSession session = new GeckoSession(settings);
-        session.setContentDelegate(new GeckoSession.ContentDelegate() {});
+        session.setContentDelegate(new GeckoSession.ContentDelegate() {
+            @Override
+            public void onTitleChange(GeckoSession source, String title) {
+                Tab tab = findBySession(source);
+                if (tab == null) return;
+                tab.title = UrlPolicy.label(title, tab.url);
+                store.addHistory(tab.profile, tab.url, tab.title);
+                saveTabSnapshots();
+                if (tab == active) updateChrome();
+            }
+        });
         session.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
             @Override
             public void onLocationChange(GeckoSession source, String url,
@@ -266,7 +279,9 @@ public final class MainActivity extends Activity {
                 Tab t = findBySession(source);
                 if (t != null && url != null) {
                     t.url = url;
-                    t.title = url.length() > 40 ? url.substring(0, 40) + "…" : url;
+                    t.title = UrlPolicy.label("", url);
+                    store.addHistory(t.profile, url, t.title);
+                    saveTabSnapshots();
                     if (t == active) updateChrome();
                 }
             }
@@ -295,6 +310,9 @@ public final class MainActivity extends Activity {
                 Tab parent = findBySession(source);
                 String owner = parent == null ? profile : parent.profile;
                 Tab child = createTab(owner);
+                // GeckoView controls initial navigation for the newly opened popup.
+                child.loaded = true;
+                if (url != null && !url.isEmpty()) child.url = url;
                 switchTo(child);
                 return GeckoResult.fromValue(child.session);
             }
@@ -318,8 +336,8 @@ public final class MainActivity extends Activity {
 
     private void openTab(String profile, String url) {
         Tab t = createTab(profile);
+        t.url = url;
         switchTo(t);
-        t.session.loadUri(url);
     }
 
     private void switchTo(Tab next) {
@@ -328,6 +346,12 @@ public final class MainActivity extends Activity {
         active = next;
         selectedProfile = next.profile;
         web.setSession(next.session);
+        if (!next.loaded) {
+            next.loaded = true;
+            next.session.loadUri(next.url);
+        }
+        store.setLastProfile(selectedProfile);
+        saveTabSnapshots();
         updateChrome();
     }
 
@@ -336,12 +360,16 @@ public final class MainActivity extends Activity {
         identity.setText(WORK.equals(selectedProfile) ? "工作空间  ▾" : "私人空间  ▾");
         tabCounter.setText(Integer.toString(tabs.size()));
         if (active != null) {
+            bookmarkButton.setText(store.isBookmarked(active.profile, active.url) ? "★" : "☆");
+            pageLabel.setText(UrlPolicy.label(active.title, active.url));
             if (!address.hasFocus()) address.setText(active.url);
             backButton.setEnabled(active.canBack);
             forwardButton.setEnabled(active.canForward);
         } else {
             backButton.setEnabled(false);
             forwardButton.setEnabled(false);
+            bookmarkButton.setText("☆");
+            pageLabel.setText("Glacier 浏览器");
         }
     }
 
@@ -402,6 +430,7 @@ public final class MainActivity extends Activity {
         } else {
             switchTo(tabs.get(tabs.size() - 1));
         }
+        saveTabSnapshots();
     }
 
     private void navigate(String raw) {
@@ -432,11 +461,145 @@ public final class MainActivity extends Activity {
         if (imm != null) imm.hideSoftInputFromWindow(address.getWindowToken(), 0);
     }
 
+
+    /**
+     * Rebuild tabs without launching background navigation in all profiles.
+     * GeckoView retains cookies by persistent contextId, while the browser
+     * only re-opens safe HTTPS URLs when the user actually selects a tab.
+     */
+    private void restoreTabs() {
+        List<BrowserStore.Entry> personal = store.tabs(PRIVATE);
+        List<BrowserStore.Entry> workTabs = store.tabs(WORK);
+        for (BrowserStore.Entry entry : personal) restoreOne(PRIVATE, entry);
+        for (BrowserStore.Entry entry : workTabs) restoreOne(WORK, entry);
+
+        selectedProfile = store.lastProfile();
+        Tab target = null;
+        for (int i = tabs.size() - 1; i >= 0; i--) {
+            Tab t = tabs.get(i);
+            if (selectedProfile.equals(t.profile)) {
+                target = t;
+                break;
+            }
+        }
+        if (target == null) {
+            openTab(selectedProfile, START_URL);
+        } else {
+            switchTo(target);
+        }
+    }
+
+    private void restoreOne(String profile, BrowserStore.Entry entry) {
+        String safe = UrlPolicy.safePersistentUrl(entry.url);
+        if (safe == null) return;
+        Tab tab = createTab(profile);
+        tab.url = safe;
+        tab.title = entry.title;
+        tab.loaded = false;
+    }
+
+    private void saveTabSnapshots() {
+        if (store == null) return;
+        List<BrowserStore.Entry> privateTabs = new ArrayList<>();
+        List<BrowserStore.Entry> workTabs = new ArrayList<>();
+        for (Tab tab : tabs) {
+            if (UrlPolicy.safePersistentUrl(tab.url) == null) continue;
+            BrowserStore.Entry entry = new BrowserStore.Entry(tab.url, tab.title);
+            if (PRIVATE.equals(tab.profile)) privateTabs.add(entry);
+            else if (WORK.equals(tab.profile)) workTabs.add(entry);
+        }
+        store.saveTabs(PRIVATE, privateTabs);
+        store.saveTabs(WORK, workTabs);
+    }
+
+    private void toggleCurrentBookmark() {
+        if (active == null) return;
+        String safe = UrlPolicy.safePersistentUrl(active.url);
+        if (safe == null) {
+            new AlertDialog.Builder(this)
+                    .setMessage("这个页面暂时无法添加书签。请打开 HTTPS 网站后重试。")
+                    .setPositiveButton("知道了", null).show();
+            return;
+        }
+        boolean added = store.toggleBookmark(active.profile, safe, active.title);
+        android.widget.Toast.makeText(this, added ? "已添加书签" : "已取消书签",
+                android.widget.Toast.LENGTH_SHORT).show();
+        updateChrome();
+    }
+
+    private void showSavedEntries(boolean bookmarks) {
+        String profile = selectedProfile;
+        List<BrowserStore.Entry> entries = bookmarks
+                ? store.bookmarks(profile) : store.history(profile);
+        if (entries.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setTitle(bookmarks ? "当前空间的书签" : "当前空间的历史记录")
+                    .setMessage(bookmarks ? "还没有收藏的网页。" : "还没有浏览记录。")
+                    .setPositiveButton("确定", null).show();
+            return;
+        }
+        String[] names = new String[entries.size()];
+        for (int i = 0; i < entries.size(); i++) {
+            BrowserStore.Entry e = entries.get(i);
+            names[i] = UrlPolicy.label(e.title, e.url) + "\n" + e.url;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle((WORK.equals(profile) ? "工作空间" : "私人空间")
+                        + (bookmarks ? " · 书签" : " · 历史"))
+                .setItems(names, (d, index) -> {
+                    // This entry belongs to profile at dialog creation time.
+                    openTab(profile, entries.get(index).url);
+                })
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private void confirmClearHistory() {
+        String profile = selectedProfile;
+        new AlertDialog.Builder(this)
+                .setTitle("清空当前空间的历史记录？")
+                .setMessage("只删除" + (WORK.equals(profile) ? "工作空间" : "私人空间")
+                        + "的本地浏览历史。不会清除另一空间的记录、书签或 Cookie。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("清空", (d, which) -> {
+                    store.clearHistory(profile);
+                    android.widget.Toast.makeText(this, "历史记录已清空",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                }).show();
+    }
+
+    private void showBrowserMenu() {
+        new AlertDialog.Builder(this)
+                .setTitle("Glacier · 浏览器")
+                .setItems(new String[]{
+                    "☆ 收藏 / 取消收藏当前页面", "书签", "历史记录",
+                    "＋ 新建标签", "查看所有标签", "切换账号空间",
+                    "打开 ChatGPT", "打开 GitHub", "GeckoView 内核信息",
+                    "清空当前空间历史", "关于实验版与网络安全"
+                }, (d, option) -> {
+                    switch (option) {
+                        case 0: toggleCurrentBookmark(); break;
+                        case 1: showSavedEntries(true); break;
+                        case 2: showSavedEntries(false); break;
+                        case 3: openTab(selectedProfile, START_URL); break;
+                        case 4: showTabs(); break;
+                        case 5: chooseProfile(); break;
+                        case 6: navigate("https://chatgpt.com/"); break;
+                        case 7: navigate("https://github.com/"); break;
+                        case 8: navigate("about:buildconfig"); break;
+                        case 9: confirmClearHistory(); break;
+                        case 10: showLabWarning(); break;
+                        default: break;
+                    }
+                }).show();
+    }
+
     private void showLabWarning() {
         new AlertDialog.Builder(this)
                 .setTitle("这是内核实验版")
-                .setMessage("已集成 GeckoView 真正的网页内核，可比较网页显示、导航、账号空间隔离和兼容性。"
-                        + "\n\n尚未接入 VLESS、账号保险箱、验证码 API、数据同步或安全权限管理。"
+                .setMessage("v0.2 已集成 GeckoView 真正的网页内核、独立账号空间、书签、历史记录及标签网址恢复。"
+                        + "\n\n仅在本机保存网页标题和不含查询参数的网址；不同空间互不共享。"
+                        + "\n\n尚未接入 VLESS、账号保险箱、验证码 API、云同步、完整文件下载和网站权限管理。"
                         + "\n\n当前网页走手机默认网络，不保证代理。请勿使用关键账号测试。")
                 .setPositiveButton("知道了", null)
                 .show();
@@ -452,12 +615,19 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStop() {
+        saveTabSnapshots();
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
-        if (isFinishing()) {
-            if (web != null && web.getSession() != null) web.releaseSession();
-            for (Tab t : tabs) t.session.close();
-            tabs.clear();
-        }
+        // Also free session resources on configuration changes; URL snapshots
+        // rebuild the tabs when Android recreates the Activity.
+        if (web != null && web.getSession() != null) web.releaseSession();
+        for (Tab t : tabs) t.session.close();
+        tabs.clear();
+        active = null;
         super.onDestroy();
     }
 }
