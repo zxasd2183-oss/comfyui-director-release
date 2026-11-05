@@ -68,6 +68,18 @@ def urlbar(prefix,timeout=75):
         time.sleep(3)
     raise RuntimeError("URL_BAR_NOT_CONFIRMED: "+prefix)
 
+def page_event(site, timeout=100):
+    """Gecko page-stop result, not an HTTP status or visible content check."""
+    end=time.monotonic()+timeout
+    while time.monotonic()<end:
+        data=adb("logcat","-d","-s","GlacierSmoke:I",timeout=25)
+        if "PAGE_STOP site="+site+" success=true" in data:
+            return
+        if "PAGE_STOP site="+site+" success=false" in data:
+            raise RuntimeError("GECKO_PAGE_LOAD_ERROR: "+site)
+        time.sleep(5)
+    raise RuntimeError("GECKO_PAGE_STOP_MISSING: "+site)
+
 def shot(name):
     try:
         with (OUT/(name+".png")).open("wb") as f:
@@ -98,17 +110,20 @@ def main():
     record("browser_start","UI present; Gecko page content NOT proven")
     shot("01-start")
     urlbar("https://example.com")
-    record("example_navigation","URL field only; content unverified")
+    page_event("example")
+    record("example_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     tap(desc="内核测试菜单")
     tap(text="打开 GitHub")
     urlbar("https://github.com")
-    record("github_navigation","URL field only; content unverified")
+    page_event("github")
+    record("github_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     time.sleep(8)
     shot("02-github")
     tap(desc="内核测试菜单")
     tap(text="打开 ChatGPT")
     urlbar("https://chatgpt.com",timeout=100)
-    record("chatgpt_navigation","URL field only; login and rendering unverified")
+    page_event("chatgpt")
+    record("chatgpt_navigation","Gecko PAGE_STOP true; login and site rendering not verified")
     time.sleep(12)
     shot("03-chatgpt")
     tap(desc="新建标签页")
