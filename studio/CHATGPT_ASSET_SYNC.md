@@ -10,14 +10,21 @@ This integration is **source-only until installed on the VPS and the Director Hu
    `kind` (`character` / `scene` / `storyboard`), `subject_id`, and `file`.
 3. ChatGPT supplies `file.download_url` and `file.file_id` as an official
    `_meta["openai/fileParams"]` tool parameter.
-4. Director Hub downloads at most 8 MiB from an allowlisted OpenAI HTTPS
-   content domain with redirects disabled and no proxy environment.
+4. Director Hub downloads at most 8 MiB over DNS-pinned verified HTTPS,
+   accepting tightly scoped OpenAI domains and the validated regional
+   `oaisdmntpr<region>.blob.core.windows.net` storage-account family.
+   Generic Azure Blob hosts, redirects, internal addresses and proxies remain blocked.
 5. Hub signs the bytes for Studio's loopback-only ingestion endpoint using
    the existing Studio Brain Link HMAC secret, timestamp and replay nonce.
-6. Studio writes an immutable file and source mapping, appends to its audit
-   chain and displays the image in **EP01 → 图片素材库**. The same file/episode/
-   subject is deduplicated; choosing the *official* image remains a separate
-   owner action.
+6. Studio atomically writes immutable file/source/audit records; same
+   file/episode/subject retries are deduplicated. It displays the image in
+   **EP01 → 图片素材库**. Selecting the *official* reference remains an
+   owner action. Open Studio pages refresh this gallery at most once per
+   four seconds (only when the inventory changed).
+7. The existing authenticated Hub `get_production_episode` tool includes
+   `visual_count` and bounded `visuals` for independent readback verification.
+   The legacy `assets` table is distinct and may stay at zero even when
+   the new image gallery contains pictures.
 
 The file parameter must be **authorized by ChatGPT**. The model must never
 invent a download URL or send a public URL to this tool. No GPU is invoked.
@@ -56,6 +63,33 @@ so the 20th tool appears. It should expose
 `sync_chatgpt_visual_to_studio` with `_meta["openai/fileParams"]=["file"]`.
 Open `https://jipite.borealos.cn/studio/` in an owner-authenticated session
 and view the EP01 image gallery.
+
+## One-deployment acceptance checklist
+
+Perform the two installers in the documented order, only after PR review and
+CI success. Both services must be updated because Studio gains readback and
+atomic ingestion while Hub gains pinned HTTPS regional downloads.
+
+- Confirm all Studio and VPS GitHub CI jobs pass.
+- Verify Hub exposes the same 20 tools; no power state transition.
+- Retry **one** currently authorized ChatGPT image. A result is successful
+  only when the Hub reports `ok: true` and `visual_id`, and a subsequent
+  `get_production_episode` includes the exact `visual_id` under `visuals`.
+- Compare Studio browser EP01 → 图片素材库 to the returned item. Confirm
+  page auto-refresh within four seconds, and opening the image works.
+- Repeat the same file once. Expect `unchanged: true`, identical
+  `visual_id`, and no extra version or audit upload.
+- Confirm the 31 shot durations, V1/V2 outline revision and GPU remain intact.
+- If the URL expires or network delivery fails, report a bounded stage
+  reason (DNS/TLS/HTTP/Studio); never print a signed download URL.
+- If VPS outbound networking blocks Azure, a GitHub CI pass cannot prove
+  production network reachability. Test from the authorized fileParam once
+  after deployment and only then claim end-to-end production success.
+
+Note: There is no general ChatGPT event hook notifying this MCP whenever
+*any* content in *any* conversation is generated. File syncing depends on a
+currently authorized active tool call. Text, PDFs, video and audio are not
+implicitly included in this PNG/JPG/WebP pipeline.
 
 ## Security notes
 
