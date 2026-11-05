@@ -17,6 +17,15 @@ POWER=/opt/comfyui-director-power
 HUB=/opt/comfyui-director-hub
 DB=/var/lib/comfyui-director-power/requests.db
 UNIT=/etc/systemd/system/director-hub-mcp.service
+# Existing Nginx must use the same private bridge that this upgrade deploys.
+# Never silently disrupt the production MCP path to reuse Glacier's 8897.
+HUB_SNIPPET=/etc/nginx/snippets/jipite-hub.conf
+[[ -f "$HUB_SNIPPET" && ! -L "$HUB_SNIPPET" ]] ||
+    fail "Hub Nginx snippet missing/unsafe; inspect before changing ports"
+grep -Fq 'proxy_pass http://127.0.0.1:8899;' "$HUB_SNIPPET" ||
+    fail "Live Hub Nginx upstream differs from reserved bridge port 8899"
+grep -Fq 'proxy_set_header Host 127.0.0.1:8899;' "$HUB_SNIPPET" ||
+    fail "Live Hub Nginx Host differs from bridge port 8899"
 for name in director-hub-mcp director-hub-bridge director-power-mcp director-mobile-v06; do
     systemctl is-active --quiet "$name" || fail "Required service $name inactive"
 done
