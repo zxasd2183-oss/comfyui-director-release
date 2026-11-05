@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 import re
 import sqlite3
 import time
@@ -126,6 +127,17 @@ def open_db(path, *, initialize=True):
     return connection
 
 
+@contextmanager
+def transaction(db):
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+        db.execute("COMMIT")
+    except BaseException:
+        db.execute("ROLLBACK")
+        raise
+
+
 def _audit(db, actor, action, target, data):
     """Append-only hash chain. External signed snapshots needed for admin tamper resistance."""
     actor = _ident(actor)
@@ -157,7 +169,7 @@ def verify_chain(db):
 
 def create_project(db, project_id, title, *, actor="studio_operator"):
     pid, title = _ident(project_id), _text(title)
-    with db:
+    with transaction(db):
         db.execute("INSERT INTO projects(project_id,title,created_at) VALUES(?,?,?)",
                    (pid, title, int(time.time())))
         _audit(db, actor, "project.created", pid, {"title": title})
@@ -168,7 +180,7 @@ def create_episode(db, project_id, episode_id, title, ordinal, *, actor="studio_
     pid, eid, title = _ident(project_id), _ident(episode_id), _text(title)
     if type(ordinal) is not int or not 1 <= ordinal <= 1000:
         raise ProductionError("invalid_episode_order")
-    with db:
+    with transaction(db):
         db.execute("INSERT INTO episodes(project_id,episode_id,title,ordinal) "
                    "VALUES(?,?,?,?)", (pid,eid,title,ordinal))
         _audit(db,actor,"episode.created",pid+"/"+eid,{"title":title,"ordinal":ordinal})
@@ -180,7 +192,7 @@ def create_shot(db, project_id, episode_id, shot_id, ordinal, duration_ms,
     if (type(ordinal) is not int or not 1 <= ordinal <= 10000 or
             type(duration_ms) is not int or not 1 <= duration_ms <= 120000):
         raise ProductionError("invalid_shot_timing")
-    with db:
+    with transaction(db):
         db.execute("INSERT INTO production_shots(project_id,episode_id,shot_id,ordinal,duration_ms)"
                    " VALUES(?,?,?,?,?)", (pid,eid,sid,ordinal,duration_ms))
         _audit(db,actor,"shot.created",pid+"/"+eid+"/"+sid,
@@ -201,7 +213,7 @@ def add_asset(db, asset_id, project_id, kind, subject_id, version, sha256,
         raise ProductionError("audio_rights_or_consent_reference_required")
     else:
         rights_ref = "owner_declared"
-    with db:
+    with transaction(db):
         old = db.execute(
             "SELECT asset_id FROM assets WHERE project_id=? AND kind=? "
             "AND subject_id=? AND version>=?",
@@ -228,7 +240,7 @@ def attach_asset(db, project_id, episode_id, shot_id, asset_id, purpose,
                  *, actor="studio_operator"):
     pid,eid,sid,aid = map(_ident, (project_id,episode_id,shot_id,asset_id))
     purpose = _text(purpose, 60)
-    with db:
+    with transaction(db):
         asset = db.execute("SELECT project_id FROM assets WHERE asset_id=?", (aid,)).fetchone()
         if not asset or asset["project_id"] != pid:
             raise ProductionError("asset_not_in_project")
@@ -243,7 +255,7 @@ def create_finding(db, finding_id, project_id, episode_id, shot_id,
     fid,pid,eid,sid = map(_ident,(finding_id,project_id,episode_id,shot_id))
     attribute, evidence = _attr(attribute), _sha(evidence_sha256)
     detail = _text(detail,MAX_EVIDENCE_TEXT)
-    with db:
+    with transaction(db):
         db.execute("INSERT INTO findings(finding_id,project_id,episode_id,shot_id,attribute,"
                    "evidence_sha256,detail,created_at) VALUES(?,?,?,?,?,?,?,?)",
                    (fid,pid,eid,sid,attribute,evidence,detail,int(time.time())))
@@ -261,7 +273,7 @@ def draft_exception(db, exception_id, finding_id, start_ms, end_ms,
     rationale = _text(rationale,MAX_EVIDENCE_TEXT)
     evidence = _sha(evidence_sha256)
     aid = _ident(bound_asset_id) if bound_asset_id else None
-    with db:
+    with transaction(db):
         finding = db.execute("SELECT * FROM findings WHERE finding_id=?", (fid,)).fetchone()
         if finding is None:
             raise ProductionError("finding_not_found")
@@ -293,7 +305,7 @@ def decide_exception(db, exception_id, decision, expected_revision,
         raise ProductionError("explicit_review_confirmation_required")
     if type(expected_revision) is not int or expected_revision < 1:
         raise ProductionError("invalid_revision")
-    with db:
+    with transaction(db):
         row = db.execute("SELECT status,revision FROM exceptions WHERE exception_id=?",
                          (xid,)).fetchone()
         if row is None:
