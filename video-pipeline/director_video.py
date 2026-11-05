@@ -279,12 +279,47 @@ def preflight_plan(plan, client=None):
             classes.add(name)
     if len(classes) > MAX_NODE_TYPES:
         raise PlanError("Too many distinct ComfyUI node classes")
+    schemas = {}
     for name in sorted(classes):
         schema = client("/object_info/" + urllib.parse.quote(name, safe=""))
         if (not isinstance(schema, dict) or name not in schema or
                 not isinstance(schema[name], dict) or
                 not isinstance(schema[name].get("input"), dict)):
             raise PlanError("Required node class is unavailable: " + name)
+        schemas[name] = schema[name]["input"]
+
+    # Only check explicit, literal inputs against server-advertised types and
+    # bounds. Linked inputs are resolved by ComfyUI, not guessed here. Step is
+    # a UI hint, so only min/max are enforced. Dynamic/unknown inputs are not
+    # rejected here: the server validates those at POST /prompt.
+    for job in plan["jobs"]:
+        for node_id, node in job["graph"].items():
+            metadata = schemas[node["class_type"]]
+            fields = {}
+            for section in ("required", "optional"):
+                declared = metadata.get(section, {})
+                if isinstance(declared, dict):
+                    fields.update(declared)
+            for field, value in node["inputs"].items():
+                spec = fields.get(field)
+                if (not isinstance(spec, (list, tuple)) or not spec or
+                        isinstance(value, (dict, list))):
+                    continue
+                kind = spec[0]
+                options = spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {}
+                if kind in ("INT", "FLOAT"):
+                    if (isinstance(value, bool) or not isinstance(value, (float, int)) or
+                            (kind == "INT" and not isinstance(value, int)) or
+                            value != value):
+                        raise PlanError("Input type mismatch at node " + node_id + "." + field)
+                    minimum, maximum = options.get("min"), options.get("max")
+                    if ((isinstance(minimum, (int, float)) and value < minimum) or
+                            (isinstance(maximum, (int, float)) and value > maximum)):
+                        raise PlanError("Input outside installed node bounds at " +
+                                        node_id + "." + field)
+                elif isinstance(kind, list) and value not in kind:
+                    raise PlanError("Input choice unavailable in installed node at " +
+                                    node_id + "." + field)
     queue = client("/queue")
     if not isinstance(queue, dict):
         raise PlanError("ComfyUI queue status unavailable")
