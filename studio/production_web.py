@@ -56,7 +56,7 @@ def create_from_web(db_path, data, session):
                 raise ProductionWebError("audit_integrity_failure", 409)
             if action == "create_project":
                 _ident(data["project_id"])
-                if db.execute("SELECT COUNT(*) FROM projects").fetchone()[0] >= 100:
+                if db.execute("SELECT COUNT(*) FROM projects").fetchone()[0] >= 20:
                     raise ProductionWebError("project_limit_reached", 409)
                 create_project(db, data["project_id"], data["title"], actor=actor)
                 return {"ok": True, "action":action,
@@ -64,8 +64,7 @@ def create_from_web(db_path, data, session):
                         "gpu_action":False}
             # The project must exist; do not allow UI to create implicit work.
             _ident(data["project_id"])
-            if db.execute("SELECT COUNT(*) FROM episodes WHERE project_id=?",
-                          (data["project_id"],)).fetchone()[0] >= 1000:
+            if db.execute("SELECT COUNT(*) FROM episodes").fetchone()[0] >= 100:
                 raise ProductionWebError("episode_limit_reached", 409)
             create_episode(db, data["project_id"],data["episode_id"],
                            data["title"],data["ordinal"],actor=actor)
