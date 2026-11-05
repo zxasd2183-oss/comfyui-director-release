@@ -14,26 +14,51 @@ import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * System-scheduled, battery-aware background poll; no Google Play / Xiaomi SDK.
- *
- * Microsoft ID tokens are acquired only through MSAL's existing secure cache
- * and used in-memory for the same authenticated VPS pending endpoint.
- * This service never launches a login UI or performs an approval.
- *
- * Doze/HyperOS restrictions can delay or prevent execution; it is NOT an
- * always-on guaranteed real-time push transport.
+ * Shared JobScheduler service for regular and user-initiated one-time polling.
+ * Both only call the authenticated read-only /pending endpoint; neither can
+ * create GPU requests or submit approvals. No token or request data is logged.
  */
 class VpsPollJobService : JobService() {
     private val main = Handler(Looper.getMainLooper())
-    private val completed = AtomicBoolean(false)
+    private val completed = AtomicBoolean(true)
     private var timeout: Runnable? = null
+    private var activeJobId: Int? = null
+
+    private fun record(params: JobParameters, code: String) {
+        if (VpsNotifications.isDiagnosticJob(params.jobId)) {
+            VpsNotifications.recordDiagnostic(this, code)
+        } else {
+            VpsNotifications.recordPeriodic(this, code)
+        }
+    }
 
     override fun onStartJob(params: JobParameters): Boolean {
-        completed.set(false)
-        if (!VpsNotifications.enabled(this) || BuildConfig.DEBUG) return false
+        // Android can start two job IDs against the same JobService. Never let
+        // a second callback reset the active job's completion/timeout guard.
+        if (!completed.compareAndSet(true, false)) {
+            if (VpsNotifications.isDiagnosticJob(params.jobId)) {
+                VpsNotifications.recordDiagnostic(this, "busy")
+            }
+            return false
+        }
+        activeJobId = params.jobId
+        if (!VpsNotifications.enabled(this) || BuildConfig.DEBUG) {
+            record(params, "disabled")
+            completed.set(true)
+            activeJobId = null
+            return false
+        }
         val id = getSharedPreferences("jipite-device", MODE_PRIVATE)
-            .getString("device_id", null) ?: return false
-        timeout = Runnable { finish(params) }.also { main.postDelayed(it, 55_000) }
+            .getString("device_id", null)
+        if (id.isNullOrBlank()) {
+            record(params, "unbound")
+            completed.set(true)
+            activeJobId = null
+            return false
+        }
+        record(params, "running")
+        timeout = Runnable { finish(params, "timeout") }
+            .also { main.postDelayed(it, 55_000L) }
         try {
             PublicClientApplication.createSingleAccountPublicClientApplication(
                 applicationContext, R.raw.msal_config,
@@ -45,8 +70,9 @@ class VpsPollJobService : JobService() {
                                 override fun onAccountLoaded(
                                     account: com.microsoft.identity.client.IAccount?
                                 ) {
-                                    if (account == null || completed.get()) {
-                                        finish(params)
+                                    if (completed.get()) return
+                                    if (account == null) {
+                                        finish(params, "no_account")
                                         return
                                     }
                                     application.acquireTokenSilentAsync(
@@ -55,26 +81,32 @@ class VpsPollJobService : JobService() {
                                         object : SilentAuthenticationCallback {
                                             override fun onSuccess(result: IAuthenticationResult) {
                                                 val token = result.account.idToken
-                                                if (token.isNullOrEmpty() || completed.get()) {
-                                                    finish(params)
+                                                if (completed.get()) return
+                                                if (token.isNullOrEmpty()) {
+                                                    finish(params, "no_token")
                                                     return
                                                 }
                                                 MobileApi.post(
                                                     "pending", token, JSONObject().put("device_id", id)
                                                 ) { response ->
                                                     if (!completed.get()) {
-                                                        response.onSuccess {
+                                                        val reply = response.getOrNull()
+                                                        if (reply != null &&
+                                                            reply.optBoolean("ok") &&
+                                                            reply.optJSONArray("requests") != null) {
                                                             VpsNotifications.onPendingResponse(
-                                                                applicationContext, it
+                                                                applicationContext, reply
                                                             )
+                                                            finish(params, "ok")
+                                                        } else {
+                                                            finish(params, "vps_error")
                                                         }
                                                     }
-                                                    finish(params)
                                                 }
                                             }
 
                                             override fun onError(exception: MsalException) {
-                                                finish(params)
+                                                finish(params, "auth_failed")
                                             }
                                         }
                                     )
@@ -84,38 +116,47 @@ class VpsPollJobService : JobService() {
                                     priorAccount: com.microsoft.identity.client.IAccount?,
                                     currentAccount: com.microsoft.identity.client.IAccount?
                                 ) {
-                                    // No cached data or token is copied to this job.
+                                    // Never store account data in diagnostic preferences.
                                 }
 
                                 override fun onError(exception: MsalException) {
-                                    finish(params)
+                                    finish(params, "account_error")
                                 }
                             }
                         )
                     }
 
                     override fun onError(exception: MsalException) {
-                        finish(params)
+                        finish(params, "msal_error")
                     }
                 }
             )
         } catch (_: Exception) {
-            finish(params)
+            finish(params, "internal_error")
         }
         return true
     }
 
-    private fun finish(params: JobParameters) {
-        if (completed.compareAndSet(false, true)) {
+    private fun finish(params: JobParameters, code: String) {
+        if (activeJobId == params.jobId && completed.compareAndSet(false, true)) {
             timeout?.let { main.removeCallbacks(it) }
+            timeout = null
+            record(params, code)
+            if (VpsNotifications.isDiagnosticJob(params.jobId)) {
+                VpsNotifications.notifyDiagnosticFinished(this, code)
+            }
+            activeJobId = null
             main.post { jobFinished(params, false) }
         }
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        completed.set(true)
-        timeout?.let { main.removeCallbacks(it) }
-        // Periodic scheduler will handle the next check; no background retry loop.
+        if (activeJobId == params.jobId && completed.compareAndSet(false, true)) {
+            timeout?.let { main.removeCallbacks(it) }
+            timeout = null
+            record(params, "interrupted")
+            activeJobId = null
+        }
         return false
     }
 }

@@ -55,6 +55,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var selftestButton: Button
     private lateinit var selftestStatus: TextView
     private var selftestBusy = false
+    private lateinit var backgroundDiagnosticState: TextView
     private val notificationPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val foregroundNotificationPoll = object : Runnable {
         override fun run() {
@@ -93,6 +94,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
         buildUi()
+        if (intent.getBooleanExtra("show_background_diagnostics", false)) showPage("settings")
         if (!isOfflinePreview) VpsNotifications.configureJob(this)
         if (!isOfflinePreview && prefs.getBoolean("auto_update_check", false)) {
             // Opt-in: metadata check only; never download or install automatically.
@@ -174,6 +176,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::backgroundDiagnosticState.isInitialized) {
+            backgroundDiagnosticState.text = VpsNotifications.diagnosticSummary(this)
+        }
         notificationPollHandler.removeCallbacks(foregroundNotificationPoll)
         if (!isOfflinePreview) {
             VpsNotifications.configureJob(this)
@@ -190,6 +195,13 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         hintRequestId = PushBootstrap.requestIdFromIntent(intent)
+        if (intent.getBooleanExtra("show_background_diagnostics", false)) {
+            showPage("settings")
+            if (::backgroundDiagnosticState.isInitialized) {
+                backgroundDiagnosticState.text = VpsNotifications.diagnosticSummary(this)
+            }
+            return
+        }
         if (hintRequestId != null) showPage("requests")
         if (!isOfflinePreview) refresh()
     }
@@ -577,6 +589,25 @@ class MainActivity : FragmentActivity() {
         caption(ownerNotify,
             "仅测试安卓通知权限、提醒通道和点击返回应用。" +
             " 不生成审批申请，不使用微软令牌，也不保证后台准时提醒。",
+            12f, secondary)
+        space(ownerNotify, 14)
+        caption(ownerNotify, "后台 VPS 只读查询自检", 14f, ink, true)
+        space(ownerNotify, 6)
+        backgroundDiagnosticState = caption(ownerNotify,
+            VpsNotifications.diagnosticSummary(this), 12f, secondary)
+        space(ownerNotify, 9)
+        val pollTestButton = button(ownerNotify, "安排一次后台查询（不操作 GPU）", true) {
+            setStatus(VpsNotifications.scheduleDiagnostic(this@MainActivity))
+            backgroundDiagnosticState.text = VpsNotifications.diagnosticSummary(this@MainActivity)
+        }
+        if (isOfflinePreview) {
+            pollTestButton.isEnabled = false
+            pollTestButton.alpha = 0.44f
+        }
+        caption(ownerNotify,
+            "点击后返回桌面、锁屏。Android 将安排一次 Microsoft 静默认证及" +
+            "VPS /pending 只读查询；结果在设置中记录，也会发送测试通知。" +
+            " 不会创建或批准 GPU 操作。省电策略可能推迟后台运行。",
             12f, secondary)
 
         val safety = card(settingsPage, "安全与诊断", "版本和登录操作不会改变 GPU 电源权限")
