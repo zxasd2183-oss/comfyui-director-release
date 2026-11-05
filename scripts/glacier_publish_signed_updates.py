@@ -150,6 +150,12 @@ def make_payloads(version, windows, mac):
     mac_name = f"GlacierBrowser-v{version}-macOS-AppleSilicon.dmg"
     win_size, win_sha = exact_asset(windows, win_name, 1_073_741_824)
     mac_size, mac_sha = exact_asset(mac, mac_name, 1_073_741_824)
+    description = (
+        "：标签右键菜单、下载中心搜索筛选、工作区恢复标签自动保存。"
+        if version_tuple(version) >= (0, 19, 0) else
+        "：双端工作区、标签分组、增强下载管理。"
+    )
+    notes = f"Glacier Browser v{version}" + description + "双端自动测试通过。"
     windows_doc = {
         "channel": "windows-x64", "version": version,
         "url": (
@@ -157,8 +163,7 @@ def make_payloads(version, windows, mac):
             f"{win_tag}/{win_name}"
         ),
         "sha256": win_sha, "size": win_size,
-        "notes": "Glacier Browser v" + version +
-                 "：双端工作区、标签分组、增强下载管理。经正式构建与自动测试验证。",
+        "notes": notes,
         "key_id": KEY_ID,
     }
     mac_doc = {
@@ -168,8 +173,7 @@ def make_payloads(version, windows, mac):
             f"{mac_tag}/{mac_name}"
         ),
         "sha256": mac_sha, "size": mac_size,
-        "notes": "Glacier Browser v" + version +
-                 "：双端工作区、标签分组、增强下载管理。经正式构建与自动测试验证。",
+        "notes": notes,
         "key_id": KEY_ID,
     }
     return {"windows-x64": windows_doc, "macos-arm64": mac_doc}
