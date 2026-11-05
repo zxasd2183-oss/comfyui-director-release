@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Glacier GeckoView network experiment v0.1.2.
+ * Glacier GeckoView network and signed updater experiment v0.1.3.
  * A REAL, app-bundled VLESS core may feed Gecko through a loopback SOCKS5 proxy.
  * No credential vault, automatic login or cloud sync exists yet.
  *
@@ -48,6 +48,7 @@ public final class MainActivity extends Activity {
     // GeckoRuntime is process-scoped, and must only be created once.
     private static GeckoRuntime runtime;
     private static boolean proxyMode = false;
+    private AndroidUpdater updater;
 
     private final List<Tab> tabs = new ArrayList<>();
     private GeckoView web;
@@ -194,8 +195,8 @@ public final class MainActivity extends Activity {
         // Testing banner makes the network security limitation explicit.
         engineLabel = new TextView(this);
         engineLabel.setText(proxyMode
-                ? "VLESS → 本地 SOCKS5 → GeckoView · 实验连接"
-                : "直连网络 · 已明确选择（无代理保护）");
+                ? "GeckoView · VLESS 网络 · 更新 v0.1.3"
+                : "GeckoView · 直连测试 · 更新 v0.1.3");
         engineLabel.setTextColor(Color.rgb(111, 91, 49));
         engineLabel.setTextSize(11);
         engineLabel.setGravity(Gravity.CENTER);
@@ -245,14 +246,20 @@ public final class MainActivity extends Activity {
                 .setTitle("Glacier · GeckoView 内核")
                 .setItems(new String[]{
                     "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
-                    "切换账号空间", "网络连接信息", "测试说明"
+                    "切换账号空间", "网络连接信息", "检查更新", "测试说明"
                 }, (dialog, index) -> {
                     if (index == 0) navigate("about:buildconfig");
                     if (index == 1) navigate("https://chatgpt.com/");
                     if (index == 2) navigate("https://github.com/");
                     if (index == 3) chooseProfile();
                     if (index == 4) showNetworkStatus();
-                    if (index == 5) showLabWarning();
+                    if (index == 5) {
+                        if (updater != null) updater.checkNow();
+                        else new AlertDialog.Builder(this)
+                                .setMessage("网络正在初始化，请连接后检查更新。")
+                                .setPositiveButton("确定",null).show();
+                    }
+                    if (index == 6) showLabWarning();
                 }).show());
         LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(43), dp(44));
         dots.setMargins(dp(8), 0, 0, 0);
@@ -544,6 +551,8 @@ public final class MainActivity extends Activity {
             }
             buildChrome();
             openTab(PRIVATE, START_URL);
+            updater = new AndroidUpdater(this, proxyMode);
+            updater.automaticCheck();
         } catch (Exception ex) {
             NativeProxy.stop();
             showNetworkError("GeckoView 无法使用当前网络配置初始化");
@@ -577,10 +586,17 @@ public final class MainActivity extends Activity {
                 .setTitle("这是内核实验版")
                 .setMessage("已集成 GeckoView 真正的网页内核，可比较网页显示、导航、账号空间隔离和兼容性。"
                         + "\n\n已接入内置 VLESS/本地 SOCKS5 实验网络；该模式不是 Android 系统级 VPN，也未经过独立审计。"
+                        + "\n\nv0.1.3 加入 GitHub 自动检查更新、SHA-256 和 APK 签名验证，以及 Android 系统确认安装。"
                         + "\n\n目前尚未提供账号保险箱、验证码 API、云同步、完整权限管理。"
                         + "\n\n直连模式仅用于对照测试；VLESS 模式必须验证真实出口。请勿输入关键账号。")
                 .setPositiveButton("知道了", null)
                 .show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (updater != null) updater.automaticCheck();
     }
 
     @Override
