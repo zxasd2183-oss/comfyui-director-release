@@ -351,6 +351,13 @@ def draft_exception(db, exception_id, finding_id, start_ms, end_ms,
             asset = db.execute("SELECT project_id FROM assets WHERE asset_id=?", (aid,)).fetchone()
             if not asset or asset["project_id"] != finding["project_id"]:
                 raise ProductionError("exception_asset_wrong_project")
+            linked = db.execute(
+                "SELECT 1 FROM shot_assets WHERE project_id=? AND episode_id=? "
+                "AND shot_id=? AND asset_id=?",
+                (finding["project_id"], finding["episode_id"], finding["shot_id"], aid)
+            ).fetchone()
+            if linked is None:
+                raise ProductionError("exception_asset_not_linked_to_shot")
         db.execute("INSERT INTO exceptions(exception_id,finding_id,attribute,start_ms,end_ms,"
                    "permitted_change,rationale,evidence_sha256,bound_asset_id)"
                    " VALUES(?,?,?,?,?,?,?,?,?)",
