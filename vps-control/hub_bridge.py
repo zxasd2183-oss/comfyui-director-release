@@ -31,7 +31,7 @@ def main():
     ))
     srv = ThreadingHTTPServer(
         ("127.0.0.1", 8897),
-        build_handler(token, upstream="http://127.0.0.1:8896/mcp")
+        build_handler(token, upstream="http://127.0.0.1:8898/mcp")
     )
     srv.daemon_threads = True
     print("Director Hub MCP bridge ready on 127.0.0.1:8897", flush=True)
