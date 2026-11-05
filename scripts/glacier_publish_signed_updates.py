@@ -11,6 +11,7 @@ It does not contact a network, change the VPS, or install software.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -22,10 +23,21 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey,
 )
 
-KEY_ID = "cf9452226375ff7d"
-PUBLIC = bytes.fromhex(
+LEGACY_KEY_ID = "cf9452226375ff7d"
+LEGACY_PUBLIC = bytes.fromhex(
     "7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab"
 )
+NEW_PUBLIC_HEX = os.environ.get("GLACIER_UPDATE_SIGNING_PUBLIC_HEX", "")
+if NEW_PUBLIC_HEX:
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", NEW_PUBLIC_HEX):
+        raise ValueError("New Glacier public key variable has invalid format")
+    PUBLIC = bytes.fromhex(NEW_PUBLIC_HEX)
+    if PUBLIC == LEGACY_PUBLIC:
+        raise ValueError("Refusing reuse of lost legacy Glacier signing key")
+    KEY_ID = "v2-" + hashlib.sha256(PUBLIC).hexdigest()[:16]
+else:
+    PUBLIC = LEGACY_PUBLIC
+    KEY_ID = LEGACY_KEY_ID
 OWNER_REPO = "zxasd2183-oss/comfyui-director-release"
 WIN_PATTERN = re.compile(r"^glacier-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 MAC_PATTERN = re.compile(r"^glacier-macos-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
@@ -152,7 +164,8 @@ def make_payloads(version, windows, mac):
     mac_doc = {
         "channel": "macos-arm64", "version": version,
         "url": (
-            "https://jipite.borealos.cn/glacier-updates/" + mac_name
+            f"https://github.com/{OWNER_REPO}/releases/download/"
+            f"{mac_tag}/{mac_name}"
         ),
         "sha256": mac_sha, "size": mac_size,
         "notes": "Glacier Browser v" + version +
@@ -165,8 +178,15 @@ def make_payloads(version, windows, mac):
 def verify_signed_doc(document):
     if not isinstance(document, dict) or set(document) != FIELDS:
         raise ValueError("Unrecognized existing signed manifest fields")
-    if document.get("key_id") != KEY_ID:
-        raise ValueError("Existing manifest signing key changed")
+    candidate_key_id = document.get("key_id")
+    if candidate_key_id == KEY_ID:
+        verify_public = PUBLIC
+    elif candidate_key_id == LEGACY_KEY_ID and KEY_ID != LEGACY_KEY_ID:
+        # The old key is allowed only to VERIFY the previous signed feed.
+        # Only the newly provisioned key signs future v0.18+ releases.
+        verify_public = LEGACY_PUBLIC
+    else:
+        raise ValueError("Existing manifest signing key is unrecognized")
     signature_b64 = document["signature"]
     if not isinstance(signature_b64, str):
         raise ValueError("Manifest signature is not a string")
@@ -175,7 +195,7 @@ def verify_signed_doc(document):
         raise ValueError("Invalid signature size")
     payload = {k: value for k, value in document.items()
                if k != "signature"}
-    Ed25519PublicKey.from_public_bytes(PUBLIC).verify(
+    Ed25519PublicKey.from_public_bytes(verify_public).verify(
         signature, canonical(payload))
     return payload
 
