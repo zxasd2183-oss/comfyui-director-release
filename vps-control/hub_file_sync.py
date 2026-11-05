@@ -97,7 +97,7 @@ def fetch_file(file, *, opener=OPENER):
 
 
 def signed_request(secret,body,timestamp,nonce):
-    value="\\n".join(("POST",MEDIA_PATH,str(timestamp),nonce,
+    value="\n".join(("POST",MEDIA_PATH,str(timestamp),nonce,
                       hashlib.sha256(body).hexdigest())).encode("ascii")
     return hmac.new(secret,value,hashlib.sha256).hexdigest()
 
@@ -110,9 +110,9 @@ def sync_chatgpt_visual(project_id,episode_id,kind,subject_id,file,*,opener=OPEN
         if kind not in ("character","scene","storyboard"):
             raise SyncError("invalid_visual_kind")
         raw,ref=fetch_file(file,opener=opener)
-        if raw.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        if raw.startswith(b"\x89PNG\r\n\x1a\n"):
             media="image/png"
-        elif raw.startswith(b"\\xff\\xd8\\xff"):
+        elif raw.startswith(b"\xff\xd8\xff"):
             media="image/jpeg"
         elif raw[:4]==b"RIFF" and raw[8:12]==b"WEBP":
             media="image/webp"
@@ -123,7 +123,7 @@ def sync_chatgpt_visual(project_id,episode_id,kind,subject_id,file,*,opener=OPEN
             raise SyncError("image_mime_mismatch")
         name=file.get("file_name") or "chatgpt-generated-image"
         if (not isinstance(name,str) or not 1<=len(name)<=120 or
-                any(c in name for c in ("/","\\","\\x00")) or
+                any(c in name for c in ("/","\\","\x00")) or
                 any(ord(c)<32 for c in name)):
             raise SyncError("invalid_filename")
         payload=json.dumps({"project_id":project_id,"episode_id":episode_id,
