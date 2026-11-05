@@ -6,7 +6,7 @@ ChatGPT 只添加一个 MCP 插件：
 
     https://jipite.borealos.cn/mcp/<Hub 自己的私密令牌>
 
-路径由 VPS 自有 HTTPS Nginx 转到 VPS 回环 8897（私密桥接），进而到 Director Hub 8896。此域名目前已经提供 /api/v1/mobile/ 手机审批和 /app-updates/ APK；安装器仅新增 /mcp/，**不删除、不覆盖**原路径。
+路径由 VPS 自有 HTTPS Nginx 转到 VPS 回环 8897（私密桥接），进而到 Director Hub 8898。此域名目前已经提供 /api/v1/mobile/ 手机审批和 /app-updates/ APK；安装器仅新增 /mcp/，**不删除、不覆盖**原路径。
 
 Hub 精确公开 13 个 MCP 工具，内部固定分成：
 
@@ -37,7 +37,7 @@ Hub 精确公开 13 个 MCP 工具，内部固定分成：
 1. 核对三个既有服务，而不改它们。
 2. 从 root 0600 控制配置提取 GPU 原有 MCP 私密路径；只把这段路径放进 0640 的 root:directorpower 文件，**不复制云平台 API 密钥**；原路径变化时不会静默替换。
 3. 只生成一次新的独立 Hub 64 位十六进制访问令牌，永久存 VPS 私有文件，重复安装会复用，不随升级轮换。
-4. 安装两个回环 systemd 服务 8896/8897。
+4. 安装两个回环 systemd 服务 8898/8897。
 5. 用本地 MCP tools/list 检查精确的 13 个工具，**不会调用开关机申请**。
 6. 定位唯一的 jipite.borealos.cn TLS Nginx server block；安装 /mcp/ 路由并 nginx -t、reload，失败自动恢复原配置。保留原三个插件和全部现有 HTTPS 服务。
 
