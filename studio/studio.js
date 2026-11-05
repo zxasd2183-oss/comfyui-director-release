@@ -209,7 +209,7 @@
       preview.src=visualURL(projectId,episodeId,v.visual_id);
       button.appendChild(preview);
       button.appendChild(el("strong","",v.subject_id+" · V"+v.version));
-      button.appendChild(el("small","",kindName[v.kind]||v.kind));
+      button.appendChild(el("small","",(kindName[v.kind]||v.kind)+" · "+(v.source||"Studio")));
       button.appendChild(el("span","visual-status",v.selected?"★ 正式参考":"候选版本"));
       button.addEventListener("click",()=>{
         currentVisual={...v,projectId,episodeId};

@@ -50,6 +50,15 @@ def prepare_schema(db):
         FOREIGN KEY(project_id,episode_id)
           REFERENCES episodes(project_id,episode_id)
       );
+      CREATE TABLE IF NOT EXISTS visual_import_sources (
+        visual_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL, episode_id TEXT NOT NULL,
+        kind TEXT NOT NULL, subject_id TEXT NOT NULL,
+        provider TEXT NOT NULL, source_file_id TEXT NOT NULL,
+        imported_at INTEGER NOT NULL,
+        UNIQUE(project_id,episode_id,kind,subject_id,provider,source_file_id),
+        FOREIGN KEY(visual_id) REFERENCES visual_media(visual_id)
+      );
       CREATE TABLE IF NOT EXISTS visual_selections (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT NOT NULL,
@@ -133,9 +142,13 @@ def list_visuals(db_path, project_id, episode_id):
             "WHERE project_id=? AND episode_id=? ORDER BY seq", (pid,eid)
         ).fetchall()
         selected = {(x["kind"],x["subject_id"]):x["visual_id"] for x in selections}
+        imports={r["visual_id"] for r in db.execute(
+            "SELECT visual_id FROM visual_import_sources WHERE project_id=? AND episode_id=?",
+            (pid,eid)).fetchall()}
         return {"ok":True,"project_id":pid,"episode_id":eid,
                 "visuals":[{**dict(row),
-                            "selected":selected.get((row["kind"],row["subject_id"]))==row["visual_id"]}
+                            "selected":selected.get((row["kind"],row["subject_id"]))==row["visual_id"],
+                            "source":"ChatGPT" if row["visual_id"] in imports else "Studio"}
                            for row in records[:250]],
                 "truncated":len(records)>250}
 
@@ -203,6 +216,58 @@ def upload_visual(db_path, data, actor):
             raise
     return {"ok":True,"visual_id":visual_id,"version":version,
             "kind":kind,"subject_id":subject,"gpu_action":False}
+
+
+def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
+    """Idempotent direct sync, preserving both user uploads and source versions.
+
+    Source ref is a bounded non-secret ChatGPT file ID, never an external URL.
+    HTTP caller must have already passed signed loopback HMAC authentication.
+    """
+    fields={"project_id","episode_id","kind","subject_id","filename",
+            "source_file_id","image_base64"}
+    if not isinstance(data,dict) or set(data)!=fields:
+        raise VisualError("invalid_visual_fields")
+    source=data["source_file_id"]
+    import re
+    if (not isinstance(source,str) or
+            not re.fullmatch(r"file[_-][A-Za-z0-9_-]{5,180}",source)):
+        raise VisualError("invalid_source_file_id")
+    pid,eid,subject=data["project_id"],data["episode_id"],data["subject_id"]
+    kind=data["kind"]
+    if kind not in ALLOWED_KINDS:
+        raise VisualError("invalid_visual_kind")
+    with closing(open_db(db_path,initialize=True)) as db:
+        prepare_schema(db)
+        if not verify_chain(db):
+            raise VisualError("audit_integrity_failure",409)
+        pid,eid=_validate_scope(db,pid,eid)
+        subject=_ident(subject)
+        row=db.execute(
+            "SELECT m.visual_id,m.version FROM visual_import_sources s "
+            "JOIN visual_media m ON m.visual_id=s.visual_id "
+            "WHERE s.project_id=? AND s.episode_id=? AND s.kind=? "
+            "AND s.subject_id=? AND s.provider='chatgpt' AND s.source_file_id=?",
+            (pid,eid,kind,subject,source)).fetchone()
+        if row:
+            return {"ok":True,"visual_id":row["visual_id"],
+                    "version":row["version"],"unchanged":True,
+                    "gpu_action":False}
+    upload_fields={k:v for k,v in data.items() if k!="source_file_id"}
+    result=upload_visual(db_path,upload_fields,actor)
+    with closing(open_db(db_path,initialize=True)) as db:
+        prepare_schema(db)
+        with transaction(db):
+            db.execute("INSERT INTO visual_import_sources "
+                "(visual_id,project_id,episode_id,kind,subject_id,provider,"
+                "source_file_id,imported_at) VALUES(?,?,?,?,?,?,?,?)",
+                (result["visual_id"],pid,eid,kind,subject,"chatgpt",
+                 source,int(time.time())))
+            _audit(db,actor,"visual.source_linked",result["visual_id"],
+                   {"provider":"chatgpt","project_id":pid,"episode_id":eid,
+                    "kind":kind,"subject_id":subject})
+    result["unchanged"]=False
+    return result
 
 
 def select_visual(db_path, data, actor):

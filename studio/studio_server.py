@@ -28,7 +28,8 @@ from production_core import (
 )
 from production_web import create_from_web, ProductionWebError, operator_from_verified_session
 from visual_library import (VisualError, MAX_POST_BYTES, prepare_schema,
-                            list_visuals, upload_visual, select_visual, read_visual)
+                            list_visuals, upload_visual, select_visual, read_visual,
+                            ingest_chatgpt_image)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -374,6 +375,41 @@ class StudioHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
+    def handle_brain_visual_post(self):
+        """Signed localhost-only upload; never reachable from a browser session."""
+        target="/api/v1/brain/visual"
+        auth=self.server.brain_auth
+        if auth.secret is None:
+            return self.reply(503,{"ok":False,"reason":"brain_link_not_configured"})
+        if self.path!=target:
+            return self.reply(403,{"ok":False,"reason":"brain_link_denied"})
+        if self.headers.get("Content-Type","").split(";")[0].strip()!="application/json":
+            return self.reply(415,{"ok":False,"reason":"json_only"})
+        if self.headers.get("Transfer-Encoding") is not None:
+            return self.reply(400,{"ok":False,"reason":"unsupported_request_encoding"})
+        raw_len=self.headers.get("Content-Length","")
+        if not raw_len.isascii() or not raw_len.isdigit() or len(raw_len)>9:
+            return self.reply(400,{"ok":False,"reason":"invalid_content_length"})
+        length=int(raw_len)
+        if length<2 or length>MAX_POST_BYTES:
+            return self.reply(413,{"ok":False,"reason":"invalid_request_size"})
+        raw=self.rfile.read(length)
+        if len(raw)!=length:
+            return self.reply(400,{"ok":False,"reason":"incomplete_request"})
+        if not auth.check(self.headers,"POST",target,raw,self.client_address[0]):
+            return self.reply(403,{"ok":False,"reason":"brain_link_denied"})
+        try:
+            data=json.loads(raw)
+            output=ingest_chatgpt_image(self.server.production_db_path,data,
+                                        actor="trusted_chatgpt_file_bridge")
+            return self.reply(200 if output["unchanged"] else 201,output)
+        except VisualError as exc:
+            return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+        except (TypeError,ValueError,UnicodeError):
+            return self.reply(400,{"ok":False,"reason":"invalid_visual_payload"})
+        except (OSError,sqlite3.Error,ProductionError):
+            return self.reply(503,{"ok":False,"reason":"visual_storage_unavailable"})
+
     def handle_brain_post(self):
         # This route must never accept a public reverse-proxy request, browser
         # cookies, Origin or arbitrary upstream forwarding headers.
@@ -417,6 +453,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.reply(403, {"ok": False, "reason": "invalid_host"})
         if urlsplit(self.path).path==BRAIN_PATH:
             return self.handle_brain_post()
+        if urlsplit(self.path).path=="/api/v1/brain/visual":
+            return self.handle_brain_visual_post()
         if self.public_mode_mismatch():
             return self.reply(403, {"ok": False, "reason": "invalid_host"})
         path = urlsplit(self.path).path

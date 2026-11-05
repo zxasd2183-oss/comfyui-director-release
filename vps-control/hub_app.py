@@ -6,7 +6,9 @@ only normal path that authorizes a real provider operation.
 """
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel
 from hub_rpc import call
+from hub_file_sync import sync_chatgpt_visual
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -156,6 +158,29 @@ def save_production_outline(
         "project_id":project_id,"episode_id":episode_id,
         "body":body,"expected_revision":expected_revision,
     })
+
+
+class ChatGPTFileRef(BaseModel):
+    download_url: str
+    file_id: str
+    mime_type: str | None = None
+    file_name: str | None = None
+
+
+@app.tool(annotations=WRITE,meta={"openai/fileParams":["file"]})
+def sync_chatgpt_visual_to_studio(
+    project_id: str, episode_id: str, kind: str, subject_id: str,
+    file: ChatGPTFileRef,
+) -> dict:
+    """Sync one authorized ChatGPT image immediately into a specific Studio episode.
+
+    Supports role images (kind=character), scene references (kind=scene) and
+    storyboard frames (kind=storyboard). No manual download, no GPU and no
+    changes to the original project outline. The host supplies a temporary
+    authorized file reference; do not invent a download URL.
+    """
+    return sync_chatgpt_visual(project_id,episode_id,kind,subject_id,
+                               file.model_dump(exclude_none=True))
 
 
 if __name__ == "__main__":
