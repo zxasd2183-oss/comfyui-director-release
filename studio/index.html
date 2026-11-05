@@ -87,7 +87,39 @@
           </div>
           <div id="episodeShotGrid" class="episode-shot-grid" role="list"></div>
           <div id="episodeAssetSummary" class="episode-asset-summary"></div>
-          <p class="production-warning">这里显示已登记的镜头时长与视听资产版本；不代表视频已经生成。素材预览与自动视听检测仍待接入。</p>
+          <section id="visualLibraryPanel" class="visual-library" hidden aria-label="视觉素材库">
+            <div class="visual-library-head">
+              <div><div class="production-label">VISUAL REFERENCES · V0.9.4</div><h3>图片素材库</h3>
+                <p>在 Studio 内查看、上传并选定正式角色／场景／分镜参考。原始图与旧版均保留。</p></div>
+              <span class="small-tag" id="visualCount">0 张图片</span>
+            </div>
+            <form id="visualUploadForm" class="visual-upload-form">
+              <label>素材类型
+                <select id="visualKind" aria-label="素材类型">
+                  <option value="character">角色图</option>
+                  <option value="scene">场景图</option>
+                  <option value="storyboard">分镜图</option>
+                </select>
+              </label>
+              <label>角色／场景／镜头编号
+                <input id="visualSubject" type="text" maxlength="48" list="visualSubjects"
+                       value="CHAR_GEM" pattern="[A-Za-z][A-Za-z0-9_-]{1,47}" required>
+                <datalist id="visualSubjects">
+                  <option value="CHAR_GEM"></option><option value="CHAR_DS"></option>
+                  <option value="CHAR_GPT"></option><option value="CHAR_CLA"></option>
+                  <option value="CHAR_ZERO"></option><option value="SCN_HALL"></option>
+                  <option value="SCN_ENTRANCE"></option><option value="SH01"></option>
+                </datalist>
+              </label>
+              <label>图片文件（PNG / JPG / WebP；单张不超过 8MB）
+                <input id="visualFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple required>
+              </label>
+              <button type="submit" id="visualUploadBtn" class="prod-new">上传到 Studio</button>
+            </form>
+            <p id="visualMessage" class="visual-message" role="status">仅 Studio 所有者可上传与选定素材；此操作不会启动 GPU。</p>
+            <div class="visual-gallery" id="visualGallery"></div>
+          </section>
+          <p class="production-warning">图片由所有者主动上传后才能在此预览。Studio 不会自动读取 ChatGPT 私人素材库，不会触发 GPU 任务。</p>
         </div>
       </section>
       <div class="content-grid">
@@ -141,6 +173,13 @@
       <button type="submit" id="productionSubmit" class="main-button">保存到制作台账</button>
     </div>
   </form>
+</dialog>
+<dialog id="visualPreviewDialog" class="visual-preview-dialog" aria-labelledby="visualPreviewTitle">
+  <div class="visual-preview-head"><strong id="visualPreviewTitle">图片预览</strong><button id="visualPreviewClose" type="button">关闭</button></div>
+  <img id="visualPreviewImg" alt="Studio 视觉素材预览">
+  <div id="visualPreviewInfo" class="visual-preview-info"></div>
+  <button id="visualApproveBtn" type="button" class="main-button">设为正式参考图</button>
+  <p class="production-warning">选择只新增审核记录；不会删除其他版本、覆盖 V1 或触发 GPU。</p>
 </dialog>
 <dialog id="actionDialog" aria-labelledby="dialogTitle">
   <form method="dialog" id="actionForm">
