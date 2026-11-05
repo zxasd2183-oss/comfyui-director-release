@@ -81,6 +81,24 @@ class IdentityTests(unittest.TestCase):
         self.id.logout(sid)
         self.assertIsNone(self.id.check(sid))
 
+    def test_microsoft_callback_may_include_session_state(self):
+        _,state=self.id.start()
+        sid=self.id.finish({"state":state,"code":"some-secure-auth-code",
+            "session_state":"8a2b6c3d-1111-2222-3333-444455556666"},state)
+        self.assertEqual(self.id.check(sid)["sub"],CFG["owner_sub"])
+
+    def test_microsoft_callback_rejects_extra_or_invalid_fields(self):
+        _,state=self.id.start()
+        with self.assertRaisesRegex(identity.IdentityError,"state_invalid"):
+            self.id.finish({"state":state,"code":"some-secure-auth-code",
+                            "session_state":"x;bad"},state)
+        with self.assertRaisesRegex(identity.IdentityError,"state_invalid"):
+            self.id.finish({"state":state,"code":"some-secure-auth-code",
+                            "unexpected":"value"},state)
+        # Failed basic validation must not consume an otherwise valid flow.
+        sid=self.id.finish({"state":state,"code":"some-secure-auth-code"},state)
+        self.assertIsNotNone(self.id.check(sid))
+
     def test_wrong_owner_tenant_and_nonce_are_rejected(self):
         for overrides in [
             {"subject":"stranger_account_999999"},
@@ -189,6 +207,26 @@ class SSOHttpTests(unittest.TestCase):
         req=self.ask("POST","/api/v1/action",{"action":"resume_dispatch"},
                      {"Origin":"https://jipite.borealos.cn","Content-Type":"application/json"})
         self.assertEqual(req["status"],401)
+
+    def test_browser_callback_with_session_state_succeeds(self):
+        start=self.ask("GET","/auth/start")
+        self.assertEqual(start["status"],302)
+        state=self.fake.last["state"]
+        qs="/auth/callback?code=some-secure-auth-code&session_state=some-opaque-session-state-123456&state="+state
+        result=self.ask("GET",qs,headers={"Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],302)
+        self.assertEqual(result["location"],"/studio/")
+        self.assertTrue(any(k.startswith(identity.COOKIE_SID+"=") for k in result["cookies"]))
+
+    def test_duplicate_state_is_rejected_without_consuming_flow(self):
+        self.ask("GET","/auth/start")
+        state=self.fake.last["state"]
+        path="/auth/callback?code=some-secure-auth-code&state="+state+"&state="+state
+        response=self.ask("GET",path,headers={"Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(response["status"],403)
+        good=self.ask("GET","/auth/callback?code=some-secure-auth-code&state="+state,
+                      headers={"Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(good["status"],302)
 
     def test_complete_login_session_scoped_csrf_and_logout(self):
         sid,state=self.login()
