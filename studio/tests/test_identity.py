@@ -297,7 +297,7 @@ class SSOHttpTests(unittest.TestCase):
         page=self.ask("GET","/")
         self.assertEqual(page["status"],200)
         for word in ("导演专属工作空间", "欢迎回来，导演",
-                     "使用 Microsoft 账号继续","./login.css"):
+                     "进入 Director Studio","./login.css"):
             self.assertIn(word,page["body"])
         self.assertNotIn("window.location",page["body"])
         self.assertNotIn("<script",page["body"])
