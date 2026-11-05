@@ -93,3 +93,11 @@ dialog{width:min(440px,calc(100% - 32px));border:1px solid #d9e7f3;border-radius
   .episode-explorer{padding:18px 16px}
   .episode-shot-grid{grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:7px}
 }
+
+
+/* V0.9.3 · audited ChatGPT creative outline card */
+.episode-outline{margin:5px 0 18px;border:1px solid #dcecfb;background:linear-gradient(135deg,#f8fcff,#eaf5ff);border-radius:13px;padding:17px 19px}
+.episode-outline-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}
+.episode-outline-header strong{font-size:12px;color:#305d86}
+.episode-outline-body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:430px;overflow-y:auto;border:1px solid #e5eff9;background:#fffdfd;border-radius:10px;padding:16px;color:#395872;font-size:13px;line-height:1.85}
+.episode-outline .production-warning{margin-bottom:0}
