@@ -160,14 +160,15 @@ def main():
     # actual proxy egress and DNS leak require an accessible VLESS test node.
     print("LIMITATION: no remote VLESS server, no cross-profile cookie assertion, no HTTP upload/download assertion",flush=True)
 
-try:
-    main()
-except Exception:
-    import traceback
-    traceback.print_exc()
+if __name__ == "__main__":
     try:
-        snapshot("failure")
-        (BASE/"logcat.txt").write_text(adb("logcat","-d","-t","2200",timeout=30,checked=False),encoding="utf-8")
-    except Exception as e:
-        print("Could not collect diagnostics:",str(e))
-    sys.exit(1)
+        main()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        try:
+            snapshot("failure")
+            (BASE/"logcat.txt").write_text(adb("logcat","-d","-t","2200",timeout=30,checked=False),encoding="utf-8")
+        except Exception as e:
+            print("Could not collect diagnostics:",str(e))
+        sys.exit(1)
