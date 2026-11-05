@@ -69,3 +69,21 @@ https://learn.microsoft.com/en-us/entra/identity-platform/reply-url
 - 同域不同路径并不隔离 JavaScript origin。如果将来允许直接取消/中断 GPU 工作，应考虑独立管理子域名与额外的操作级确认。
 - 真实 Microsoft 网页端到端登录只有在你配置好 App registration 并完成浏览器登录后才能验证；CI 的模拟登录及真实 JWT 签名测试不能代替它。
 - 如果 Microsoft JWKS 端点因为网络无法访问，则宁可登录失败，也不禁用签名验证。
+
+## V0.9.1 回调故障修复（Microsoft session_state）
+
+Microsoft 可能返回三个参数：code、state 和 session_state。早期 Studio 回调只接受前两个参数，会误拒绝正常登录并显示 microsoft_login_failed。修复版允许微软的可选 session_state，但仍严格验证浏览器 state Cookie、OAuth state、PKCE、已绑定所有者、JWT 签名与身份。
+
+已经安装 Microsoft SSO 的 VPS 不需要重建应用或新建 Secret，直接运行：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/install-microsoft-web.sh
+
+确认安装成功后，关闭以前失败的 callback 页面，**仅从 https://jipite.borealos.cn/studio/ 重新发起登录**。旧授权码是一次性的，不能使用刷新来重放。
+
+如果仍然提示 microsoft_login_failed，可以在 VPS 的私人终端仅筛选安全分类日志：
+
+    sudo journalctl -u director-studio --since '10 minutes ago' --no-pager | grep 'STUDIO_AUTH_CALLBACK_DENIED' | tail -n 5
+
+只发送该命令的输出，不要发送原始 journalctl 全部日志、浏览器带 code 的回调 URL、客户端 Secret、会话 Cookie 或 ID Token。类别为 oidc_state_invalid、oidc_flow_expired、microsoft_token_exchange_failed、microsoft_token_verification_failed、microsoft_owner_not_authorized 或 oidc_internal_error 等。外部网页仍只显示通用错误，不泄露账号身份或认证信息。
