@@ -263,6 +263,38 @@ class VideoPipelineTests(unittest.TestCase):
                             "--execute", "--acknowledge-gpu-cost"])
 
 
+
+    def test_preflight_detects_h3_frame_limit_before_spending_gpu(self):
+        # A model may support fewer frames than seconds * fps requests.
+        plan = self.plan()
+        def local(endpoint, body=None):
+            if endpoint == "/queue":
+                self.fail("Invalid frame size must abort before queue execution")
+            name = endpoint.rsplit("/", 1)[-1]
+            fields = {}
+            if name == "FrameNode":
+                fields = {"required": {
+                    "frames": ["INT", {"min": 1, "max": 100}],
+                    "seed": ["INT", {"min": 0}],
+                }}
+            return {name: {"input": fields}}
+        with self.assertRaisesRegex(dv.PlanError, "outside installed node bounds"):
+            dv.preflight_plan(plan, client=local)
+
+    def test_preflight_checks_invalid_choices_and_wrong_types(self):
+        plan = self.plan()
+        plan["jobs"][0]["graph"]["6"]["inputs"]["text"] = 42
+        def local(endpoint, body=None):
+            if endpoint == "/queue":
+                self.fail("Wrong input type should abort")
+            name = endpoint.rsplit("/", 1)[-1]
+            schema = {"required": {}}
+            if name == "TextNode":
+                schema = {"required": {"text": [["allowed", "different"]]}}
+            return {name: {"input": schema}}
+        with self.assertRaisesRegex(dv.PlanError, "choice unavailable"):
+            dv.preflight_plan(plan, client=local)
+
     def _archive_shots(self):
         plan = self.plan()
         directory = self.root / "results"
