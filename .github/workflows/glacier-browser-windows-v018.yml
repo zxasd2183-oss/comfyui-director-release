@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 jobs:
   build-publish:
     if: vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX != ''
@@ -145,3 +146,10 @@ jobs:
           }
           if (-not $published) { throw 'Unable to publish Windows setup release after retries.' }
           Write-Host 'Installer published. Signed update feed is issued separately by an offline key, NOT this workflow.'
+      - name: Request v2 signed update feed (only after BOTH releases exist)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run glacier-browser-signed-updates.yml --ref main
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'Signed feed hourly fallback will retry.' }
+
