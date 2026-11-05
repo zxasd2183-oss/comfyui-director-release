@@ -44,7 +44,7 @@ def create_from_web(db_path, data, session):
     if not isinstance(data, dict):
         raise ProductionWebError("invalid_production_action")
     action = data.get("action")
-    if action not in ALLOWED_ACTIONS:
+    if not isinstance(action,str) or action not in ALLOWED_ACTIONS:
         raise ProductionWebError("unsupported_production_action", 403)
     if set(data) != FIELDS[action]:
         raise ProductionWebError("invalid_production_fields")
