@@ -1,7 +1,9 @@
 """V0.9.1 Web Microsoft owner sign-in security tests (offline fakes only)."""
 from __future__ import annotations
 import hashlib
+import io
 import http.client
+from contextlib import redirect_stdout
 import json
 import sys
 import tempfile
@@ -48,6 +50,48 @@ def fake_claims(app, *, subject=None, nonce=None, tenant=None):
         "sub":subject or CFG["owner_sub"],
         "nonce":nonce or hashlib.sha256(app.last["nonce"].encode("ascii")).hexdigest(),
     }
+
+
+class CallbackDiagnosticTests(unittest.TestCase):
+    def test_logs_only_known_param_names_never_values_or_untrusted_keys(self):
+        secret = "secret-auth-code-super-confidential"
+        payload = ("code="+secret+"&state=some-state&error_description="
+                   "private-user-email&access_token=TOP-SECRET-TOKEN")
+        msg=server.callback_fields_for_log(payload)
+        self.assertIn("param_names=code,error_description,state,other",msg)
+        self.assertIn("param_count=4",msg)
+        self.assertIn("unknown_count=1",msg)
+        self.assertNotIn(secret,msg)
+        self.assertNotIn("private-user-email",msg)
+        self.assertNotIn("access_token",msg)
+        self.assertNotIn("TOP-SECRET-TOKEN",msg)
+
+    def test_error_callback_and_duplicate_keys_identified(self):
+        msg=server.callback_fields_for_log(
+            "error=access_denied&error_description=secret&state=abc")
+        self.assertIn("param_names=error,error_description,state",msg)
+        self.assertIn("param_count=3",msg)
+        self.assertNotIn("access_denied",msg)
+        self.assertNotIn("secret",msg)
+        msg=server.callback_fields_for_log("code=x&state=y&state=z")
+        self.assertIn("duplicates=1",msg)
+
+    def test_malicious_parameter_names_are_not_logged(self):
+        msg=server.callback_fields_for_log(
+            "code=x&state=y&%0AFAKE-LOG%20TOKEN%3Dabc=value")
+        self.assertIn("other",msg)
+        self.assertNotIn("FAKE-LOG",msg)
+        self.assertNotIn("TOKEN",msg)
+        self.assertNotIn("\\n",msg)
+
+    def test_long_parameter_query_is_bounded(self):
+        msg=server.callback_fields_for_log(
+            "&".join("unknown"+str(i)+"=secret" for i in range(33)))
+        self.assertIn("too_many",msg)
+        self.assertNotIn("secret",msg)
+        msg=server.callback_fields_for_log("code="+"S"*17000)
+        self.assertIn("oversized",msg)
+        self.assertNotIn("S"*64,msg)
 
 
 class IdentityTests(unittest.TestCase):
@@ -227,6 +271,39 @@ class SSOHttpTests(unittest.TestCase):
         good=self.ask("GET","/auth/callback?code=some-secure-auth-code&state="+state,
                       headers={"Cookie":identity.COOKIE_STATE+"="+state})
         self.assertEqual(good["status"],302)
+
+    def test_oauth_error_callback_logs_only_safe_param_names(self):
+        self.ask("GET","/auth/start")
+        state=self.fake.last["state"]
+        callback=("/auth/callback?error=access_denied"
+                  "&error_description=very-private-email-and-debug-details"
+                  "&state="+state)
+        sink=io.StringIO()
+        with redirect_stdout(sink):
+            result=self.ask("GET",callback,
+                headers={"Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],403)
+        log=sink.getvalue()
+        self.assertIn("STUDIO_AUTH_CALLBACK_DENIED invalid_callback",log)
+        self.assertIn("param_names=error,error_description,state",log)
+        self.assertNotIn("very-private-email-and-debug-details",log)
+        self.assertNotIn(state,log)
+        self.assertNotIn("access_denied",log)
+
+    def test_many_callback_params_get_invalid_callback_not_internal_error(self):
+        self.ask("GET","/auth/start")
+        state=self.fake.last["state"]
+        qs="state="+state+"&code=some-secure-auth-code"+"".join(
+            "&unknown"+str(i)+"=private" for i in range(40))
+        sink=io.StringIO()
+        with redirect_stdout(sink):
+            result=self.ask("GET","/auth/callback?"+qs,
+                headers={"Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],403)
+        self.assertIn("invalid_callback",sink.getvalue())
+        self.assertIn("param_names=too_many",sink.getvalue())
+        self.assertNotIn("private",sink.getvalue())
+
 
     def test_complete_login_session_scoped_csrf_and_logout(self):
         sid,state=self.login()
