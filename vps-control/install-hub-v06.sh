@@ -23,7 +23,7 @@ done
 [[ -x "$PYTHON" && -f "$DB" && ! -L "$DB" ]] || fail "Existing Python or approval DB missing"
 [[ -d "$HUB" && ! -L "$HUB" && -d "$POWER" && ! -L "$POWER" ]] || fail "Existing installation missing"
 for name in power_ops.py power_write_mcp.py vps_unified_status.py \
-            hub_rpc.py hub_app.py director-hub-mcp.service; do
+            hub_rpc.py hub_brain.py hub_app.py director-hub-mcp.service; do
     [[ -f "$SRC/$name" && ! -L "$SRC/$name" ]] || fail "Missing source $name"
 done
 for item in "$POWER/power_ops.py" "$POWER/power_write_mcp.py" \
@@ -55,6 +55,11 @@ cp -p "$POWER/power_ops.py" "$BACKUP/power_ops.py"
 cp -p "$POWER/power_write_mcp.py" "$BACKUP/power_write_mcp.py"
 cp -p "$HUB/hub_rpc.py" "$BACKUP/hub_rpc.py"
 cp -p "$HUB/hub_app.py" "$BACKUP/hub_app.py"
+HAD_BRAIN=0
+if [[ -f "$HUB/hub_brain.py" && ! -L "$HUB/hub_brain.py" ]]; then
+    HAD_BRAIN=1
+    cp -p "$HUB/hub_brain.py" "$BACKUP/hub_brain.py"
+fi
 cp -p "$UNIT" "$BACKUP/director-hub-mcp.service"
 HAD_STATUS=0
 if [[ -f "$POWER/vps_unified_status.py" ]]; then
@@ -71,6 +76,11 @@ restore_on_exit() {
         cp -p "$BACKUP/power_write_mcp.py" "$POWER/power_write_mcp.py" || :
         cp -p "$BACKUP/hub_rpc.py" "$HUB/hub_rpc.py" || :
         cp -p "$BACKUP/hub_app.py" "$HUB/hub_app.py" || :
+        if (( HAD_BRAIN )); then
+            cp -p "$BACKUP/hub_brain.py" "$HUB/hub_brain.py" || :
+        else
+            rm -f "$HUB/hub_brain.py" || :
+        fi
         cp -p "$BACKUP/director-hub-mcp.service" "$UNIT" || :
         if (( HAD_STATUS )); then
             cp -p "$BACKUP/vps_unified_status.py" "$POWER/vps_unified_status.py" || :
@@ -94,10 +104,11 @@ install -o root -g root -m 0644 "$SRC/power_ops.py" "$POWER/power_ops.py"
 install -o root -g root -m 0644 "$SRC/power_write_mcp.py" "$POWER/power_write_mcp.py"
 install -o root -g root -m 0644 "$SRC/vps_unified_status.py" "$POWER/vps_unified_status.py"
 install -o root -g root -m 0644 "$SRC/hub_rpc.py" "$HUB/hub_rpc.py"
+install -o root -g root -m 0644 "$SRC/hub_brain.py" "$HUB/hub_brain.py"
 install -o root -g root -m 0644 "$SRC/hub_app.py" "$HUB/hub_app.py"
 install -o root -g root -m 0644 "$SRC/director-hub-mcp.service" "$UNIT"
 "$PYTHON" -m py_compile "$POWER"/power_ops.py "$POWER"/power_write_mcp.py \
-    "$POWER"/vps_unified_status.py "$HUB"/hub_rpc.py "$HUB"/hub_app.py
+    "$POWER"/vps_unified_status.py "$HUB"/hub_rpc.py "$HUB"/hub_brain.py "$HUB"/hub_app.py
 systemctl daemon-reload
 systemctl restart director-power-mcp director-hub-mcp
 for name in director-power-mcp director-hub-mcp director-hub-bridge director-mobile-v06; do
@@ -129,7 +140,10 @@ def read(port,name):
         data=json.loads(values[0]) if values else {}
     return data
 core={"get_power_service_health","get_control_center_status","get_gpu_power_status",
-      "request_gpu_start","request_gpu_stop","get_power_request_status"}
+      "request_gpu_start","request_gpu_stop","get_power_request_status",
+     "get_production_dashboard","get_production_episode",
+     "create_production_project","create_production_episode",
+     "add_production_shot","save_production_outline"}
 hub={"get_studio_status","get_queue_summary","list_h3_nodes","list_h3_workflows",
      "get_h3_workflow_structure","audit_h3_workflow","get_h3_node_inputs",
      "get_upgrade_readiness","get_control_center_status","get_gpu_power_status",
@@ -145,7 +159,7 @@ for attempt in range(8):
                 raise RuntimeError("Read-only status backend unavailable")
             if not read(port,"get_control_center_status").get("configured"):
                 raise RuntimeError("Provider configuration unavailable")
-        print("PASS: VPS unified core 6 tools; Hub 13 tools; state via both; no power operation")
+        print("PASS: VPS unified core 6 tools; Hub 19 tools; state via both; no power operation")
         break
     except Exception:
         if attempt==7: raise
