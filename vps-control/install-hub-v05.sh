@@ -12,6 +12,16 @@ PYTHON=/opt/comfyui-director-control/.venv/bin/python
 ENV=/etc/comfyui-director-control.env
 GPU_PATH=/etc/comfyui-director-hub-gpu-path
 TOKEN=/etc/comfyui-director-hub.token
+# Fresh installations may create the snippet. Existing routes must be verified
+# before restarting either service, not after the bridge has changed.
+HUB_SNIPPET=/etc/nginx/snippets/jipite-hub.conf
+[[ ! -L "$HUB_SNIPPET" ]] || fail "Refusing symlinked Hub Nginx snippet"
+if [[ -e "$HUB_SNIPPET" ]]; then
+    grep -Fq 'proxy_pass http://127.0.0.1:8899;' "$HUB_SNIPPET" ||
+        fail "Live Hub Nginx upstream differs from 8899; review before install"
+    grep -Fq 'proxy_set_header Host 127.0.0.1:8899;' "$HUB_SNIPPET" ||
+        fail "Live Hub Nginx Host differs from 8899; review before install"
+fi
 
 [[ -x "$PYTHON" && -f "$ENV" ]] || fail "Original VPS controller missing"
 id directorpower >/dev/null || fail "Existing directorpower service account missing"
