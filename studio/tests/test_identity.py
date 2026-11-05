@@ -256,7 +256,9 @@ class SSOHttpTests(unittest.TestCase):
         raw=resp.read()
         out={"status":resp.status,"location":resp.getheader("Location"),
              "cookies":[value for key,value in resp.getheaders() if key.lower()=="set-cookie"],
-             "json":json.loads(raw) if raw and "application/json" in resp.getheader("Content-Type","") else None}
+             "json":json.loads(raw) if raw and "application/json" in resp.getheader("Content-Type","") else None,
+             "body":raw.decode("utf-8","replace"),
+             "content_type":resp.getheader("Content-Type","")}
         conn.close()
         return out
 
@@ -274,7 +276,14 @@ class SSOHttpTests(unittest.TestCase):
         return sid,state
 
     def test_public_route_blocks_everything_before_login(self):
-        self.assertEqual(self.ask("GET","/")["location"],"/studio/auth/start")
+        page=self.ask("GET","/")
+        self.assertEqual(page["status"],200)
+        self.assertIn("text/html",page["content_type"])
+        self.assertIn("Director Studio",page["body"])
+        self.assertIn("href=\"./auth/start\"",page["body"])
+        self.assertNotIn("studio.js",page["body"])
+        self.assertEqual(self.ask("GET","/login")["status"],200)
+        self.assertEqual(self.ask("GET","/login.css")["status"],200)
         self.assertEqual(self.ask("GET","/api/v1/snapshot")["status"],401)
         self.assertEqual(self.ask("GET","/api/v1/production")["status"],401)
         self.assertEqual(self.ask("GET","/studio.js")["status"],401)
@@ -283,6 +292,34 @@ class SSOHttpTests(unittest.TestCase):
         req=self.ask("POST","/api/v1/action",{"action":"resume_dispatch"},
                      {"Origin":"https://jipite.borealos.cn","Content-Type":"application/json"})
         self.assertEqual(req["status"],401)
+
+    def test_glacier_login_public_content_has_no_private_data_or_external_scripts(self):
+        page=self.ask("GET","/")
+        self.assertEqual(page["status"],200)
+        for word in ("导演专属工作空间", "欢迎回来，导演",
+                     "使用 Microsoft 账号继续","./login.css"):
+            self.assertIn(word,page["body"])
+        self.assertNotIn("window.location",page["body"])
+        self.assertNotIn("<script",page["body"])
+        self.assertNotIn("client_secret",page["body"])
+        self.assertNotIn("owner_sub",page["body"])
+        self.assertNotIn("https://login.microsoftonline.com/",page["body"])
+        start=self.ask("GET","/auth/start")
+        self.assertEqual(start["status"],302)
+        self.assertTrue(start["location"].startswith(identity.AUTHORITY+"/"))
+        self.assertEqual(self.ask("GET","/api/v1/production")["status"],401)
+        self.assertEqual(self.ask("GET","/studio.css")["status"],401)
+        self.assertEqual(self.ask("GET","/studio.js")["status"],401)
+
+    def test_ssh_only_mode_keeps_original_dashboard_not_public_login(self):
+        headers={"X-Forwarded-Proto":"",
+                 "X-Forwarded-Host":"",
+                 "X-Director-Studio-Auth-Mode":""}
+        page=self.ask("GET","/",headers=headers)
+        self.assertEqual(page["status"],200)
+        self.assertIn("Production Control",page["body"])
+        self.assertNotIn("WELCOME BACK",page["body"])
+        self.assertEqual(self.ask("GET","/login",headers=headers)["status"],404)
 
     def test_browser_callback_with_session_state_succeeds(self):
         start=self.ask("GET","/auth/start")
@@ -379,6 +416,11 @@ class SSOHttpTests(unittest.TestCase):
         sid,state=self.login()
         header={"Cookie":identity.COOKIE_SID+"="+sid}
         self.assertEqual(self.ask("GET","/auth/status",headers=header)["json"]["authenticated"],True)
+        home=self.ask("GET","/",headers=header)
+        self.assertEqual(home["status"],200)
+        self.assertIn("Production Control",home["body"])
+        self.assertNotIn("WELCOME BACK",home["body"])
+        self.assertEqual(self.ask("GET","/login",headers=header)["location"],"/studio/")
         boot=self.ask("GET","/api/v1/bootstrap",headers=header)
         self.assertEqual(boot["json"]["mode"],"microsoft_owner")
         self.assertEqual(self.ask("GET","/api/v1/snapshot",headers=header)["status"],200)
@@ -401,6 +443,9 @@ class SSOHttpTests(unittest.TestCase):
             "X-CSRF-Token":boot["json"]["csrf"]})
         self.assertEqual(quit["status"],204)
         self.assertEqual(self.ask("GET","/api/v1/snapshot",headers=header)["status"],401)
+        after=self.ask("GET","/",headers=header)
+        self.assertEqual(after["status"],200)
+        self.assertIn("欢迎回来，导演",after["body"])
 
     def test_public_proxy_fails_closed_without_identity_or_tls_markers(self):
         self.svc.identity=None
