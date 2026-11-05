@@ -134,7 +134,7 @@ install -o root -g root -m 0644 "$VPS/brain-link-hub.service.conf" "$HDROP"
 systemctl daemon-reload
 systemctl restart director-studio
 systemctl restart director-hub-mcp
-# Port 8897 bridge proxies into Hub MCP 8898; reload its upstream only
+# Port 8899 bridge proxies into Hub MCP 8898; reload its upstream only
 # after the new Hub is active, never touch the unrelated 8896 OIDC service.
 systemctl is-active --quiet director-hub-mcp || die "Hub MCP did not recover"
 systemctl restart director-hub-bridge
