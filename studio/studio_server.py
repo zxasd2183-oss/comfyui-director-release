@@ -255,6 +255,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                     reason = str(exc) if str(exc) in reasons else "oidc_internal_error"
                     diagnostics = (" "+callback_fields_for_log(url.query)
                                    if reason == "invalid_callback" else "")
+                    if reason in ("microsoft_token_exchange_failed",
+                                  "microsoft_token_verification_failed"):
+                        # IdentityError.diagnostic comes only from the fixed,
+                        # vetted exception class allowlist, never from a
+                        # potentially secret-bearing exception message.
+                        cls = getattr(exc, "diagnostic", None)
+                        if cls:
+                            diagnostics += " exc_class=" + cls
                     print("STUDIO_AUTH_CALLBACK_DENIED "+reason+diagnostics, flush=True)
                     return self.reply(403, {"ok":False,"reason":"microsoft_login_failed"})
                 except Exception:
