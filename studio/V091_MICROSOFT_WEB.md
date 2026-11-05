@@ -109,3 +109,17 @@ Microsoft 可能返回三个参数：code、state 和 session_state。早期 Stu
     STUDIO_AUTH_CALLBACK_DENIED invalid_callback param_names=error,error_description,state param_count=3 unknown_count=0 duplicates=0
 
 如果是 microsoft_token_exchange_failed、microsoft_owner_not_authorized、oidc_state_invalid 等其他错误，不添加参数名细节，以避免扩散敏感认证材料。
+
+## Microsoft client_info 回调兼容修复
+
+VPS 已经观测到 Microsoft 回调包含 **code、state、client_info**，先前代码因为未允许 client_info 而错误拒绝登录。修复后的 HTTP 回调解析与身份验证层共同使用同一份允许参数集合：code、state、session_state、client_info。两个可选参数均有长度/字符验证，仍禁止重复、不认识的字段与缺少 code/state 的请求；PKCE、浏览器绑定 state、JWT 验签和原有 Microsoft 所有者匹配均保持强制。
+
+诊断现在区分 **unknown_count**（完全未知的参数名）与 **unsupported_count**（已知但不允许用于认证的参数，比如 error_description）：即使 unknown_count=0，也能准确说明因已知但不支持的字段而拒绝。
+
+已安装登录的 VPS 仍用原命令升级，**不需要新建 Microsoft 应用或重置客户端密钥**：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/install-microsoft-web.sh
+
+升级完成后从 https://jipite.borealos.cn/studio/ 新建登录流程，不要重放旧 callback URL。若仍出错，只提供筛选后的 STUDIO_AUTH_CALLBACK_DENIED 分类日志，不要分享 OAuth 参数值、Cookie 或私钥。
