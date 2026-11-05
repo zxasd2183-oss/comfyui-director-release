@@ -273,6 +273,20 @@ def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
                     return {"ok":True,"visual_id":existing["visual_id"],
                             "version":existing["version"],"unchanged":True,
                             "gpu_action":False}
+                # ChatGPT can issue a different opaque file ID on every tool call.
+                # Scope deduplication to EXACT image bytes + episode + type +
+                # subject, not the ephemeral source ID. Reuse the OLDEST
+                # version if pre-fix runs already created duplicate candidates.
+                same_bytes=db.execute(
+                    "SELECT visual_id,version FROM visual_media "
+                    "WHERE project_id=? AND episode_id=? AND kind=? "
+                    "AND subject_id=? AND sha256=? AND size_bytes=? "
+                    "ORDER BY version ASC LIMIT 1",
+                    (pid,eid,kind,subject,digest,len(raw))).fetchone()
+                if same_bytes:
+                    return {"ok":True,"visual_id":same_bytes["visual_id"],
+                            "version":same_bytes["version"],"unchanged":True,
+                            "gpu_action":False}
                 count=db.execute(
                     "SELECT COUNT(*) FROM visual_media WHERE project_id=? AND episode_id=?",
                     (pid,eid)).fetchone()[0]
