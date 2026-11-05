@@ -158,9 +158,12 @@ def build_plan(workflow, bindings, shots, fps):
     jobs = []
     for shot in shots:
         copy_graph = copy.deepcopy(graph)
-        values = {"prompt": shot["prompt"], "seed": shot["seed"],
+        default_seed = int.from_bytes(
+            hashlib.sha256(shot["shot_id"].encode("utf-8")).digest()[:4], "big"
+        )
+        values = {"prompt": shot["prompt"], "seed": shot.get("seed", default_seed),
                   "frames": round(shot["seconds"] * fps), "fps": fps,
-                  "image": shot["image"]}
+                  "image": shot.get("image", "")}
         for field, (node, input_name) in slots.items():
             if field == "image" and not values["image"]:
                 raise PlanError("Image binding needs an explicit image for every shot")
