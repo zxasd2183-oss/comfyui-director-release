@@ -151,6 +151,8 @@ def make_payloads(version, windows, mac):
     win_size, win_sha = exact_asset(windows, win_name, 1_073_741_824)
     mac_size, mac_sha = exact_asset(mac, mac_name, 1_073_741_824)
     description = (
+        "：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。"
+        if version_tuple(version) >= (0, 20, 0) else
         "：标签右键菜单、下载中心搜索筛选、工作区恢复标签自动保存。"
         if version_tuple(version) >= (0, 19, 0) else
         "：双端工作区、标签分组、增强下载管理。"
