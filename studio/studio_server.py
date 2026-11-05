@@ -21,7 +21,11 @@ from studio_backend import query
 from studio_identity import (from_systemd, cookies, COOKIE_SID, COOKIE_STATE,
     state_cookie, session_cookie, clear_cookie, IdentityError,
     ALLOWED_CALLBACK_FIELDS)
-from production_core import open_db as open_production, dashboard_from_path
+from production_core import (
+    open_db as open_production, dashboard_from_path,
+    episode_detail_from_path, ProductionError
+)
+from production_web import create_from_web, ProductionWebError
 
 BASE = Path(__file__).resolve().parent
 HOSTS = {"127.0.0.1:8900", "localhost:8900"}
@@ -288,6 +292,27 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.reply(200, self.fresh_snapshot())
         if path == "/api/v1/production":
             return self.reply(200, dashboard_from_path(self.server.production_db_path))
+        if path == "/api/v1/production/episode":
+            # Episode details include private media-version metadata: allow
+            # only the signed-in Microsoft owner, not SSH/basic/anonymous.
+            if not secured:
+                return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                pairs=parse_qsl(url.query, keep_blank_values=True, max_num_fields=4)
+                if (len(pairs) != 2 or len(set(k for k,_ in pairs))!=2
+                        or set(k for k,_ in pairs)!={"project","episode"}):
+                    raise ProductionError("invalid_episode_query")
+                args=dict(pairs)
+                detail=episode_detail_from_path(
+                    self.server.production_db_path,args["project"],args["episode"])
+                return self.reply(200,detail)
+            except ProductionError as exc:
+                return self.reply(404 if str(exc)=="episode_not_found" else 400,
+                                  {"ok":False,"reason":str(exc)})
+            except (ValueError,UnicodeError):
+                return self.reply(400,{"ok":False,"reason":"invalid_episode_query"})
+            except Exception:
+                return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
         if path != "/api/v1/stream":
             return self.reply(404, {"ok": False, "reason": "not_found"})
         self.send_response(200)
@@ -318,8 +343,11 @@ class StudioHandler(BaseHTTPRequestHandler):
             session=self.authenticated()
             if session is None:
                 return self.reply(401,{"ok":False,"reason":"microsoft_login_required"})
-        if path not in ("/api/v1/action", "/auth/logout"):
+        if path not in ("/api/v1/action", "/auth/logout",
+                        "/api/v1/production/action"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
+        if path=="/api/v1/production/action" and not secured:
+            return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
         origin = self.headers.get("Origin", "")
@@ -354,7 +382,9 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.reply(413, {"ok": False, "reason": "invalid_request_size"})
         try:
             data = json.loads(self.rfile.read(length))
-            if (not isinstance(data, dict) or
+            if not isinstance(data,dict):
+                raise ValueError
+            if (path=="/api/v1/action" and
                     set(data) - {"csrf", "action", "shot_id", "revision", "reason"}):
                 raise ValueError
         except (ValueError, UnicodeDecodeError):
@@ -362,6 +392,15 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path=="/api/v1/production/action":
+            try:
+                result=create_from_web(
+                    self.server.production_db_path,data,session)
+                return self.reply(201,result)
+            except ProductionWebError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except Exception:
+                return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
         try:
             with connect(self.server.db_path) as db:
                 out = decide(db, data.get("action"), shot_id=data.get("shot_id"),
