@@ -110,6 +110,7 @@ class GlacierWorkspaces17:
         self._workspace_readonly17 = False
         self._workspace_switching17 = False
         self._workspace_group_by_view17 = {}
+        self._workspace_bound_views19 = set()
         self._workspace_doc17 = {"schema": 1, "active": "default",
                                   "items": [_default_workspace17()]}
         path = self._workspace_file17
@@ -159,6 +160,11 @@ class GlacierWorkspaces17:
         # Attach group metadata only to matching restored tabs; never replace tabs
         # just because a v0.17 workspace file exists.
         self._restore_current_groups17()
+        # v0.18 restored tabs before this workspace layer was initialized.
+        # Register their URL changes too, without immediately rewriting the
+        # encrypted workspace snapshot while startup is still settling.
+        for i in range(self.tabs.count()):
+            self._workspace_register17(self.tabs.widget(i), queue=False)
         self._update_workspace_controls17()
         self.tabs.currentChanged.connect(lambda _index: self._queue_workspace_save17())
         self.setStyleSheet(self.styleSheet() + """
@@ -256,16 +262,22 @@ QToolButton#GlacierWorkspaceButton17:hover,QToolButton#GlacierTabGroupsButton17:
             self._workspace_timer17.stop()
             self._save_active_workspace17()
 
-    def _workspace_register17(self, view):
-        if not hasattr(self, "_workspace_group_by_view17"):
+    def _workspace_register17(self, view, *, queue=True):
+        if not hasattr(self, "_workspace_group_by_view17") or view is None:
             return
+        ident = id(view)
+        if ident in self._workspace_bound_views19:
+            return
+        self._workspace_bound_views19.add(ident)
         view.urlChanged.connect(lambda _url: self._queue_workspace_save17())
         view.titleChanged.connect(lambda _title: self._decorate_group_tabs17())
-        self._queue_workspace_save17()
+        if queue:
+            self._queue_workspace_save17()
 
     def _workspace_forget17(self, view):
         if hasattr(self, "_workspace_group_by_view17"):
             self._workspace_group_by_view17.pop(id(view), None)
+            self._workspace_bound_views19.discard(id(view))
             self._queue_workspace_save17()
 
     def _update_workspace_controls17(self):
