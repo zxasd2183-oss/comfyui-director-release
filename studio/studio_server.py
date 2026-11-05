@@ -19,7 +19,8 @@ from urllib.parse import urlsplit, parse_qsl
 from studio_core import StudioError, connect, decide, snapshot
 from studio_backend import query
 from studio_identity import (from_systemd, cookies, COOKIE_SID, COOKIE_STATE,
-    state_cookie, session_cookie, clear_cookie, IdentityError)
+    state_cookie, session_cookie, clear_cookie, IdentityError,
+    ALLOWED_CALLBACK_FIELDS)
 from production_core import open_db as open_production, dashboard_from_path
 
 BASE = Path(__file__).resolve().parent
@@ -47,12 +48,14 @@ def callback_fields_for_log(raw_query):
     names = [name for name, _ in pairs]
     safe = sorted(set(names).intersection(SAFE_CALLBACK_FIELDS))
     unknown = sum(name not in SAFE_CALLBACK_FIELDS for name in names)
+    unsupported = sum(name not in ALLOWED_CALLBACK_FIELDS for name in names)
     if unknown:
         safe.append("other")
     duplicates = len(names) - len(set(names))
     return ("param_names=" + (",".join(safe) if safe else "none")
             + " param_count=" + str(len(names))
             + " unknown_count=" + str(unknown)
+            + " unsupported_count=" + str(unsupported)
             + " duplicates=" + str(duplicates))
 
 
@@ -226,9 +229,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                     except (ValueError, UnicodeError):
                         raise IdentityError("invalid_callback") from None
                     names=[key for key,_ in pairs]
-                    if (not 2 <= len(pairs) <= 3 or len(set(names)) != len(names)
+                    if (not 2 <= len(pairs) <= len(ALLOWED_CALLBACK_FIELDS)
+                            or len(set(names)) != len(names)
                             or not {"state","code"}.issubset(names)
-                            or set(names)-{"state","code","session_state"}):
+                            or set(names) - ALLOWED_CALLBACK_FIELDS):
                         raise IdentityError("invalid_callback")
                     query=dict(pairs)
                     state=cookies(self.headers.get("Cookie","")).get(COOKIE_STATE)
