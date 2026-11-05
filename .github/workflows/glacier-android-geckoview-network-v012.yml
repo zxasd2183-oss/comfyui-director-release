@@ -97,23 +97,6 @@ jobs:
           path: glacier-android-gecko/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk
           if-no-files-found: error
           retention-days: 30
-      - name: Publish GeckoView engine-test preview release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag='glacier-android-gecko-network-v0.1.2'
-          apk='glacier-android-gecko/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk'
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$apk" --clobber
-          else
-            gh release create "$tag" "$apk" \
-              --target experiment/glacier-android-geckoview-network-v012 \
-              --title 'Glacier Android v0.1.2 · GeckoView + VLESS 内核网络实验版' \
-              --notes 'ARM64/x86_64 双架构 APK，内置 GeckoView 159 与来自 SagerNet 上游、经过官方 SHA-256 核验的 sing-box 1.14.4 CLI。可导入 VLESS TLS/REALITY，GeckoView 经本地 SOCKS5 和远端 DNS 出网，禁用 WebRTC、无自动直连回退。另有明确选择的直连对照模式。非 Android VpnService；请测试真实出口 IP 和断线泄漏。无账号保险箱、云同步或正式安全审计，请勿使用真实关键账号。使用临时 Debug 签名，不是正式版；不同 CI 运行生成的调试签名可能变化。' \
-              --prerelease
-          fi
-          gh release view "$tag" --json tagName,assets
 
   emulator_smoke:
     name: Android 15 x86_64 real-APK UI smoke (bounded ADB + evidence)
@@ -153,3 +136,31 @@ jobs:
           path: emulator-evidence/
           if-no-files-found: warn
           retention-days: 30
+  publish_verified:
+    name: Publish preview APK only after Android emulator verification
+    needs: [build, emulator_smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Publish GeckoView engine-test preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='glacier-android-gecko-network-v0.1.2'
+          apk='.glacier-test-apk/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk'
+          test -s "$apk"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+          else
+            gh release create "$tag" "$apk" \
+              --target experiment/glacier-android-geckoview-network-v012 \
+              --title 'Glacier Android v0.1.2 · GeckoView + VLESS 内核网络实验版' \
+              --notes 'ARM64/x86_64 双架构 APK，内置 GeckoView 159 与来自 SagerNet 上游、经过官方 SHA-256 核验的 sing-box 1.14.4 CLI。可导入 VLESS TLS/REALITY，GeckoView 经本地 SOCKS5 和远端 DNS 出网，禁用 WebRTC、无自动直连回退。另有明确选择的直连对照模式。非 Android VpnService；请测试真实出口 IP 和断线泄漏。无账号保险箱、云同步或正式安全审计，请勿使用真实关键账号。使用临时 Debug 签名，不是正式版；不同 CI 运行生成的调试签名可能变化。' \
+              --prerelease
+          fi
+          gh release view "$tag" --json tagName,assets

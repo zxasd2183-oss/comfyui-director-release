@@ -66,24 +66,15 @@ final class BrowserTransfers {
             }
         }
         pendingPrompt = prompt;
-        pendingResult = new GeckoResult<>();
+        GeckoResult<GeckoSession.PromptDelegate.PromptResponse> result = new GeckoResult<>();
+        pendingResult = result;
         try {
             activity.startActivityForResult(pick, PICK_UPLOAD);
         } catch (ActivityNotFoundException | SecurityException ex) {
             finishUpload(null);
             Toast.makeText(activity, "无法打开系统文件选择器", Toast.LENGTH_LONG).show();
         }
-        return pendingResultOrDismiss(prompt);
-    }
-
-    private GeckoResult<GeckoSession.PromptDelegate.PromptResponse> pendingResultOrDismiss(
-            GeckoSession.PromptDelegate.FilePrompt prompt) {
-        // startActivityForResult can throw before returning. In that case the
-        // GeckoResult was completed with dismiss and the fields were cleared.
-        if (pendingResult == null) {
-            return GeckoResult.fromValue(prompt.dismiss());
-        }
-        return pendingResult;
+        return result;
     }
 
     private void finishUpload(Uri[] uris) {

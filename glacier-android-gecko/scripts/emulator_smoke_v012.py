@@ -26,9 +26,35 @@ def record(name,detail):
     checks.append({"step":name,"result":"observed","detail":detail})
     print("OBSERVED",name,detail,flush=True)
 
+launcher_anrs = 0
+
 def dump():
+    global launcher_anrs
     adb("shell","uiautomator","dump","/sdcard/glacier-smoke.xml",timeout=35)
-    return ET.fromstring(adb("exec-out","cat","/sdcard/glacier-smoke.xml",timeout=20))
+    root = ET.fromstring(adb("exec-out","cat","/sdcard/glacier-smoke.xml",timeout=20))
+    # Only dismiss the emulator's own home-screen ANR. Never mask a Glacier
+    # application ANR: a separate app failure remains a test failure.
+    labels = {n.attrib.get("text","") for n in root.iter("node")}
+    if ("Quickstep isn't responding" in labels
+            or "Launcher3 isn't responding" in labels):
+        launcher_anrs += 1
+        if launcher_anrs > 2:
+            raise RuntimeError("REPEATED_ANDROID_LAUNCHER_ANR")
+        button = next((n.attrib for n in root.iter("node")
+                       if n.attrib.get("text")=="Close app"), None)
+        if button is None:
+            raise RuntimeError("SYSTEM_LAUNCHER_ANR_NOT_DISMISSABLE")
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                       button.get("bounds",""))
+        if not m:
+            raise RuntimeError("SYSTEM_LAUNCHER_ANR_BAD_BUTTON_BOUNDS")
+        x1,y1,x2,y2=map(int,m.groups())
+        adb("shell","input","tap",str((x1+x2)//2),str((y1+y2)//2),timeout=12)
+        record("system_launcher_anr","dismissed emulator Quickstep/Launcher3 only")
+        time.sleep(2)
+        adb("shell","uiautomator","dump","/sdcard/glacier-smoke.xml",timeout=35)
+        root = ET.fromstring(adb("exec-out","cat","/sdcard/glacier-smoke.xml",timeout=20))
+    return root
 
 def lookup(root,text=None,desc=None,cls=None):
     for el in root.iter("node"):
