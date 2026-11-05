@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import http.client
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 import json
 import secrets
 import sqlite3
@@ -17,6 +19,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import studio_server as server
 import studio_brain as brain
 import production_core as prod
+import visual_library as visuals
 
 PNG=bytes.fromhex(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
@@ -88,6 +91,61 @@ class HubVisualSyncHTTPTests(unittest.TestCase):
             row=db.execute("SELECT body,revision FROM episode_outlines").fetchone()
             self.assertEqual(tuple(row),("V1 preserved",1))
             self.assertTrue(prod.verify_chain(db))
+
+    def test_concurrent_same_file_only_one_visual_and_source(self):
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results=list(pool.map(lambda _:self.make_call(self.body()),range(4)))
+        self.assertEqual(sorted(code for code,_ in results),[200,200,200,201])
+        ids={result["visual_id"] for _,result in results}
+        self.assertEqual(len(ids),1)
+        with closing(prod.open_db(self.app.production_db_path,initialize=False)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_media").fetchone()[0],1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_import_sources").fetchone()[0],1)
+            self.assertTrue(prod.verify_chain(db))
+
+    def test_original_image_can_be_read_back_through_brain_episode(self):
+        code,out=self.make_call(self.body())
+        self.assertEqual(code,201,out)
+        detail=brain.execute(self.app.production_db_path,"get_production_episode",
+                             {"project_id":"WaitingOffice","episode_id":"EP01"})
+        self.assertEqual(detail["visual_count"],1)
+        self.assertEqual(detail["visuals"][0]["visual_id"],out["visual_id"])
+        self.assertEqual(detail["visuals"][0]["source"],"ChatGPT")
+        self.assertEqual(detail["visuals"][0]["subject_id"],"CHAR_GEM")
+        self.assertEqual(visuals.read_visual(
+            self.app.production_db_path,"WaitingOffice","EP01",
+            out["visual_id"])[1],PNG)
+        # Legacy production asset count and V1 outline remain independent.
+        self.assertEqual(detail["assets"],[])
+        self.assertEqual(detail["outline"]["body"],"V1 preserved")
+
+    def test_atomic_failure_leaves_no_asset_provenance_or_file(self):
+        from visual_library import _audit as original_audit
+        def fail_second_event(db,actor,action,target,data):
+            if action=="visual.source_linked":
+                raise RuntimeError("simulated_mid_transaction_failure")
+            return original_audit(db,actor,action,target,data)
+        with patch.object(visuals,"_audit",side_effect=fail_second_event):
+            with self.assertRaises(RuntimeError):
+                visuals.ingest_chatgpt_image(
+                    self.app.production_db_path,self.body(),actor="test")
+        with closing(prod.open_db(self.app.production_db_path,initialize=False)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_media").fetchone()[0],0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_import_sources").fetchone()[0],0)
+            self.assertTrue(prod.verify_chain(db))
+        media_path=Path(self.app.production_db_path).parent/"visual_media"
+        self.assertEqual(list(media_path.glob("*")),[])
+
+    def test_same_source_with_changed_bytes_is_rejected(self):
+        code,_=self.make_call(self.body())
+        self.assertEqual(code,201)
+        changed=self.body()
+        raw=bytearray(PNG)
+        raw[-2]^=1
+        changed["image_base64"]=base64.b64encode(bytes(raw)).decode()
+        status,result=self.make_call(changed)
+        self.assertEqual(status,409)
+        self.assertEqual(result["reason"],"source_file_integrity_conflict")
 
     def test_bad_signature_and_forwarded_proxy_blocked(self):
         code,_=self.make_call(self.body(),signed=False)
