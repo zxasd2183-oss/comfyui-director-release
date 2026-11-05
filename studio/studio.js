@@ -11,6 +11,7 @@
     review:"待审片",approved:"审核通过",failed:"生成失败",done:"已完成"};
   let latest = null, selectedId = null, csrf = null, pending = null;
   let microsoftOwner = false, selectedProductionEpisode = null, productionAction = null;
+  let currentVisual = null;
   const clock = () => {
     $("clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false});
   };
@@ -118,6 +119,8 @@
     $("episodeOutlineBody").textContent="";
     $("episodeShotGrid").replaceChildren();
     $("episodeAssetSummary").replaceChildren();
+    $("visualLibraryPanel").hidden=true;
+    $("visualGallery").replaceChildren();
     try {
       const url="./api/v1/production/episode?project="+encodeURIComponent(projectId)
         +"&episode="+encodeURIComponent(episodeId);
@@ -166,11 +169,137 @@
         assets.appendChild(el("span","asset-chip",
           asset.kind+" · "+asset.subject_id+" · V"+asset.version));
       }
+      if(microsoftOwner) await loadVisuals(projectId,episodeId);
     } catch(err) {
       $("episodeExplorerTitle").textContent="无法读取剧集";
       $("episodeExplorerInfo").textContent=err.message;
     }
   }
+
+  function visualURL(projectId,episodeId,id) {
+    return "./api/v1/production/visual?project="+encodeURIComponent(projectId)
+      +"&episode="+encodeURIComponent(episodeId)+"&id="+encodeURIComponent(id);
+  }
+
+  async function loadVisuals(projectId,episodeId) {
+    const panel=$("visualLibraryPanel"), gallery=$("visualGallery");
+    if(!microsoftOwner){panel.hidden=true;return;}
+    panel.hidden=false;
+    gallery.replaceChildren();
+    const response=await fetch("./api/v1/production/visuals?project="
+      +encodeURIComponent(projectId)+"&episode="+encodeURIComponent(episodeId),
+      {cache:"no-store"});
+    if(!response.ok) {
+      $("visualMessage").textContent="素材库暂时不可用，请检查登录状态或服务版本。";
+      return;
+    }
+    const data=await response.json(), visuals=data.visuals||[];
+    $("visualCount").textContent=visuals.length+(data.truncated?"+":"")+" 张图片";
+    $("visualMessage").textContent=visuals.length?
+      "点击图片可放大，并将确认的版本设为正式参考。":
+      "本集暂无已上传图片。请先把之前生成的 PNG/JPG 图片上传一次；不会触发 GPU。";
+    if(!visuals.length)gallery.appendChild(el("p","production-empty","暂无图片：角色、场景、分镜图可以从上方上传。"));
+    const kindName={character:"角色",scene:"场景",storyboard:"分镜"};
+    for(const v of visuals) {
+      const button=el("button","visual-card"+(v.selected?" selected":""));
+      button.type="button";
+      button.setAttribute("aria-label","预览 "+v.filename+" 版本"+v.version);
+      const preview=el("img","visual-thumb");
+      preview.loading="lazy";preview.alt=v.filename;
+      preview.src=visualURL(projectId,episodeId,v.visual_id);
+      button.appendChild(preview);
+      button.appendChild(el("strong","",v.subject_id+" · V"+v.version));
+      button.appendChild(el("small","",kindName[v.kind]||v.kind));
+      button.appendChild(el("span","visual-status",v.selected?"★ 正式参考":"候选版本"));
+      button.addEventListener("click",()=>{
+        currentVisual={...v,projectId,episodeId};
+        $("visualPreviewTitle").textContent=v.filename;
+        $("visualPreviewImg").src=visualURL(projectId,episodeId,v.visual_id);
+        $("visualPreviewInfo").textContent=
+          (kindName[v.kind]||v.kind)+" / "+v.subject_id+" / V"+v.version;
+        $("visualApproveBtn").disabled=v.selected;
+        $("visualApproveBtn").textContent=v.selected?"当前正式参考":"设为正式参考图";
+        $("visualPreviewDialog").showModal();
+      });
+      gallery.appendChild(button);
+    }
+  }
+  $("visualKind").addEventListener("change",()=>{
+    const byKind={character:"CHAR_GEM",scene:"SCN_HALL",storyboard:"SH01"};
+    $("visualSubject").value=byKind[$("visualKind").value]||"CHAR_GEM";
+  });
+  $("visualPreviewClose").addEventListener("click",()=>{
+    $("visualPreviewDialog").close();
+    $("visualPreviewImg").removeAttribute("src");
+  });
+  $("visualApproveBtn").addEventListener("click",async()=>{
+    const v=currentVisual;
+    if(!v||!microsoftOwner||!csrf||v.selected)return;
+    $("visualApproveBtn").disabled=true;
+    try {
+      const response=await fetch("./api/v1/production/visual/select",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({csrf,project_id:v.projectId,episode_id:v.episodeId,
+                             visual_id:v.visual_id}),cache:"no-store"});
+      const out=await response.json();
+      if(!response.ok)throw Error(out.reason||"无法保存正式参考");
+      $("visualPreviewDialog").close();
+      $("visualPreviewImg").removeAttribute("src");
+      await loadVisuals(v.projectId,v.episodeId);
+    } catch(err) {
+      $("visualPreviewInfo").textContent="保存失败："+err.message;
+      $("visualApproveBtn").disabled=false;
+    }
+  });
+  function fileAsBase64(file) {
+    return new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onerror=()=>reject(Error("读取文件失败"));
+      reader.onload=()=>resolve(String(reader.result).split(",")[1]||"");
+      reader.readAsDataURL(file);
+    });
+  }
+  $("visualUploadForm").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const ref=selectedProductionEpisode;
+    if(!microsoftOwner||!csrf||!ref)return;
+    const subject=$("visualSubject").value.trim();
+    if(!/^[A-Za-z][A-Za-z0-9_-]{1,47}$/.test(subject)){
+      $("visualMessage").textContent="编号须使用字母开头的字母、数字、下划线或连字符。";
+      return;
+    }
+    const files=Array.from($("visualFiles").files||[]);
+    if(!files.length)return;
+    const btn=$("visualUploadBtn");
+    btn.disabled=true;
+    let uploaded=0;
+    try {
+      for(let i=0;i<files.length;i++){
+        const f=files[i];
+        if(f.size<32||f.size>8*1024*1024)
+          throw Error(f.name+"：仅支持 8MB 以内的图片");
+        if(!["image/png","image/jpeg","image/webp"].includes(f.type))
+          throw Error(f.name+"：不支持此格式");
+        $("visualMessage").textContent="上传中 "+(i+1)+"/"+files.length+" · "+f.name;
+        const image_base64=await fileAsBase64(f);
+        const response=await fetch("./api/v1/production/visual/upload",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({csrf,project_id:ref.projectId,
+            episode_id:ref.episodeId,kind:$("visualKind").value,
+            subject_id:subject,filename:f.name,image_base64}),cache:"no-store"});
+        const out=await response.json();
+        if(!response.ok)throw Error(f.name+"："+(out.reason||"上传失败"));
+        uploaded++;
+      }
+      $("visualFiles").value="";
+      await loadVisuals(ref.projectId,ref.episodeId);
+      $("visualMessage").textContent="成功上传 "+uploaded+" 张；原有版本和正式参考均未覆盖。";
+    } catch(err) {
+      $("visualMessage").textContent="已上传 "+uploaded+" 张；"+err.message;
+      await loadVisuals(ref.projectId,ref.episodeId);
+      $("visualMessage").textContent="已上传 "+uploaded+" 张；"+err.message;
+    } finally {btn.disabled=false;}
+  });
 
   function openProductionEditor(action,projectId=null) {
     if(!microsoftOwner||!csrf)return;
