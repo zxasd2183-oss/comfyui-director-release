@@ -175,6 +175,57 @@ class IdentityTests(unittest.TestCase):
         sid=self.id.finish({"state":state,"code":"some-secure-auth-code"},state)
         self.assertIsNotNone(self.id.check(sid))
 
+    def test_token_exchange_exception_is_not_misclassified_as_jwt_failure(self):
+        class ExchangeFailure(FakeMSAL):
+            def acquire_token_by_auth_code_flow(self, flow, query):
+                raise RuntimeError("sensitive-authorization-code-should-never-appear")
+        app=ExchangeFailure()
+        identity_service=identity.MicrosoftStudioIdentity(
+            CFG,msal_app=app,validator=lambda _:fake_claims(app))
+        _,state=identity_service.start()
+        with self.assertRaises(identity.IdentityError) as caught:
+            identity_service.finish(
+                {"state":state,"code":"some-secure-auth-code"},state)
+        self.assertEqual(str(caught.exception),"microsoft_token_exchange_failed")
+        self.assertEqual(caught.exception.diagnostic,"RuntimeError")
+        self.assertNotIn("sensitive-",str(caught.exception))
+
+    def test_jwt_invalid_issuer_category_and_no_token_data(self):
+        from jwt.exceptions import InvalidIssuerError
+        self.id.validate=lambda token:(_ for _ in ()).throw(
+            InvalidIssuerError("secret-token-value-should-not-appear"))
+        _,state=self.id.start()
+        with self.assertRaises(identity.IdentityError) as caught:
+            self.id.finish({"state":state,"code":"some-secure-auth-code"},state)
+        self.assertEqual(str(caught.exception),"microsoft_token_verification_failed")
+        self.assertEqual(caught.exception.diagnostic,"InvalidIssuerError")
+        self.assertNotIn("secret-token",str(caught.exception))
+
+    def test_missing_id_token_is_distinct_from_exchange_and_remains_denied(self):
+        class MissingToken(FakeMSAL):
+            def acquire_token_by_auth_code_flow(self, flow, query):
+                return {"id_token_claims":{"sub":"fake"}}
+        app=MissingToken()
+        identity_service=identity.MicrosoftStudioIdentity(
+            CFG,msal_app=app,validator=lambda _:"unexpected")
+        _,state=identity_service.start()
+        with self.assertRaises(identity.IdentityError) as caught:
+            identity_service.finish(
+                {"state":state,"code":"some-secure-auth-code"},state)
+        self.assertEqual(str(caught.exception),"microsoft_token_verification_failed")
+        self.assertEqual(caught.exception.diagnostic,"MissingIdToken")
+        self.assertEqual(identity_service.sessions,{})
+
+    def test_unknown_exception_name_maps_to_constant_safe_class(self):
+        class SecretTokenWasCompromised(Exception):pass
+        self.id.validate=lambda token:(_ for _ in ()).throw(
+            SecretTokenWasCompromised("PII email@example.com"))
+        _,state=self.id.start()
+        with self.assertRaises(identity.IdentityError) as caught:
+            self.id.finish({"state":state,"code":"some-secure-auth-code"},state)
+        self.assertEqual(caught.exception.diagnostic,"OtherVerificationError")
+        self.assertNotIn("email@example.com",str(caught.exception))
+
     def test_wrong_owner_tenant_and_nonce_are_rejected(self):
         for overrides in [
             {"subject":"stranger_account_999999"},
@@ -320,6 +371,47 @@ class SSOHttpTests(unittest.TestCase):
         self.assertIn("Production Control",page["body"])
         self.assertNotIn("WELCOME BACK",page["body"])
         self.assertEqual(self.ask("GET","/login",headers=headers)["status"],404)
+
+    def test_real_jwt_exception_is_logged_as_class_only(self):
+        from jwt.exceptions import InvalidIssuerError
+        self.id.validate=lambda token:(_ for _ in ()).throw(
+            InvalidIssuerError("DO-NOT-LOG-ID-TOKEN OR EMAIL"))
+        self.ask("GET","/auth/start")
+        state=self.fake.last["state"]
+        callback="/auth/callback?state="+state+"&code=some-secure-auth-code"
+        sink=io.StringIO()
+        with redirect_stdout(sink):
+            result=self.ask("GET",callback,headers={
+                "Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],403)
+        self.assertEqual(result["json"]["reason"],"microsoft_login_failed")
+        log=sink.getvalue()
+        self.assertIn(
+            "STUDIO_AUTH_CALLBACK_DENIED microsoft_token_verification_failed "
+            "exc_class=InvalidIssuerError",log)
+        self.assertNotIn("DO-NOT-LOG",log)
+        self.assertNotIn("some-secure-auth-code",log)
+        self.assertNotIn(state,log)
+        self.assertNotIn("email",log.lower())
+        self.assertEqual(self.id.sessions,{})
+
+    def test_oauth_exchange_failure_logs_separately_without_credentials(self):
+        def rejected(flow,query):
+            raise RuntimeError("PRIVATE_CREDENTIAL_DO_NOT_LOG")
+        self.fake.acquire_token_by_auth_code_flow=rejected
+        self.ask("GET","/auth/start")
+        state=self.fake.last["state"]
+        sink=io.StringIO()
+        with redirect_stdout(sink):
+            result=self.ask(
+                "GET","/auth/callback?state="+state+"&code=some-secure-auth-code",
+                headers={"Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],403)
+        self.assertIn(
+            "microsoft_token_exchange_failed exc_class=RuntimeError",
+            sink.getvalue())
+        self.assertNotIn("PRIVATE_CREDENTIAL_DO_NOT_LOG",sink.getvalue())
+        self.assertEqual(self.id.sessions,{})
 
     def test_browser_callback_with_session_state_succeeds(self):
         start=self.ask("GET","/auth/start")
