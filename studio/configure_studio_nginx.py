@@ -70,22 +70,31 @@ def worker_gid(nginx_dump):
 def create_auth(gid):
     if AUTH.exists() or AUTH.is_symlink():
         if (AUTH.is_symlink() or not AUTH.is_file() or AUTH.stat().st_uid != 0
-                or stat.S_IMODE(AUTH.stat().st_mode) & 0o007):
+                or AUTH.stat().st_gid != gid or
+                stat.S_IMODE(AUTH.stat().st_mode) & 0o007):
             raise RuntimeError("Existing Studio auth file is unsafe")
         return False
     if FIRST_LOGIN.exists() or FIRST_LOGIN.is_symlink():
         raise RuntimeError("Stale first-login file; manually review before installation")
-    if shutil.which("htpasswd") is None:
-        raise RuntimeError("Missing htpasswd (install apache2-utils first)")
     password = secrets.token_urlsafe(33)
+    if shutil.which("htpasswd"):
+        args = ["htpasswd", "-n", "-B", "-i", "studioowner"]
+        prefix = "studioowner:$2"
+    elif shutil.which("openssl"):
+        # Nginx supports OS crypt(3) SHA-512 ($6$) on the VPS Linux host.
+        args = ["openssl", "passwd", "-6", "-stdin"]
+        prefix = "$6$"
+    else:
+        raise RuntimeError("No secure password hasher (htpasswd / openssl)")
     result = subprocess.run(
-        ["htpasswd", "-n", "-B", "-i", "studioowner"],
-        input=password + "\n", text=True, capture_output=True, check=True,
-        timeout=20,
+        args, input=password + "\n", text=True,
+        capture_output=True, check=True, timeout=20,
     )
     hashed = result.stdout.strip()
-    if not hashed.startswith("studioowner:$2") or len(hashed) > 250:
-        raise RuntimeError("Unexpected htpasswd output")
+    if not hashed.startswith(prefix) or len(hashed) > 250:
+        raise RuntimeError("Unexpected hashed password output")
+    if args[0] == "openssl":
+        hashed = "studioowner:" + hashed
     # Create both credentials with O_EXCL; passwords are NEVER logged or
     # returned to the GitHub runner, nginx or ChatGPT.
     try:
