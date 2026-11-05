@@ -268,6 +268,37 @@ public final class MainActivity extends Activity {
                 .build();
         GeckoSession session = new GeckoSession(settings);
         session.setContentDelegate(new GeckoSession.ContentDelegate() {});
+        // Debug-only page-load evidence for CI. Never record arbitrary URLs,
+        // query strings, proxy links, account data, or credentials.
+        if ((getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            session.setProgressDelegate(new GeckoSession.ProgressDelegate() {
+                private String testSite;
+
+                @Override
+                public void onPageStart(GeckoSession source, String url) {
+                    if (url != null && url.startsWith("https://example.com/")) {
+                        testSite = "example";
+                    } else if (url != null && url.startsWith("https://github.com/")) {
+                        testSite = "github";
+                    } else if (url != null && url.startsWith("https://chatgpt.com/")) {
+                        testSite = "chatgpt";
+                    }
+                    if (testSite != null) {
+                        android.util.Log.i("GlacierSmoke", "PAGE_START site=" + testSite);
+                    }
+                }
+
+                @Override
+                public void onPageStop(GeckoSession source, boolean success) {
+                    if (testSite != null) {
+                        android.util.Log.i("GlacierSmoke",
+                                "PAGE_STOP site=" + testSite + " success=" + success);
+                    }
+                    testSite = null;
+                }
+            });
+        }
         session.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
             @Override
             public void onLocationChange(GeckoSession source, String url,
