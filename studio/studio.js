@@ -208,7 +208,7 @@
           try{
             const result=await fetch("./auth/logout",{
               method:"POST",headers:{"X-CSRF-Token":csrf},cache:"no-store"});
-            if(result.status===204)window.location.assign("./auth/start");
+            if(result.status===204)window.location.assign("./");
           }catch(_error){$("streamLabel").textContent="退出登录失败，请刷新页面";}
         });
       }
