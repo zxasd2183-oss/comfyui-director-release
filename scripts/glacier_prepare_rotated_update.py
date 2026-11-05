@@ -55,6 +55,19 @@ def prepare(base, platform, public):
     if f"CURRENT_VERSION = {quote}{VERSION}{quote}" not in source:
         raise ValueError("Not a Glacier v0.18.0 release source")
     transformed = rewrite_source(source, platform, public)
+    if platform == "windows":
+        # Keep older Windows installations on the LEGACY channel. Only the
+        # manually installed v0.18 client may trust the new v2 feed.
+        feed = root / "update_core.py"
+        feed_text = feed.read_text(encoding="utf-8")
+        legacy = "glacier-browser-updates/channels/windows-x64.json"
+        if feed_text.count(legacy) != 1:
+            raise ValueError("Windows updater source must point to the expected legacy feed")
+        feed.write_text(
+            feed_text.replace(legacy,
+                              "glacier-browser-updates-v2/channels/windows-x64.json"),
+            encoding="utf-8",
+        )
     path.write_text(transformed, encoding="utf-8")
     print("Glacier v0.18 updater trust root installed:",
           platform, derived_key_id(public))
