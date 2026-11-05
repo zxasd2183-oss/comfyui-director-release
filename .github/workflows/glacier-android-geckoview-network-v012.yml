@@ -144,7 +144,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            set -euo pipefail
+            set -eu
             export GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk"
             export GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-evidence"
             python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/emulator_smoke_v012.py"
