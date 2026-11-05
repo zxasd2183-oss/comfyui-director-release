@@ -206,6 +206,9 @@ def render_manifests(releases, directory, key):
         print("No matching dual-platform release; signed feed unchanged.")
         return False
     version, windows, mac = pair
+    if NEW_PUBLIC_HEX and version_tuple(version) < (0, 18, 0):
+        print("Waiting for BOTH v0.18.0 key-migration installers; old feeds unchanged.")
+        return False
     payloads = make_payloads(version, windows, mac)
     output = Path(directory)
     planned = {}
