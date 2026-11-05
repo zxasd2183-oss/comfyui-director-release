@@ -12,6 +12,41 @@
 - **独立低权限**：Director Studio 由独立系统用户 directorstudio 运行，不是 directorpower，不读取审批数据库/API 密钥，MCP 只能调用 get_gpu_power_status、get_queue_summary。只监听 VPS 127.0.0.1:8900，**不对公网开放、不修改 Nginx、无独立弱口令登录页面**。
 - ChatGPT 原 Director Hub V0.6 的 13 个工具、URL/token、吉皮提指纹审批、APK/DMG、OIDC、GPU SSH 回连全都不变。
 
+## V0.8.1：使用 Jipite 正式域名（临时身份验证）
+
+正式地址：https://jipite.borealos.cn/studio/ 。这个路径与原有 /mcp/、/api/v1/mobile/、/app-updates/ 独立。工作台后端仍仅监听 VPS 的 127.0.0.1:8900，Nginx 新增带 HTTPS Basic Auth 的 /studio/ 路由。**当前还没有 Microsoft 个人账号网页登录**；这个强随机密码是短期防护，待正式 Microsoft OIDC 接入后替换。
+
+在已安装本地 V0.8 的 VPS 私人 SSH 终端执行：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/enable-jipite-domain.sh
+
+脚本先运行 Studio 测试和更新本地前后端，再检查现有 Nginx TLS 虚拟主机结构。发现已有同名 /studio/ 路由或不同的片段则拒绝覆盖。首次运行生成一位 studioowner 用户和随机长密码。**密码绝不会输出到常规部署日志或本聊天**，只临时存入 VPS root-only 文件。
+
+仅在自己的 VPS 私有终端查看一次登录密码：
+
+    sudo cat /root/.director-studio-first-login
+
+把密码保存到密码管理器后，立刻删除临时明文文件：
+
+    sudo rm /root/.director-studio-first-login
+
+在电脑或手机浏览器打开 https://jipite.borealos.cn/studio/。浏览器会显示 HTTP Basic Auth 登录框，用户名称为 studioowner，密码为上述随机口令。只有身份验证通过才可以读取工作台 API、实时 SSE 和交互页面。不能把这种临时登录宣称为 Microsoft 登录。
+
+### 安全和功能验收
+
+- 从外网未登录的请求访问 /studio/ 必须返回 HTTP 401。
+- 浏览器登录后能加载 CSS/JS、实时事件、镜头及审计记录，当前 GPU 仍应显示 Stopped。
+- Hub 原有 13 个工具维持不变、原有手机 API 未携带 Microsoft Token 时仍 401。
+- APK/DMG 更新 feed 按原路径返回 200。
+- Studio 后端 8900 必须仍只监听回环地址；不会新增公网 TCP 端口。
+- SSH 访问原本地 http://127.0.0.1:8900 仍可用。
+
+安装器为 Nginx vhost 保留私密备份，nginx -t 或 reload 失败时尝试自动回滚。VPS、ComfyUI、吉皮提、OIDC 与 GPU 电源没有变化。
+
+**同域路径共享浏览器同源权限。** 在后续增加真正 GPU 任务中断和调度控制之前，应完成 Microsoft 登录、会话授权和操作分级。当前 V0.8.1 的网页仍然只写审计和派单意图，不会调用真实 GPU 中断或开关机。
+
 ## 1. VPS 一次安装（无需打开 GPU）
 
 在自有 VPS 私人终端：
