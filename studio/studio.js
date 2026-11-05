@@ -213,7 +213,7 @@
       error.textContent="编号必须以英文字母开头，且为 2–48 位字母、数字、下划线或连字符";
       return;
     }
-    if(!title||title.length>160||/[\\u0000-\\u001f]/.test(title)) {
+    if(!title||title.length>160||/[\u0000-\u001f]/.test(title)) {
       error.textContent="请输入 1–160 字的项目或剧集名称";return;
     }
     let data={action:productionAction,csrf,title};
