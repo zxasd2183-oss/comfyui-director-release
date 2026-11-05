@@ -1,10 +1,10 @@
 {
   "channel": "windows-x64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.19.0：标签右键菜单、下载中心搜索筛选、工作区恢复标签自动保存。双端自动测试通过。",
-  "sha256": "a9542c7329ce57783e2b495b5f75ec4cd0d6530522e73f058905d36e6602cc2f",
-  "signature": "fwI//kPeA6XvuRMxVR2njIsyfDLZLC8s56yQoblYSul43EbagHGZHCclZS1L9cyKrKC+K2irlDTxZ03svkkhAQ==",
-  "size": 173186412,
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.19.0/GlacierBrowser-v0.19.0-Windows-Setup-x64.exe",
-  "version": "0.19.0"
+  "notes": "Glacier Browser v0.20.0：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
+  "sha256": "49229d37f93e2a21c9408d4fd61176fe1d0d631af52eeaf5719f6b02a2b2dd1a",
+  "signature": "R8M9wJSRGElQcVpUEzAABir3LCj8lC8Vl86vzmaVXBuY2YHMwyfOQWGuKOxUIUyS1EweoSGGhX2i+bkmRYbuBw==",
+  "size": 173182132,
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.20.0/GlacierBrowser-v0.20.0-Windows-Setup-x64.exe",
+  "version": "0.20.0"
 }
