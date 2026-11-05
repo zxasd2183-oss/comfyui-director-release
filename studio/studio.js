@@ -114,6 +114,8 @@
     panel.hidden=false;
     $("episodeExplorerTitle").textContent=episodeId+" · 读取中";
     $("episodeExplorerInfo").replaceChildren();
+    $("episodeOutlinePanel").hidden=true;
+    $("episodeOutlineBody").textContent="";
     $("episodeShotGrid").replaceChildren();
     $("episodeAssetSummary").replaceChildren();
     try {
@@ -137,6 +139,14 @@
       summary.appendChild(el("span","", "关联资产 "+data.assets.length
         +(data.assets_truncated?"+":"")));
       summary.appendChild(el("span","", "连续性异常 "+data.finding_count));
+      const outline=data.outline||{};
+      if(Number.isSafeInteger(outline.revision)&&outline.revision>0
+          && typeof outline.body==="string") {
+        $("episodeOutlinePanel").hidden=false;
+        $("episodeOutlineRevision").textContent="DRAFT · V"+outline.revision;
+        // Never interpret AI-provided content as HTML; no script execution.
+        $("episodeOutlineBody").textContent=outline.body;
+      }
       const shotGrid=$("episodeShotGrid");
       if(!data.shots.length)shotGrid.appendChild(
         el("div","production-empty","尚未导入分镜。可以在 VPS 使用审核后的 V0.7 计划安全导入。"));
