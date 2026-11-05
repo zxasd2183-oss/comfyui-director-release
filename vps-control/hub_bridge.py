@@ -30,11 +30,11 @@ def main():
         "DIRECTOR_HUB_TOKEN_FILE", "/etc/comfyui-director-hub.token"
     ))
     srv = ThreadingHTTPServer(
-        ("127.0.0.1", 8897),
+        ("127.0.0.1", 8899),
         build_handler(token, upstream="http://127.0.0.1:8898/mcp")
     )
     srv.daemon_threads = True
-    print("Director Hub MCP bridge ready on 127.0.0.1:8897", flush=True)
+    print("Director Hub MCP bridge ready on 127.0.0.1:8899", flush=True)
     srv.serve_forever(poll_interval=0.3)
 
 
