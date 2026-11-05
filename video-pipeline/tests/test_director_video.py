@@ -2,6 +2,8 @@ import copy
 import csv
 import hashlib
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 import urllib.error
@@ -401,6 +403,35 @@ class VideoPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(dv.PlanError, "invalid stream metadata"):
             dv.assemble_movie(plan, result_dir, self.root / "bad.mp4",
                               runner=fake_runner)
+
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "ffmpeg/ffprobe not installed")
+    def test_real_ffmpeg_stitches_two_short_safe_clips(self):
+        plan = self.plan()
+        result_dir = self.root / "real-clips"
+        result_dir.mkdir()
+        for job in plan["jobs"]:
+            directory = result_dir / job["shot_id"]
+            directory.mkdir()
+            name = "000_clip.mp4"
+            dest = directory / name
+            cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                   "-f", "lavfi", "-i", "color=c=black:s=64x64:r=12:d=0.5",
+                   "-an", "-c:v", "mpeg4", "-q:v", "2", "-y", str(dest)]
+            proc = subprocess.run(cmd, capture_output=True, check=False, timeout=25)
+            self.assertEqual(proc.returncode, 0, proc.stderr[:300])
+            checksum, size = dv.file_checksum(dest)
+            dv.atomic_json(directory / "manifest.json", {
+                "shot_id": job["shot_id"],
+                "downloaded": [{"file": name, "sha256": checksum, "bytes": size}]
+            })
+        final = self.root / "real-concat.mp4"
+        output = dv.assemble_movie(plan, result_dir, final)
+        self.assertTrue(output["ok"])
+        self.assertGreater(final.stat().st_size, 0)
+        signature = dv.video_stream_signature(final)
+        self.assertEqual(signature[0][0], "video")
 
     def _json_file(self, rows):
         path = self.root / "input.json"
