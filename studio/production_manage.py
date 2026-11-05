@@ -16,7 +16,7 @@ from contextlib import closing
 from production_core import (
     ProductionError, open_db, create_project, create_episode, create_shot,
     add_asset, attach_asset, create_finding, draft_exception, decide_exception,
-    dashboard, verify_chain,
+    dashboard, verify_chain, import_video_plan,
 )
 
 
@@ -36,6 +36,9 @@ def main(argv=None):
     p.add_argument("--project", required=True); p.add_argument("--episode", required=True)
     p.add_argument("--id", required=True); p.add_argument("--ordinal", type=int, required=True)
     p.add_argument("--duration-ms", type=int, required=True)
+    p = sp.add_parser("import-plan")
+    p.add_argument("--project", required=True); p.add_argument("--episode", required=True)
+    p.add_argument("--plan", required=True)
     p = sp.add_parser("register-asset")
     p.add_argument("--project", required=True); p.add_argument("--id", required=True)
     p.add_argument("--kind", required=True)
@@ -77,6 +80,8 @@ def main(argv=None):
                 create_shot(db,args.project,args.episode,args.id,args.ordinal,
                             args.duration_ms,actor=args.actor)
                 result={"ok":True,"shot_id":args.id}
+            elif args.command == "import-plan":
+                result=import_video_plan(db,args.project,args.episode,args.plan,actor=args.actor)
             elif args.command == "register-asset":
                 add_asset(db,args.id,args.project,args.kind,args.subject,args.version,
                           args.sha256,args.rights_ref,actor=args.actor)
