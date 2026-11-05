@@ -65,7 +65,8 @@ class WindowsDesktop15:
 
         add("新建标签页                 Ctrl+T", self.new_tab)
         add("重新打开关闭的标签      Ctrl+Shift+T", self.reopen_closed_tab15)
-        add("搜索标签页                  Ctrl+Shift+A", self.show_tab_search16)
+        if callable(getattr(self, "show_tab_search16", None)):
+            add("搜索标签页                  Ctrl+Shift+A", self.show_tab_search16)
         add("新建窗口                     Ctrl+N", lambda: self.open_satellite(private=False))
         add("新建无痕窗口             Ctrl+Shift+N", lambda: self.open_satellite(private=True))
         menu.addSeparator()
