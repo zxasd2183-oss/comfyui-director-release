@@ -9,8 +9,10 @@ on:
       - '.github/workflows/glacier-browser-signed-updates.yml'
       - 'scripts/glacier_publish_signed_updates.py'
       - 'scripts/test_glacier_signed_updates.py'
+      - 'scripts/glacier_prepare_rotated_update.py'
+      - 'scripts/test_glacier_prepare_rotated_update.py'
   schedule:
-    - cron: '37 */6 * * *'
+    - cron: '37 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -29,15 +31,16 @@ jobs:
         id: signer
         env:
           SIGNING_KEY: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
+          SIGNING_PUBLIC: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
         run: |
           set -euo pipefail
-          if [[ -z "$SIGNING_KEY" ]]; then
+          if [[ -z "$SIGNING_KEY" || -z "$SIGNING_PUBLIC" ]]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Glacier signing key not configured; existing signed update feeds remain unchanged."
-            echo "Configure the original trusted signing key as GLACIER_UPDATE_SIGNING_PRIVATE_HEX."
+            echo "Glacier v2 private or public key not yet provisioned; signed update feeds remain unchanged."
+            echo "Use the trusted device migration script to provision the NEW v2 keypair."
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "An update signing key is configured. The Python publisher will verify its public key."
+            echo "Glacier v2 key configuration present. Python publisher verifies the private/public pair."
           fi
 
       - name: Checkout trusted publisher from main
@@ -59,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'cryptography>=43,<47'
-          python -m unittest -v source/scripts/test_glacier_signed_updates.py
+          python -m unittest -v source/scripts/test_glacier_signed_updates.py source/scripts/test_glacier_prepare_rotated_update.py
 
       - name: Read both actual GitHub Releases
         if: steps.signer.outputs.enabled == 'true'
@@ -75,6 +78,7 @@ jobs:
         if: steps.signer.outputs.enabled == 'true'
         env:
           GLACIER_UPDATE_SIGNING_PRIVATE_HEX: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
         run: |
           set -euo pipefail
           python source/scripts/glacier_publish_signed_updates.py \
