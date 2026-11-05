@@ -258,6 +258,7 @@ def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
             raise VisualError("audit_integrity_failure",409)
         pid,eid=_validate_scope(db,data["project_id"],data["episode_id"])
         path=None
+        file_created=False
         try:
             with transaction(db):
                 existing=db.execute(
@@ -285,6 +286,7 @@ def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
                 visual_id="VIS_"+secrets.token_hex(12)
                 path=root/(visual_id+MIME_EXT[mime])
                 fd=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
+                file_created=True
                 with os.fdopen(fd,"wb") as f:
                     f.write(raw)
                     f.flush()
@@ -312,7 +314,7 @@ def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
                     "kind":kind,"subject_id":subject,
                     "unchanged":False,"gpu_action":False}
         except BaseException:
-            if path is not None:
+            if file_created and path is not None:
                 path.unlink(missing_ok=True)
             raise
 
