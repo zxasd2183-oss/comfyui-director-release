@@ -8,7 +8,7 @@ die(){ echo "ERROR: $*" >&2; exit 2; }
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/director-studio
 [[ -f "$SRC/studio_core.py" && ! -L "$SRC/studio_core.py" ]] || die "Missing trusted studio sources"
-for file in studio_server.py studio_backend.py studio_core.py production_core.py production_manage.py manage.py index.html studio.css studio.js director-studio.service; do
+for file in studio_server.py studio_identity.py studio_backend.py studio_core.py production_core.py production_manage.py manage.py index.html studio.css studio.js director-studio.service; do
   [[ -f "$SRC/$file" && ! -L "$SRC/$file" ]] || die "Missing source $file"
 done
 systemctl is-active --quiet director-hub-mcp || die "Existing Director Hub must be running"
@@ -20,7 +20,7 @@ if ! id directorstudio >/dev/null 2>&1; then
 fi
 [[ ! -L "$DEST" ]] || die "Destination cannot be symlink"
 install -d -o root -g root -m 0755 "$DEST"
-for file in studio_server.py studio_backend.py studio_core.py production_core.py production_manage.py manage.py index.html studio.css studio.js; do
+for file in studio_server.py studio_identity.py studio_backend.py studio_core.py production_core.py production_manage.py manage.py index.html studio.css studio.js; do
     install -o root -g root -m 0644 "$SRC/$file" "$DEST/$file"
 done
 install -o root -g root -m 0644 "$SRC/director-studio.service" \
