@@ -74,7 +74,7 @@ class MacDesktop15:
         add("收藏此页面                  ⌘D", self.toggle_bookmark)
         menu.addMenu(self.bookmarks_menu)
         add("历史记录                      ⌘Y", self.show_history)
-        add("下载内容                      ⌘J", self.show_downloads)
+        add("下载中心                      ⌘J", lambda: self.show_download_center17() if hasattr(self, "show_download_center17") else self.show_downloads())
         add("在网页中查找               ⌘F", self.open_find13)
         menu.addSeparator()
         add("检测 VLESS 连接", self.start_connection_check)
@@ -100,7 +100,7 @@ class MacDesktop15:
             "Meta+Shift+N": lambda: self.open_satellite(private=True),
             "Meta+D": self.toggle_bookmark,
             "Meta+F": self.open_find13,
-            "Meta+J": self.show_downloads,
+            "Meta+J": lambda: self.show_download_center17() if hasattr(self, "show_download_center17") else self.show_downloads(),
             "Meta+Y": self.show_history,
         }
         for index in range(1, 9):
