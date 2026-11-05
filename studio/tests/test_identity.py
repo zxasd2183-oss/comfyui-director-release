@@ -27,7 +27,7 @@ class FakeMSAL:
         self.last=None
         self.calls=0
     def initiate_auth_code_flow(self, scopes, redirect_uri, response_mode, max_age):
-        assert "openid" in scopes and redirect_uri == identity.REDIRECT
+        assert scopes == [] and redirect_uri == identity.REDIRECT
         assert response_mode == "query"
         self.calls+=1
         state="st"+str(self.calls).zfill(20)
