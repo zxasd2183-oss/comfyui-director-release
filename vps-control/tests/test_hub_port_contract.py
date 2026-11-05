@@ -1,7 +1,7 @@
-"""Keep Director Hub bound to the production 8898/8897 port contract.
+"""Keep Director Hub bound to the production 8898/8899 port contract.
 
-8896 belongs to the unrelated OIDC notification service and must never be
-reintroduced by fresh installs, safe upgrades or Brain Link rollouts.
+8896 belongs to the existing OIDC service and 8897 belongs to Glacier OIDC.
+Neither port may be claimed by new Hub installers or Brain Link upgrades.
 These source checks run in CI without opening sockets or touching any VPS.
 """
 import ast
@@ -24,11 +24,14 @@ class HubPortContractTests(unittest.TestCase):
         bridge=content(VPS/"hub_bridge.py")
         self.assertRegex(app,r'FastMCP\("Director Hub Studio Brain",\s*host="127\.0\.0\.1", port=8898,')
         self.assertIn('build_handler(token, upstream="http://127.0.0.1:8898/mcp")',bridge)
-        self.assertIn('("127.0.0.1", 8897)',bridge)
+        self.assertIn('("127.0.0.1", 8899)',bridge)
         self.assertNotIn("port=8896",app)
         self.assertNotIn("127.0.0.1:8896/mcp",bridge)
         nginx=content(VPS/"nginx-alidns"/"jipite-hub.conf")
-        self.assertIn("proxy_pass http://127.0.0.1:8897;",nginx)
+        self.assertIn("proxy_pass http://127.0.0.1:8899;",nginx)
+        self.assertIn("proxy_set_header Host 127.0.0.1:8899;",nginx)
+        self.assertNotIn("127.0.0.1:8897",nginx)
+        self.assertNotIn("127.0.0.1:8897",bridge)
 
     def test_all_three_installers_probe_8898_not_8896(self):
         for path in (STUDIO/"install-brain-link.sh",
@@ -40,6 +43,10 @@ class HubPortContractTests(unittest.TestCase):
         link=content(STUDIO/"install-brain-link.sh")
         self.assertIn('"$VPS/hub_bridge.py" "$HUB/hub_bridge.py"',link)
         self.assertIn('systemctl restart director-hub-bridge',link)
+        self.assertIn("proxy_pass http://127.0.0.1:8899;",link)
+        for installer in ("install-hub-v05.sh","install-hub-v06.sh"):
+            self.assertIn("proxy_pass http://127.0.0.1:8899;",
+                          content(VPS/installer))
         self.assertIn('cp -p "$BACKUP/hub_bridge.py" "$HUB/hub_bridge.py"',link)
         v05=content(VPS/"install-hub-v05.sh")
         self.assertIn("hub_brain.py hub_app.py hub_bridge.py",v05)
