@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 from hub_rpc import call
 from hub_file_sync import sync_chatgpt_visual
+from hub_sync_jobs import JOBS
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -181,6 +182,37 @@ def sync_chatgpt_visual_to_studio(
     """
     return sync_chatgpt_visual(project_id,episode_id,kind,subject_id,
                                file.model_dump(exclude_none=True))
+
+
+@app.tool(annotations=WRITE,meta={"openai/fileParams":["file"]})
+def enqueue_chatgpt_visual_to_studio(
+    project_id: str, episode_id: str, kind: str, subject_id: str,
+    file: ChatGPTFileRef,
+) -> dict:
+    """Start an authorized image transfer and return its job ID immediately.
+
+    For large files, use this instead of the synchronous visual sync tool.
+    Poll get_chatgpt_visual_sync_status for a committed Studio visual ID.
+    Signed file URLs are never written to disk or included in status records.
+    """
+    return JOBS.submit(project_id,episode_id,kind,subject_id,
+                       file.model_dump(exclude_none=True))
+
+
+@app.tool(annotations=READ)
+def get_chatgpt_visual_sync_status(job_id: str) -> dict:
+    """Read completion of a previous ChatGPT image transfer, without GPU actions."""
+    return JOBS.status(job_id)
+
+
+@app.tool(annotations=READ)
+def list_recent_chatgpt_visual_syncs(project_id: str, episode_id: str) -> dict:
+    """Recover recent image-transfer receipts even if an MCP response was lost.
+
+    Volatile receipts expire after one hour or Hub service restart. Always
+    check Studio's persisted episode visual list for final confirmation.
+    """
+    return JOBS.recent(project_id,episode_id)
 
 
 if __name__ == "__main__":

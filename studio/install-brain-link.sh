@@ -35,7 +35,7 @@ cmp -s /etc/nginx/snippets/director-studio.conf \
     || die "Studio Nginx auth gate does not match the reviewed Microsoft template"
 [[ -f "$SRC/studio_brain.py" && -f "$SRC/production_core.py" &&
    -f "$VPS/hub_rpc.py" && -f "$VPS/hub_brain.py" &&
-   -f "$VPS/hub_app.py" && -f "$VPS/hub_file_sync.py" && -f "$VPS/hub_bridge.py" && -f "$SRC/brain-link-studio.service.conf" &&
+   -f "$VPS/hub_app.py" && -f "$VPS/hub_file_sync.py" && -f "$VPS/hub_sync_jobs.py" && -f "$VPS/hub_bridge.py" && -f "$SRC/brain-link-studio.service.conf" &&
    -f "$VPS/brain-link-hub.service.conf" ]] || die "Brain-link source files missing"
 for f in "$HUB/hub_rpc.py" "$HUB/hub_app.py" "$HUB/hub_bridge.py"; do
     [[ -f "$f" && ! -L "$f" ]] || die "Installed Hub file unsafe: $f"
@@ -58,7 +58,7 @@ fi
 python3 -m unittest discover -s "$SRC/tests" -p 'test_*.py' -q
 "$PYTHON" "$VPS/tests/test_studio_brain_route.py" -q
 "$PYTHON" -m py_compile "$VPS/hub_app.py" "$VPS/hub_bridge.py" "$VPS/hub_rpc.py" \
-    "$VPS/hub_brain.py" "$VPS/hub_file_sync.py" "$SRC/studio_server.py" "$SRC/studio_brain.py"
+    "$VPS/hub_brain.py" "$VPS/hub_file_sync.py" "$VPS/hub_sync_jobs.py" "$SRC/studio_server.py" "$SRC/studio_brain.py"
 
 # Studio uses its existing backup+rollback installer. This may invalidate
 # existing browser sessions when systemd restarts the service.
@@ -97,6 +97,11 @@ PY
 BACKUP="$(mktemp -d /var/tmp/director-brain-link-backup-XXXXXXXX)"
 chmod 0700 "$BACKUP"
 cp -p "$HUB/hub_app.py" "$BACKUP/hub_app.py"
+HAD_SYNC_JOBS=0
+if [[ -f "$HUB/hub_sync_jobs.py" && ! -L "$HUB/hub_sync_jobs.py" ]]; then
+  HAD_SYNC_JOBS=1
+  cp -p "$HUB/hub_sync_jobs.py" "$BACKUP/hub_sync_jobs.py"
+fi
 HAD_FILE_SYNC=0
 if [[ -f "$HUB/hub_file_sync.py" && ! -L "$HUB/hub_file_sync.py" ]]; then
   HAD_FILE_SYNC=1
@@ -119,6 +124,11 @@ restore(){
     if (( ! COMMITTED )); then
         echo "Brain-link deployment blocked; attempting to restore previous Hub." >&2
         cp -p "$BACKUP/hub_app.py" "$HUB/hub_app.py" || :
+        if (( HAD_SYNC_JOBS )); then
+            cp -p "$BACKUP/hub_sync_jobs.py" "$HUB/hub_sync_jobs.py" || :
+        else
+            rm -f "$HUB/hub_sync_jobs.py" || :
+        fi
         if (( HAD_FILE_SYNC )); then
             cp -p "$BACKUP/hub_file_sync.py" "$HUB/hub_file_sync.py" || :
         else
@@ -147,6 +157,7 @@ install -o root -g root -m 0644 "$VPS/hub_rpc.py" "$HUB/hub_rpc.py"
 install -o root -g root -m 0644 "$VPS/hub_brain.py" "$HUB/hub_brain.py"
 install -o root -g root -m 0644 "$VPS/hub_app.py" "$HUB/hub_app.py"
 install -o root -g root -m 0644 "$VPS/hub_file_sync.py" "$HUB/hub_file_sync.py"
+install -o root -g root -m 0644 "$VPS/hub_sync_jobs.py" "$HUB/hub_sync_jobs.py"
 install -o root -g root -m 0644 "$VPS/hub_bridge.py" "$HUB/hub_bridge.py"
 mkdir -p "$(dirname "$SDROP")" "$(dirname "$HDROP")"
 install -o root -g root -m 0644 "$SRC/brain-link-studio.service.conf" "$SDROP"
@@ -209,10 +220,13 @@ for attempt in range(8):
             "create_production_project","create_production_episode",
             "add_production_shot","save_production_outline",
             "sync_chatgpt_visual_to_studio",
+            "enqueue_chatgpt_visual_to_studio",
+            "get_chatgpt_visual_sync_status",
+            "list_recent_chatgpt_visual_syncs",
         }
         if names!=expected:
             raise RuntimeError("Hub MCP registry mismatch")
-        print("PASS: Hub 20 tools registered; existing GPU/power tools preserved")
+        print("PASS: Hub 23 tools registered; existing GPU/power tools preserved")
         break
     except Exception:
         if attempt==7: raise
