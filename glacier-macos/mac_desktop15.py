@@ -66,6 +66,7 @@ class MacDesktop15:
 
         add("新建标签页                 ⌘T", self.new_tab)
         add("重新打开关闭的标签      ⇧⌘T", self.reopen_closed_tab15)
+        add("搜索标签页                     ⇧⌘A", self.show_tab_search16)
         add("新建窗口                     ⌘N", lambda: self.open_satellite(private=False))
         add("新建无痕窗口             ⇧⌘N", lambda: self.open_satellite(private=True))
         menu.addSeparator()
