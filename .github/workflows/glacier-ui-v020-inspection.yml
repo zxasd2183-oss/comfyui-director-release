@@ -1,0 +1,26 @@
+name: Glacier UI v0.20 baseline inspection (no release)
+on:
+  push:
+    branches: [build/glacier-browser-v0-20-ui-refresh]
+    paths: ['.github/workflows/glacier-ui-v020-inspection.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect decoded Chrome 14 layout
+        run: |
+          python - <<'PY'
+          import base64,lzma,pathlib
+          for name in ("chrome14", "ui12", "ui08"):
+              s=lzma.decompress(base64.b64decode(pathlib.Path("glacier-windows/"+name+".py.xz.b64").read_text().strip())).decode()
+              print("====",name,len(s),"====")
+              for n,line in enumerate(s.splitlines(),1):
+                  if name=="chrome14":
+                      print(f"{n:03d} {line}")
+                  elif (line.strip().startswith(("def ","class ","self.")) and any(k in line for k in (
+                       "setup_","init_","QWidget","QPushButton","QToolButton","nav","menu","tabs","address","show_","button","update"))):
+                      print(f"{n:03d} {line}")
+          PY
