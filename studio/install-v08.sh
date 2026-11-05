@@ -8,19 +8,19 @@ die(){ echo "ERROR: $*" >&2; exit 2; }
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/director-studio
 [[ -f "$SRC/studio_core.py" && ! -L "$SRC/studio_core.py" ]] || die "Missing trusted studio sources"
-for file in studio_server.py studio_identity.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py manage.py index.html login.html login.css studio.css studio.js director-studio.service; do
+for file in studio_server.py studio_identity.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py manage.py index.html login.html login.css studio.css studio.js director-studio.service; do
   [[ -f "$SRC/$file" && ! -L "$SRC/$file" ]] || die "Missing source $file"
 done
 systemctl is-active --quiet director-hub-mcp || die "Existing Director Hub must be running"
 [[ -x /usr/bin/python3 ]] || die "Python3 required"
-python3 -m py_compile "$SRC"/studio_*.py "$SRC"/production_*.py "$SRC"/manage.py
+python3 -m py_compile "$SRC"/studio_*.py "$SRC"/production_*.py "$SRC"/visual_library.py "$SRC"/manage.py
 python3 -m unittest discover -s "$SRC/tests" -p "test_*.py" -q
 if ! id directorstudio >/dev/null 2>&1; then
     useradd --system --no-create-home --shell /usr/sbin/nologin directorstudio
 fi
 [[ ! -L "$DEST" ]] || die "Destination cannot be symlink"
 install -d -o root -g root -m 0755 "$DEST"
-for file in studio_server.py studio_identity.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py manage.py index.html login.html login.css studio.css studio.js; do
+for file in studio_server.py studio_identity.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py manage.py index.html login.html login.css studio.css studio.js; do
     install -o root -g root -m 0644 "$SRC/$file" "$DEST/$file"
 done
 install -o root -g root -m 0644 "$SRC/director-studio.service" \
