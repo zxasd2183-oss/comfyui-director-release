@@ -125,7 +125,8 @@ class Productivity16Tests(unittest.TestCase):
                     for s in win._productivity_shortcuts16
                 }
                 self.assertIn(f"{prefix}+Shift+A", keys)
-                self.assertIn(f"{prefix}+Minus", keys)
+                self.assertIn(f"{prefix}+-", keys)
+                self.assertNotIn("", keys)
                 self.assertIn(f"{prefix}+0", keys)
             finally:
                 win.close()
