@@ -27,15 +27,24 @@ MEDIA_PATH="/api/v1/brain/visual"
 MEDIA_URL="http://127.0.0.1:8900"+MEDIA_PATH
 MAX_IMAGE=8*1024*1024
 MAX_REPLY=4096
-_ALLOWED_HOST_SUFFIXES=(".oaiusercontent.com",".openai.com")
+# Fixed OpenAI/ChatGPT-operated domains only; never follow redirects.
+_ALLOWED_HOSTS=frozenset({"chatgpt.com","openai.com",
+                          "oaiusercontent.com","openaiusercontent.com"})
+_ALLOWED_HOST_SUFFIXES=(".oaiusercontent.com",".openai.com",
+                        ".chatgpt.com",".openaiusercontent.com")
 _ID=re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
 # ChatGPT may provide opaque connector-scoped file IDs, not only file_... IDs.
 # Never persist/log the raw identifier: normalize it to a stable SHA-256 token.
 
 
 class SyncError(ValueError):
-    def __init__(self, reason):
+    def __init__(self, reason, *, hostname=None):
         self.reason=reason
+        # Diagnostic includes only the URL hostname, never path, query or token.
+        self.hostname=hostname if (
+            isinstance(hostname,str) and
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?",hostname)
+        ) else None
         super().__init__(reason)
 
 
@@ -62,8 +71,9 @@ def validate_file_ref(file):
     host=(parts.hostname or "").lower()
     if (parts.scheme!="https" or not host or parts.username or parts.password
             or parts.fragment or parts.port not in (None,443)
-            or not any(host.endswith(s) for s in _ALLOWED_HOST_SUFFIXES)):
-        raise SyncError("untrusted_chatgpt_file_host")
+            or not (host in _ALLOWED_HOSTS or
+                    any(host.endswith(s) for s in _ALLOWED_HOST_SUFFIXES))):
+        raise SyncError("untrusted_chatgpt_file_host",hostname=host)
     # A signed URL can be temporary; never print it in an error or log.
     if not parts.path or parts.path=="/":
         raise SyncError("invalid_chatgpt_file_url")
@@ -158,6 +168,9 @@ def sync_chatgpt_visual(project_id,episode_id,kind,subject_id,file,*,opener=OPEN
                 "unchanged":reply.get("unchanged",False),
                 "gpu_action":False}
     except SyncError as exc:
-        return {"ok":False,"reason":exc.reason}
+        result={"ok":False,"reason":exc.reason}
+        if exc.reason=="untrusted_chatgpt_file_host" and exc.hostname:
+            result["download_host"]=exc.hostname
+        return result
     except (ValueError,TypeError,OSError,urllib.error.URLError):
         return {"ok":False,"reason":"studio_visual_sync_unavailable"}
