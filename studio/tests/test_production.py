@@ -98,6 +98,25 @@ class ProductionTests(unittest.TestCase):
                                confirmation="I_HAVE_REVIEWED_EVIDENCE")
         self.assertTrue(p.verify_chain(self.db))
 
+    def test_approval_requires_current_artifact_version_binding(self):
+        self.basic()
+        p.create_finding(self.db,"F01","SHOW01","EP01","S01","audio.effect",
+                         HASH1,"局部电子化")
+        p.draft_exception(self.db,"X01","F01",200,700,"filter","叙事需要",HASH2)
+        with self.assertRaisesRegex(p.ProductionError,"version_binding_required"):
+            p.decide_exception(self.db,"X01","approve",1,actor="owner_local",
+                               confirmation="I_HAVE_REVIEWED_EVIDENCE")
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM exceptions WHERE exception_id='X01'").fetchone()[0],"draft")
+
+    def test_old_candidate_cannot_receive_new_approval(self):
+        self.make_exception()
+        p.add_asset(self.db,"A02","SHOW01","character_voice","VOICE01",2,HASH3,
+                    "signed_voice_consent")
+        with self.assertRaisesRegex(p.ProductionError,"stale_bound_asset_version"):
+            p.decide_exception(self.db,"X01","approve",1,actor="owner_local",
+                               confirmation="I_HAVE_REVIEWED_EVIDENCE")
+
     def test_new_voice_revision_invalidates_approved_exception(self):
         self.make_exception()
         p.decide_exception(self.db,"X01","approve",1,actor="owner_local",
