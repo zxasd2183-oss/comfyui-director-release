@@ -111,11 +111,20 @@ class VideoPipelineTests(unittest.TestCase):
                                  "queued")
             # Client driver submits only pending records. A second run won't re-submit shot 01.
             dv.atomic_json(self.root / "plan.json", plan)
-            with patch.object(dv, "comfy_json", return_value={"prompt_id": "12345678-5678"}) as call:
+            def fake_comfy(endpoint, body=None):
+                if endpoint == "/queue":
+                    return {"queue_running": [], "queue_pending": []}
+                if endpoint.startswith("/object_info/"):
+                    name = endpoint.rsplit("/", 1)[-1]
+                    return {name: {"input": {}}}
+                if endpoint == "/prompt":
+                    return {"prompt_id": "12345678-5678"}
+                raise AssertionError("Unexpected ComfyUI endpoint")
+            with patch.object(dv, "comfy_json", side_effect=fake_comfy) as call:
                 self.assertEqual(dv.run_cli(["submit", "--plan", str(self.root / "plan.json"),
                     "--db", str(self.root / "state.sqlite"),
                     "--execute", "--acknowledge-gpu-cost", "--max-jobs", "1"]), 0)
-                self.assertEqual(call.call_count, 1)
+                self.assertEqual(sum(x.args[0] == "/prompt" for x in call.call_args_list), 1)
                 self.assertEqual(con.execute("SELECT state FROM runs WHERE shot_id='01'").fetchone()[0],
                                  "queued")
         finally:
@@ -171,6 +180,86 @@ class VideoPipelineTests(unittest.TestCase):
             {"filename": "valid.png", "subfolder": "shots", "type": "output"}]}}}
         files = dv.outputs_from_history(content)
         self.assertEqual([x["filename"] for x in files], ["valid.png"])
+
+
+    def test_preflight_read_only_checks_actual_node_schemas_and_queue(self):
+        plan = self.plan()
+        seen = []
+        def local(endpoint, body=None):
+            seen.append((endpoint, body))
+            if endpoint == "/queue":
+                return {"queue_running": [], "queue_pending": []}
+            if endpoint.startswith("/object_info/"):
+                name = endpoint.rsplit("/", 1)[-1]
+                return {name: {"input": {"required": {}}}}
+            raise AssertionError("Unexpected endpoint")
+        result = dv.preflight_plan(plan, client=local)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["generation_submitted"])
+        self.assertEqual(result["node_types_checked"], 3)
+        self.assertEqual([x[0] for x in seen].count("/queue"), 1)
+        self.assertTrue(all(x[1] is None for x in seen))
+        self.assertFalse(any(x[0] == "/prompt" for x in seen))
+
+    def test_preflight_rejects_missing_node_without_submitting(self):
+        def missing(endpoint, body=None):
+            if endpoint.startswith("/object_info/"):
+                return {}
+            raise AssertionError("Should not check queue after missing node")
+        with self.assertRaisesRegex(dv.PlanError, "unavailable"):
+            dv.preflight_plan(self.plan(), client=missing)
+
+    def test_preflight_blocks_busy_or_invalid_queue(self):
+        def busy(endpoint, body=None):
+            if endpoint == "/queue":
+                return {"queue_running": [{"prompt_id": "other"}], "queue_pending": []}
+            name = endpoint.rsplit("/", 1)[-1]
+            return {name: {"input": {}}}
+        with self.assertRaisesRegex(dv.PlanError, "not idle"):
+            dv.preflight_plan(self.plan(), client=busy)
+        def malformed(endpoint, body=None):
+            if endpoint == "/queue":
+                return {"queue_running": 0, "queue_pending": "unknown"}
+            name = endpoint.rsplit("/", 1)[-1]
+            return {name: {"input": {}}}
+        with self.assertRaisesRegex(dv.PlanError, "invalid shape"):
+            dv.preflight_plan(self.plan(), client=malformed)
+
+    def test_preflight_blocks_unsafe_class_and_never_requests_url(self):
+        plan = self.plan()
+        plan["jobs"][0]["graph"]["6"]["class_type"] = "../internal"
+        with self.assertRaisesRegex(dv.PlanError, "Unsafe"):
+            dv.preflight_plan(plan, client=lambda *args: self.fail("No HTTP for invalid classes"))
+
+    def test_preflight_cli_does_not_open_database_or_execute(self):
+        plan = self.root / "plan-preflight.json"
+        dv.atomic_json(plan, self.plan())
+        db = self.root / "not-created.sqlite"
+        def local(endpoint, body=None):
+            if endpoint == "/queue":
+                return {"queue_running": [], "queue_pending": []}
+            name = endpoint.rsplit("/", 1)[-1]
+            return {name: {"input": {}}}
+        with patch.object(dv, "comfy_json", side_effect=local) as client:
+            self.assertEqual(dv.run_cli(["preflight", "--plan", str(plan)]), 0)
+            self.assertFalse(any(x.args[0] == "/prompt" for x in client.call_args_list))
+        self.assertFalse(db.exists())
+
+    def test_execute_with_busy_queue_fails_before_prompt_post(self):
+        plan = self.root / "plan-busy.json"
+        dv.atomic_json(plan, self.plan())
+        def local(endpoint, body=None):
+            if endpoint == "/queue":
+                return {"queue_running": [], "queue_pending": ["existing"]}
+            if endpoint == "/prompt":
+                self.fail("Preflight must protect against queuing another job")
+            name = endpoint.rsplit("/", 1)[-1]
+            return {name: {"input": {}}}
+        with patch.object(dv, "comfy_json", side_effect=local):
+            with self.assertRaisesRegex(dv.PlanError, "not idle"):
+                dv.run_cli(["submit", "--plan", str(plan),
+                            "--db", str(self.root / "state-busy.sqlite"),
+                            "--execute", "--acknowledge-gpu-cost"])
 
     def _json_file(self, rows):
         path = self.root / "input.json"
