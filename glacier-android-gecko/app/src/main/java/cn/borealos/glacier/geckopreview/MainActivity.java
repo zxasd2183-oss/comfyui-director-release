@@ -3,6 +3,7 @@ package cn.borealos.glacier.geckopreview;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -23,6 +24,7 @@ import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.WebResponse;
 
 import java.net.URLEncoder;
 import java.util.ArrayList;
@@ -51,6 +53,7 @@ public final class MainActivity extends Activity {
 
     private final List<Tab> tabs = new ArrayList<>();
     private GeckoView web;
+    private BrowserTransfers transfers;
     private EditText address;
     private TextView identity;
     private TextView tabCounter;
@@ -77,6 +80,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        transfers = new BrowserTransfers(this);
         getWindow().setStatusBarColor(Color.rgb(238, 244, 248));
         getWindow().setNavigationBarColor(Color.rgb(248, 251, 253));
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -286,7 +290,19 @@ public final class MainActivity extends Activity {
                 .usePrivateMode(false)
                 .build();
         GeckoSession session = new GeckoSession(settings);
-        session.setContentDelegate(new GeckoSession.ContentDelegate() {});
+        session.setContentDelegate(new GeckoSession.ContentDelegate() {
+            @Override
+            public void onExternalResponse(GeckoSession source, WebResponse response) {
+                transfers.onExternalResponse(response);
+            }
+        });
+        session.setPromptDelegate(new GeckoSession.PromptDelegate() {
+            @Override
+            public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onFilePrompt(
+                    GeckoSession source, GeckoSession.PromptDelegate.FilePrompt prompt) {
+                return transfers.onFilePrompt(source, prompt);
+            }
+        });
         // Debug-only page-load evidence for CI. Never record arbitrary URLs,
         // query strings, proxy links, account data, or credentials.
         if ((getApplicationInfo().flags
@@ -627,7 +643,8 @@ public final class MainActivity extends Activity {
                 .setTitle("这是内核实验版")
                 .setMessage("已集成 GeckoView 真正的网页内核，可比较网页显示、导航、账号空间隔离和兼容性。"
                         + "\n\n已接入内置 VLESS/本地 SOCKS5 实验网络；该模式不是 Android 系统级 VPN，也未经过独立审计。"
-                        + "\n\n目前尚未提供账号保险箱、验证码 API、云同步、完整权限管理。"
+                        + "\n\n现已增加系统文件选择器和实验性下载保存（单文件最大 64 MB）；文件夹上传暂不支持。"
+                        + "\n\n仍未提供账号保险箱、验证码 API、云同步、完整权限管理。"
                         + "\n\n直连模式仅用于对照测试；VLESS 模式必须验证真实出口。请勿输入关键账号。")
                 .setPositiveButton("知道了", null)
                 .show();
@@ -643,7 +660,14 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (transfers != null) transfers.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
     protected void onDestroy() {
+        if (transfers != null && isFinishing()) transfers.dispose();
         if (isFinishing()) {
             if (web != null && web.getSession() != null) web.releaseSession();
             for (Tab t : tabs) t.session.close();
