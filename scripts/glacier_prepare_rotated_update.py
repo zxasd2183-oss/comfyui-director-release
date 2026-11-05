@@ -15,7 +15,7 @@ from pathlib import Path
 
 OLD_PUBLIC = "7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab"
 OLD_KEY_ID = "cf9452226375ff7d"
-VERSION = "0.19.0"
+VERSION = "0.20.0"
 
 
 def validate_public(raw):
@@ -82,4 +82,4 @@ if __name__ == "__main__":
         prepare(sys.argv[2], sys.argv[1],
                 os.environ.get("GLACIER_UPDATE_SIGNING_PUBLIC_HEX", ""))
     except (ValueError, OSError) as exc:
-        raise SystemExit("Glacier v0.19 build safely blocked: " + str(exc))
+        raise SystemExit("Glacier v0.20 build safely blocked: " + str(exc))
