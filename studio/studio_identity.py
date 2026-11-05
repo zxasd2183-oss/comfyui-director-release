@@ -114,6 +114,7 @@ class MicrosoftStudioIdentity:
             msal_app = msal.ConfidentialClientApplication(
                 config["client_id"], authority=AUTHORITY,
                 client_credential=config["client_secret"],
+                exclude_scopes=["offline_access"],
                 enable_pii_log=False)
         if validator is None:
             import jwt
@@ -137,7 +138,7 @@ class MicrosoftStudioIdentity:
 
     def start(self):
         flow = self.app.initiate_auth_code_flow(
-            scopes=["openid", "profile"], redirect_uri=REDIRECT,
+            scopes=[], redirect_uri=REDIRECT,
             response_mode="query", max_age=1200)
         if (not isinstance(flow,dict) or not _STATE_ID.fullmatch(str(flow.get("state",""))) or
                 not isinstance(flow.get("code_verifier"),str) or
