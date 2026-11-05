@@ -1,5 +1,6 @@
 import copy
 import csv
+import hashlib
 import json
 import tempfile
 import unittest
@@ -260,6 +261,93 @@ class VideoPipelineTests(unittest.TestCase):
                 dv.run_cli(["submit", "--plan", str(plan),
                             "--db", str(self.root / "state-busy.sqlite"),
                             "--execute", "--acknowledge-gpu-cost"])
+
+
+    def _archive_shots(self):
+        plan = self.plan()
+        directory = self.root / "results"
+        directory.mkdir()
+        for job in plan["jobs"]:
+            folder = directory / job["shot_id"]
+            folder.mkdir()
+            payload = b"video-" + job["shot_id"].encode()
+            name = "000_" + job["shot_id"] + ".mp4"
+            (folder / name).write_bytes(payload)
+            dv.atomic_json(folder / "manifest.json", {
+                "shot_id": job["shot_id"],
+                "downloaded": [{
+                    "file": name, "sha256": hashlib.sha256(payload).hexdigest(),
+                    "bytes": len(payload),
+                }]
+            })
+        return plan, directory
+
+    def test_assemble_verifies_hashes_and_uses_no_shell(self):
+        plan, result_dir = self._archive_shots()
+        movie = self.root / "movie.mp4"
+        calls = []
+        def fake_runner(args, **kwargs):
+            calls.append(args)
+            if args[0] == "ffprobe":
+                return type("Result", (), {"returncode": 0,
+                    "stdout": json.dumps({"streams": [
+                        {"codec_type": "video", "codec_name": "h264",
+                         "width": 1280, "height": 720, "pix_fmt": "yuv420p",
+                         "avg_frame_rate": "24/1"}]}).encode()})()
+            if args[0] == "ffmpeg":
+                self.assertEqual(args[:3], ["ffmpeg", "-nostdin", "-hide_banner"])
+                self.assertEqual(kwargs.get("check"), False)
+                (Path(args[-1])).write_bytes(b"merged MP4 for mock")
+                return type("Result", (), {"returncode": 0})()
+            self.fail("Unexpected subprocess")
+        result = dv.assemble_movie(plan, result_dir, movie, runner=fake_runner)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["clips"], 2)
+        self.assertEqual(result["gpu_calls"], 0)
+        self.assertEqual(movie.read_bytes(), b"merged MP4 for mock")
+        self.assertEqual(sum(x[0] == "ffmpeg" for x in calls), 1)
+        with self.assertRaisesRegex(dv.PlanError, "new .mp4"):
+            dv.assemble_movie(plan, result_dir, movie, runner=fake_runner)
+
+    def test_assemble_rejects_hash_mismatch_without_running_ffmpeg(self):
+        plan, result_dir = self._archive_shots()
+        (result_dir / "02" / "000_02.mp4").write_bytes(b"tampered")
+        with self.assertRaisesRegex(dv.PlanError, "checksum"):
+            dv.assemble_movie(plan, result_dir, self.root / "bad.mp4",
+                runner=lambda *_args, **_kwargs: self.fail("Should not run ffprobe/ffmpeg"))
+
+    def test_assemble_rejects_missing_clip_or_symlink(self):
+        plan, result_dir = self._archive_shots()
+        (result_dir / "01" / "000_01.mp4").unlink()
+        with self.assertRaisesRegex(dv.PlanError, "path is invalid"):
+            dv.archived_clips(plan, result_dir)
+        (result_dir / "01" / "000_01.mp4").symlink_to(
+            result_dir / "02" / "000_02.mp4")
+        with self.assertRaisesRegex(dv.PlanError, "path is invalid"):
+            dv.archived_clips(plan, result_dir)
+
+    def test_assemble_rejects_incompatible_streams(self):
+        plan, result_dir = self._archive_shots()
+        def fake_runner(args, **_kwargs):
+            if args[0] == "ffmpeg":
+                self.fail("Cannot concatenate incompatible streams")
+            width = 1280 if "01/" in args[-1] else 1920
+            return type("Result", (), {"returncode": 0,
+                "stdout": json.dumps({"streams": [{
+                    "codec_type": "video", "codec_name": "h264",
+                    "width": width, "height": 720
+                }]}).encode()})()
+        with self.assertRaisesRegex(dv.PlanError, "streams differ"):
+            dv.assemble_movie(plan, result_dir, self.root / "bad.mp4",
+                              runner=fake_runner)
+
+    def test_assemble_rejects_corrupt_probe(self):
+        plan, result_dir = self._archive_shots()
+        def fake_runner(args, **_kwargs):
+            return type("Result", (), {"returncode": 0, "stdout": b"not json"})()
+        with self.assertRaisesRegex(dv.PlanError, "invalid stream metadata"):
+            dv.assemble_movie(plan, result_dir, self.root / "bad.mp4",
+                              runner=fake_runner)
 
     def _json_file(self, rows):
         path = self.root / "input.json"
