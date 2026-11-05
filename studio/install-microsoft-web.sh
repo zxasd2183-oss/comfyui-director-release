@@ -18,8 +18,10 @@ systemctl is-active --quiet nginx || die "Nginx must be active"
    && -f "$SRC/promote_microsoft_nginx.py" ]] || die "Missing V0.9.1 source files"
 [[ -f /etc/nginx/snippets/director-studio.conf ]] || \
   die "First deploy the existing protected /studio/ Basic Auth route"
+ROUTE_ALREADY_MODERN=0
 if cmp -s /etc/nginx/snippets/director-studio.conf \
     "$SRC/nginx-jipite-studio-microsoft.conf"; then
+  ROUTE_ALREADY_MODERN=1
   [[ -f "$DROPIN" ]] || die "Microsoft route enabled without service guard; manual recovery required"
 elif ! cmp -s /etc/nginx/snippets/director-studio.conf \
     "$SRC/nginx-jipite-studio.conf"; then
@@ -38,7 +40,9 @@ fi
 python3 -m unittest discover -s "$SRC/tests" -p 'test_*.py' -q
 
 # Upgrade private app WITHOUT changing Basic Auth, GPU, or Nginx.
-bash "$SRC/upgrade-v09.sh"
+if ! bash "$SRC/upgrade-v09.sh"; then
+  die "Studio version upgrade did not complete; inspect its rollback output"
+fi
 if [[ ! -x "$VENV/bin/python" ]]; then
     python3 -m venv "$VENV" || die "python3-venv missing; install it before retry"
 fi
@@ -73,26 +77,48 @@ restore(){
   local code="$1"
   trap - EXIT
   if (( ! COMMITTED )); then
-    echo "Microsoft SSO promotion failed; keeping/reverting to Basic Auth." >&2
-    if (( NEW_DROPIN )); then
-      rm -f "$DROPIN"
+    if (( ROUTE_ALREADY_MODERN )); then
+      echo "Microsoft Studio upgrade incomplete; EXISTING Microsoft Nginx route retained." >&2
+      echo "No Basic Auth downgrade: the signed-in owner gate must stay fail-closed." >&2
+    else
+      echo "Microsoft first-time promotion incomplete; protected Basic Auth retained/restored." >&2
     fi
-    systemctl daemon-reload || :
-    systemctl restart director-studio || :
-    echo "If Nginx has an unexpected partial state, check its snippet locally." >&2
+    if (( NEW_DROPIN )); then
+      rm -f "$DROPIN" || :
+      systemctl daemon-reload || :
+      systemctl restart director-studio || :
+      echo "Temporary Microsoft credential drop-in removed after failed first-time promotion." >&2
+    else
+      echo "Existing Microsoft systemd credential and routes were not altered." >&2
+    fi
+    echo "Inspect the redacted Studio diagnostics and service health, not credentials." >&2
   fi
   exit "$code"
 }
 trap 'restore $?' EXIT
 systemctl daemon-reload
-systemctl restart director-studio
-systemctl is-active --quiet director-studio || die "SSO Studio service failed"
+if (( NEW_DROPIN )); then
+  systemctl restart director-studio || die "New Microsoft owner service restart failed"
+else
+  # upgrade-v09.sh has already restarted Studio using the existing drop-in.
+  # Avoid a second restart that can race with probes or evict live sessions.
+  echo "PASS: existing Microsoft service credentials reused; redundant restart skipped"
+fi
+systemctl is-active --quiet director-studio || die "SSO Studio service inactive"
 
-# A successful Microsoft redirect and a denied anonymous snapshot are both
-# REQUIRED before removing Nginx Basic Auth. No need to submit real tokens.
-python3 "$SRC/promote_microsoft_nginx.py"
+# Both first-time and already-Microsoft installations must pass the same
+# fail-closed checks. The Python probe retries only startup races, not a
+# misconfigured or publicly open API.
+if ! python3 "$SRC/promote_microsoft_nginx.py"; then
+  die "Microsoft auth gate verification failed; existing protection preserved"
+fi
 
+# This line must be reached for BOTH existing and newly promoted routes.
+# Never mark committed until the 401+302 gate checks have succeeded.
 COMMITTED=1
+if (( ROUTE_ALREADY_MODERN )); then
+  echo "PASS: reused protected Microsoft route; installation committed"
+fi
 echo "SUCCESS: Director Studio Microsoft owner SSO gate enabled."
 echo "URL: https://jipite.borealos.cn/studio/"
 echo "Only your original Jipite Microsoft owner subject is authorized."
