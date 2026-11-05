@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import secrets
 import threading
 import time
@@ -25,7 +26,9 @@ from production_core import (
     open_db as open_production, dashboard_from_path,
     episode_detail_from_path, ProductionError
 )
-from production_web import create_from_web, ProductionWebError
+from production_web import create_from_web, ProductionWebError, operator_from_verified_session
+from visual_library import (VisualError, MAX_POST_BYTES, prepare_schema,
+                            list_visuals, upload_visual, select_visual, read_visual)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -122,8 +125,8 @@ class StudioServer(ThreadingHTTPServer):
         with closing(connect(self.db_path)):
             pass
         # Independent V0.9 database; legacy shot ledger is never rewritten.
-        with closing(open_production(self.production_db_path)):
-            pass
+        with closing(open_production(self.production_db_path)) as db:
+            prepare_schema(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -327,6 +330,31 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(400,{"ok":False,"reason":"invalid_episode_query"})
             except Exception:
                 return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
+        if path in ("/api/v1/production/visuals", "/api/v1/production/visual"):
+            if not secured:
+                return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                fields = {"project","episode"} if path.endswith("/visuals") else {"project","episode","id"}
+                pairs = parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if len(pairs)!=len(fields) or set(k for k,_ in pairs)!=fields:
+                    raise VisualError("invalid_visual_query")
+                query = dict(pairs)
+                if path.endswith("/visuals"):
+                    return self.reply(200,list_visuals(self.server.production_db_path,
+                                                       query["project"],query["episode"]))
+                mime,payload=read_visual(self.server.production_db_path,
+                    query["project"],query["episode"],query["id"])
+                self.send_response(200)
+                self.common_headers(mime)
+                self.send_header("Content-Length",str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except (VisualError,ProductionError) as exc:
+                return self.reply(getattr(exc,"status",400),
+                                  {"ok":False,"reason":str(exc)})
+            except (OSError,sqlite3.Error):
+                return self.reply(503,{"ok":False,"reason":"visual_storage_unavailable"})
         if path != "/api/v1/stream":
             return self.reply(404, {"ok": False, "reason": "not_found"})
         self.send_response(200)
@@ -400,9 +428,11 @@ class StudioHandler(BaseHTTPRequestHandler):
             if session is None:
                 return self.reply(401,{"ok":False,"reason":"microsoft_login_required"})
         if path not in ("/api/v1/action", "/auth/logout",
-                        "/api/v1/production/action"):
+                        "/api/v1/production/action",
+                        "/api/v1/production/visual/upload",
+                        "/api/v1/production/visual/select"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
-        if path=="/api/v1/production/action" and not secured:
+        if path.startswith("/api/v1/production/") and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -430,11 +460,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
         if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
             return self.reply(415, {"ok": False, "reason": "json_only"})
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            return self.reply(400, {"ok": False, "reason": "invalid_content_length"})
-        if not 1 <= length <= MAX_BODY:
+        raw_len=self.headers.get("Content-Length","")
+        if (self.headers.get("Transfer-Encoding") is not None
+                or not raw_len.isascii() or not raw_len.isdigit() or len(raw_len)>9):
+            return self.reply(400,{"ok":False,"reason":"invalid_content_length"})
+        length=int(raw_len)
+        max_allowed=MAX_POST_BYTES if path.endswith("/visual/upload") else MAX_BODY
+        if not 1 <= length <= max_allowed:
             return self.reply(413, {"ok": False, "reason": "invalid_request_size"})
         try:
             data = json.loads(self.rfile.read(length))
@@ -448,6 +480,22 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path in ("/api/v1/production/visual/upload",
+                    "/api/v1/production/visual/select"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                if path.endswith("/upload"):
+                    out=upload_visual(self.server.production_db_path,fields,actor)
+                    return self.reply(201,out)
+                out=select_visual(self.server.production_db_path,fields,actor)
+                return self.reply(200,out)
+            except (VisualError,ProductionWebError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionError,ValueError):
+                return self.reply(400,{"ok":False,"reason":"invalid_visual_fields"})
+            except (OSError,sqlite3.Error):
+                return self.reply(503,{"ok":False,"reason":"visual_storage_unavailable"})
         if path=="/api/v1/production/action":
             try:
                 result=create_from_web(
