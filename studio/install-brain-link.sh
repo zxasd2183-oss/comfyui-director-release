@@ -53,8 +53,11 @@ python3 -m unittest discover -s "$SRC/tests" -p 'test_*.py' -q
 
 # Studio uses its existing backup+rollback installer. This may invalidate
 # existing browser sessions when systemd restarts the service.
-bash "$SRC/install-microsoft-web.sh"
-systemctl is-active --quiet director-studio || die "Studio upgrade failed"
+echo "STEP: verifying/upgrading existing Microsoft Studio route (no changes to GPU)"
+if ! bash "$SRC/install-microsoft-web.sh"; then
+    die "Microsoft Studio sub-installer failed; Hub remains untouched. Check Studio gate diagnostics."
+fi
+systemctl is-active --quiet director-studio || die "Studio upgrade completed but Studio is inactive"
 
 # Key lives ONLY in /etc/director-studio, root-owned and mode 0600.
 python3 - "$KEY" <<'PY'
