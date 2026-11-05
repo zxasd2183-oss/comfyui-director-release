@@ -248,6 +248,25 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["effect"], "operator_ledger_only")
 
+    def test_v09_production_dashboard_is_read_only_on_http(self):
+        status, _, value = self.call("GET", "/api/v1/production")
+        self.assertEqual(status, 200)
+        self.assertEqual(value["version"], "0.9.0")
+        self.assertEqual(value["counts"]["projects"], 0)
+        self.assertTrue(value["audit_chain_verified"])
+        status, _, snapshot = self.call("GET", "/api/v1/snapshot")
+        self.assertEqual(status, 200)
+        self.assertEqual(snapshot["production"]["mode"], "read_only_production_summary")
+        _, _, bootstrap = self.call("GET", "/api/v1/bootstrap")
+        status, _, _ = self.call("POST", "/api/v1/production",
+            {"csrf": bootstrap["csrf"], "action": "create-project",
+             "project_id": "INJECTED"},
+            {"Origin": "http://127.0.0.1:8900",
+             "Content-Type": "application/json"})
+        self.assertEqual(status, 404)
+        status, _, again = self.call("GET", "/api/v1/production")
+        self.assertEqual(again["counts"]["projects"], 0)
+
     def test_static_frontend_has_no_remote_scripts(self):
         for path in ("/","/studio.css","/studio.js"):
             code,_,content=self.call("GET",path)
