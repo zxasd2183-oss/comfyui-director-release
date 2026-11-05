@@ -9,7 +9,7 @@
 - GPU/ComfyUI（执行器）：与新读写路径隔离，仍须按原有吉皮提生物识别审批。
 
 流程：
-ChatGPT → MCP → Director Hub (127.0.0.1:8896)
+ChatGPT → MCP → Director Hub (127.0.0.1:8898)
 → HMAC-SHA256 签名 POST → Studio (127.0.0.1:8900/api/v1/brain)
 → production.sqlite → https://jipite.borealos.cn/studio/
 
