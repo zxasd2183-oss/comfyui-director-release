@@ -18,6 +18,8 @@ from tabtools13 import GlacierTabTools13
 from mac_chrome_adapter import MacChrome14
 from mac_desktop15 import MacDesktop15
 from glacier_productivity16 import GlacierProductivity16
+from glacier_workspaces17 import GlacierWorkspaces17
+from glacier_downloads17 import GlacierDownloads17
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -67,13 +69,13 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.16.0")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.17.0")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -98,6 +100,8 @@ class Browser(GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools1
   self.restore_startup_session()
   self.setup_desktop15()
   self.setup_productivity16(bar,mac=True)
+  self.setup_workspaces17(bar,appdir(),dpapi)
+  self.setup_downloads17(bar,appdir(),dpapi)
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -109,10 +113,12 @@ class Browser(GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools1
   self.attach_page_security(v)
   v.setHtml(self.home_markup(),QUrl("about:blank"));self.open_startup_home(v)
   self.refresh_tabs14()
+  self._workspace_register17(v)
   return v
  def close_tab(self,i):
   v=self.tabs.widget(i)
   if v is None:return
+  self._workspace_forget17(v)
   self.remember_recent15(v.url().toString())
   self.remember_closed_tab(v.url().toString())
   self.cleanup_closed13(v)
@@ -132,6 +138,8 @@ class Browser(GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools1
   self.current().setUrl(QUrl(url))
  def closeEvent(self,event):
   self.close_satellite_windows()
+  self.flush_workspaces17()
+  self.flush_downloads17()
   self._autosave_timer15.stop()
   self.session_timer.stop();self.save_session()
   if self.proc and self.proc.poll() is None:self.proc.terminate()
