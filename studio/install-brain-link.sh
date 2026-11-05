@@ -45,7 +45,7 @@ fi
 
 # Run all offline suites before touching active Hub or Studio. No real GPU/power.
 python3 -m unittest discover -s "$SRC/tests" -p 'test_*.py' -q
-python3 -m unittest discover -s "$VPS/tests" -p 'test_*.py' -q
+"$PYTHON" -m unittest discover -s "$VPS/tests" -p 'test_*.py' -q
 "$PYTHON" -m py_compile "$VPS/hub_app.py" "$VPS/hub_rpc.py" \
     "$VPS/hub_brain.py" "$SRC/studio_server.py" "$SRC/studio_brain.py"
 
