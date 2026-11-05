@@ -189,7 +189,10 @@ class StudioHandler(BaseHTTPRequestHandler):
             if path == "/auth/callback":
                 try:
                     pairs=parse_qsl(url.query, keep_blank_values=True, max_num_fields=4)
-                    if len(pairs)!=2 or len({k for k,v in pairs})!=2:
+                    names=[key for key,_ in pairs]
+                    if (not 2 <= len(pairs) <= 3 or len(set(names)) != len(names)
+                            or not {"state","code"}.issubset(names)
+                            or set(names)-{"state","code","session_state"}):
                         raise IdentityError("invalid_callback")
                     query=dict(pairs)
                     state=cookies(self.headers.get("Cookie","")).get(COOKIE_STATE)
