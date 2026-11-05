@@ -370,7 +370,7 @@ def decide_exception(db, exception_id, decision, expected_revision,
     if type(expected_revision) is not int or expected_revision < 1:
         raise ProductionError("invalid_revision")
     with transaction(db):
-        row = db.execute("SELECT status,revision FROM exceptions WHERE exception_id=?",
+        row = db.execute("SELECT status,revision,bound_asset_id FROM exceptions WHERE exception_id=?",
                          (xid,)).fetchone()
         if row is None:
             raise ProductionError("exception_not_found")
@@ -378,6 +378,20 @@ def decide_exception(db, exception_id, decision, expected_revision,
             raise ProductionError("stale_exception_revision")
         if decision == "approve" and row["status"] != "draft":
             raise ProductionError("only_draft_can_be_approved")
+        if decision == "approve":
+            if not row["bound_asset_id"]:
+                raise ProductionError("exception_version_binding_required")
+            version = db.execute("""
+                SELECT original.version, MAX(latest.version) AS newest
+                FROM assets AS original
+                JOIN assets AS latest
+                  ON original.project_id=latest.project_id
+                 AND original.kind=latest.kind
+                 AND original.subject_id=latest.subject_id
+                WHERE original.asset_id=?
+            """, (row["bound_asset_id"],)).fetchone()
+            if version is None or version["newest"] is None or version["version"] != version["newest"]:
+                raise ProductionError("stale_bound_asset_version")
         if decision == "revoke" and row["status"] != "approved":
             raise ProductionError("only_approved_can_be_revoked")
         target = "approved" if decision == "approve" else "revoked"
@@ -419,5 +433,6 @@ def dashboard(db):
 
 
 def dashboard_from_path(path):
-    with open_db(path,initialize=False) as db:
+    from contextlib import closing
+    with closing(open_db(path,initialize=False)) as db:
         return dashboard(db)
