@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -54,8 +55,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def probe_backend():
-    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+class BackendStarting(RuntimeError):
+    """Transient local startup/restart race; never bypass the SSO gate."""
+
+
+def _probe_backend_once(opener=None):
+    opener = opener or urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), NoRedirect())
     headers={
         "Host":"127.0.0.1:8900",
         "X-Forwarded-Proto":"https",
@@ -68,6 +74,8 @@ def probe_backend():
         opener.open(req,timeout=8)
         raise RuntimeError("Studio allowed anonymous read; refusing to remove Basic Auth")
     except urllib.error.HTTPError as exc:
+        if exc.code in (502,503,504):
+            raise BackendStarting("studio_gate_initializing") from None
         if exc.code!=401:
             raise RuntimeError("Studio did not deny anonymous API access")
     req=urllib.request.Request(base+"/auth/start",headers=headers)
@@ -75,6 +83,8 @@ def probe_backend():
         opener.open(req,timeout=10)
         raise RuntimeError("Microsoft authorization redirect absent")
     except urllib.error.HTTPError as exc:
+        if exc.code in (502,503,504):
+            raise BackendStarting("studio_login_initializing") from None
         redirect=exc.headers.get("Location","")
         trusted=(
             "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?",
@@ -82,6 +92,29 @@ def probe_backend():
         )
         if exc.code!=302 or not any(redirect.startswith(prefix) for prefix in trusted):
             raise RuntimeError("Microsoft authorization flow not available")
+
+
+def probe_backend(*, attempts=9, delay=0.5, opener=None, sleep=time.sleep):
+    """Retry only temporary local transport/startup failures, fail closed.
+
+    Every successful probe must still confirm BOTH HTTP 401 (anonymous
+    production API) and a 302 redirect to the pinned Microsoft endpoint.
+    Errors from unexpected 200/403/other redirects are never retried.
+    """
+    if not isinstance(attempts,int) or not 1<=attempts<=12:
+        raise ValueError("invalid_probe_attempts")
+    for index in range(attempts):
+        try:
+            _probe_backend_once(opener=opener)
+            if index:
+                print("PASS: Microsoft auth gate ready after startup retries")
+            return
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                BackendStarting) as exc:
+            if index+1==attempts:
+                raise RuntimeError(
+                    "studio_auth_gate_not_ready_after_retries") from None
+            sleep(min(delay * (index+1),2.0))
 
 
 def promote():
@@ -93,8 +126,10 @@ def promote():
     modern=MS_TEMPLATE.read_bytes()
     current=SNIPPET.read_bytes()
     if current==modern:
-        print("Studio Microsoft route already configured; verified backend gate")
+        # Idempotent re-use: do not mutate the existing protected Nginx route.
+        # Still require a healthy fail-closed identity backend before success.
         probe_backend()
+        print("PASS: existing Microsoft Studio route retained; gate verified")
         return
     if current!=basic:
         raise RuntimeError("unexpected_studio_nginx_configuration_refusing_override")
