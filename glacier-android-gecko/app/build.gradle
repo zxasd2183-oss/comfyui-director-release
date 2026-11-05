@@ -2,6 +2,16 @@ plugins {
     id 'com.android.application'
 }
 
+def requiredSigningEnvironment = [
+    'GLACIER_ANDROID_KEYSTORE_FILE',
+    'GLACIER_ANDROID_SIGNING_STORE_PASSWORD',
+    'GLACIER_ANDROID_SIGNING_KEY_ALIAS',
+    'GLACIER_ANDROID_SIGNING_KEY_PASSWORD'
+]
+def readyToSign = requiredSigningEnvironment.every { key ->
+    System.getenv(key) != null && !System.getenv(key).trim().isEmpty()
+}
+
 android {
     namespace 'cn.borealos.glacier.geckopreview'
     compileSdk 37
@@ -10,16 +20,28 @@ android {
         applicationId 'cn.borealos.glacier.geckopreview'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '0.1.2-gecko-vless'
+        versionCode 4
+        versionName '0.1.3'
         ndk {
             abiFilters 'arm64-v8a', 'x86_64'
         }
     }
 
+    signingConfigs {
+        glacierStable {
+            if (readyToSign) {
+                storeType 'PKCS12'
+                storeFile file(System.getenv('GLACIER_ANDROID_KEYSTORE_FILE'))
+                storePassword System.getenv('GLACIER_ANDROID_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('GLACIER_ANDROID_SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('GLACIER_ANDROID_SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            if (readyToSign) signingConfig signingConfigs.glacierStable
         }
         debug {
             minifyEnabled false
@@ -42,4 +64,5 @@ dependencies {
     // Pin the verified October 2026 stable GeckoView build, not a moving nightly.
     implementation 'org.mozilla.geckoview:geckoview:159.0.20261022150525'
     testImplementation 'junit:junit:4.13.2'
+    implementation 'androidx.core:core:1.19.1'
 }
