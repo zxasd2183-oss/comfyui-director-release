@@ -133,6 +133,48 @@ class HubVisualSyncHTTPTests(unittest.TestCase):
         self.assertEqual(detail["shot_count"],1)
         self.assertEqual(detail["outline"]["revision"],1)
 
+    def test_different_chatgpt_file_ids_same_bytes_do_not_create_versions(self):
+        first=self.body("file_00000abcde123456")
+        second=self.body("file_00000abcde654321")
+        code,one=self.make_call(first)
+        self.assertEqual(code,201,one)
+        code,two=self.make_call(second)
+        self.assertEqual(code,200,two)
+        self.assertTrue(two["unchanged"])
+        self.assertEqual(two["visual_id"],one["visual_id"])
+        self.assertEqual(two["version"],1)
+        with closing(prod.open_db(self.app.production_db_path,initialize=False)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_media").fetchone()[0],1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_import_sources").fetchone()[0],1)
+            self.assertTrue(prod.verify_chain(db))
+
+    def test_legacy_duplicate_images_reuse_oldest_visual_without_deletion(self):
+        browser={"project_id":"WaitingOffice","episode_id":"EP01",
+                 "kind":"character","subject_id":"CHAR_GEM","filename":"Gemini.png",
+                 "image_base64":base64.b64encode(PNG).decode()}
+        a=visuals.upload_visual(self.app.production_db_path,browser,"legacy")
+        b=visuals.upload_visual(self.app.production_db_path,browser,"legacy")
+        self.assertNotEqual(a["visual_id"],b["visual_id"])
+        status,out=self.make_call(self.body("file_00000abcde123456"))
+        self.assertEqual(status,200,out)
+        self.assertTrue(out["unchanged"])
+        self.assertEqual(out["visual_id"],a["visual_id"])
+        with closing(prod.open_db(self.app.production_db_path,initialize=False)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_media").fetchone()[0],2)
+            self.assertTrue(prod.verify_chain(db))
+
+    def test_changed_image_with_new_source_id_creates_new_version(self):
+        code,a=self.make_call(self.body("file_00000abcde123456"))
+        self.assertEqual(code,201,a)
+        changed=self.body("file_00000abcde654321")
+        raw=bytearray(PNG)
+        raw[-2] ^= 1
+        changed["image_base64"]=base64.b64encode(bytes(raw)).decode()
+        code,b=self.make_call(changed)
+        self.assertEqual(code,201,b)
+        self.assertEqual(b["version"],2)
+        self.assertNotEqual(a["visual_id"],b["visual_id"])
+
     def test_concurrent_same_file_only_one_visual_and_source(self):
         with ThreadPoolExecutor(max_workers=4) as pool:
             results=list(pool.map(lambda _:self.make_call(self.body()),range(4)))
