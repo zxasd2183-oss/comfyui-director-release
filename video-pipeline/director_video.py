@@ -232,7 +232,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise PlanError("ComfyUI attempted an unexpected redirect")
 
 
-OPENER = urllib.request.build_opener(NoRedirect)
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
 
 
 def comfy_json(endpoint, body=None):
@@ -247,6 +247,53 @@ def comfy_json(endpoint, body=None):
     if len(data) > MAX_JSON:
         raise PlanError("ComfyUI returned oversized JSON")
     return json.loads(data)
+
+
+
+# V0.7: validate against the real GPU installation without submitting a prompt.
+# ComfyUI exposes a small per-node schema endpoint, avoiding the often large
+# aggregate /object_info response. No dynamic hostnames or user-provided URLs.
+NODE_CLASS = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,127}$")
+MAX_NODE_TYPES = 128
+
+
+def preflight_plan(plan, client=None):
+    """Read-only node-presence + idle queue preflight; fail closed on uncertainty.
+
+    ComfyUI has no atomic 'queue-if-idle' API. This check reduces accidental
+    overlap but cannot exclude jobs submitted by another client afterward.
+    """
+    client = comfy_json if client is None else client
+    if not isinstance(plan, dict) or not isinstance(plan.get("jobs"), list) or not plan["jobs"]:
+        raise PlanError("Invalid video plan")
+    classes = set()
+    for job in plan["jobs"]:
+        graph = validate_workflow(job.get("graph"))
+        for node in graph.values():
+            name = node["class_type"]
+            if not NODE_CLASS.fullmatch(name):
+                raise PlanError("Unsafe or unsupported node class name")
+            classes.add(name)
+    if len(classes) > MAX_NODE_TYPES:
+        raise PlanError("Too many distinct ComfyUI node classes")
+    for name in sorted(classes):
+        schema = client("/object_info/" + urllib.parse.quote(name, safe=""))
+        if (not isinstance(schema, dict) or name not in schema or
+                not isinstance(schema[name], dict) or
+                not isinstance(schema[name].get("input"), dict)):
+            raise PlanError("Required node class is unavailable: " + name)
+    queue = client("/queue")
+    if not isinstance(queue, dict):
+        raise PlanError("ComfyUI queue status unavailable")
+    running, pending = queue.get("queue_running"), queue.get("queue_pending")
+    if not isinstance(running, list) or not isinstance(pending, list):
+        raise PlanError("ComfyUI queue response has invalid shape")
+    if len(running) or len(pending):
+        raise PlanError("ComfyUI queue is not idle; no new generation submitted")
+    return {"ok": True, "node_types_checked": len(classes),
+            "queue_running": 0, "queue_pending": 0,
+            "shot_count": len(plan["jobs"]),
+            "generation_submitted": False}
 
 
 def submit_one(con, job):
@@ -387,10 +434,11 @@ def run_cli(argv=None):
     prepare.add_argument("--prompts", help="Optional markdown per-shot prompt file")
     prepare.add_argument("--fps", type=int, default=24)
     prepare.add_argument("--out", required=True)
-    for cmd in ("submit", "collect", "status"):
+    for cmd in ("preflight", "submit", "collect", "status"):
         item = sub.add_parser(cmd)
         item.add_argument("--plan", required=True)
-        item.add_argument("--db", required=True)
+        if cmd != "preflight":
+            item.add_argument("--db", required=True)
         if cmd == "submit":
             item.add_argument("--execute", action="store_true")
             item.add_argument("--acknowledge-gpu-cost", action="store_true")
@@ -406,6 +454,9 @@ def run_cli(argv=None):
         print(f"Prepared {plan['shot_count']} shots, {plan['total_seconds']} seconds; NO GPU call")
         return 0
     plan = load_plan(args.plan)
+    if args.command == "preflight":
+        print(json.dumps(preflight_plan(plan), ensure_ascii=False, sort_keys=True))
+        return 0
     if args.command == "submit" and not (args.execute and args.acknowledge_gpu_cost):
         print("DRY RUN: no tasks submitted. Need BOTH --execute and --acknowledge-gpu-cost")
         return 0
@@ -414,6 +465,8 @@ def run_cli(argv=None):
     con = db_open(args.db, plan)
     try:
         if args.command == "submit":
+            checked = preflight_plan(plan)
+            print("Preflight OK: %d node types present, ComfyUI queue idle" % checked["node_types_checked"])
             attempted = 0
             for job in plan["jobs"]:
                 state = con.execute("SELECT state FROM runs WHERE shot_id=?",
