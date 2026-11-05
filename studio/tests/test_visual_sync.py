@@ -24,6 +24,9 @@ import visual_library as visuals
 PNG=bytes.fromhex(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
   "0000000b49444154789c636000020000050001a5f645400000000049454e44ae426082")
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"vps-control"))
+import hub_file_sync as hub_transfer
+
 SECRET=b"t"*32
 PATH="/api/v1/brain/visual"
 
@@ -91,6 +94,44 @@ class HubVisualSyncHTTPTests(unittest.TestCase):
             row=db.execute("SELECT body,revision FROM episode_outlines").fetchone()
             self.assertEqual(tuple(row),("V1 preserved",1))
             self.assertTrue(prod.verify_chain(db))
+
+    def test_full_hub_fileparam_to_studio_to_brain_readback(self):
+        # Fake only the ephemeral internet download, exercise the REAL Hub
+        # JSON+HMAC and Studio HTTP upload with isolated production.sqlite.
+        ref={"file_id":"opaque-file-qwen-1",
+             "download_url":"https://oaisdmntprwestcentralus.blob.core.windows.net/"
+                            "container/Qwen.png?sig=NOT_LOGGED",
+             "file_name":"Qwen.png","mime_type":"image/png"}
+        class FakeFileReply:
+            status=200
+            def geturl(self):return ref["download_url"]
+            def read(self,n):return PNG[:n]
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+        class FakeDownload:
+            def open(self,req,timeout):return FakeFileReply()
+        endpoint="http://127.0.0.1:"+str(self.app.server_port)+"/api/v1/brain/visual"
+        with patch.object(hub_transfer,"_check_public_resolve",
+                          return_value=("8.8.8.8",)), \
+             patch.object(hub_transfer,"secret_from_systemd",return_value=SECRET), \
+             patch.object(hub_transfer,"MEDIA_URL",endpoint):
+            first=hub_transfer.sync_chatgpt_visual(
+                "WaitingOffice","EP01","character","CHAR_QWEN",ref,
+                opener=FakeDownload())
+            again=hub_transfer.sync_chatgpt_visual(
+                "WaitingOffice","EP01","character","CHAR_QWEN",ref,
+                opener=FakeDownload())
+        self.assertTrue(first["ok"],first)
+        self.assertEqual(first["visual_id"],again["visual_id"])
+        self.assertTrue(again["unchanged"])
+        detail=brain.execute(self.app.production_db_path,"get_production_episode",
+                             {"project_id":"WaitingOffice","episode_id":"EP01"})
+        self.assertEqual(detail["visual_count"],1)
+        self.assertEqual(detail["visuals"][0]["subject_id"],"CHAR_QWEN")
+        self.assertEqual(visuals.read_visual(
+            self.app.production_db_path,"WaitingOffice","EP01",first["visual_id"])[1],PNG)
+        self.assertEqual(detail["shot_count"],1)
+        self.assertEqual(detail["outline"]["revision"],1)
 
     def test_concurrent_same_file_only_one_visual_and_source(self):
         with ThreadPoolExecutor(max_workers=4) as pool:
