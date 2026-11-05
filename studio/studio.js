@@ -201,6 +201,17 @@
       const r=await fetch("./api/v1/bootstrap",{cache:"no-store"});
       if(!r.ok)throw Error("No operator access");
       const b=await r.json(); csrf=b.csrf;
+      if(b.mode==="microsoft_owner"){
+        $("logoutMicrosoft").hidden=false;
+        $("logoutMicrosoft").addEventListener("click",async()=>{
+          if(!csrf)return;
+          try{
+            const result=await fetch("./auth/logout",{
+              method:"POST",headers:{"X-CSRF-Token":csrf},cache:"no-store"});
+            if(result.status===204)window.location.assign("./auth/start");
+          }catch(_error){$("streamLabel").textContent="退出登录失败，请刷新页面";}
+        });
+      }
       await refresh();
       const es=new EventSource("./api/v1/stream");
       es.addEventListener("snapshot",event=>{
