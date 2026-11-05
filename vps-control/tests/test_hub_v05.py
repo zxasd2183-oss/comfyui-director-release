@@ -103,6 +103,7 @@ class HubV05Tests(unittest.TestCase):
         self.assertEqual(body["params"]["name"], "get_queue_summary")
         self.assertEqual(body["params"]["arguments"], {})
         self.assertEqual(req.get_method(), "POST")
+        self.assertEqual(req.get_header("Host"), "127.0.0.1:8790")
 
     def test_power_write_only_creates_existing_request(self):
         mock = FakeOpener({"ok": True, "state": "pending",
@@ -111,6 +112,7 @@ class HubV05Tests(unittest.TestCase):
         self.assertEqual(data["state"], "pending")
         req = mock.requests[0][0]
         self.assertEqual(req.full_url, "http://127.0.0.1:8892/mcp")
+        self.assertEqual(req.get_header("Host"), "127.0.0.1:8892")
         self.assertEqual(json.loads(req.data)["params"]["name"], "request_gpu_start")
 
     def test_upstream_error_and_sse_misparse_fails_closed(self):
