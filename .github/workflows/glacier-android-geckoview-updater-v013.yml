@@ -105,7 +105,7 @@ jobs:
           tag='glacier-android-gecko-debug-v0.1.3'
           apk='glacier-android-gecko/GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64-debug.apk'
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$apk" --clobber
+            echo 'Debug preview already published; refusing same-version resigned replacement.'
           else
             gh release create "$tag" "$apk" \
               --target experiment/glacier-android-geckoview-updater-v013 \
@@ -130,6 +130,29 @@ jobs:
             echo 'ready=false' >> "$GITHUB_OUTPUT"
             echo 'No Glacier-specific signing secrets: signed release and auto-update channel intentionally skipped.' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Rehearse release signing using disposable key (never published)
+        if: steps.signer.outputs.ready != 'true'
+        run: |
+          set -euo pipefail
+          export GLACIER_ANDROID_SIGNING_STORE_PASSWORD='disposable-ci-only-not-a-real-secret'
+          export GLACIER_ANDROID_SIGNING_KEY_PASSWORD="$GLACIER_ANDROID_SIGNING_STORE_PASSWORD"
+          export GLACIER_ANDROID_SIGNING_KEY_ALIAS='glacier-disposable-ci'
+          export GLACIER_ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/glacier-disposable-ci.p12"
+          keytool -genkeypair -storetype PKCS12 \
+            -keystore "$GLACIER_ANDROID_KEYSTORE_FILE" \
+            -alias "$GLACIER_ANDROID_SIGNING_KEY_ALIAS" \
+            -keyalg RSA -keysize 3072 -validity 2 \
+            -dname 'CN=CI disposable key - NEVER PUBLISH' \
+            -storepass:env GLACIER_ANDROID_SIGNING_STORE_PASSWORD \
+            -keypass:env GLACIER_ANDROID_SIGNING_KEY_PASSWORD -noprompt
+          gradle -p glacier-android-gecko :app:assembleRelease --no-daemon
+          test -s 'glacier-android-gecko/app/build/outputs/apk/release/app-release.apk'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose \
+            'glacier-android-gecko/app/build/outputs/apk/release/app-release.apk' >/dev/null
+          echo 'PASS: Android release signing with disposable test key (APK not published)' >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$GLACIER_ANDROID_KEYSTORE_FILE"
+          rm -f 'glacier-android-gecko/app/build/outputs/apk/release/app-release.apk'
 
       - name: Prepare dedicated signed Android release keystore
         if: steps.signer.outputs.ready == 'true'
