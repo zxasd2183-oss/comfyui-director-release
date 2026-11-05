@@ -402,7 +402,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             except Exception:
                 return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
         try:
-            with connect(self.server.db_path) as db:
+            with closing(connect(self.server.db_path)) as db:
                 out = decide(db, data.get("action"), shot_id=data.get("shot_id"),
                              revision=data.get("revision"), reason=data.get("reason", ""))
         except StudioError as exc:
