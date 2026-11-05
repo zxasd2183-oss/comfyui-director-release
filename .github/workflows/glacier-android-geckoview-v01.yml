@@ -28,7 +28,7 @@ jobs:
       - name: Use runner Android SDK and install required platform
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
-          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-35' 'build-tools;35.0.0'
+          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-37' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
