@@ -28,6 +28,34 @@ MAX_BODY = 8192
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'")
 
+# Fixed vocabulary only. Never log arbitrary keys because an attacker can put
+# tokens, newlines or PII in an OAuth query *parameter name* as well as a value.
+SAFE_CALLBACK_FIELDS = frozenset({
+    "code", "state", "session_state", "error", "error_description",
+    "error_uri", "iss", "client_info",
+})
+
+
+def callback_fields_for_log(raw_query):
+    """Bounded diagnostic of parameter NAMES only, never any OAuth values."""
+    if not isinstance(raw_query, str) or len(raw_query) > 16384:
+        return "param_names=oversized param_count=unknown unknown_count=unknown duplicates=unknown"
+    try:
+        pairs = parse_qsl(raw_query, keep_blank_values=True, max_num_fields=32)
+    except (ValueError, UnicodeError):
+        return "param_names=too_many param_count=over_limit unknown_count=unknown duplicates=unknown"
+    names = [name for name, _ in pairs]
+    safe = sorted(set(names).intersection(SAFE_CALLBACK_FIELDS))
+    unknown = sum(name not in SAFE_CALLBACK_FIELDS for name in names)
+    if unknown:
+        safe.append("other")
+    duplicates = len(names) - len(set(names))
+    return ("param_names=" + (",".join(safe) if safe else "none")
+            + " param_count=" + str(len(names))
+            + " unknown_count=" + str(unknown)
+            + " duplicates=" + str(duplicates))
+
+
 class Poller:
     def __init__(self, interval=5, probe=query):
         self.interval, self.probe = interval, probe
@@ -188,7 +216,15 @@ class StudioHandler(BaseHTTPRequestHandler):
                     return self.reply(503, {"ok":False,"reason":"microsoft_login_unavailable"})
             if path == "/auth/callback":
                 try:
-                    pairs=parse_qsl(url.query, keep_blank_values=True, max_num_fields=4)
+                    # Recognize malformed/extra parameters as invalid_callback
+                    # so the bounded parameter-name-only diagnostic can explain
+                    # the rejection without storing any auth code or token.
+                    if len(url.query) > 16384:
+                        raise IdentityError("invalid_callback")
+                    try:
+                        pairs=parse_qsl(url.query, keep_blank_values=True, max_num_fields=32)
+                    except (ValueError, UnicodeError):
+                        raise IdentityError("invalid_callback") from None
                     names=[key for key,_ in pairs]
                     if (not 2 <= len(pairs) <= 3 or len(set(names)) != len(names)
                             or not {"state","code"}.issubset(names)
@@ -209,7 +245,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "microsoft_owner_not_authorized", "too_many_sessions",
                     }
                     reason = str(exc) if str(exc) in reasons else "oidc_internal_error"
-                    print("STUDIO_AUTH_CALLBACK_DENIED "+reason, flush=True)
+                    diagnostics = (" "+callback_fields_for_log(url.query)
+                                   if reason == "invalid_callback" else "")
+                    print("STUDIO_AUTH_CALLBACK_DENIED "+reason+diagnostics, flush=True)
                     return self.reply(403, {"ok":False,"reason":"microsoft_login_failed"})
                 except Exception:
                     print("STUDIO_AUTH_CALLBACK_DENIED oidc_internal_error", flush=True)
