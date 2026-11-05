@@ -51,7 +51,8 @@ def prepare(base, platform, public):
     path = root / ("secure_update.py" if platform == "windows"
                    else "mac_update_core.py")
     source = path.read_text(encoding="utf-8")
-    if f'CURRENT_VERSION = {chr(39) if platform == "windows" else chr(34)}{VERSION}' not in source:
+    quote = "'" if platform == "windows" else '"'
+    if f"CURRENT_VERSION = {quote}{VERSION}{quote}" not in source:
         raise ValueError("Not a Glacier v0.18.0 release source")
     transformed = rewrite_source(source, platform, public)
     path.write_text(transformed, encoding="utf-8")
