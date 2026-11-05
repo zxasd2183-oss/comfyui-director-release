@@ -101,6 +101,19 @@ def clear_cookie(name):
     return name + "=; Path=/studio/; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
 
 
+def verify_signed_id_token(token,client_id,jwks):
+    """Verify signature & required claims; MSAL 1.38+ returns decoded but unsigned claims."""
+    import jwt
+    if not isinstance(token,str) or not 100 <= len(token) <= 16384:
+        raise IdentityError("invalid_id_token")
+    key = jwks.get_signing_key_from_jwt(token)
+    return jwt.decode(
+        token, key.key, algorithms=["RS256"],
+        audience=client_id, issuer=ISSUER,
+        options={"require":["iss","aud","exp","iat","sub","nonce","tid"]},
+        leeway=30)
+
+
 def _now():
     return time.time()
 
@@ -120,16 +133,7 @@ class MicrosoftStudioIdentity:
             import jwt
             jwks = jwt.PyJWKClient(JWKS_URL, cache_jwk_set=True,
                                    lifespan=300, timeout=5)
-            def validate(token):
-                if not isinstance(token,str) or not 100 <= len(token) <= 16384:
-                    raise IdentityError("invalid_id_token")
-                key = jwks.get_signing_key_from_jwt(token)
-                return jwt.decode(
-                    token, key.key, algorithms=["RS256"],
-                    audience=config["client_id"], issuer=ISSUER,
-                    options={"require":["iss","aud","exp","iat","sub","nonce","tid"]},
-                    leeway=30)
-            validator = validate
+            validator = lambda token: verify_signed_id_token(token,config["client_id"],jwks)
         self.app = msal_app
         self.validate = validator
         self.lock = threading.Lock()
