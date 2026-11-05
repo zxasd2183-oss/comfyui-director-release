@@ -1,6 +1,6 @@
 [Unit]
-Description=Director Hub V0.5 single MCP service (13 fixed routed tools)
-After=network-online.target director-vps-control.service director-power-mcp.service
+Description=Director Hub V0.6 single MCP service (13 tools, unified VPS core)
+After=network-online.target director-power-mcp.service
 Wants=network-online.target
 Requires=director-power-mcp.service
 

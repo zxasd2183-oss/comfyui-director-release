@@ -139,6 +139,7 @@ def get_provider_state(config: dict, client=None) -> dict:
                 "region": config["COMP_REGION"],
                 "zone": config["COMP_ZONE"],
                 "gpu_type": info.get("GpuType"),
+                "gpu_count": info.get("GPU"),
                 "charge_type": info.get("ChargeType"),
                 "is_spot": bool(info.get("IsSpot", False))}
     except PowerError:

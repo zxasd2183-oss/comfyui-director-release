@@ -1,7 +1,7 @@
-"""Separate MCP for staged power requests. A MCP tool can NEVER itself power the GPU.
+"""V0.6 unified VPS status + staged power requests MCP. MCP cannot power GPU.
 
 Authentication boundary: bind to localhost only; configure authenticated HTTPS
-proxy separately. Requests require independent owner TOTP approval in browser.
+proxy separately. Requests require independent Jipite biometric owner approval (legacy TOTP remains available).
 """
 import os
 import stat
@@ -12,6 +12,7 @@ from mcp.types import ToolAnnotations
 
 from power_ops import PowerError, read_env_file, read_systemd_credential_env
 from power_v03 import DB_DEFAULT, plan_and_request, request_status
+from vps_unified_status import control_center_status, gpu_power_status
 
 app = FastMCP("ComfyUI Director VPS - Power Requests",
               host="127.0.0.1", port=8892,
@@ -31,6 +32,18 @@ def _config():
 
 def _db():
     return os.environ.get("DIRECTOR_POWER_DB", DB_DEFAULT)
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+def get_control_center_status() -> dict:
+    """Read VPS configuration status through the unified V0.6 power core."""
+    return control_center_status(_config)
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+def get_gpu_power_status() -> dict:
+    """Read selected CompShare GPU state; never executes any power action."""
+    return gpu_power_status(_config)
+
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
 def get_power_service_health() -> dict:
@@ -102,7 +115,7 @@ def get_power_service_health() -> dict:
                                       openWorldHint=False))
 def request_gpu_start() -> dict:
     """Submit a GPU START application; DOES NOT start hardware.
-    Your owner must separately approve in their 2FA browser page. May incur
+    Your owner must separately approve with Jipite biometric signature. May incur
     GPU billing only after that independent approval. Never guess approval codes.
     """
     try:
@@ -117,7 +130,7 @@ def request_gpu_start() -> dict:
 def request_gpu_stop() -> dict:
     """Submit a GPU STOP application; DOES NOT turn hardware off.
     Rejects when ComfyUI queue cannot be verified or is busy.
-    Owner must separately check saved files and approve in 2FA browser.
+    Owner must separately check saved files and approve on Jipite.
     """
     try:
         return plan_and_request("stop", _config(), _db())

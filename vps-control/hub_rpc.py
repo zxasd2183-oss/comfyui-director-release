@@ -1,4 +1,4 @@
-"""Director Hub V0.5: strict, local-only routing to three existing MCP services.
+"""Director Hub V0.6: strict, local-only routing to GPU and unified VPS core.
 
 The Hub has no direct cloud provider credentials and NO power execution tool.
 All start/stop requests remain behind the existing mobile biometric approval.
@@ -24,7 +24,7 @@ POWER_TOOLS = frozenset({
 ALL_TOOLS = GPU_TOOLS | VPS_TOOLS | POWER_TOOLS
 
 GPU_PORT = 18790  # SSH -R endpoint, VPS LOOPBACK ONLY.
-VPS_PORT = 8890
+VPS_PORT = 8892  # Unified private VPS state + staged request service
 POWER_PORT = 8892
 MAX_REPLY = 1_048_576
 MAX_PARAMS = 16_384

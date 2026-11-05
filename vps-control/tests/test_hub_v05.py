@@ -58,7 +58,7 @@ class HubV05Tests(unittest.TestCase):
         self.assertEqual(hub.endpoint("get_studio_status", self.gpu),
                          "http://127.0.0.1:18790/mcp/" + "a" * 64)
         self.assertEqual(hub.endpoint("get_gpu_power_status"),
-                         "http://127.0.0.1:8890/mcp")
+                         "http://127.0.0.1:8892/mcp")
         self.assertEqual(hub.endpoint("request_gpu_stop"),
                          "http://127.0.0.1:8892/mcp")
         with self.assertRaisesRegex(hub.HubError, "allowlisted"):

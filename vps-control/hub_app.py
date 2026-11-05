@@ -1,7 +1,7 @@
-"""Single ChatGPT-facing Director Hub V0.5: 8 GPU + 2 VPS + 3 power tools.
+"""Single ChatGPT-facing Director Hub V0.6: 8 GPU + 2 VPS + 3 power tools.
 
-The Hub NEVER invokes provider Start/Stop APIs. The existing Power Requests
-service creates pending requests, and Jipite's biometric approval remains the
+The Hub NEVER invokes provider Start/Stop APIs. The unified protected VPS core
+creates pending requests, and Jipite's biometric approval remains the
 only normal path that authorizes a real provider operation.
 """
 from mcp.server.fastmcp import FastMCP
@@ -72,7 +72,7 @@ def get_control_center_status() -> dict:
 
 @app.tool(annotations=READ)
 def get_gpu_power_status() -> dict:
-    """Read actual GPU instance power state from the VPS controller."""
+    """Read actual GPU instance power state from the unified VPS core."""
     return call("get_gpu_power_status")
 
 
