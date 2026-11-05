@@ -17,6 +17,7 @@ import re
 import secrets
 import threading
 import time
+from urllib.parse import urlsplit
 from http.cookies import SimpleCookie
 from pathlib import Path
 
@@ -144,7 +145,11 @@ class MicrosoftStudioIdentity:
                 not isinstance(flow.get("nonce"),str) or
                 len(flow["nonce"]) < 16 or
                 not isinstance(flow.get("auth_uri"),str) or
-                not flow["auth_uri"].startswith(AUTHORITY+"/")):
+                urlsplit(flow["auth_uri"]).scheme != "https" or
+                urlsplit(flow["auth_uri"]).hostname != "login.microsoftonline.com" or
+                urlsplit(flow["auth_uri"]).path not in (
+                    "/consumers/oauth2/v2.0/authorize",
+                    "/"+PERSONAL_TID+"/oauth2/v2.0/authorize")):
             raise IdentityError("oidc_pkce_preflight_failed")
         state = flow["state"]
         now = self.clock()
