@@ -199,7 +199,20 @@ class StudioHandler(BaseHTTPRequestHandler):
                     sid=self.server.identity.finish(query,state)
                     return self.redirect("/studio/",set_cookies=(
                         session_cookie(sid),clear_cookie(COOKIE_STATE)))
+                except IdentityError as exc:
+                    # Log ONLY a fixed, non-sensitive reason. Never log the
+                    # callback URL, authorization code, cookie or ID token.
+                    reasons = {
+                        "invalid_callback", "oidc_state_invalid",
+                        "oidc_flow_expired", "microsoft_token_exchange_failed",
+                        "microsoft_token_verification_failed",
+                        "microsoft_owner_not_authorized", "too_many_sessions",
+                    }
+                    reason = str(exc) if str(exc) in reasons else "oidc_internal_error"
+                    print("STUDIO_AUTH_CALLBACK_DENIED "+reason, flush=True)
+                    return self.reply(403, {"ok":False,"reason":"microsoft_login_failed"})
                 except Exception:
+                    print("STUDIO_AUTH_CALLBACK_DENIED oidc_internal_error", flush=True)
                     return self.reply(403, {"ok":False,"reason":"microsoft_login_failed"})
             session=self.authenticated()
             if path == "/auth/status":
