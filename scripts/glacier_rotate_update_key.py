@@ -8,6 +8,7 @@ and stores the public key in GitHub Actions Variables for v0.18 builds.
 The private key is never printed, placed in the repository, or sent to a model.
 """
 from __future__ import annotations
+import base64
 import hashlib
 import os
 import re
@@ -75,6 +76,30 @@ def private_key():
     return raw, pub
 
 
+def trigger_bootstrap_builds(pub):
+    """Trigger ONLY v0.18 branch builds using public fingerprint markers."""
+    fingerprint = hashlib.sha256(bytes.fromhex(pub)).hexdigest()[:24]
+    branch = "build/glacier-browser-v0-18-key-migration"
+    for folder in ("glacier-macos", "glacier-windows"):
+        filename = f"{folder}/.migration-v018-{fingerprint}.txt"
+        endpoint = f"repos/{REPO}/contents/{filename}"
+        check = gh("api", endpoint + "?ref=" + branch, allow_missing=True)
+        if check.returncode == 0:
+            print(folder + ": bootstrap marker already exists; existing build may be inspected.")
+            continue
+        payload = base64.b64encode(
+            ("Glacier v0.18 signing public key fingerprint: " + fingerprint + "\n")
+            .encode("ascii")
+        ).decode("ascii")
+        gh(
+            "api", "--method", "PUT", endpoint,
+            "-f", "message=build(glacier-v0.18): start verified key-migration release",
+            "-f", "content=" + payload,
+            "-f", "branch=" + branch,
+        )
+        print(folder + ": verified public-key build triggered.")
+
+
 def main():
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -102,12 +127,13 @@ def main():
     # The private key passes via process stdin, NEVER command arguments or logs.
     gh("secret", "set", SECRET, input_data=raw.encode("ascii"))
     gh("variable", "set", VARIABLE, "--body", pub)
+    trigger_bootstrap_builds(pub)
     print("Glacier signing v2 installed for the Windows/macOS migration.")
     print("Public key SHA-256 fingerprint:", hashlib.sha256(bytes.fromhex(pub)).hexdigest()[:24])
     print("Local backup directory:", HOME)
     print("IMPORTANT: Keep the private-key backup safe and never share it.")
     print("New v0.18 builds must pin this public key. Do not publish using legacy key.")
-    print("Now tell ChatGPT: v2 密钥已配置")
+    print("Both platform builds have been triggered. Check GitHub Actions and Releases.")
 
 
 if __name__ == "__main__":
