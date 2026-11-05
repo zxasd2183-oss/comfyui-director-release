@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: glacier-android-geckoview-v01
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build arm64 GeckoView test APK
