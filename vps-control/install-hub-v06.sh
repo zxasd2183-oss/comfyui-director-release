@@ -32,7 +32,7 @@ done
 [[ -x "$PYTHON" && -f "$DB" && ! -L "$DB" ]] || fail "Existing Python or approval DB missing"
 [[ -d "$HUB" && ! -L "$HUB" && -d "$POWER" && ! -L "$POWER" ]] || fail "Existing installation missing"
 for name in power_ops.py power_write_mcp.py vps_unified_status.py \
-            hub_rpc.py hub_brain.py hub_file_sync.py hub_app.py hub_bridge.py director-hub-mcp.service; do
+            hub_rpc.py hub_brain.py hub_file_sync.py hub_sync_jobs.py hub_app.py hub_bridge.py director-hub-mcp.service; do
     [[ -f "$SRC/$name" && ! -L "$SRC/$name" ]] || fail "Missing source $name"
 done
 for item in "$POWER/power_ops.py" "$POWER/power_write_mcp.py" \
@@ -64,6 +64,11 @@ cp -p "$POWER/power_ops.py" "$BACKUP/power_ops.py"
 cp -p "$POWER/power_write_mcp.py" "$BACKUP/power_write_mcp.py"
 cp -p "$HUB/hub_rpc.py" "$BACKUP/hub_rpc.py"
 cp -p "$HUB/hub_app.py" "$BACKUP/hub_app.py"
+HAD_SYNC_JOBS=0
+if [[ -f "$HUB/hub_sync_jobs.py" && ! -L "$HUB/hub_sync_jobs.py" ]]; then
+    HAD_SYNC_JOBS=1
+    cp -p "$HUB/hub_sync_jobs.py" "$BACKUP/hub_sync_jobs.py"
+fi
 HAD_FILE_SYNC=0
 if [[ -f "$HUB/hub_file_sync.py" && ! -L "$HUB/hub_file_sync.py" ]]; then
     HAD_FILE_SYNC=1
@@ -91,6 +96,11 @@ restore_on_exit() {
         cp -p "$BACKUP/power_write_mcp.py" "$POWER/power_write_mcp.py" || :
         cp -p "$BACKUP/hub_rpc.py" "$HUB/hub_rpc.py" || :
         cp -p "$BACKUP/hub_app.py" "$HUB/hub_app.py" || :
+        if (( HAD_SYNC_JOBS )); then
+            cp -p "$BACKUP/hub_sync_jobs.py" "$HUB/hub_sync_jobs.py" || :
+        else
+            rm -f "$HUB/hub_sync_jobs.py" || :
+        fi
         if (( HAD_FILE_SYNC )); then
             cp -p "$BACKUP/hub_file_sync.py" "$HUB/hub_file_sync.py" || :
         else
@@ -128,11 +138,12 @@ install -o root -g root -m 0644 "$SRC/vps_unified_status.py" "$POWER/vps_unified
 install -o root -g root -m 0644 "$SRC/hub_rpc.py" "$HUB/hub_rpc.py"
 install -o root -g root -m 0644 "$SRC/hub_brain.py" "$HUB/hub_brain.py"
 install -o root -g root -m 0644 "$SRC/hub_file_sync.py" "$HUB/hub_file_sync.py"
+install -o root -g root -m 0644 "$SRC/hub_sync_jobs.py" "$HUB/hub_sync_jobs.py"
 install -o root -g root -m 0644 "$SRC/hub_app.py" "$HUB/hub_app.py"
 install -o root -g root -m 0644 "$SRC/hub_bridge.py" "$HUB/hub_bridge.py"
 install -o root -g root -m 0644 "$SRC/director-hub-mcp.service" "$UNIT"
 "$PYTHON" -m py_compile "$POWER"/power_ops.py "$POWER"/power_write_mcp.py \
-    "$POWER"/vps_unified_status.py "$HUB"/hub_rpc.py "$HUB"/hub_brain.py "$HUB"/hub_file_sync.py "$HUB"/hub_app.py "$HUB"/hub_bridge.py
+    "$POWER"/vps_unified_status.py "$HUB"/hub_rpc.py "$HUB"/hub_brain.py "$HUB"/hub_file_sync.py "$HUB"/hub_sync_jobs.py "$HUB"/hub_app.py "$HUB"/hub_bridge.py
 systemctl daemon-reload
 systemctl restart director-power-mcp director-hub-mcp
 systemctl restart director-hub-bridge
@@ -173,7 +184,10 @@ hub={"get_studio_status","get_queue_summary","list_h3_nodes","list_h3_workflows"
      "get_production_dashboard","get_production_episode",
      "create_production_project","create_production_episode",
      "add_production_shot","save_production_outline",
-     "sync_chatgpt_visual_to_studio"}
+     "sync_chatgpt_visual_to_studio",
+     "enqueue_chatgpt_visual_to_studio",
+     "get_chatgpt_visual_sync_status",
+     "list_recent_chatgpt_visual_syncs"}
 for attempt in range(8):
     try:
         for port,expected in ((8892,core),(8898,hub)):
@@ -185,7 +199,7 @@ for attempt in range(8):
                 raise RuntimeError("Read-only status backend unavailable")
             if not read(port,"get_control_center_status").get("configured"):
                 raise RuntimeError("Provider configuration unavailable")
-        print("PASS: VPS unified core 6 tools; Hub 20 tools; state via both; no power operation")
+        print("PASS: VPS unified core 6 tools; Hub 23 tools; state via both; no power operation")
         break
     except Exception:
         if attempt==7: raise
