@@ -39,6 +39,8 @@ db.close()
 if active: raise SystemExit("BLOCKED: pending/executing GPU operation, cannot restart services")
 print("PASS: no pending or executing power operations")
 PY
+LEGACY_BRIDGE_ACTIVE=0
+systemctl is-active --quiet director-vps-bridge.service && LEGACY_BRIDGE_ACTIVE=1
 if (( RETIRE )); then
     if systemctl is-active --quiet director-vps-named-tunnel.service; then
         fail "Refuse to retire dependencies of a running legacy named tunnel"
@@ -76,6 +78,12 @@ restore_on_exit() {
             rm -f "$POWER/vps_unified_status.py" || :
         fi
         systemctl daemon-reload || :
+        if (( RETIRE )); then
+            systemctl enable --now director-vps-control.service || :
+            if (( LEGACY_BRIDGE_ACTIVE )); then
+                systemctl enable --now director-vps-bridge.service || :
+            fi
+        fi
         systemctl restart director-power-mcp director-hub-mcp || :
         echo "Rollback attempted; inspect services. Backup: $BACKUP" >&2
     fi
@@ -92,8 +100,9 @@ install -o root -g root -m 0644 "$SRC/director-hub-mcp.service" "$UNIT"
     "$POWER"/vps_unified_status.py "$HUB"/hub_rpc.py "$HUB"/hub_app.py
 systemctl daemon-reload
 systemctl restart director-power-mcp director-hub-mcp
-systemctl is-active --quiet director-power-mcp director-hub-mcp \
-    director-hub-bridge director-mobile-v06 || fail "VPS or mobile service unavailable"
+for name in director-power-mcp director-hub-mcp director-hub-bridge director-mobile-v06; do
+    systemctl is-active --quiet "$name" || fail "Service did not recover: $name"
+done
 
 # Read-only local integration probe; never calls request_gpu_start/stop.
 "$PYTHON" - <<'PY'
@@ -144,8 +153,9 @@ for attempt in range(8):
 PY
 if (( RETIRE )); then
     systemctl disable --now director-vps-bridge.service director-vps-control.service
-    systemctl is-active --quiet director-power-mcp director-hub-mcp \
-        director-mobile-v06 || fail "Retirement destabilized active services"
+    for name in director-power-mcp director-hub-mcp director-mobile-v06; do
+        systemctl is-active --quiet "$name" || fail "Retirement destabilized service: $name"
+    done
     echo "Retired redundant VPS status service and old bridge (8890/8891)"
 else
     echo "Legacy 8890/8891 remain online until deliberate retirement"
