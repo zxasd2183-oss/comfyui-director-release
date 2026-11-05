@@ -1,4 +1,4 @@
-"""Single ChatGPT-facing Director Hub V0.6: 8 GPU + 2 VPS + 3 power tools.
+"""ChatGPT-facing Director Hub: GPU/VPS/power plus authenticated Studio brain tools.
 
 The Hub NEVER invokes provider Start/Stop APIs. The unified protected VPS core
 creates pending requests, and Jipite's biometric approval remains the
@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from hub_rpc import call
 
-app = FastMCP("Director Hub V0.5", host="127.0.0.1", port=8896,
+app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8896,
               stateless_http=True, json_response=True)
 
 READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
@@ -96,6 +96,66 @@ def request_gpu_stop() -> dict:
 def get_power_request_status(request_id: str) -> dict:
     """Read the state of an existing start/stop approval request."""
     return call("get_power_request_status", {"request_id": request_id})
+
+
+
+# Creator-facing tools: read project context; write only audited project
+# metadata, storyboard-shot metadata and episode outline DRAFTS in Studio.
+# These do not run any GPU, external provider action or artistic approval.
+@app.tool(annotations=READ)
+def get_production_dashboard() -> dict:
+    """Read Director Studio project and episode summaries, counts and audit status."""
+    return call("get_production_dashboard")
+
+
+@app.tool(annotations=READ)
+def get_production_episode(project_id: str, episode_id: str) -> dict:
+    """Read one private Studio episode with registered shots, assets and outline draft."""
+    return call("get_production_episode", {
+        "project_id":project_id,"episode_id":episode_id,
+    })
+
+
+@app.tool(annotations=WRITE)
+def create_production_project(project_id: str, title: str) -> dict:
+    """Create a new audited Studio project; never starts GPU jobs."""
+    return call("create_production_project", {
+        "project_id":project_id,"title":title,
+    })
+
+
+@app.tool(annotations=WRITE)
+def create_production_episode(
+    project_id: str, episode_id: str, title: str, ordinal: int,
+) -> dict:
+    """Add an episode to a Studio project with an audited creation record."""
+    return call("create_production_episode", {
+        "project_id":project_id,"episode_id":episode_id,
+        "title":title,"ordinal":ordinal,
+    })
+
+
+@app.tool(annotations=WRITE)
+def add_production_shot(
+    project_id: str, episode_id: str, shot_id: str,
+    ordinal: int, duration_ms: int,
+) -> dict:
+    """Record one planned storyboard shot's ID, order and duration; no rendering."""
+    return call("add_production_shot", {
+        "project_id":project_id,"episode_id":episode_id,"shot_id":shot_id,
+        "ordinal":ordinal,"duration_ms":duration_ms,
+    })
+
+
+@app.tool(annotations=WRITE)
+def save_production_outline(
+    project_id: str, episode_id: str, body: str, expected_revision: int,
+) -> dict:
+    """Save a versioned DRAFT episode creative outline; use revision 0 initially."""
+    return call("save_production_outline", {
+        "project_id":project_id,"episode_id":episode_id,
+        "body":body,"expected_revision":expected_revision,
+    })
 
 
 if __name__ == "__main__":
