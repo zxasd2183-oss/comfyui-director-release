@@ -59,7 +59,7 @@ class SignedFeedTests(unittest.TestCase):
         self.assertEqual(m["channel"], "macos-arm64")
         self.assertTrue(w["url"].startswith("https://github.com/"))
         self.assertTrue(m["url"].startswith(
-            "https://jipite.borealos.cn/glacier-updates/"))
+            "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v"))
         self.assertEqual(w["sha256"], "a" * 64)
         self.assertEqual(m["sha256"], "b" * 64)
         self.assertEqual(
