@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from hub_rpc import call
 
-app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8896,
+app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
 
 READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
