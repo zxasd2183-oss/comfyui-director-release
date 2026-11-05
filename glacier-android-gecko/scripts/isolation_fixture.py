@@ -58,7 +58,7 @@ document.querySelector('#upload').addEventListener('change',async (event)=>{
  const file=event.target.files[0];
  if(!file){document.title='GLACIER_TEST_UPLOAD_CANCELLED';return;}
  const text=await file.text();
- if(file.name!=='glacier-upload-test.txt' || text!=='GLACIER_UPLOAD_TEST\\n') {
+ if(file.name!=='glacier-upload-test.txt' || text!=='GLACIER_UPLOAD_TEST\n') {
    document.title='GLACIER_TEST_UPLOAD_WRONG_FILE';
    return;
  }
@@ -92,7 +92,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         actual = self.rfile.read(n)
-        if actual != b'GLACIER_UPLOAD_TEST\\n':
+        if actual != b'GLACIER_UPLOAD_TEST\n':
             self.send_error(422)
             return
         result = b'GLACIER_UPLOAD_BYTES_VERIFIED'

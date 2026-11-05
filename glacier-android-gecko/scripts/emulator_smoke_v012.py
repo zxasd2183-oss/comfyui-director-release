@@ -129,6 +129,52 @@ def file_event(marker,timeout=60):
         time.sleep(2)
     raise RuntimeError("FILE_EVENT_MISSING: "+marker)
 
+def tap_any_text(labels, timeout=45):
+    """Wait for one of a few known, Android-version-specific picker labels."""
+    end=time.monotonic()+timeout
+    while time.monotonic()<end:
+        try:
+            root=dump()
+            for label in labels:
+                node=lookup(root,text=label)
+                if node:
+                    m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",node.get("bounds",""))
+                    if m:
+                        x1,y1,x2,y2=map(int,m.groups())
+                        adb("shell","input","tap",str((x1+x2)//2),str((y1+y2)//2),timeout=12)
+                        return label
+        except Exception:
+            pass
+        time.sleep(2)
+    raise RuntimeError("ANDROID_DOCUMENT_PICKER_TARGET_NOT_FOUND: "+str(labels))
+
+def install_fixture_upload():
+    """Make an artificial file in Downloads for Android DocumentsUI."""
+    file=OUT/"glacier-upload-test.txt"
+    file.write_bytes(b"GLACIER_UPLOAD_TEST\n")
+    adb("shell","mkdir","-p","/sdcard/Download",timeout=15)
+    adb("push",str(file),"/sdcard/Download/glacier-upload-test.txt",timeout=40)
+    try:
+        adb("shell","am","broadcast","-a",
+            "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+            "-d","file:///sdcard/Download/glacier-upload-test.txt",timeout=15)
+    except Exception:
+        pass
+    record("fixture_upload_prepared","only artificial local text file")
+
+def choose_fixture_upload():
+    """DocumentsUI Recent -> Downloads on a fixed Android 15 Pixel 6 AVD."""
+    try:
+        tap_any_text(["glacier-upload-test.txt"],timeout=10)
+        return
+    except RuntimeError:
+        pass
+    # The location is grounded by the prior run's DocumentsUI screenshot
+    # (1080x2400 Pixel 6). This fallback stays restricted to the CI emulator.
+    adb("shell","input","tap","55","148",timeout=12)
+    tap_any_text(["Downloads","Download"],timeout=35)
+    tap_any_text(["glacier-upload-test.txt"],timeout=45)
+
 def shot(name):
     try:
         with (OUT/(name+".png")).open("wb") as f:
@@ -201,13 +247,16 @@ def main():
     tap(text="传输自测：打开测试页面")
     isolation_state("TRANSFER_READY")
     record("transfer_fixture","loopback Gecko transfer page loaded")
+    install_fixture_upload()
     tap(text="选择测试文件")
     file_event("UPLOAD_PICKER_OPEN")
     record("file_upload_prompt","Android document picker invoked from web file input")
     shot("03-upload-picker")
-    adb("shell","input","keyevent","KEYCODE_BACK",timeout=12)
-    file_event("UPLOAD_CANCELLED")
-    record("file_upload_cancel","cancel resolved Gecko file prompt")
+    choose_fixture_upload()
+    file_event("UPLOAD_SELECTION_CONFIRMED")
+    isolation_state("UPLOAD_OK",timeout=90)
+    record("file_upload_bytes","actual fake text file was sent via Gecko POST and verified byte-for-byte by loopback server")
+    shot("03-upload-roundtrip")
     tap(text="保存测试下载")
     file_event("DOWNLOAD_RESPONSE_RECEIVED")
     record("download_response","Gecko external-response callback saw fixture attachment")
@@ -215,7 +264,13 @@ def main():
     file_event("DOWNLOAD_STREAM_STAGED",timeout=90)
     record("download_stream","native response body staged, not re-fetched via Android DownloadManager")
     shot("03-save-picker")
-    adb("shell","input","keyevent","KEYCODE_BACK",timeout=12)
+    tap_any_text(["SAVE","Save","Save file"],timeout=35)
+    file_event("DOWNLOAD_SAVED",timeout=90)
+    saved=adb("exec-out","cat","/sdcard/Download/glacier-download-test.txt",timeout=35)
+    if saved != "GLACIER_DOWNLOAD_TEST\n":
+        raise RuntimeError("DOWNLOADED_FILE_BYTES_MISMATCH")
+    record("file_download_bytes","saved Android Downloads file matched full Gecko response body, byte-for-byte")
+    shot("03-download-saved")
     adb("shell","input","keyevent","KEYCODE_HOME",timeout=12)
     adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=65)
     await_ui(desc="内核测试菜单")
@@ -235,7 +290,7 @@ def main():
     page_event("github")
     record("github_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     shot("05-github")
-    print("UI_SMOKE_DONE; Cookie/localStorage and transfer callbacks verified; login, VLESS exit and real file roundtrip NOT VERIFIED",flush=True)
+    print("UI_SMOKE_DONE; Cookie/localStorage and transfer callbacks verified; login and VLESS real exit NOT VERIFIED",flush=True)
 
 if __name__=="__main__":
     status=0
