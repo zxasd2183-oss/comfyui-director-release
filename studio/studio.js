@@ -12,6 +12,8 @@
   let latest = null, selectedId = null, csrf = null, pending = null;
   let microsoftOwner = false, selectedProductionEpisode = null, productionAction = null;
   let currentVisual = null;
+  let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
+  let visualRefreshInFlight = false;
   const clock = () => {
     $("clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false});
   };
@@ -121,6 +123,7 @@
     $("episodeAssetSummary").replaceChildren();
     $("visualLibraryPanel").hidden=true;
     $("visualGallery").replaceChildren();
+    visualScope = ""; visualFingerprint = "";
     try {
       const url="./api/v1/production/episode?project="+encodeURIComponent(projectId)
         +"&episode="+encodeURIComponent(episodeId);
@@ -181,19 +184,30 @@
       +"&episode="+encodeURIComponent(episodeId)+"&id="+encodeURIComponent(id);
   }
 
-  async function loadVisuals(projectId,episodeId) {
+  async function loadVisuals(projectId,episodeId,{automatic=false}={}) {
     const panel=$("visualLibraryPanel"), gallery=$("visualGallery");
     if(!microsoftOwner){panel.hidden=true;return;}
-    panel.hidden=false;
-    gallery.replaceChildren();
+    if(visualRefreshInFlight || (automatic && $("visualUploadBtn").disabled))return;
+    visualRefreshInFlight=true;
+    try {
     const response=await fetch("./api/v1/production/visuals?project="
       +encodeURIComponent(projectId)+"&episode="+encodeURIComponent(episodeId),
       {cache:"no-store"});
     if(!response.ok) {
-      $("visualMessage").textContent="素材库暂时不可用，请检查登录状态或服务版本。";
+      if(!automatic)$("visualMessage").textContent="素材库暂时不可用，请检查登录状态或服务版本。";
       return;
     }
     const data=await response.json(), visuals=data.visuals||[];
+    if(!selectedProductionEpisode ||
+       selectedProductionEpisode.projectId!==projectId ||
+       selectedProductionEpisode.episodeId!==episodeId)return;
+    const scope=projectId+"/"+episodeId;
+    const fingerprint=JSON.stringify(visuals.map(v=>
+      [v.visual_id,v.version,v.selected,v.source,v.sha256]));
+    if(!panel.hidden && visualScope===scope && visualFingerprint===fingerprint)return;
+    visualScope=scope;visualFingerprint=fingerprint;
+    panel.hidden=false;
+    gallery.replaceChildren();
     $("visualCount").textContent=visuals.length+(data.truncated?"+":"")+" 张图片";
     $("visualMessage").textContent=visuals.length?
       "点击图片可放大，并将确认的版本设为正式参考。":
@@ -223,6 +237,7 @@
       });
       gallery.appendChild(button);
     }
+    } finally {visualRefreshInFlight=false;}
   }
   $("visualKind").addEventListener("change",()=>{
     const byKind={character:"CHAR_GEM",scene:"SCN_HALL",storyboard:"SH01"};
@@ -515,6 +530,16 @@
       const es=new EventSource("./api/v1/stream");
       es.addEventListener("snapshot",event=>{
         try{render(JSON.parse(event.data));}catch(_error){/* next tick will recover */}
+        // The browser gallery is separate from the V0.9 assets ledger.
+        // Poll its owner-only index at most every 4s while the EP is visible.
+        // Repaint only if the actual image/version inventory changed.
+        if(microsoftOwner && selectedProductionEpisode &&
+           document.visibilityState!=="hidden" &&
+           Date.now()-visualRefreshAt>=4000){
+          visualRefreshAt=Date.now();
+          const {projectId,episodeId}=selectedProductionEpisode;
+          loadVisuals(projectId,episodeId,{automatic:true}).catch(()=>{});
+        }
       });
       es.addEventListener("error",()=>{
         $("streamDot").className="dot bad";
