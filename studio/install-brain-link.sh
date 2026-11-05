@@ -13,6 +13,15 @@ PYTHON=/opt/comfyui-director-control/.venv/bin/python
 KEY=/etc/director-studio/brain-link.key
 SDROP=/etc/systemd/system/director-studio.service.d/brain-link.conf
 HDROP=/etc/systemd/system/director-hub-mcp.service.d/brain-link.conf
+# Never replace the live bridge with code targeting 8899 while Nginx still
+# routes /mcp/ to a different bridge. Do not mutate Nginx here.
+HUB_SNIPPET=/etc/nginx/snippets/jipite-hub.conf
+[[ -f "$HUB_SNIPPET" && ! -L "$HUB_SNIPPET" ]] ||
+    die "Hub Nginx snippet missing or symlinked; review without changing ports"
+grep -Fq 'proxy_pass http://127.0.0.1:8899;' "$HUB_SNIPPET" ||
+    die "Hub Nginx upstream is not 8899; do not overwrite a working bridge"
+grep -Fq 'proxy_set_header Host 127.0.0.1:8899;' "$HUB_SNIPPET" ||
+    die "Hub Nginx Host header is not 8899; review before upgrade"
 
 for name in director-studio director-hub-mcp director-hub-bridge director-power-mcp director-mobile-v06 nginx; do
     systemctl is-active --quiet "$name" || die "Required service not active: $name"
