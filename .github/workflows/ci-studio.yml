@@ -25,7 +25,9 @@ jobs:
         run: python -m compileall -q studio
       - name: JavaScript syntax check
         run: node --check studio/studio.js
-      - name: Check safe VPS installer
-        run: bash -n studio/install-v08.sh
+      - name: Check safe VPS installers
+        run: |
+          bash -n studio/install-v08.sh
+          bash -n studio/enable-jipite-domain.sh
       - name: Offline tests - SQLite, control rights, Hub read-only, HTTP and CSRF
         run: python -m unittest discover -s studio/tests -p 'test_*.py' -v
