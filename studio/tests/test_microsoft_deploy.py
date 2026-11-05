@@ -33,12 +33,14 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(client,"12345678-1234-1234-1234-123456789abc")
         self.assertEqual(subject,"owner_subject_fixed_1234")
         # Simulate only the root-owned /etc parent on the unprivileged CI runner.
-        from types import SimpleNamespace
         real_stat=Path.stat
         def root_parent(path,*args,**kwargs):
+            original=real_stat(path,*args,**kwargs)
             if path == self.destination.parent:
-                return SimpleNamespace(st_uid=0)
-            return real_stat(path,*args,**kwargs)
+                values=list(original)
+                values[4]=0
+                return os.stat_result(values)
+            return original
         with patch.object(setup.os,"geteuid",return_value=0), patch.object(
                 setup.Path,"stat",root_parent):
             result=setup.provision(client_file=self.client,power_db=self.db,
