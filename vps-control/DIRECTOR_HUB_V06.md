@@ -4,7 +4,7 @@
 
 ## 架构
 
-- ChatGPT → jipite.borealos.cn → Hub MCP 8898 / 私密桥 8897：原 13 工具（8 GPU、2 VPS、3 电源申请），Brain Link 启用后共 19 工具。
+- ChatGPT → jipite.borealos.cn → Hub MCP 8898 / 私密桥 8899：原 13 工具（8 GPU、2 VPS、3 电源申请），Brain Link 启用后共 19 工具。
 - 8 个 GPU 只读工具 → SSH -R 本地 18790 → GPU 8790：不变。
 - 2 个 VPS 状态查询 + 3 个电源申请工具 → 统一受保护 VPS 核心 **8892**，不再依赖旧独立状态服务 8890。
 - 吉皮提 Microsoft 身份、设备绑定、指纹私钥签名 → 原有独立 8895 手机 API：不变；实际电源执行始终需要手机批准和服务器最终安全复核。
