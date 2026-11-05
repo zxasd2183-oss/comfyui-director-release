@@ -58,9 +58,9 @@ class GlacierProductivity16:
 
         prefix = "Meta" if mac else "Ctrl"
         self._make_shortcut16(f"{prefix}+Shift+A", self.show_tab_search16)
-        self._make_shortcut16(f"{prefix}+Equal", lambda: self.change_zoom16(1))
-        self._make_shortcut16(f"{prefix}+Shift+Equal", lambda: self.change_zoom16(1))
-        self._make_shortcut16(f"{prefix}+Minus", lambda: self.change_zoom16(-1))
+        self._make_shortcut16(f"{prefix}+=", lambda: self.change_zoom16(1))
+        self._make_shortcut16(f"{prefix}+Shift+=", lambda: self.change_zoom16(1))
+        self._make_shortcut16(f"{prefix}+-", lambda: self.change_zoom16(-1))
         self._make_shortcut16(f"{prefix}+0", self.reset_zoom16)
 
         # Keep controls matched to Glacier's existing pastel palette.
