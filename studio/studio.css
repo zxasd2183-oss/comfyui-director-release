@@ -19,3 +19,26 @@ main{min-width:0}.topbar{height:76px;background:#fff;border-bottom:1px solid var
 dialog{width:min(440px,calc(100% - 32px));border:1px solid #d9e7f3;border-radius:18px;box-shadow:0 24px 90px #102d4e3b;padding:26px;background:#fff}dialog::backdrop{background:#172f4c6b;backdrop-filter:blur(4px)}.dialog-icon{height:43px;width:43px;background:#e3f1ff;border-radius:12px;display:grid;place-items:center;color:#518ec5;font-size:26px}dialog h2{font-size:19px;margin:15px 0 8px}dialog p{color:#8495a6;font-size:12px;line-height:1.7}dialog label{display:block;color:#5e7994;font-weight:650;margin:20px 0 8px;font-size:12px}dialog textarea{width:100%;resize:vertical;padding:12px;border:1px solid #dce7f3;border-radius:9px;color:var(--text);outline:none}dialog textarea:focus{border-color:#70aae6}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}.dialog-actions button{border-radius:9px;border:1px solid #dce7f3;padding:11px 16px;background:#fff}.dialog-actions .main-button{background:#2f7ccf;border:0}.dialog-error{color:#b95264;font-size:12px;margin-top:8px;min-height:15px}
 @media(max-width:1200px){.app-shell{grid-template-columns:215px minmax(0,1fr)}.workspace{padding:24px}.content-grid{grid-template-columns:minmax(0,1fr)}.viewer{height:240px}}
 @media(max-width:740px){.app-shell{display:block}.sidebar{position:static;height:auto;padding:16px}.brand{padding:0}.nav-items{display:flex;overflow-x:auto;margin-top:15px}.nav-items a{white-space:nowrap;padding:10px}.side-caption,.sidebar-bottom{display:none}.topbar{height:54px;padding:0 17px}.workspace{padding:15px}.hero{padding:24px 22px;flex-direction:column;align-items:flex-start}.hero h1{font-size:26px}.hero-controls{align-items:flex-start}.metrics{grid-template-columns:1fr 1fr;gap:10px}.metric{padding:16px}.metric strong{font-size:25px}.metric-glyph{display:none}.top-divider{margin:0 3px}.panel-header{padding:19px}.pipeline-legend{padding:4px 17px 14px}.shot-list{padding:0 9px}.inspector-details{padding:15px}.notice{padding:11px}.footer{font-size:9px}}
+
+/* V0.9: project / episode / audiovisual continuity summary */
+.production-panel{margin-bottom:20px}
+.production-grid{padding:0 23px 19px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.production-block{background:linear-gradient(140deg,#f9fcff,#f0f7fd);border:1px solid #e4edf7;border-radius:12px;padding:16px;min-width:0}
+.production-block small{display:block;color:#8a9daf;font-size:11px;font-weight:600}
+.production-block strong{display:block;font-size:23px;font-variant-numeric:tabular-nums;margin-top:9px;color:#263f58}
+.production-hint{margin-top:8px;color:#93a5b5;font-size:10px;line-height:1.5}
+.production-lower{border-top:1px solid #edf2f7;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.production-lower>div{padding:19px 23px 20px;min-width:0}
+.production-lower>div+div{border-left:1px solid #edf2f7}
+.production-label{font-weight:750;font-size:12px;color:#536e8b;margin-bottom:14px}
+.project-list{display:grid;gap:8px;max-height:230px;overflow-y:auto}
+.project-item{padding:12px 14px;border:1px solid #e5edf7;border-radius:9px;display:flex;gap:12px;align-items:center;justify-content:space-between}
+.project-item strong{display:block;font-size:12px}
+.project-item small{display:block;margin-top:4px;color:#97a6b8;font-size:10px}
+.project-id{color:#77a0c9;font-size:10px;font-weight:700}
+.production-empty{color:#9aadc0;background:#f7faff;padding:20px 15px;border-radius:9px;font-size:12px;text-align:center}
+.audit-indicator{display:grid;gap:8px;color:#728ba5;font-size:12px}
+.audit-indicator span:first-child{font-weight:700}
+.production-warning{font-size:11px;line-height:1.7;color:#9aa9b8;margin:14px 0 0}
+@media(max-width:1200px){.production-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:740px){.production-grid{padding:0 16px 16px;gap:8px}.production-block{padding:13px}.production-block strong{font-size:19px}.production-lower{grid-template-columns:1fr}.production-lower>div{padding:16px}.production-lower>div+div{border-left:0;border-top:1px solid #edf2f7}}
