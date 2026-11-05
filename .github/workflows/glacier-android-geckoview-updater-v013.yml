@@ -1,0 +1,188 @@
+name: Glacier Android v0.1.3 verified self-updater APK
+
+on:
+  push:
+    branches:
+      - experiment/glacier-android-geckoview-updater-v013
+    paths:
+      - 'glacier-android-gecko/**'
+      - '.github/workflows/glacier-android-geckoview-updater-v013.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: glacier-android-geckoview-updater-v013
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and verify dual-ABI signed-update client
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Use runner Android SDK and install required platform
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-37.0' 'build-tools;36.0.0' --channel=3
+          # API 37 currently ships as android-37.0; some AGP paths still use android-37.
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ -d "$sdk/platforms/android-37.0" ] && [ ! -e "$sdk/platforms/android-37" ]; then
+            ln -s android-37.0 "$sdk/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Download and SHA256 verify official sing-box 1.14.4 Android cores
+        run: |
+          set -euo pipefail
+          for spec in \
+            'arm64:arm64-v8a:fb3a6c5197f4044f82c8fd75e01ce14c28b6abdd4c3df84bb987d41a962a320f' \
+            'amd64:x86_64:e72a8eead1ace9ce84a4ed07dfbf364e87562b736463fc00967b845cf9b3b8ac'; do
+            IFS=: read -r upstream abi digest <<< "$spec"
+            name="sing-box-1.14.4-android-$upstream"
+            curl --fail --location --retry 3 --silent --show-error \
+              "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/$name.tar.gz" \
+              --output "$name.tar.gz"
+            echo "$digest  $name.tar.gz" | sha256sum --check --status
+            mkdir -p "tmp-core-$abi" "glacier-android-gecko/app/src/main/jniLibs/$abi"
+            tar xzf "$name.tar.gz" -C "tmp-core-$abi"
+            binary=$(find "tmp-core-$abi" -type f -name sing-box | head -1)
+            test -n "$binary"
+            cp "$binary" "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so"
+            chmod 755 "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so"
+            file "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so"
+            case "$abi" in
+              arm64-v8a) readelf -h "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so" | grep -q 'AArch64' ;;
+              x86_64) readelf -h "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so" | grep -q 'X86-64' ;;
+            esac
+            echo "Verified and bundled sing-box $upstream core"
+          done
+      - name: Build GeckoView and embedded native VLESS bridge APK
+        run: |
+          gradle -p glacier-android-gecko :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK and embedded GeckoView native engine
+        run: |
+          set -euo pipefail
+          apk='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$apk"
+          python - <<'PY'
+          from zipfile import ZipFile
+          path='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          with ZipFile(path) as z:
+              names=z.namelist()
+              for abi in ('arm64-v8a', 'x86_64'):
+                  native=[n for n in names if n.startswith('lib/'+abi+'/') and n.endswith('.so')]
+                  assert native, 'Missing GeckoView native libraries for '+abi
+                  assert 'lib/'+abi+'/libxul.so' in names, 'Missing Gecko engine for '+abi
+                  assert 'lib/'+abi+'/libsingbox.so' in names, 'Missing embedded sing-box for '+abi
+                  print('PASS: GeckoView real native '+abi+' engine:',len(native),'native .so files')
+              assert 'classes.dex' in names, 'Missing app bytecode'
+              assert not any(n.startswith('lib/armeabi-v7a') for n in names), 'Unexpected 32-bit library'
+          PY
+          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64-debug.apk"
+          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64-debug.apk'
+      - name: Upload real installable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64-debug
+          path: glacier-android-gecko/GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish clearly labeled debug preview (not in update channel)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='glacier-android-gecko-debug-v0.1.3'
+          apk='glacier-android-gecko/GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64-debug.apk'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+          else
+            gh release create "$tag" "$apk" \
+              --target experiment/glacier-android-geckoview-updater-v013 \
+              --title 'Glacier Android v0.1.3 · 自动更新功能调试版（非稳定签名）' \
+              --notes 'v0.1.3 增加后台检查 GitHub 更新、SHA-256、版本回退和 Android APK 签名证书校验及系统安装确认。此 Debug APK 使用临时签名，不能确保覆盖旧测试版，也不会进入正式自动更新通道。只有使用 Glacier 独立持久签名密钥构建的 Release APK 才发布到正式 tag。仍为 GeckoView 159 + VLESS 单应用实验，不是 Android 系统 VPN。使用临时 Debug 签名，不是正式版；不同 CI 运行生成的调试签名可能变化。' \
+              --prerelease
+          fi
+          gh release view "$tag" --json tagName,assets
+
+      - name: Detect dedicated long-lived Android signing identity
+        id: signer
+        env:
+          KEYSTORE: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          STOREPASS: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          ALIAS: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          KEYPASS: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ] && [ -n "$STOREPASS" ] && [ -n "$ALIAS" ] && [ -n "$KEYPASS" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+            echo 'Dedicated Glacier Android signing identity configured.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'No Glacier-specific signing secrets: signed release and auto-update channel intentionally skipped.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Prepare dedicated signed Android release keystore
+        if: steps.signer.outputs.ready == 'true'
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/glacier-android-release.p12"
+          printf '%s' "$GLACIER_ANDROID_KEYSTORE_BASE64" | base64 -d > "$keyfile"
+          chmod 600 "$keyfile"
+          echo "GLACIER_ANDROID_KEYSTORE_FILE=$keyfile" >> "$GITHUB_ENV"
+
+      - name: Assemble verified long-lived signed Release APK
+        if: steps.signer.outputs.ready == 'true'
+        env:
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          gradle -p glacier-android-gecko :app:assembleRelease --no-daemon --stacktrace
+          apk='glacier-android-gecko/app/build/outputs/apk/release/app-release.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" | grep -E 'Verified using v2 scheme|Signer #1 certificate SHA-256 digest'
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | grep "package: name='cn.borealos.glacier.geckopreview' versionCode='4' versionName='0.1.3'"
+          python - <<'PY'
+          from zipfile import ZipFile
+          path='glacier-android-gecko/app/build/outputs/apk/release/app-release.apk'
+          with ZipFile(path) as z:
+              for abi in ('arm64-v8a','x86_64'):
+                  for core in ('libxul.so','libsingbox.so'):
+                      assert 'lib/'+abi+'/'+core in z.namelist(), 'Missing native engine '+abi+'/'+core
+          print('APK native cores and stable signing checked.')
+          PY
+          mkdir -p glacier-android-gecko/dist
+          cp "$apk" 'glacier-android-gecko/dist/GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64.apk'
+          sha256sum 'glacier-android-gecko/dist/'*.apk >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish immutable signed automatic-update release
+        if: steps.signer.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='glacier-android-gecko-network-v0.1.3'
+          apk='glacier-android-gecko/dist/GlacierAndroid-v0.1.3-GeckoView-VLESS-ARM64-x86_64.apk'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::Refusing same-version APK replacement, bump version instead."
+            exit 2
+          fi
+          gh release create "$tag" "$apk" \
+            --target experiment/glacier-android-geckoview-updater-v013 \
+            --title 'Glacier Android v0.1.3 · 正式签名自动更新实验版' \
+            --notes 'APK 使用独立长期 Glacier Android 签名。启动时自动检查可信 GitHub 发布，HTTPS + SHA-256 + 包名和版本 + APK 签名证书校验后由 Android 确认安装。首次须手动安装此长期签名版，以后相同签名版本才能覆盖安装；旧的 0.1.2 临时调试签名无法直接覆盖。仍为未审计的 GeckoView + VLESS 内核实验。' \
+            --prerelease
+          gh release view "$tag" --json tagName,assets >> "$GITHUB_STEP_SUMMARY"
