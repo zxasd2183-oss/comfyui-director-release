@@ -58,14 +58,51 @@ document.querySelector('#upload').addEventListener('change',async (event)=>{
  const file=event.target.files[0];
  if(!file){document.title='GLACIER_TEST_UPLOAD_CANCELLED';return;}
  const text=await file.text();
- document.title=(file.name==='glacier-upload-test.txt' && text.trim()==='GLACIER_UPLOAD_TEST')
-    ? 'GLACIER_TEST_UPLOAD_OK':'GLACIER_TEST_UPLOAD_WRONG_FILE';
+ if(file.name!=='glacier-upload-test.txt' || text!=='GLACIER_UPLOAD_TEST\\n') {
+   document.title='GLACIER_TEST_UPLOAD_WRONG_FILE';
+   return;
+ }
+ try {
+   const response=await fetch('/upload', {
+      method:'POST', body:file, cache:'no-store',
+      headers:{'Content-Type':'text/plain'}
+   });
+   const result=await response.text();
+   document.title=(response.ok && result==='GLACIER_UPLOAD_BYTES_VERIFIED')
+       ? 'GLACIER_TEST_UPLOAD_OK':'GLACIER_TEST_UPLOAD_REJECTED';
+ } catch(err) {
+   document.title='GLACIER_TEST_UPLOAD_NETWORK_ERROR';
+ }
 });
 </script>
 """
 DOWNLOAD_BODY = b"GLACIER_DOWNLOAD_TEST\n"
 
 class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        # Only a known, fake test payload may be received. No user documents.
+        if urlsplit(self.path).path != '/upload':
+            self.send_error(404)
+            return
+        try:
+            n = int(self.headers.get('Content-Length','-1'))
+        except ValueError:
+            n = -1
+        if n < 0 or n > 1024 * 1024:
+            self.send_error(413)
+            return
+        actual = self.rfile.read(n)
+        if actual != b'GLACIER_UPLOAD_TEST\\n':
+            self.send_error(422)
+            return
+        result = b'GLACIER_UPLOAD_BYTES_VERIFIED'
+        self.send_response(200)
+        self.send_header('Content-Type','text/plain')
+        self.send_header('Cache-Control','no-store')
+        self.send_header('Content-Length',str(len(result)))
+        self.end_headers()
+        self.wfile.write(result)
+
     def do_GET(self):
         parsed = urlsplit(self.path)
         if parsed.path == '/test-attachment':
