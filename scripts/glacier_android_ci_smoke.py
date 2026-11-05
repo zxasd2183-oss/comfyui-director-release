@@ -94,7 +94,6 @@ def type_url(value):
         raise AssertionError("Address EditText not present")
     adb("shell","input","tap",str(pos[0]),str(pos[1]))
     time.sleep(0.3)
-    adb("shell","input","keyevent","KEYCODE_CTRL_A")
     # URL input is ASCII and does not rely on keyboard IME.
     adb("shell","input","text",value)
     adb("shell","input","keyevent","KEYCODE_ENTER")
@@ -124,7 +123,9 @@ def main():
 
     tap("新建标签页")
     # content description in bottom plus may be detected by accessibility.
-    wait_for("2",seconds=20)
+    if locate("2",mode="exact") is None:
+        snapshot("second-tab-count-failure")
+        raise AssertionError("Tab count was not 2 after opening second tab")
     alive()
     snapshot("03-second-tab")
     print("PASS: new GeckoView tab survived",flush=True)
