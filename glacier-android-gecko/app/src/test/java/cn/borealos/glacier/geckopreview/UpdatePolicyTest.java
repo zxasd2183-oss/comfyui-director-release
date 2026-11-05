@@ -24,7 +24,7 @@ public final class UpdatePolicyTest {
         assertFalse(UpdatePolicy.allowedDownloadUrl(url.replace("github.com","evil.example.com")));
         assertFalse(UpdatePolicy.allowedDownloadUrl(url.replace("https://","http://")));
         assertFalse(UpdatePolicy.allowedDownloadUrl(url+"?token=wrong"));
-        assertFalse(UpdatePolicy.allowedDownloadUrl(url.replace("v0.1.4","v0.1.5")));
+        assertFalse(UpdatePolicy.allowedDownloadUrl(url.replace("network-v0.1.4","network-v0.1.5")));
     }
     @Test public void redirectsNeverAllowUntrustedOrHttp() {
         assertTrue(UpdatePolicy.allowedHttpsHop("https://api.github.com/repos/test"));
