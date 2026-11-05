@@ -73,6 +73,13 @@ class CallbackDiagnosticTests(unittest.TestCase):
         self.assertIn("param_count=3",msg)
         self.assertNotIn("access_denied",msg)
         self.assertNotIn("secret",msg)
+        # Known diagnostic names are not necessarily accepted as auth inputs.
+        self.assertIn("unknown_count=0",msg)
+        self.assertIn("unsupported_count=2",msg)
+        supported=server.callback_fields_for_log(
+            "code=PRIVATE&state=STATE&client_info=eyJ1aWQiOiJ0ZXN0In0")
+        self.assertIn("unsupported_count=0",supported)
+        self.assertNotIn("PRIVATE",supported)
         msg=server.callback_fields_for_log("code=x&state=y&state=z")
         self.assertIn("duplicates=1",msg)
 
@@ -130,6 +137,31 @@ class IdentityTests(unittest.TestCase):
         sid=self.id.finish({"state":state,"code":"some-secure-auth-code",
             "session_state":"8a2b6c3d-1111-2222-3333-444455556666"},state)
         self.assertEqual(self.id.check(sid)["sub"],CFG["owner_sub"])
+
+    def test_real_microsoft_callback_accepts_client_info(self):
+        _,state=self.id.start()
+        info="eyJ1aWQiOiJ0ZXN0IiwidXRpZCI6InRlc3QifQ"
+        sid=self.id.finish({"state":state,"code":"some-secure-auth-code",
+                            "client_info":info},state)
+        self.assertEqual(self.id.check(sid)["sub"],CFG["owner_sub"])
+
+    def test_callback_accepts_both_optional_microsoft_parameters(self):
+        _,state=self.id.start()
+        sid=self.id.finish({"state":state,"code":"some-secure-auth-code",
+                            "client_info":"eyJ1aWQiOiJ0ZXN0In0",
+                            "session_state":"8a2b6c3d-1111-2222-3333-444455556666"},state)
+        self.assertIsNotNone(self.id.check(sid))
+
+    def test_client_info_must_remain_bounded_and_encoded(self):
+        _,state=self.id.start()
+        for invalid in ("short", "bad;newline", "x"*4100, "☃"):
+            with self.subTest(value=str(invalid)[:20]):
+                with self.assertRaisesRegex(identity.IdentityError,"state_invalid"):
+                    self.id.finish({"state":state,"code":"some-secure-auth-code",
+                                    "client_info":invalid},state)
+        # Rejected input never consumes a valid authorization code flow.
+        sid=self.id.finish({"state":state,"code":"some-secure-auth-code"},state)
+        self.assertIsNotNone(self.id.check(sid))
 
     def test_microsoft_callback_rejects_extra_or_invalid_fields(self):
         _,state=self.id.start()
@@ -261,6 +293,44 @@ class SSOHttpTests(unittest.TestCase):
         self.assertEqual(result["status"],302)
         self.assertEqual(result["location"],"/studio/")
         self.assertTrue(any(k.startswith(identity.COOKIE_SID+"=") for k in result["cookies"]))
+
+    def test_browser_callback_with_client_info_succeeds(self):
+        start=self.ask("GET","/auth/start")
+        self.assertEqual(start["status"],302)
+        state=self.fake.last["state"]
+        qs=("/auth/callback?code=some-secure-auth-code&state="+state
+            +"&client_info=eyJ1aWQiOiJ0ZXN0IiwidXRpZCI6InRlc3QifQ")
+        result=self.ask("GET",qs,headers={
+            "Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],302)
+        self.assertEqual(result["location"],"/studio/")
+        self.assertTrue(any(cookie.startswith(identity.COOKIE_SID+"=")
+                            for cookie in result["cookies"]))
+
+    def test_browser_callback_with_all_four_allowed_fields_succeeds(self):
+        self.ask("GET","/auth/start")
+        state=self.fake.last["state"]
+        qs=("/auth/callback?code=some-secure-auth-code"
+            +"&session_state=8a2b6c3d-1111-2222-3333-444455556666"
+            +"&client_info=eyJ1aWQiOiJ0ZXN0IiwidXRpZCI6InRlc3QifQ"
+            +"&state="+state)
+        result=self.ask("GET",qs,headers={
+            "Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],302)
+
+    def test_browser_callback_rejects_duplicate_client_info_without_consuming_flow(self):
+        self.ask("GET","/auth/start")
+        state=self.fake.last["state"]
+        qs=("/auth/callback?code=some-secure-auth-code&state="+state
+            +"&client_info=eyJ1aWQiOiJ0ZXN0In0&client_info=eyJ1aWQiOiJ0ZXN0In0")
+        with redirect_stdout(io.StringIO()) as sink:
+            result=self.ask("GET",qs,headers={
+                "Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(result["status"],403)
+        self.assertIn("duplicates=1",sink.getvalue())
+        ok=self.ask("GET","/auth/callback?code=some-secure-auth-code&state="+state,
+                    headers={"Cookie":identity.COOKIE_STATE+"="+state})
+        self.assertEqual(ok["status"],302)
 
     def test_duplicate_state_is_rejected_without_consuming_flow(self):
         self.ask("GET","/auth/start")
