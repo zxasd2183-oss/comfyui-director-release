@@ -282,7 +282,8 @@ public final class MainActivity extends Activity {
                 ? new String[]{
                     "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
                     "切换账号空间", "网络连接信息", "测试说明",
-                    "隔离自测：私人写入", "隔离自测：工作检查", "隔离自测：私人复查"
+                    "隔离自测：私人写入", "隔离自测：工作检查", "隔离自测：私人复查",
+                    "传输自测：打开测试页面"
                 }
                 : new String[]{
                     "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
@@ -299,9 +300,12 @@ public final class MainActivity extends Activity {
                     if (index == 5) showLabWarning();
                     // Only artificial CI data on loopback and only in direct
                     // debug mode. Never mix localhost diagnostics into VLESS.
-                    if (index >= 6 && debugBuild() && !proxyMode && active != null) {
+                    if (index >= 6 && index <= 8 && debugBuild() && !proxyMode && active != null) {
                         String phase = index == 6 ? "seed" : index == 7 ? "work" : "return";
                         active.session.loadUri("http://127.0.0.1:18765/profile?phase=" + phase);
+                    }
+                    if (index == 9 && debugBuild() && !proxyMode && active != null) {
+                        active.session.loadUri("http://127.0.0.1:18765/transfer");
                     }
                 }).show();
     }
@@ -317,7 +321,8 @@ public final class MainActivity extends Activity {
             public void onTitleChange(GeckoSession source, String title) {
                 if (!debugBuild() || title == null || !title.startsWith("GLACIER_TEST_")) return;
                 Tab tab = findBySession(source);
-                if (tab != null && tab.url.startsWith("http://127.0.0.1:18765/profile")) {
+                if (tab != null && (tab.url.startsWith("http://127.0.0.1:18765/profile")
+                        || tab.url.startsWith("http://127.0.0.1:18765/transfer"))) {
                     // The value is a fixed fixture marker, never account data.
                     android.util.Log.i("GlacierSmoke", "ISOLATION_STATE=" + title);
                 }
