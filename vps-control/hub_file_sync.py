@@ -29,7 +29,8 @@ MAX_IMAGE=8*1024*1024
 MAX_REPLY=4096
 _ALLOWED_HOST_SUFFIXES=(".oaiusercontent.com",".openai.com")
 _ID=re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
-_FILE_ID=re.compile(r"^file[_-][A-Za-z0-9_-]{5,180}$")
+# ChatGPT may provide opaque connector-scoped file IDs, not only file_... IDs.
+# Never persist/log the raw identifier: normalize it to a stable SHA-256 token.
 
 
 class SyncError(ValueError):
@@ -50,8 +51,10 @@ def validate_file_ref(file):
     if not isinstance(file,dict) or set(file)-{"download_url","file_id","mime_type","file_name"}:
         raise SyncError("invalid_chatgpt_file_reference")
     identifier=file.get("file_id")
-    if not isinstance(identifier,str) or not _FILE_ID.fullmatch(identifier):
+    if (not isinstance(identifier,str) or not 1<=len(identifier)<=2048
+            or any(ord(c)<32 for c in identifier)):
         raise SyncError("invalid_chatgpt_file_id")
+    source_token="file_"+hashlib.sha256(identifier.encode("utf-8")).hexdigest()
     value=file.get("download_url")
     if not isinstance(value,str) or len(value)>8192:
         raise SyncError("invalid_chatgpt_file_url")
@@ -64,7 +67,7 @@ def validate_file_ref(file):
     # A signed URL can be temporary; never print it in an error or log.
     if not parts.path or parts.path=="/":
         raise SyncError("invalid_chatgpt_file_url")
-    return value,identifier
+    return value,source_token
 
 
 def _check_public_resolve(host):
