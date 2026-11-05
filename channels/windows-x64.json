@@ -1,10 +1,10 @@
 {
   "channel": "windows-x64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.18.0：双端工作区、标签分组、增强下载管理。经正式构建与自动测试验证。",
-  "sha256": "82378ffe85c0f816addb400b8121cc1cd3f8434f7297c5192a9316f7569b8d0c",
-  "signature": "7FbmVrb+3GesVVKUP6bl2YEdJiNyH86NtNKjIQ7DAExUH3bfQfA/hDBY1Lq9dtNZZItGqzugGdqFWZbvvpWDBw==",
-  "size": 173094120,
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.18.0/GlacierBrowser-v0.18.0-Windows-Setup-x64.exe",
-  "version": "0.18.0"
+  "notes": "Glacier Browser v0.19.0：标签右键菜单、下载中心搜索筛选、工作区恢复标签自动保存。双端自动测试通过。",
+  "sha256": "a9542c7329ce57783e2b495b5f75ec4cd0d6530522e73f058905d36e6602cc2f",
+  "signature": "fwI//kPeA6XvuRMxVR2njIsyfDLZLC8s56yQoblYSul43EbagHGZHCclZS1L9cyKrKC+K2irlDTxZ03svkkhAQ==",
+  "size": 173186412,
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.19.0/GlacierBrowser-v0.19.0-Windows-Setup-x64.exe",
+  "version": "0.19.0"
 }

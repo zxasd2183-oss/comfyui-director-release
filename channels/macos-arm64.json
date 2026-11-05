@@ -1,10 +1,10 @@
 {
   "channel": "macos-arm64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.18.0：双端工作区、标签分组、增强下载管理。经正式构建与自动测试验证。",
-  "sha256": "6db4e873101eae8ee345e7bb10aa4b255b8f0c107402c2a78e6afe9bb565961d",
-  "signature": "36hxvTIcjKA/evn9xE47BHWLDpivRtnLY69MKogddyMXULz3Wb23MV6/W77ILWnmAlL4YCqIL0+qrYNUWnnwDg==",
-  "size": 274145125,
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v0.18.0/GlacierBrowser-v0.18.0-macOS-AppleSilicon.dmg",
-  "version": "0.18.0"
+  "notes": "Glacier Browser v0.19.0：标签右键菜单、下载中心搜索筛选、工作区恢复标签自动保存。双端自动测试通过。",
+  "sha256": "a5f757fd86354db5c6ff7a7794cf1ed7381b69ddf231f2da2f54bb591655afea",
+  "signature": "DbO43bTMQ1SQlBAbuVLi8H5C+c7jCpZKa3raHfVPxcClsyXZkQTZbW50V8wMhSvFRaRUTKpmZHntZodlamd6Cw==",
+  "size": 275965337,
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v0.19.0/GlacierBrowser-v0.19.0-macOS-AppleSilicon.dmg",
+  "version": "0.19.0"
 }
