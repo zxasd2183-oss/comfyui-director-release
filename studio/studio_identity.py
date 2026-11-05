@@ -41,8 +41,32 @@ _STATE_ID = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 ALLOWED_CALLBACK_FIELDS = frozenset({"state", "code", "session_state", "client_info"})
 
 
+# Public and VPS diagnostic messages must be constant strings. Never emit
+# exception messages, request URLs, OAuth codes, tokens, JWT headers or claims.
+SAFE_EXCEPTION_CLASSES = frozenset({
+    "InvalidIssuerError", "InvalidAudienceError", "InvalidSignatureError",
+    "ExpiredSignatureError", "ImmatureSignatureError", "InvalidIssuedAtError",
+    "InvalidAlgorithmError", "MissingRequiredClaimError", "InvalidTokenError",
+    "DecodeError", "InvalidKeyError", "InvalidSubjectError",
+    "PyJWKClientConnectionError", "PyJWKClientError", "PyJWKSetError",
+    "MissingCryptographyError", "ConnectionError", "ConnectTimeout",
+    "ReadTimeout", "TimeoutError", "ValueError", "KeyError",
+    "TypeError", "RuntimeError", "IdentityError",
+})
+
+
+def _safe_exception_class(exc):
+    name = type(exc).__name__
+    return name if name in SAFE_EXCEPTION_CLASSES else "OtherVerificationError"
+
+
 class IdentityError(ValueError):
-    pass
+    def __init__(self, reason, *, diagnostic=None):
+        super().__init__(reason)
+        self.diagnostic = (
+            diagnostic if diagnostic in SAFE_EXCEPTION_CLASSES.union({"MissingIdToken"})
+            else None
+        )
 
 
 def _valid_config(config):
@@ -193,15 +217,27 @@ class MicrosoftStudioIdentity:
         if entry is None or entry[1] <= now:
             raise IdentityError("oidc_flow_expired")
         flow = entry[0]
+        # Keep exchange failures separate from signature/claim failures;
+        # class-only diagnostics are allowlisted, never raw exception text.
         try:
-            result=self.app.acquire_token_by_auth_code_flow(flow, query)
-            if not isinstance(result,dict) or "error" in result:
-                raise IdentityError("microsoft_token_exchange_failed")
-            claims=self.validate(result.get("id_token"))
-        except IdentityError:
-            raise
-        except Exception:
-            raise IdentityError("microsoft_token_verification_failed") from None
+            result = self.app.acquire_token_by_auth_code_flow(flow, query)
+        except Exception as exc:
+            raise IdentityError(
+                "microsoft_token_exchange_failed",
+                diagnostic=_safe_exception_class(exc)) from None
+        if not isinstance(result,dict) or "error" in result:
+            raise IdentityError("microsoft_token_exchange_failed")
+        token = result.get("id_token")
+        if not isinstance(token,str) or not token:
+            raise IdentityError(
+                "microsoft_token_verification_failed",
+                diagnostic="MissingIdToken")
+        try:
+            claims=self.validate(token)
+        except Exception as exc:
+            raise IdentityError(
+                "microsoft_token_verification_failed",
+                diagnostic=_safe_exception_class(exc)) from None
         expected_nonce = hashlib.sha256(flow["nonce"].encode("ascii")).hexdigest()
         if (not isinstance(claims,dict) or
                 claims.get("tid") != PERSONAL_TID or
