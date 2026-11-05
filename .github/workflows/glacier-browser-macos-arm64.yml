@@ -16,6 +16,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 jobs:
   macos-arm64:
     if: vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX != ''
@@ -171,3 +172,10 @@ jobs:
           done
           gh release view "$tag" --json tagName,assets
           echo 'Mac release available. Ed25519 update feed published independently after offline signature.'
+      - name: Request v2 signed update feed (only after BOTH releases exist)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run glacier-browser-signed-updates.yml --ref main || \
+            echo "Automatic hourly fallback will retry signed feed publication."
+
