@@ -104,15 +104,20 @@ class StudioHandler(BaseHTTPRequestHandler):
         return host in HOSTS and self.client_address[0] == "127.0.0.1"
 
     def microsoft_proxy(self):
-        return (self.headers.get("X-Director-Studio-Auth-Mode") == "microsoft"
+        # Protect the public proxy even during the short period between the
+        # systemd SSO activation and Nginx route promotion. Missing a marker
+        # must NEVER downgrade configured Microsoft owner authentication.
+        required = os.environ.get("DIRECTOR_STUDIO_MICROSOFT_REQUIRED") == "1"
+        marked = self.headers.get("X-Director-Studio-Auth-Mode") == "microsoft"
+        return ((required or marked)
                 and self.headers.get("X-Forwarded-Proto") == "https"
                 and self.headers.get("X-Forwarded-Host") == "jipite.borealos.cn")
 
     def public_mode_mismatch(self):
-        # If Nginx advertises Microsoft auth but transport markers differ,
-        # reject, rather than silently treating it as SSH local mode.
-        return (self.headers.get("X-Director-Studio-Auth-Mode") == "microsoft"
-                and not self.microsoft_proxy())
+        required = os.environ.get("DIRECTOR_STUDIO_MICROSOFT_REQUIRED") == "1"
+        public_host = self.headers.get("X-Forwarded-Host") == "jipite.borealos.cn"
+        marked = self.headers.get("X-Director-Studio-Auth-Mode") == "microsoft"
+        return (marked or (required and public_host)) and not self.microsoft_proxy()
 
     def authenticated(self):
         if self.server.identity is None:
