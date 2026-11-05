@@ -133,6 +133,18 @@ def open_db(path, *, initialize=True):
       revision INTEGER NOT NULL DEFAULT 1,
       FOREIGN KEY(finding_id) REFERENCES findings(finding_id),
       FOREIGN KEY(bound_asset_id) REFERENCES assets(asset_id));
+    CREATE TABLE IF NOT EXISTS episode_outlines (
+      project_id TEXT NOT NULL, episode_id TEXT NOT NULL,
+      revision INTEGER NOT NULL, outline_sha256 TEXT NOT NULL,
+      body TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY(project_id,episode_id),
+      FOREIGN KEY(project_id,episode_id) REFERENCES episodes(project_id,episode_id));
+    CREATE TABLE IF NOT EXISTS episode_outline_history (
+      project_id TEXT NOT NULL, episode_id TEXT NOT NULL,
+      revision INTEGER NOT NULL, outline_sha256 TEXT NOT NULL,
+      body TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY(project_id,episode_id,revision),
+      FOREIGN KEY(project_id,episode_id) REFERENCES episodes(project_id,episode_id));
     CREATE TABLE IF NOT EXISTS audit_chain (
       id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL,
       actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL,
@@ -479,6 +491,13 @@ def episode_detail(db, project_id, episode_id):
         "assets_truncated":len(assets)>150,
         "finding_count":findings,
         "exceptions_by_status":{r["status"]:r["count"] for r in exceptions},
+        "outline":(lambda r: {
+            "revision":r["revision"],"body":r["body"],"sha256":r["outline_sha256"],
+            "status":"draft","updated_at":r["updated_at"]
+        } if r else {"revision":0,"body":"","status":"not_written"})(
+            db.execute("SELECT revision,outline_sha256,body,updated_at "
+                "FROM episode_outlines WHERE project_id=? AND episode_id=?",
+                (pid,eid)).fetchone()),
     }
 
 
