@@ -28,7 +28,8 @@ PUBLIC_FILE = HOME / "update-public-key.hex"
 def gh(*args, input_data=None, allow_missing=False):
     # gh api has explicit REST endpoint URLs and does not support -R.
     command = ["gh", *args]
-    if args[0] != "api":
+    # gh repo view accepts OWNER/REPO as a positional argument, not -R.
+    if args[0] != "api" and tuple(args[:2]) != ("repo", "view"):
         command.extend(["-R", REPO])
     p = subprocess.run(
         command,
@@ -110,7 +111,7 @@ def main():
         _ = Ed25519PrivateKey
     except ImportError:
         raise RuntimeError("Install dependency first: python -m pip install cryptography")
-    p = gh("repo", "view", "--json", "nameWithOwner")
+    p = gh("repo", "view", REPO, "--json", "nameWithOwner")
     if REPO.encode() not in p.stdout:
         raise RuntimeError("Authenticated GitHub access to the expected repository is required")
 
