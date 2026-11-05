@@ -120,6 +120,15 @@ def isolation_state(marker,timeout=60):
         time.sleep(2)
     raise RuntimeError("ISOLATION_MARKER_NOT_OBSERVED: "+marker)
 
+def file_event(marker,timeout=60):
+    end=time.monotonic()+timeout
+    while time.monotonic()<end:
+        log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+        if "FILE_EVENT="+marker in log:
+            return
+        time.sleep(2)
+    raise RuntimeError("FILE_EVENT_MISSING: "+marker)
+
 def shot(name):
     try:
         with (OUT/(name+".png")).open("wb") as f:
@@ -185,6 +194,28 @@ def main():
     isolation_state("PRIVATE_RETAINED")
     record("private_storage_retained","private cookie and localStorage retained after switching")
     shot("03-private-retained")
+    # Real Gecko HTML file controls -> Android Storage Access Framework.
+    # No real accounts or sensitive documents; only cancel paths in the smoke
+    # test until reliable file-byte round trips have been independently proven.
+    tap(desc="内核测试菜单")
+    tap(text="传输自测：打开测试页面")
+    isolation_state("TRANSFER_READY")
+    record("transfer_fixture","loopback Gecko transfer page loaded")
+    tap(text="选择测试文件")
+    file_event("UPLOAD_PICKER_OPEN")
+    record("file_upload_prompt","Android document picker invoked from web file input")
+    shot("03-upload-picker")
+    adb("shell","input","keyevent","KEYCODE_BACK",timeout=12)
+    file_event("UPLOAD_CANCELLED")
+    record("file_upload_cancel","cancel resolved Gecko file prompt")
+    tap(text="保存测试下载")
+    file_event("DOWNLOAD_RESPONSE_RECEIVED")
+    record("download_response","Gecko external-response callback saw fixture attachment")
+    tap(text="继续")
+    file_event("DOWNLOAD_STREAM_STAGED",timeout=90)
+    record("download_stream","native response body staged, not re-fetched via Android DownloadManager")
+    shot("03-save-picker")
+    adb("shell","input","keyevent","KEYCODE_BACK",timeout=12)
     adb("shell","input","keyevent","KEYCODE_HOME",timeout=12)
     adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=65)
     await_ui(desc="内核测试菜单")
@@ -204,7 +235,7 @@ def main():
     page_event("github")
     record("github_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     shot("05-github")
-    print("UI_SMOKE_DONE; artificial loopback Cookie/localStorage isolated; login, VLESS exit and file roundtrip NOT VERIFIED",flush=True)
+    print("UI_SMOKE_DONE; Cookie/localStorage and transfer callbacks verified; login, VLESS exit and real file roundtrip NOT VERIFIED",flush=True)
 
 if __name__=="__main__":
     status=0
