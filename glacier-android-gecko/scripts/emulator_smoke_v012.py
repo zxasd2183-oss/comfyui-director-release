@@ -80,6 +80,20 @@ def page_event(site, timeout=100):
         time.sleep(5)
     raise RuntimeError("GECKO_PAGE_STOP_MISSING: "+site)
 
+def isolation_state(marker,timeout=60):
+    """Require real page-script markers, not merely that profile menu changed."""
+    end=time.monotonic()+timeout
+    while time.monotonic()<end:
+        log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+        if "ISOLATION_STATE=GLACIER_TEST_"+marker in log:
+            return
+        if "ISOLATION_STATE=GLACIER_TEST_WORK_LEAK" in log:
+            raise RuntimeError("COOKIE_STORAGE_CROSS_PROFILE_LEAK")
+        if "ISOLATION_STATE=GLACIER_TEST_PRIVATE_LOST" in log:
+            raise RuntimeError("PRIVATE_PROFILE_STORAGE_NOT_RETAINED")
+        time.sleep(2)
+    raise RuntimeError("ISOLATION_MARKER_NOT_OBSERVED: "+marker)
+
 def shot(name):
     try:
         with (OUT/(name+".png")).open("wb") as f:
@@ -103,6 +117,8 @@ def main():
     record("android_api",adb("shell","getprop","ro.build.version.sdk").strip())
     adb("install","-r",APK,timeout=180)
     record("apk_install","installed")
+    adb("reverse","tcp:18765","tcp:18765",timeout=15)
+    record("isolation_fixture_route","adb reverse loopback enabled")
     adb("logcat","-c")
     adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=75)
     tap(text="明确使用直连")
@@ -123,11 +139,26 @@ def main():
     await_ui(text="2")
     shot("02-tabs")
     record("new_tab","tab counter observed; tab persistence not verified")
+    tap(desc="内核测试菜单")
+    tap(text="隔离自测：私人写入")
+    isolation_state("PRIVATE_SEEDED")
+    record("private_storage_seed","cookie and localStorage written by JS on loopback fixture")
     tap(text="私人空间  ▾")
     tap(text="工作空间 · 独立 Cookie")
     await_ui(text="工作空间  ▾")
-    record("profile_switch","profile UI observed; Cookie isolation unverified")
+    tap(desc="内核测试菜单")
+    tap(text="隔离自测：工作检查")
+    isolation_state("WORK_ISOLATED")
+    record("work_profile_isolation","work page observed neither private Cookie nor localStorage")
     shot("02-work")
+    tap(text="工作空间  ▾")
+    tap(text="私人空间 · 独立 Cookie")
+    await_ui(text="私人空间  ▾")
+    tap(desc="内核测试菜单")
+    tap(text="隔离自测：私人复查")
+    isolation_state("PRIVATE_RETAINED")
+    record("private_storage_retained","private cookie and localStorage retained after switching")
+    shot("03-private-retained")
     adb("shell","input","keyevent","KEYCODE_HOME",timeout=12)
     adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=65)
     await_ui(desc="内核测试菜单")
@@ -147,7 +178,7 @@ def main():
     page_event("github")
     record("github_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     shot("05-github")
-    print("UI_SMOKE_DONE; real web content, VLESS, cookies, files NOT VERIFIED",flush=True)
+    print("UI_SMOKE_DONE; artificial loopback Cookie/localStorage isolated; login, VLESS exit and file roundtrip NOT VERIFIED",flush=True)
 
 if __name__=="__main__":
     status=0
