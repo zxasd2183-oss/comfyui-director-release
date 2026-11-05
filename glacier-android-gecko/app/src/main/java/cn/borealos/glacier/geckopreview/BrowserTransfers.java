@@ -36,6 +36,14 @@ final class BrowserTransfers {
     private GeckoResult<GeckoSession.PromptDelegate.PromptResponse> pendingResult;
     private File pendingDownload;
     private boolean downloadBusy;
+    private boolean pendingFixtureDownload;
+
+    private void debugEvent(String event) {
+        if ((activity.getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.util.Log.i("GlacierSmoke", "FILE_EVENT=" + event);
+        }
+    }
 
     BrowserTransfers(Activity activity) { this.activity = activity; }
 
@@ -70,6 +78,7 @@ final class BrowserTransfers {
         pendingResult = result;
         try {
             activity.startActivityForResult(pick, PICK_UPLOAD);
+            debugEvent("UPLOAD_PICKER_OPEN");
         } catch (ActivityNotFoundException | SecurityException ex) {
             finishUpload(null);
             Toast.makeText(activity, "无法打开系统文件选择器", Toast.LENGTH_LONG).show();
@@ -84,8 +93,10 @@ final class BrowserTransfers {
         pendingResult = null;
         if (prompt == null || result == null) return;
         if (uris == null || uris.length == 0) {
+            debugEvent("UPLOAD_CANCELLED");
             result.complete(prompt.dismiss());
         } else {
+            debugEvent("UPLOAD_SELECTION_CONFIRMED");
             result.complete(prompt.confirm(activity.getApplicationContext(), uris));
         }
     }
@@ -109,6 +120,8 @@ final class BrowserTransfers {
             Toast.makeText(activity, "请先完成当前下载", Toast.LENGTH_SHORT).show();
             return;
         }
+        pendingFixtureDownload = "http://127.0.0.1:18765/test-attachment".equals(response.uri);
+        if (pendingFixtureDownload) debugEvent("DOWNLOAD_RESPONSE_RECEIVED");
         String name = safeFilename(response, uri);
         String mime = header(response.headers, "content-type");
         if (mime == null || mime.trim().isEmpty()) mime = "application/octet-stream";
@@ -150,6 +163,7 @@ final class BrowserTransfers {
                 File done = staged;
                 activity.runOnUiThread(() -> {
                     pendingDownload = done;
+                    if (pendingFixtureDownload) debugEvent("DOWNLOAD_STREAM_STAGED");
                     Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     save.addCategory(Intent.CATEGORY_OPENABLE);
                     save.setType(mime);
@@ -214,6 +228,8 @@ final class BrowserTransfers {
                         final boolean saved = ok;
                         activity.runOnUiThread(() -> {
                             downloadBusy = false;
+                            if (pendingFixtureDownload) debugEvent(saved
+                                    ? "DOWNLOAD_SAVED" : "DOWNLOAD_SAVE_FAILED");
                             toast(saved ? "文件已保存" : "保存失败，请重试");
                         });
                     }
@@ -235,6 +251,7 @@ final class BrowserTransfers {
         if (pendingDownload != null) pendingDownload.delete();
         pendingDownload = null;
         downloadBusy = false;
+        pendingFixtureDownload = false;
     }
 
     private void toast(String message) {
