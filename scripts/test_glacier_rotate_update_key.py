@@ -19,10 +19,16 @@ class OwnerMigrationTests(unittest.TestCase):
             cmd = run.call_args.args[0]
             self.assertNotIn("-R", cmd)
             self.assertEqual(cmd[:2], ["gh", "api"])
-            owner.gh("repo", "view", "--json", "nameWithOwner")
+            owner.gh("repo", "view", owner.REPO, "--json", "nameWithOwner")
             cmd = run.call_args.args[0]
-            self.assertIn("-R", cmd)
-            self.assertEqual(cmd[-1], owner.REPO)
+            self.assertEqual(cmd, [
+                "gh", "repo", "view", owner.REPO, "--json", "nameWithOwner"
+            ])
+            self.assertNotIn("-R", cmd)
+            owner.gh("secret", "set", owner.SECRET, input_data=b"private-key-placeholder")
+            cmd = run.call_args.args[0]
+            self.assertEqual(cmd[-2:], ["-R", owner.REPO])
+            self.assertNotIn("private-key-placeholder", " ".join(cmd))
 
     def test_locally_generated_key_is_reused_without_rotation(self):
         with tempfile.TemporaryDirectory() as folder:
