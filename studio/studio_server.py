@@ -260,10 +260,19 @@ class StudioHandler(BaseHTTPRequestHandler):
             if path == "/auth/status":
                 return self.reply(200,{"authenticated":bool(session),
                                       "mode":"microsoft_personal_owner"})
+            # The login page belongs to Director Studio, not the identity
+            # provider. It is intentionally public but contains zero production
+            # data and NO session tokens, project names or private APIs.
             if session is None:
-                if path == "/":
-                    return self.redirect("/studio/auth/start")
+                if path in ("/", "/login"):
+                    return self.file("login.html", "text/html; charset=utf-8")
+                if path == "/login.css":
+                    return self.file("login.css", "text/css; charset=utf-8")
                 return self.reply(401,{"ok":False,"reason":"microsoft_login_required"})
+            if path == "/login":
+                return self.redirect("/studio/")
+            if path == "/login.css":
+                return self.file("login.css", "text/css; charset=utf-8")
         if path == "/":
             return self.file("index.html", "text/html; charset=utf-8")
         if path == "/studio.css":
