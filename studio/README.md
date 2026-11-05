@@ -12,6 +12,12 @@
 - **独立低权限**：Director Studio 由独立系统用户 directorstudio 运行，不是 directorpower，不读取审批数据库/API 密钥，MCP 只能调用 get_gpu_power_status、get_queue_summary。只监听 VPS 127.0.0.1:8900，**不对公网开放、不修改 Nginx、无独立弱口令登录页面**。
 - ChatGPT 原 Director Hub V0.6 的 13 个工具、URL/token、吉皮提指纹审批、APK/DMG、OIDC、GPU SSH 回连全都不变。
 
+## V0.9.1：Microsoft 个人账号 Web 登录（待所有者配置后部署）
+
+V0.9.1 已实现服务器端 Microsoft 个人账号授权码登录、原吉皮提已绑定用户限制、签名令牌校验与受控 Nginx 升级流程。**没有运行微软应用注册与 Web Secret 配置之前，它只是已测试的代码，不是已经上线的微软网页登录。**
+
+详细部署步骤与安全说明请参阅 [V091_MICROSOFT_WEB.md](V091_MICROSOFT_WEB.md)。安装前保留现有 /studio/ 临时密码防护；登录验证通过后才切换至 Microsoft 身份认证。原移动 GPU 审批仍完全独立。
+
 ## V0.8.1：使用 Jipite 正式域名（临时身份验证）
 
 正式地址：https://jipite.borealos.cn/studio/ 。这个路径与原有 /mcp/、/api/v1/mobile/、/app-updates/ 独立。工作台后端仍仅监听 VPS 的 127.0.0.1:8900，Nginx 新增带 HTTPS Basic Auth 的 /studio/ 路由。**当前还没有 Microsoft 个人账号网页登录**；这个强随机密码是短期防护，待正式 Microsoft OIDC 接入后替换。
