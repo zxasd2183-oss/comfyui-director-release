@@ -1,0 +1,31 @@
+name: Director Studio realtime workbench CI
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'studio/**'
+      - '.github/workflows/ci-studio.yml'
+  pull_request:
+    paths:
+      - 'studio/**'
+      - '.github/workflows/ci-studio.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  workbench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile isolated workbench backend
+        run: python -m compileall -q studio
+      - name: JavaScript syntax check
+        run: node --check studio/studio.js
+      - name: Check safe VPS installer
+        run: bash -n studio/install-v08.sh
+      - name: Offline tests - SQLite, control rights, Hub read-only, HTTP and CSRF
+        run: python -m unittest discover -s studio/tests -p 'test_*.py' -v

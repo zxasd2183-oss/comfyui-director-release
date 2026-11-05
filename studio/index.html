@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Director Studio · 实时监制工作台</title>
+  <link rel="stylesheet" href="/studio.css">
+  <script defer src="/studio.js"></script>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-symbol">D<span>✦</span></div>
+      <div><strong>Director</strong><small>STUDIO / CONTROL</small></div>
+    </div>
+    <div class="side-caption">工作空间</div>
+    <nav class="nav-items" aria-label="工作台导航">
+      <a class="active" href="#overview"><span>▦</span> 制作总览</a>
+      <a href="#shots"><span>▥</span> 镜头生产线</a>
+      <a href="#inspector"><span>◎</span> 人工监审</a>
+      <a href="#activity"><span>≋</span> 操作审计</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="safety-indicator"><span class="safety-dot"></span>安全控制模式</div>
+      <p>本工作台只允许通过 SSH 访问。导演决策会写入审计记录，尚不会远程中断已提交的 GPU 任务。</p>
+      <small>DIRECTOR STUDIO <b>V0.8</b></small>
+    </div>
+  </aside>
+  <main id="overview">
+    <header class="topbar">
+      <div class="crumb"><span>WORKSPACE</span><b>/</b><strong>Production Control</strong></div>
+      <div class="topbar-right"><span id="streamDot" class="dot neutral"></span><span id="streamLabel">连接中</span><span class="top-divider"></span><span id="clock"></span></div>
+    </header>
+    <div class="workspace">
+      <section class="hero">
+        <div><div class="eyebrow">DIRECTOR OPERATIONS · 实时监制</div><h1>所有镜头，尽在掌控。</h1>
+        <p>实时观察算力与任务运行状态，逐镜头审核、暂停调度、发起返工，并保留可追溯的导演决策。</p></div>
+        <div class="hero-controls">
+          <div class="mode-label"><span class="dot blue"></span>监制模式 · 人工监督</div>
+          <button id="dispatchToggle" class="main-button" type="button" disabled>读取状态中…</button>
+        </div>
+      </section>
+      <section class="notice" aria-label="控制权限提醒">
+        <span class="notice-icon">ⓘ</span>
+        <p><strong>控制范围明确：</strong>这里的暂停与返工操作目前写入排程账本，不会取消已运行的 ComfyUI 任务；真正 GPU 中断和自动调度联动尚待后续安装验证。</p>
+      </section>
+      <section class="metrics" aria-label="实时生产指标">
+        <div class="metric"><span class="metric-name">GPU 实际状态</span><strong id="gpuValue">—</strong><span class="metric-sub" id="gpuSub">正在检测...</span><div class="metric-glyph">◈</div></div>
+        <div class="metric"><span class="metric-name">ComfyUI 任务队列</span><strong id="queueValue">—</strong><span class="metric-sub" id="queueSub">等待回连</span><div class="metric-glyph">≡</div></div>
+        <div class="metric"><span class="metric-name">已导入镜头</span><strong id="shotCount">—</strong><span class="metric-sub" id="shotSub">等待制作计划</span><div class="metric-glyph">▦</div></div>
+        <div class="metric"><span class="metric-name">待处理 / 已暂缓</span><strong id="reviewCount">—</strong><span class="metric-sub">人工监督工作量</span><div class="metric-glyph">◉</div></div>
+      </section>
+      <div class="content-grid">
+        <section id="shots" class="panel shots-panel">
+          <div class="panel-header"><div><div class="kicker">PRODUCTION PIPELINE</div><h2>镜头生产线</h2><p>按顺序安排生产，随时选中镜头介入</p></div>
+          <div class="small-tag" id="dispatchState">调度状态：—</div></div>
+          <div class="pipeline-legend"><span><i class="legend-dot planned"></i>待制作</span><span><i class="legend-dot hold"></i>已暂缓</span><span><i class="legend-dot rework"></i>需返工</span><span><i class="legend-dot approved"></i>已批准</span></div>
+          <div id="shotList" class="shot-list" role="list"><div class="empty-state">正在读取镜头数据…</div></div>
+          <footer class="panel-footer"><span>镜头提示词与模型密钥不会发送到监控页面</span><span id="shotsTotal">0 SHOTS</span></footer>
+        </section>
+        <section id="inspector" class="panel inspector-panel">
+          <div class="panel-header"><div><div class="kicker">DIRECTOR'S MONITOR</div><h2>镜头监看</h2><p>审片意见与人工处理</p></div><span class="small-tag">OPERATOR</span></div>
+          <div class="viewer"><div class="viewer-mark">▣</div><div id="viewerMain">未选择镜头</div><small id="viewerSub">选择左侧镜头，开始监管</small><div class="viewer-badge">PREVIEW NOT CONNECTED</div></div>
+          <div class="inspector-details"><div><small>当前镜头</small><strong id="selectedShot">—</strong></div><div><small>阶段 / 审核</small><strong id="selectedStage">—</strong></div><div><small>版本</small><strong id="selectedRevision">—</strong></div></div>
+          <div class="action-grid">
+            <button id="holdBtn" type="button" disabled>暂停当前镜头</button>
+            <button id="reworkBtn" type="button" disabled>↺ 要求返工</button>
+            <button id="noteBtn" type="button" disabled>＋ 添加审查意见</button>
+            <button id="approveBtn" type="button" disabled>✓ 审核通过</button>
+          </div>
+          <div class="inspector-foot">未验证的真实视频不能直接标记审核通过。返工记录也不会在未经确认时自动重复提交 GPU 任务。</div>
+        </section>
+      </div>
+      <section id="activity" class="panel activity-panel">
+        <div class="panel-header"><div><div class="kicker">AUDIT & EVENTS</div><h2>监制记录</h2><p>每一次介入都有记录</p></div><span class="small-tag">AUDIT LOG</span></div>
+        <div id="eventList" class="events"><div class="empty-state">尚无操作记录</div></div>
+      </section>
+      <footer class="footer">DIRECTOR STUDIO V0.8 <span>●</span> 本地 SSH 加密访问 <span>●</span> 不开放公网管理入口 <span>●</span> GPU 电源仍由吉皮提独立指纹审批</footer>
+    </div>
+  </main>
+</div>
+<dialog id="actionDialog" aria-labelledby="dialogTitle">
+  <form method="dialog" id="actionForm">
+    <div class="dialog-icon">✧</div>
+    <h2 id="dialogTitle">操作确认</h2>
+    <p id="dialogDescription"></p>
+    <label for="reasonInput">导演备注 / 原因</label>
+    <textarea id="reasonInput" rows="3" maxlength="500" placeholder="写下介入原因，便于后续追踪"></textarea>
+    <div id="dialogError" class="dialog-error" role="alert"></div>
+    <div class="dialog-actions"><button type="button" id="dialogCancel">取消</button><button type="submit" id="dialogConfirm" class="main-button">确认写入记录</button></div>
+  </form>
+</dialog>
+</body>
+</html>
