@@ -1,5 +1,7 @@
 """Offline trusted file parameter and Studio HMAC transfer tests."""
 import hashlib
+import socket
+import urllib.parse
 import sys
 import unittest
 from pathlib import Path
@@ -89,6 +91,68 @@ class TestHubFileTransfer(unittest.TestCase):
                 self.assertEqual(result["reason"],"untrusted_chatgpt_file_host")
                 self.assertEqual(result.get("download_host"),host)
                 self.assertNotIn("SECRET",str(result))
+
+    def test_region_varying_openai_blob_host_family(self):
+        approved=(
+            "oaisdmntprcentralus.blob.core.windows.net",
+            "oaisdmntprwestcentralus.blob.core.windows.net",
+            "oaisdmntpreastus.blob.core.windows.net",
+            "oaisdmntprswedencentral.blob.core.windows.net",
+        )
+        for host in approved:
+            with self.subTest(approved_host=host):
+                out,_=fs.validate_file_ref(
+                    {**REF,"download_url":"https://"+host+"/object?token=PRIVATE"})
+                self.assertIn(host,out)
+        for host in (
+            "oaisdmntprwestcentralus.blob.core.windows.net.attacker.test",
+            "oaisdmntprattacker.blob.core.windows.net.evil.test",
+            "someoneelse.blob.core.windows.net",
+            "oaisdmntpr"+("z"*15)+".blob.core.windows.net",
+        ):
+            with self.subTest(blocked_host=host):
+                with self.assertRaises(fs.SyncError):
+                    fs.validate_file_ref(
+                        {**REF,"download_url":"https://"+host+"/file?token=PRIVATE"})
+
+    def test_dns_answers_with_non_global_addresses_rejected(self):
+        with patch.object(fs.socket,"getaddrinfo", return_value=[
+                (socket.AF_INET,socket.SOCK_STREAM,6,"",("8.8.8.8",443)),
+                (socket.AF_INET,socket.SOCK_STREAM,6,"",("127.0.0.1",443))]):
+            with self.assertRaises(fs.SyncError) as caught:
+                fs._check_public_resolve("oaisdmntprcentralus.blob.core.windows.net")
+        self.assertEqual(caught.exception.reason,"untrusted_chatgpt_file_host")
+
+    def test_tls_connect_uses_validated_ip_and_original_sni(self):
+        with patch.object(fs.ssl,"create_default_context") as mkctx, \
+             patch.object(fs.socket,"create_connection") as connect:
+            host="oaisdmntprwestcentralus.blob.core.windows.net"
+            conn=fs._PinnedHTTPSConnection(host,"8.8.8.8")
+            conn.connect()
+            connect.assert_called_once_with(("8.8.8.8",443),20)
+            mkctx.return_value.wrap_socket.assert_called_once_with(
+                connect.return_value,server_hostname=host)
+
+    def test_download_http_status_is_classified_without_exposing_url(self):
+        class FakeConnection:
+            def request(self,*a,**kw):pass
+            def getresponse(self):
+                return type("Reply",(),{"status":403})()
+            def close(self):pass
+        host="oaisdmntprwestcentralus.blob.core.windows.net"
+        url=urllib.parse.urlsplit("https://"+host+"/image?sig=PRIVATE")
+        with patch.object(fs,"_PinnedHTTPSConnection",return_value=FakeConnection()):
+            with self.assertRaises(fs.SyncError) as caught:
+                fs._fetch_pinned(url,("8.8.8.8",))
+        self.assertEqual(caught.exception.reason,"chatgpt_download_http_error")
+        self.assertEqual(caught.exception.http_status,403)
+        self.assertNotIn("PRIVATE",str(caught.exception))
+
+    def test_filename_metadata_is_bounded_and_basename_only(self):
+        self.assertEqual(fs._safe_filename("user/old/path/Qwen.png"),"Qwen.png")
+        self.assertEqual(fs._safe_filename(r"C:\tmp\Qwen.png"),"Qwen.png")
+        with self.assertRaises(fs.SyncError):
+            fs._safe_filename("x"*121)
 
     def test_no_http_access_with_invalid_project(self):
         result=fs.sync_chatgpt_visual("bad/project","EP01",

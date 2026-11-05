@@ -219,10 +219,11 @@ def upload_visual(db_path, data, actor):
 
 
 def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
-    """Idempotent direct sync, preserving both user uploads and source versions.
+    """Atomically register image bytes, source provenance and audit history.
 
-    Source ref is a bounded non-secret ChatGPT file ID, never an external URL.
-    HTTP caller must have already passed signed loopback HMAC authentication.
+    All DB writes use one BEGIN IMMEDIATE transaction, so concurrent retry of
+    the same file cannot create duplicate versions. If the DB commit fails,
+    the newly written file is removed and no half-synced asset is published.
     """
     fields={"project_id","episode_id","kind","subject_id","filename",
             "source_file_id","image_base64"}
@@ -233,41 +234,89 @@ def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
     if (not isinstance(source,str) or
             not re.fullmatch(r"file[_-][A-Za-z0-9_-]{5,180}",source)):
         raise VisualError("invalid_source_file_id")
-    pid,eid,subject=data["project_id"],data["episode_id"],data["subject_id"]
     kind=data["kind"]
     if kind not in ALLOWED_KINDS:
         raise VisualError("invalid_visual_kind")
+    try:
+        subject=_ident(data["subject_id"])
+    except ProductionError:
+        raise VisualError("invalid_subject_id") from None
+    filename=_clean_filename(data["filename"])
+    encoded=data["image_base64"]
+    if not isinstance(encoded,str):
+        raise VisualError("invalid_image_payload")
+    try:
+        raw=base64.b64decode(encoded,validate=True)
+    except (ValueError,binascii.Error):
+        raise VisualError("invalid_image_payload") from None
+    mime=verify_image(raw)
+    digest=hashlib.sha256(raw).hexdigest()
+
     with closing(open_db(db_path,initialize=True)) as db:
         prepare_schema(db)
         if not verify_chain(db):
             raise VisualError("audit_integrity_failure",409)
-        pid,eid=_validate_scope(db,pid,eid)
-        subject=_ident(subject)
-        row=db.execute(
-            "SELECT m.visual_id,m.version FROM visual_import_sources s "
-            "JOIN visual_media m ON m.visual_id=s.visual_id "
-            "WHERE s.project_id=? AND s.episode_id=? AND s.kind=? "
-            "AND s.subject_id=? AND s.provider='chatgpt' AND s.source_file_id=?",
-            (pid,eid,kind,subject,source)).fetchone()
-        if row:
-            return {"ok":True,"visual_id":row["visual_id"],
-                    "version":row["version"],"unchanged":True,
-                    "gpu_action":False}
-    upload_fields={k:v for k,v in data.items() if k!="source_file_id"}
-    result=upload_visual(db_path,upload_fields,actor)
-    with closing(open_db(db_path,initialize=True)) as db:
-        prepare_schema(db)
-        with transaction(db):
-            db.execute("INSERT INTO visual_import_sources "
-                "(visual_id,project_id,episode_id,kind,subject_id,provider,"
-                "source_file_id,imported_at) VALUES(?,?,?,?,?,?,?,?)",
-                (result["visual_id"],pid,eid,kind,subject,"chatgpt",
-                 source,int(time.time())))
-            _audit(db,actor,"visual.source_linked",result["visual_id"],
-                   {"provider":"chatgpt","project_id":pid,"episode_id":eid,
-                    "kind":kind,"subject_id":subject})
-    result["unchanged"]=False
-    return result
+        pid,eid=_validate_scope(db,data["project_id"],data["episode_id"])
+        path=None
+        file_created=False
+        try:
+            with transaction(db):
+                existing=db.execute(
+                    "SELECT m.visual_id,m.version,m.sha256 FROM visual_import_sources s "
+                    "JOIN visual_media m ON m.visual_id=s.visual_id "
+                    "WHERE s.project_id=? AND s.episode_id=? AND s.kind=? "
+                    "AND s.subject_id=? AND s.provider='chatgpt' AND s.source_file_id=?",
+                    (pid,eid,kind,subject,source)).fetchone()
+                if existing:
+                    if existing["sha256"]!=digest:
+                        raise VisualError("source_file_integrity_conflict",409)
+                    return {"ok":True,"visual_id":existing["visual_id"],
+                            "version":existing["version"],"unchanged":True,
+                            "gpu_action":False}
+                count=db.execute(
+                    "SELECT COUNT(*) FROM visual_media WHERE project_id=? AND episode_id=?",
+                    (pid,eid)).fetchone()[0]
+                if count>=250:
+                    raise VisualError("episode_visual_limit_reached",409)
+                version=db.execute(
+                    "SELECT COALESCE(MAX(version),0)+1 FROM visual_media "
+                    "WHERE project_id=? AND episode_id=? AND kind=? AND subject_id=?",
+                    (pid,eid,kind,subject)).fetchone()[0]
+                root=media_directory(db_path,create=True)
+                visual_id="VIS_"+secrets.token_hex(12)
+                path=root/(visual_id+MIME_EXT[mime])
+                fd=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
+                file_created=True
+                with os.fdopen(fd,"wb") as f:
+                    f.write(raw)
+                    f.flush()
+                    os.fsync(f.fileno())
+                now=int(time.time())
+                db.execute(
+                    "INSERT INTO visual_media "
+                    "(visual_id,project_id,episode_id,kind,subject_id,version,"
+                    "filename,mime,size_bytes,sha256,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (visual_id,pid,eid,kind,subject,version,filename,mime,
+                     len(raw),digest,now))
+                db.execute(
+                    "INSERT INTO visual_import_sources "
+                    "(visual_id,project_id,episode_id,kind,subject_id,provider,"
+                    "source_file_id,imported_at) VALUES(?,?,?,?,?,?,?,?)",
+                    (visual_id,pid,eid,kind,subject,"chatgpt",source,now))
+                _audit(db,actor,"visual.uploaded",visual_id,
+                       {"project_id":pid,"episode_id":eid,"kind":kind,
+                        "subject_id":subject,"version":version,"sha256":digest})
+                _audit(db,actor,"visual.source_linked",visual_id,
+                       {"provider":"chatgpt","project_id":pid,"episode_id":eid,
+                        "kind":kind,"subject_id":subject})
+            return {"ok":True,"visual_id":visual_id,"version":version,
+                    "kind":kind,"subject_id":subject,
+                    "unchanged":False,"gpu_action":False}
+        except BaseException:
+            if file_created and path is not None:
+                path.unlink(missing_ok=True)
+            raise
 
 
 def select_visual(db_path, data, actor):

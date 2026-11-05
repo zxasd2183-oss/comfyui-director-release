@@ -22,6 +22,8 @@ from production_core import (
     create_shot, dashboard, episode_detail, _ident, _text, transaction, _audit,
 )
 
+from visual_library import list_visuals
+
 BRAIN_PATH="/api/v1/brain"
 READ_TOOLS=frozenset({"get_production_dashboard","get_production_episode"})
 WRITE_TOOLS=frozenset({
@@ -167,7 +169,12 @@ def execute(db_path,tool,args):
             if tool=="get_production_episode":
                 _exact(args,("project_id","episode_id"))
                 pid,eid=_ident(args["project_id"]),_ident(args["episode_id"])
-                return {**episode_detail(db,pid,eid),"outline":_outline(db,pid,eid)}
+                visuals=list_visuals(db_path,pid,eid)
+                return {**episode_detail(db,pid,eid),
+                        "outline":_outline(db,pid,eid),
+                        "visuals":visuals["visuals"],
+                        "visual_count":len(visuals["visuals"]),
+                        "visuals_truncated":visuals["truncated"]}
             if not verify_chain(db):
                 raise BrainError("audit_integrity_failure",409)
             if tool=="create_production_project":
