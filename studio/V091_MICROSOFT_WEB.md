@@ -87,3 +87,25 @@ Microsoft 可能返回三个参数：code、state 和 session_state。早期 Stu
     sudo journalctl -u director-studio --since '10 minutes ago' --no-pager | grep 'STUDIO_AUTH_CALLBACK_DENIED' | tail -n 5
 
 只发送该命令的输出，不要发送原始 journalctl 全部日志、浏览器带 code 的回调 URL、客户端 Secret、会话 Cookie 或 ID Token。类别为 oidc_state_invalid、oidc_flow_expired、microsoft_token_exchange_failed、microsoft_token_verification_failed、microsoft_owner_not_authorized 或 oidc_internal_error 等。外部网页仍只显示通用错误，不泄露账号身份或认证信息。
+
+## 回调参数名安全诊断（V0.9.1 补丁）
+
+如果 Microsoft 跳回 /studio/auth/callback 后返回 403 microsoft_login_failed，并且 VPS 日志中出现 invalid_callback，**不代表一定缺少 code**：微软可能另外发送了参数，也可能返回 error/state 组合。仅根据看到的通用错误不能推断确切原因。
+
+此补丁仅在 invalid_callback 记录可信参数名白名单（code、state、session_state、error、error_description、error_uri、iss、client_info）、参数数量、未知参数数量和重复数量；陌生参数名统一标记 other，不记录任意参数名或参数值，也不记录浏览器 URL、授权码、令牌或 Cookie。
+
+已部署 Microsoft SSO 的 VPS，可安全升级代码而无需重建 Web Secret：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/install-microsoft-web.sh
+
+然后只从 https://jipite.borealos.cn/studio/ **重新发起一次登录**，不要刷新旧回调页面或重复使用一次性授权码。失败后仅用下面的私有 VPS 命令看受限诊断日志：
+
+    sudo journalctl -u director-studio --since '10 minutes ago' --no-pager | grep 'STUDIO_AUTH_CALLBACK_DENIED' | tail -n 5
+
+可以把这条筛选输出发到聊天；不要贴完整 systemd 日志或包含 code、state 值的完整回调 URL。例如：
+
+    STUDIO_AUTH_CALLBACK_DENIED invalid_callback param_names=error,error_description,state param_count=3 unknown_count=0 duplicates=0
+
+如果是 microsoft_token_exchange_failed、microsoft_owner_not_authorized、oidc_state_invalid 等其他错误，不添加参数名细节，以避免扩散敏感认证材料。
