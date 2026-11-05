@@ -28,6 +28,11 @@ class BrainHubError(ValueError):
     pass
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs):
+        raise BrainHubError("brain_backend_redirect_blocked")
+
+
 def secret_from_systemd(environ=None):
     env=environ if environ is not None else os.environ
     directory=env.get("CREDENTIALS_DIRECTORY")
@@ -72,7 +77,8 @@ def call_studio(tool,params,*,environ=None,opener=None,clock=time.time,rand=None
                 "X-Director-Brain-Signature":sign(secret,payload,now,nonce),
             }
         )
-        backend=opener or urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        backend=opener or urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),_NoRedirect())
         try:
             with backend.open(req,timeout=8) as response:
                 if response.geturl()!=STUDIO_URL:
