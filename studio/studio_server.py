@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from studio_core import StudioError, connect, decide, snapshot
 from studio_backend import query
+from production_core import open_db as open_production, dashboard_from_path
 
 BASE = Path(__file__).resolve().parent
 HOSTS = {"127.0.0.1:8900", "localhost:8900"}
@@ -70,10 +71,14 @@ class StudioServer(ThreadingHTTPServer):
         if bind[0] != "127.0.0.1":
             raise RuntimeError("Only 127.0.0.1 binding is permitted")
         self.db_path = db_path
+        self.production_db_path = str(Path(db_path).with_name("production.sqlite"))
         self.poller = poller if poller is not None else Poller()
         self.csrf_token = secrets.token_urlsafe(32)
         self.is_running = True
         with closing(connect(self.db_path)):
+            pass
+        # Independent V0.9 database; legacy shot ledger is never rewritten.
+        with closing(open_production(self.production_db_path)):
             pass
         super().__init__(bind, StudioHandler)
 
@@ -124,6 +129,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         with closing(connect(self.server.db_path)) as db:
             value = snapshot(db)
         value["live"] = self.server.poller.current()
+        value["production"] = dashboard_from_path(self.server.production_db_path)
         value["sample_age_seconds"] = (
             max(0, int(time.time()) - value["live"]["last_checked"])
             if value["live"]["last_checked"] is not None else None)
@@ -144,6 +150,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                                     "mode": "ssh_only_local_supervisor"})
         if path == "/api/v1/snapshot":
             return self.reply(200, self.fresh_snapshot())
+        if path == "/api/v1/production":
+            return self.reply(200, dashboard_from_path(self.server.production_db_path))
         if path != "/api/v1/stream":
             return self.reply(404, {"ok": False, "reason": "not_found"})
         self.send_response(200)
