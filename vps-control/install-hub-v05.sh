@@ -100,7 +100,7 @@ systemctl restart director-hub-mcp director-hub-bridge
 systemctl is-active --quiet director-hub-mcp director-hub-bridge \
     || fail "Hub MCP or bridge service failed; inspect journalctl locally"
 
-# Verify the LOCAL 13-tool registry, not an external route or power request.
+# Verify the LOCAL 19-tool registry, not an external route or power request.
 "$PYTHON" - <<'PY'
 import json
 from urllib.request import Request, urlopen
@@ -124,13 +124,13 @@ expected = {
     "add_production_shot","save_production_outline",
 }
 if names != expected:
-    raise SystemExit("Hub MCP registry mismatch; expected exactly 13 tools")
+    raise SystemExit("Hub MCP registry mismatch; expected exactly 19 tools")
 print("Hub MCP tools/list: 19/19 declared, NO POWER OPERATION")
 PY
 
 # Nginx routing is applied only if target HTTPS vhost is unambiguous.
 python3 "$SRC/configure_director_hub_nginx.py"
-echo "Director Hub installed on VPS loopback (8898/8897)."
+echo "Director Hub installed on VPS loopback (8898/8899)."
 echo "Existing GPU / VPS / mobile approval services unchanged."
 echo "Retrieve private connection URL ONLY in VPS private SSH terminal:"
 echo "sudo sh -c 'printf https://jipite.borealos.cn/mcp/; cat /etc/comfyui-director-hub.token'"
