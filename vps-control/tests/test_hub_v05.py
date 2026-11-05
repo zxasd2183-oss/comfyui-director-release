@@ -48,10 +48,12 @@ class HubV05Tests(unittest.TestCase):
         self.token.chmod(0o640)
 
     def test_exactly_13_allowlisted_tools(self):
-        self.assertEqual(len(hub.ALL_TOOLS), 13)
+        self.assertEqual(len(hub.ALL_TOOLS), 19)
         self.assertEqual(len(hub.GPU_TOOLS), 8)
         self.assertEqual(len(hub.VPS_TOOLS), 2)
         self.assertEqual(len(hub.POWER_TOOLS), 3)
+        self.assertEqual(len(hub.BRAIN_TOOLS), 6)
+        self.assertFalse(hub.BRAIN_TOOLS & hub.POWER_TOOLS)
         self.assertFalse(set(hub.GPU_TOOLS) & set(hub.POWER_TOOLS))
 
     def test_pinned_local_route_all_backends(self):
