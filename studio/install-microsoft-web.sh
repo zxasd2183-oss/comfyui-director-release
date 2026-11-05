@@ -18,6 +18,13 @@ systemctl is-active --quiet nginx || die "Nginx must be active"
    && -f "$SRC/promote_microsoft_nginx.py" ]] || die "Missing V0.9.1 source files"
 [[ -f /etc/nginx/snippets/director-studio.conf ]] || \
   die "First deploy the existing protected /studio/ Basic Auth route"
+if cmp -s /etc/nginx/snippets/director-studio.conf \
+    "$SRC/nginx-jipite-studio-microsoft.conf"; then
+  [[ -f "$DROPIN" ]] || die "Microsoft route enabled without service guard; manual recovery required"
+elif ! cmp -s /etc/nginx/snippets/director-studio.conf \
+    "$SRC/nginx-jipite-studio.conf"; then
+  die "Unexpected Studio Nginx route; refusing to overwrite it"
+fi
 [[ ! -L "$DEST" && -d "$DEST" ]] || die "Studio destination unsafe"
 [[ ! -L "$VENV" ]] || die "Refusing symlinked Studio Python environment"
 if [[ -e "$DROPIN" || -L "$DROPIN" ]]; then
