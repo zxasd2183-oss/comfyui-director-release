@@ -146,3 +146,23 @@ VPS 已经观测到 Microsoft 回调包含 **code、state、client_info**，先�
 测试时建议先使用无痕浏览器打开正式 URL，以避免旧的已登录 Cookie 直接进入工作台而看不到登录页。正式验收必须分别检查未登录页面、点击登录、登录成功后 API 可访问、退出后业务 API 再次变为 HTTP 401。
 
 这是一张**自己的产品登录页面**，不等于另建一套不受审计的用户名/密码系统。微软仍然是认证提供方，但不再承担 Studio 的品牌入口展示。
+
+
+## JWT 验签与令牌交换分层诊断（2026-11-05）
+
+用户实际日志出现 microsoft_token_verification_failed。原有 try/except 将 MSAL 令牌交换期间抛出的异常和真正的 JWT 验证异常混为一谈，因此不能仅凭这一条日志认定令牌已获取成功。新版本将两层分开，只记录固定类别（例如 exc_class=InvalidIssuerError、InvalidSignatureError、MissingRequiredClaimError、PyJWKClientConnectionError、MissingIdToken、RuntimeError 或 OtherVerificationError），不记录 exception message、JWT、授权码、state、回调 URL 或任何 token claim。所有令牌签名、aud、iss、tenant、nonce、所有者身份验证仍然严格执行，不提供关闭校验的降级选项。
+
+已在 VPS 上配置微软登录的环境执行：
+
+    cd ~/comfyui-director-release
+    git pull --ff-only
+    sudo bash studio/install-microsoft-web.sh
+
+此操作重启工作台服务，原有内存登录会话会失效。重新从 https://jipite.borealos.cn/studio/ 发起**一次新的登录**，然后在 VPS 私有终端只读取这组限定日志：
+
+    sudo journalctl -u director-studio --since '10 minutes ago' --no-pager | grep 'STUDIO_AUTH_CALLBACK_DENIED' | tail -n 5
+
+可以提供此筛选输出来进一步决定是否需要修正 Microsoft claims 或验签公钥，不要发送完整回调 URL、原始 journal、令牌、账号密码、Secret、Cookie。JWKS HTTP 200 和 VPS NTP 时间正确只能排除部分原因，不能代替实际 JWT 验证。
+
+微软应用注册入口：https://entra.microsoft.com/
+导演工作台：https://jipite.borealos.cn/studio/
