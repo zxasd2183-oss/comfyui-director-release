@@ -6,6 +6,7 @@ on:
       - feature/glacier-android-m05-updates
     paths:
       - 'glacier-android-gecko/scripts/check_installed_apk_upgrade.ps1'
+      - 'glacier-android-gecko/scripts/tests/**'
       - '.github/workflows/glacier-android-m05-upgrade-check.yml'
   workflow_dispatch:
 
@@ -41,3 +42,6 @@ jobs:
             }
           }
           Write-Host 'PASS: read-only checker parses and contains required signature/version checks'
+      - name: Exercise seven safe/unsafe APK upgrade scenarios using mocked tools
+        shell: pwsh
+        run: ./glacier-android-gecko/scripts/tests/test_upgrade_checker.ps1
