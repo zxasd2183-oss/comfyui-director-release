@@ -106,6 +106,32 @@ class AccountCardTests(unittest.TestCase):
             self.assertFalse(restored.delete_account22("chatgpt.com", "Primary"))
             self.assertIs(restored._accounts_doc22, original)
 
+    def test_edit_persists_and_rejects_duplicate_with_rollback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host()
+            def encrypt(data):
+                return b"ENCRYPTED:" + data[::-1]
+            def decrypt(data):
+                return data.split(b":", 1)[1][::-1]
+            host.setup_accounts22(tmp, encrypt, decrypt)
+            first = {"site": "chatgpt.com", "name": "Personal",
+                     "username": "old@test.invalid", "password": "old-secret"}
+            second = {"site": "chatgpt.com", "name": "Work",
+                      "username": "work@test.invalid", "password": ""}
+            host._accounts_doc22["accounts"] = [first, second]
+            host._save_accounts22()
+            self.assertTrue(host.update_account22(
+                "chatgpt.com", "Personal", "Personal", "new@test.invalid", "new-secret"))
+            self.assertFalse(host.update_account22(
+                "chatgpt.com", "Personal", " work ", "new@test.invalid", "new-secret"))
+            reloaded = Host()
+            reloaded.setup_accounts22(tmp, encrypt, decrypt)
+            self.assertEqual(reloaded._accounts_doc22["accounts"][0]["username"],
+                             "new@test.invalid")
+            self.assertEqual(reloaded._accounts_doc22["accounts"][0]["password"],
+                             "new-secret")
+            self.assertEqual(reloaded._accounts_doc22["accounts"][1]["name"], "Work")
+
     def test_fail_closed_without_encryption(self):
         with tempfile.TemporaryDirectory() as tmp:
             host = Host()
