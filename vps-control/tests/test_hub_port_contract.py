@@ -51,7 +51,7 @@ class HubPortContractTests(unittest.TestCase):
         v05=content(VPS/"install-hub-v05.sh")
         self.assertIn("hub_brain.py hub_file_sync.py hub_sync_jobs.py hub_app.py hub_bridge.py",v05)
 
-    def test_v06_upgrade_checks_six_core_and_twenty_three_hub_tools(self):
+    def test_v06_upgrade_checks_six_core_and_twenty_seven_hub_tools(self):
         script=content(VPS/"install-hub-v06.sh")
         groups=re.search(
             r'^core=(\{.*?\})\s*^hub=(\{.*?\})\s*^for attempt in range\(8\):',
@@ -60,7 +60,7 @@ class HubPortContractTests(unittest.TestCase):
         core=ast.literal_eval(groups.group(1))
         hub=ast.literal_eval(groups.group(2))
         self.assertEqual(len(core),6)
-        self.assertEqual(len(hub),23)
+        self.assertEqual(len(hub),27)
         self.assertTrue(core<=hub|{"get_power_service_health"})
         self.assertIn('((8892,core),(8898,hub))',script)
         self.assertIn('"$SRC/hub_bridge.py" "$HUB/hub_bridge.py"',script)
