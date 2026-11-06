@@ -15,6 +15,7 @@ import shutil
 import threading
 
 from playwright.sync_api import sync_playwright
+from visual_browser_fixtures import fulfil_fixture
 
 ROOT=Path(__file__).resolve().parents[1]
 PAGES=("home","characters","scenes","props","shots",
@@ -122,6 +123,36 @@ def main():
                         "el=>el.scrollWidth")<=395, name
                     mobile.screenshot(path=str(out/f"mobile_{name}.png"),
                                       full_page=True)
+
+                # Separate illustrative CI fixtures exercise populated layouts.
+                # Nothing is written to the production database; SVGs contain an
+                # explicit "VISUAL CI FIXTURE ONLY" watermark.
+                cases=[
+                    ("home",".icebound-progress-row",4),
+                    ("characters","#characterList .character-entry",6),
+                    ("scenes","#sceneList .scene-entry",4),
+                    ("props","#wfList_props .workflow-record",4),
+                    ("storyboards","#storyboardTimeline .icebound-timeline-card",31),
+                    ("tasks","#wfList_tasks .workflow-record",4),
+                ]
+                fixture=browser.new_page(viewport={"width":1440,"height":900},
+                                         device_scale_factor=1)
+                fixture.route("**/api/v1/**",fulfil_fixture)
+                fixture_errors=[]
+                fixture.on("pageerror",lambda e:fixture_errors.append(str(e)))
+                for name,selector,expected in cases:
+                    fixture.goto(url+"?page="+name,wait_until="domcontentloaded")
+                    try:
+                        fixture.wait_for_function("""([selector,expected]) =>
+                          document.querySelectorAll(selector).length>=expected""",
+                          [selector,expected],timeout=8000)
+                    finally:
+                        fixture.screenshot(path=str(out/f"fixture_{name}.png"))
+                    count=fixture.locator(selector).count()
+                    assert count>=expected,(name,count,expected)
+                assert not fixture_errors,fixture_errors
+                print("Fixture visual smoke passed: 6 populated desktop screenshots")
+
                 print("Visual layout smoke passed: 11 desktop + 5 mobile screenshots")
             finally:
                 browser.close()
