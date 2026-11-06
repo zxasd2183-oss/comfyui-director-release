@@ -189,6 +189,27 @@ class WorkflowTests(unittest.TestCase):
             self.decide("white_models","01","approve")
         self.assertEqual(e.exception.reason,"shot_plan_not_approved")
 
+    def test_white_model_keyframe_rejects_non_numeric_and_claimed_fine_mode(self):
+        for value in (
+            '[{"t":0,"actor_x":0},{"t":0,"actor_x":3}]',
+            '[{"t":0,"actor_x":"not a number"}]',
+            '[{"t":500,"actor_x":3}]',
+            '{"t":0,"actor_x":1}',
+        ):
+            with self.subTest(value=value):
+                with self.assertRaises(w.WorkflowError) as ctx:
+                    self.save("white_models",fields={
+                        "stage_width":"9","keyframes":value})
+                self.assertEqual(ctx.exception.reason,"invalid_white_model_keyframes")
+        self.save("white_models",fields={
+            "stage_width":"9","stage_depth":"10","camera_z":"2.5",
+            "focal_mm":"35","actor_height":"1.7","quality":"精白模",
+            "keyframes":'[{"t":0,"actor_x":0},{"t":4,"actor_x":2}]'})
+        self.decide("white_models","01","submit")
+        with self.assertRaises(w.WorkflowError) as ctx:
+            self.decide("white_models","01","approve")
+        self.assertEqual(ctx.exception.reason,"fine_white_model_engine_not_connected")
+
     def test_video_is_job_specification_not_fake_rendered_clip(self):
         self.save("video_plans")
         self.decide("video_plans","01","submit")
