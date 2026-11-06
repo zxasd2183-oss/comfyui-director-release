@@ -319,15 +319,16 @@ jobs:
       contents: write
     env:
       GRADLE_OPTS: -Dorg.gradle.daemon=false
-      GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
-      GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
-      GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
-      GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
-      GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
     steps:
       - uses: actions/checkout@v4
       - name: Refuse missing signing material or missing public certificate pin
         shell: bash
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+          GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
           for k in GLACIER_ANDROID_KEYSTORE_BASE64 GLACIER_ANDROID_SIGNING_STORE_PASSWORD \
@@ -363,6 +364,10 @@ jobs:
           path: glacier-android-gecko/app/src/main/jniLibs
       - name: Prepare independently held Glacier APK signing key
         shell: bash
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
         run: |
           set -euo pipefail
           keystore="$RUNNER_TEMP/glacier-android-stable.p12"
@@ -373,11 +378,17 @@ jobs:
           keytool -list -alias "$GLACIER_ANDROID_SIGNING_KEY_ALIAS" \
             -keystore "$keystore" -storepass:env GLACIER_ANDROID_SIGNING_STORE_PASSWORD >/dev/null
       - name: Build full Android release from the same verified source commit
+        env:
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           gradle -p glacier-android-gecko :app:assembleRelease --no-daemon --stacktrace
       - name: Enforce immutable signing identity and verify signed APK
         shell: bash
+        env:
+          GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
           source='glacier-android-gecko/app/build/outputs/apk/release/app-release.apk'
