@@ -1,4 +1,4 @@
-name: Glacier Browser v0.20.1 Windows input compatibility preview r2
+name: Glacier Browser v0.20.1 D03 encrypted account cards preview
 on:
   push:
     branches:
@@ -134,7 +134,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = '0.20.1'
-          $tag = "glacier-v$version-input-preview-r3"
+          $tag = "glacier-v$version-account-cards-d03-preview"
           $name = "GlacierBrowser-v$version-Windows-Setup-x64.exe"
           $installer = "dist/$name"
           if (-not (Test-Path $installer)) { throw 'Windows setup missing.' }
@@ -144,9 +144,11 @@ jobs:
           for ($attempt=1; $attempt -le 5; $attempt++) {
             gh release view $tag *> $null
             if ($LASTEXITCODE -eq 0) {
-              gh release upload $tag $installer --clobber
+              Write-Host 'Immutable D03 preview already exists; keeping original asset unchanged.'
+              $published = $true
+              break
             } else {
-              gh release create $tag $installer --target fix/glacier-browser-windows-v0201-input --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser v0.20.1 input compatibility preview: locally hosted Pointer Events and HTML5 drag diagnostics plus explicit open-current-page-in-system-browser fallback. Does not automate or bypass verification challenges; Qt WebEngine compatibility with specific verification sites remains unverified. VLESS, account spaces and signed update verification retained. Windows binary is not Authenticode signed." --prerelease
+              gh release create $tag $installer --target fix/glacier-browser-windows-v0201-input --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser v0.20.1 D03 preview: encrypted local per-site account cards, manual username/password copy only, no autofill, alongside pointer diagnostics. Does not automate or bypass verification challenges; Qt WebEngine compatibility with specific verification sites remains unverified. VLESS, account spaces and signed update verification retained. Windows binary is not Authenticode signed." --prerelease
             }
             if ($LASTEXITCODE -eq 0) { $published = $true; break }
             Write-Warning "Release upload failed on attempt $attempt"
