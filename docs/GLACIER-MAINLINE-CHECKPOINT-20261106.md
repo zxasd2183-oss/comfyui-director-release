@@ -33,3 +33,11 @@ macOS 分支 `build/glacier-browser-v0-20-ui-refresh`：
 3. 继续 D05–D07 桌面功能与双平台统一验收，避免回头为 M04 添加兼容阻塞。
 
 此文档是代码状态记录，不代表应用已实际安装测试成功。
+
+## 07:00 后追加进展
+
+- Windows/macOS D03：账号卡片只对当前活动标签页展示，后台加载不弹；切回标签页时弹出一次，同一网站访问不重复提示；已补模拟回归。
+- Windows/macOS D03：账号名称大小写/空格归一化去重；编辑与失败回滚回归、测试夹具信号修正。
+- Android M05：正式签名 Release 不再带 `--prerelease`；客户端 `BrowserUpdater.findLatest` 排除 draft/prerelease。
+- Android M05：增加 `StableReleaseFilteringTest` 两项 instrumentation 测试，更新 CI 为至少 9 项通过，并修复 grep 正则。
+- GitHub commit 已写入；工作流是否实际成功、正式签名 Secret 是否存在仍待真实 CI 检查。**未宣称发布或真机验证完成。**
