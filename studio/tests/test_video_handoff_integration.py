@@ -161,6 +161,29 @@ class StudioToGpuHandoffTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.PlanError,"checksum mismatch"):
             runner.build_studio_episode_plan(tampered,workflow,bindings)
 
+    def test_all_31_shots_160_seconds_never_silently_skip_unready_ones(self):
+        self.build_approved_chain()
+        # Exact production scale, but fully isolated in disposable SQLite.
+        # 3 + seven 6-second shots + twenty-three 5-second shots = 160s.
+        with closing(core.open_db(self.db)) as db:
+            for number in range(2,32):
+                duration=6000 if number<=8 else 5000
+                core.create_shot(db,"WaitingOffice","EP01",
+                                 f"{number:02d}",number,duration)
+        result=work.get_episode_video_handoffs(self.db,"WaitingOffice","EP01")
+        bundle=result["bundle"]
+        self.assertEqual(bundle["shot_count"],31)
+        self.assertEqual(bundle["total_duration_ms"],160000)
+        self.assertEqual(bundle["shot_ids"][0],"01")
+        self.assertEqual(bundle["shot_ids"][-1],"31")
+        self.assertEqual(len(bundle["packages"]),1)
+        self.assertEqual(len(bundle["blocked"]),30)
+        self.assertFalse(bundle["all_ready"])
+        with self.assertRaisesRegex(runner.PlanError,"blocked shots"):
+            runner.build_studio_episode_plan(result,
+                {"6":{"class_type":"TextNode","inputs":{"text":""}}},
+                {"prompt":{"node":"6","input":"text"}})
+
     def test_revised_upstream_blocks_video_import_without_approval(self):
         self.build_approved_chain()
         self.save("shot_plans",{"title":"需要重新审阅的镜头",
