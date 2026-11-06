@@ -635,6 +635,8 @@
       ep.closest("label").hidden=wfScope(kind)==="project";
       $("wfNew_"+kind).disabled=(!state.project ||
         (wfScope(kind)!=="project"&&!state.episode));
+      if(kind==="video_plans")
+        $("wfBatchExport_video_plans").disabled=!state.project||!state.episode;
     }
     const reviewProject=$("wfReviewProject"),reviewEpisode=$("wfReviewEpisode");
     const p=reviewProject.value||projects[0]?.project_id||"";
@@ -1545,6 +1547,42 @@
       }
     });
   }
+
+  $("wfBatchExport_video_plans").addEventListener("click",async()=>{
+    const state=wfState.video_plans;
+    const pid=state.project,eid=state.episode;
+    if(!microsoftOwner||!pid||!eid)return;
+    const btn=$("wfBatchExport_video_plans");
+    const label=$("wfMessage_video_plans");
+    btn.disabled=true;
+    try{
+      label.textContent="正在汇总整集镜头版本、已批准的素材与执行阻塞项…";
+      const qs=new URLSearchParams({project:pid,episode:eid});
+      const response=await fetch("./api/v1/workflow/video-packages?"+qs.toString(),
+                                 {cache:"no-store"});
+      const data=await response.json();
+      if(!response.ok)throw Error(data.reason||"无法取得整集制作包");
+      if(pid!==state.project||eid!==state.episode)
+        throw Error("剧集已切换，请重新导出");
+      if(data.bundle.shot_count<1)
+        throw Error("当前剧集没有正式镜头计划");
+      const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+      const uri=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=uri;a.download="studio_episode_"+eid+"_handoff.json";
+      a.click();URL.revokeObjectURL(uri);
+      label.textContent=data.bundle.all_ready?
+        "已导出整集 "+data.bundle.shot_count+
+          " 镜头制作包；仍须 GPU 本地执行器显式授权。":
+        "已导出完整阻塞报告：整集 "+data.bundle.shot_count+
+          " 镜头，"+data.bundle.blocked.length+
+          " 个镜头未满足准入条件。离线执行器会拒绝缺镜头或未批准的制作包。";
+    }catch(error){
+      label.textContent="导出整集失败："+error.message;
+    }finally{
+      btn.disabled=!state.project||!state.episode;
+    }
+  });
 
   // UI handlers are bound once. Project/episode changes discard stale scopes.
   for(const kind of wfKinds){
