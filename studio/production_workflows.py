@@ -401,6 +401,9 @@ def review_unit(db_path,data,actor):
                     if prior is None or prior["status"]!="approved":
                         raise WorkflowError("shot_plan_not_approved",409)
                 if kind=="white_models":
+                    board=_record(db,pid,eid,"storyboards",uid)
+                    if board is None or board["status"]!="approved":
+                        raise WorkflowError("storyboard_not_approved",409)
                     for key in ("stage_width","stage_depth","camera_z","focal_mm",
                                 "actor_height"):
                         if key not in fields:raise WorkflowError(
