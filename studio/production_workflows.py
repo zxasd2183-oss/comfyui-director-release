@@ -382,6 +382,42 @@ def review_unit(db_path,data,actor):
                 (dec in ("approve","reject") and row["status"]!="in_review")):
                 raise WorkflowError("invalid_workflow_review_transition",409)
             if dec=="approve":
+                fields=json.loads(row["fields_json"])
+                if kind=="shot_plans":
+                    scene_id=fields.get("scene_id")
+                    if not scene_id:
+                        raise WorkflowError("approved_scene_required",409)
+                    scene=db.execute("SELECT status FROM scene_profiles WHERE "
+                        "project_id=? AND scene_id=?",(pid,scene_id)).fetchone()
+                    if not scene or scene["status"]!="approved":
+                        raise WorkflowError("scene_not_approved",409)
+                    for prop_id in [x.strip() for x in
+                        fields.get("prop_ids","").split(",") if x.strip()]:
+                        prop=_record(db,pid,"","props",prop_id)
+                        if not prop or prop["status"]!="approved":
+                            raise WorkflowError("prop_not_approved",409)
+                if kind in ("storyboards","white_models"):
+                    prior=_record(db,pid,eid,"shot_plans",uid)
+                    if prior is None or prior["status"]!="approved":
+                        raise WorkflowError("shot_plan_not_approved",409)
+                if kind=="white_models":
+                    for key in ("stage_width","stage_depth","camera_z","focal_mm",
+                                "actor_height"):
+                        if key not in fields:raise WorkflowError(
+                            "white_model_geometry_incomplete",409)
+                if kind=="tasks" and not fields.get("outcome"):
+                    raise WorkflowError("task_completion_evidence_required",409)
+                if kind=="settings":
+                    for key in ("aspect","fps","width","height"):
+                        if key not in fields:raise WorkflowError(
+                            "project_format_incomplete",409)
+                    aspect=fields["aspect"]
+                    expected={"9:16":9/16,"16:9":16/9,"1:1":1,
+                        "4:3":4/3,"3:4":3/4,"2.39:1":2.39}[aspect]
+                    width=float(fields["width"])
+                    height=float(fields["height"])
+                    if abs(width/height-expected)>0.02:
+                        raise WorkflowError("project_aspect_does_not_match_resolution",409)
                 if kind in ("storyboards","props") and not row["source_visual_id"]:
                     raise WorkflowError("individual_reference_image_required",409)
                 if row["source_visual_id"]:
