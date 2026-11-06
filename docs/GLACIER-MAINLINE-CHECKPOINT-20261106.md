@@ -10,13 +10,13 @@
 ## 本轮完成的桌面代码 (D03)
 
 Windows 分支 `fix/glacier-browser-windows-v0201-input`：
-- `glacier-windows/glacier_accounts22.py`：按 HTTPS 域名精准匹配账号卡片；本机 DPAPI 加密；新增、查看、手动复制与确认删除。
+- `glacier-windows/glacier_accounts22.py`：按 HTTPS 域名精准匹配账号卡片；本机 DPAPI 加密；新增、查看、编辑、手动复制与确认删除；拒绝仅大小写或空格不同的重复名称。
 - `glacier-windows/main.py` / `windows_desktop15.py`：接入现有标签页与菜单；不自动填表、自动登录或上传凭据。
-- `glacier-windows/test_accounts22.py`：主机匹配、非法站点、存储加密、删除及失败回滚。
+- `glacier-windows/test_accounts22.py`：主机匹配、非法站点、存储加密、编辑与删除、重复名称拦截及失败回滚。
 - `.github/workflows/glacier-browser-windows-v0201-input.yml`：将新代码及测试加入 CI，使用独立不可覆盖预览 tag，不更新已签名自动更新源。
 
 macOS 分支 `build/glacier-browser-v0-20-ui-refresh`：
-- 同步账号卡片模块、菜单、标签页监听与测试；复用 macOS Keychain / Fernet 密钥存储。
+- 同步账号卡片模块、编辑与删除、菜单、标签页监听与测试；复用 macOS Keychain / Fernet 密钥存储。
 - `.github/workflows/glacier-browser-macos-arm64.yml`：加入测试，采用独立不可覆盖 D03 预览 tag，取消预览构建自动触发正式签名 feed。
 
 ## 未完成 / 不得假报通过
