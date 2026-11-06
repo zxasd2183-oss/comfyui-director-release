@@ -110,12 +110,14 @@ class GlacierAccounts22:
         if self._account_last_site22.get(key) == site:
             return
         self._account_last_site22[key] = site
-        if site and any(r["site"] == site for r in self._accounts_doc22["accounts"]):
+        # Never interrupt a foreground session for a background tab load.
+        if (site and view is self.current()
+                and any(r["site"] == site for r in self._accounts_doc22["accounts"]):
             QTimer.singleShot(350, lambda v=view, s=site: self._show_site_accounts22(v, s))
 
     def _show_site_accounts22(self, view, site):
         try:
-            if page_site22(view.url()) != site:
+            if view is not self.current() or page_site22(view.url()) != site:
                 return
         except RuntimeError:
             return
