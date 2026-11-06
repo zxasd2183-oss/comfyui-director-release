@@ -4,6 +4,15 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.os.Handler;
+import android.os.Looper;
+import android.widget.ImageView;
+import java.io.ByteArrayOutputStream;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -59,6 +68,10 @@ public final class MainActivity extends Activity {
     private static boolean proxyMode = false;
 
     private final List<Tab> tabs = new ArrayList<>();
+    private final Handler tabSaveHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService tabSaveQueue = Executors.newSingleThreadExecutor();
+    private final Runnable saveTabsTask = this::persistTabs;
+    private boolean restoringTabs;
     private GeckoView web;
     private BrowserTransfers transfers;
     private EditText address;
@@ -75,14 +88,22 @@ public final class MainActivity extends Activity {
     private static class Tab {
         final GeckoSession session;
         final String profile;
+        final String id;
         String url = START_URL;
         String title = "新标签页";
+        String geckoState;
+        byte[] thumbnail;
+        boolean pendingRestore;
         boolean canBack = false;
         boolean canForward = false;
 
         Tab(GeckoSession session, String profile) {
+            this(session, profile, UUID.randomUUID().toString());
+        }
+        Tab(GeckoSession session, String profile, String id) {
             this.session = session;
             this.profile = profile;
+            this.id = id;
         }
     }
 
@@ -396,12 +417,114 @@ public final class MainActivity extends Activity {
         active.session.loadUri("about:blank");
         active.url = "about:blank";
         active.title = "新标签页";
+        active.geckoState = null;
+        active.thumbnail = null;
         updateChrome();
+        scheduleTabsSave();
     }
 
     private boolean debugBuild() {
         return (getApplicationInfo().flags
                 & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
+    private void scheduleTabsSave() {
+        if (restoringTabs) return;
+        tabSaveHandler.removeCallbacks(saveTabsTask);
+        tabSaveHandler.postDelayed(saveTabsTask, 420);
+    }
+
+    private BrowserTabStore.Snapshot snapshotTabs() {
+        BrowserTabStore.Snapshot snapshot = new BrowserTabStore.Snapshot();
+        snapshot.activeId = active == null ? null : active.id;
+        for (Tab tab : tabs) {
+            snapshot.tabs.add(new BrowserTabStore.TabRecord(
+                    tab.id, tab.profile, tab.url, tab.title,
+                    tab.geckoState, tab.thumbnail == null ? null : tab.thumbnail.clone()));
+        }
+        return snapshot;
+    }
+
+    private void persistTabs() {
+        if (restoringTabs || tabs.isEmpty()) return;
+        BrowserTabStore.Snapshot snapshot = snapshotTabs();
+        tabSaveQueue.execute(() -> {
+            try {
+                BrowserTabStore.save(getApplicationContext(), snapshot);
+            } catch (Exception ignored) {
+                // No browsing URLs, titles, form state or thumbnails in logs.
+            }
+        });
+    }
+
+    private boolean restoreSavedTabs() {
+        BrowserTabStore.Snapshot snapshot;
+        try {
+            snapshot = BrowserTabStore.load(this);
+        } catch (Exception ignored) {
+            android.widget.Toast.makeText(this,
+                    "标签页数据无法读取，本次开启新的浏览会话",
+                    android.widget.Toast.LENGTH_LONG).show();
+            return false;
+        }
+        if (snapshot.tabs.isEmpty()) return false;
+        restoringTabs = true;
+        try {
+            Tab resume = null;
+            for (BrowserTabStore.TabRecord row : snapshot.tabs) {
+                // Profile/contextId is selected BEFORE opening the GeckoSession.
+                Tab tab = new Tab(createSession(row.profile), row.profile, row.id);
+                tab.url = row.url;
+                tab.title = row.title == null || row.title.isEmpty()
+                        ? row.url : row.title;
+                tab.geckoState = row.state;
+                tab.thumbnail = row.thumb;
+                tab.pendingRestore = true;
+                tabs.add(tab);
+                if (row.id.equals(snapshot.activeId)) resume = tab;
+            }
+            if (tabs.isEmpty()) return false;
+            if (resume == null) resume = tabs.get(0);
+            switchTo(resume);
+            if (debugBuild()) android.util.Log.i("GlacierSmoke",
+                    "TAB_RESTORE_COUNT=" + tabs.size());
+            return true;
+        } finally {
+            restoringTabs = false;
+        }
+    }
+
+    private void captureTabThumbnail(Tab tab) {
+        if (tab == null || tab != active || web == null
+                || !BrowserTabStore.validUrl(tab.url)
+                || "about:blank".equals(tab.url)) return;
+        try {
+            web.capturePixels().accept(bitmap -> {
+                if (bitmap == null || !tabs.contains(tab)) return;
+                try {
+                    int width = 240;
+                    int height = Math.max(1, Math.min(420,
+                            (int)((double)bitmap.getHeight() * width / bitmap.getWidth())));
+                    Bitmap small = Bitmap.createScaledBitmap(bitmap, width, height, true);
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    small.compress(Bitmap.CompressFormat.JPEG, 55, output);
+                    byte[] bytes = output.toByteArray();
+                    if (bytes.length <= 50 * 1024) {
+                        tab.thumbnail = bytes;
+                        scheduleTabsSave();
+                        if (debugBuild()) android.util.Log.i("GlacierSmoke",
+                                "TAB_THUMBNAIL_CAPTURED=true");
+                    }
+                    if (small != bitmap) small.recycle();
+                } catch (Exception ignored) {
+                    // A thumbnail is optional; never break browser navigation.
+                }
+            }, error -> {
+                // Gecko compositor may not have painted yet; keep prior preview.
+            });
+        } catch (Exception ignored) {
+            // Surface can be unavailable when app is going to background.
+        }
     }
 
     private void showBrowserMenu() {
@@ -505,13 +628,12 @@ public final class MainActivity extends Activity {
         });
         // Debug-only page-load evidence for CI. Never record arbitrary URLs,
         // query strings, proxy links, account data, or credentials.
-        if ((getApplicationInfo().flags
-                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            session.setProgressDelegate(new GeckoSession.ProgressDelegate() {
+        session.setProgressDelegate(new GeckoSession.ProgressDelegate() {
                 private String testSite;
 
                 @Override
                 public void onPageStart(GeckoSession source, String url) {
+                    if (!debugBuild()) return;
                     if (url != null && url.startsWith("https://example.com/")) {
                         testSite = "example";
                     } else if (url != null && "http://glacier-ci.invalid/".equals(url)
@@ -529,14 +651,32 @@ public final class MainActivity extends Activity {
 
                 @Override
                 public void onPageStop(GeckoSession source, boolean success) {
-                    if (testSite != null) {
+                    if (debugBuild() && testSite != null) {
                         android.util.Log.i("GlacierSmoke",
                                 "PAGE_STOP site=" + testSite + " success=" + success);
                     }
                     testSite = null;
+                    if (success) {
+                        Tab target = findBySession(source);
+                        if (target != null) {
+                            tabSaveHandler.postDelayed(
+                                    () -> captureTabThumbnail(target), 950);
+                        }
+                    }
+                }
+
+                @Override
+                public void onSessionStateChange(GeckoSession source,
+                                                 GeckoSession.SessionState state) {
+                    Tab target = findBySession(source);
+                    if (target == null || state == null) return;
+                    String serialized = state.toString();
+                    if (serialized != null && serialized.length() <= 256 * 1024) {
+                        target.geckoState = serialized;
+                        scheduleTabsSave();
+                    }
                 }
             });
-        }
         session.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
             @Override
             public GeckoResult<String> onLoadError(
@@ -564,6 +704,7 @@ public final class MainActivity extends Activity {
                     t.url = url;
                     t.title = url.length() > 40 ? url.substring(0, 40) + "…" : url;
                     if (t == active) updateChrome();
+                    scheduleTabsSave();
                 }
             }
 
@@ -614,20 +755,45 @@ public final class MainActivity extends Activity {
 
     private void openTab(String profile, String url) {
         Tab t = createTab(profile);
-        switchTo(t);
         t.url = url;
         t.title = "about:blank".equals(url) ? "新标签页" : url;
+        switchTo(t);
         t.session.loadUri(url);
         updateChrome();
+        scheduleTabsSave();
     }
 
     private void switchTo(Tab next) {
         if (next == active) return;
+        if (active != null) {
+            captureTabThumbnail(active);
+            active.session.setActive(false);
+        }
         if (web.getSession() != null) web.releaseSession();
         active = next;
         selectedProfile = next.profile;
         web.setSession(next.session);
+        next.session.setActive(true);
+        if (next.pendingRestore) {
+            next.pendingRestore = false;
+            boolean usedState = false;
+            if (next.geckoState != null && !next.geckoState.isEmpty()) {
+                try {
+                    GeckoSession.SessionState previous =
+                            GeckoSession.SessionState.fromString(next.geckoState);
+                    if (previous != null && previous.size() > 0) {
+                        next.session.restoreState(previous);
+                        if (!"about:blank".equals(next.url)) next.session.reload();
+                        usedState = true;
+                    }
+                } catch (Exception ignored) {
+                    // Corrupt session history must not prevent basic URL restore.
+                }
+            }
+            if (!usedState) next.session.loadUri(next.url);
+        }
         updateChrome();
+        scheduleTabsSave();
     }
 
     private void updateChrome() {
@@ -682,6 +848,7 @@ public final class MainActivity extends Activity {
 
     private void showTabs() {
         if (tabs.isEmpty() || tabOverview == null) return;
+        captureTabThumbnail(active);
         // Full-screen grid like the Android Chrome switcher, not a small
         // clipped AlertDialog. Data is an in-memory per-tab placeholder;
         // M03 will add persistent thumbnails and session restoration.
@@ -761,13 +928,35 @@ public final class MainActivity extends Activity {
             cardHeader.addView(close, new LinearLayout.LayoutParams(dp(33), dp(33)));
             tile.addView(cardHeader);
 
-            TextView preview = new TextView(this);
-            preview.setText("❄");
-            preview.setTextSize(39);
-            preview.setTextColor(GLACIER_BLUE);
-            preview.setGravity(Gravity.CENTER);
-            preview.setBackground(surface(PALE, 12));
-            tile.addView(preview, new LinearLayout.LayoutParams(
+            FrameLayout previewFrame = new FrameLayout(this);
+            previewFrame.setBackground(surface(PALE, 12));
+            if (tab.thumbnail != null && tab.thumbnail.length > 0) {
+                try {
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(
+                            tab.thumbnail, 0, tab.thumbnail.length);
+                    if (bitmap != null) {
+                        ImageView preview = new ImageView(this);
+                        preview.setImageBitmap(bitmap);
+                        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                        previewFrame.addView(preview, new FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT));
+                    }
+                } catch (Exception ignored) {
+                    // Malformed preview should simply show the fallback.
+                }
+            }
+            if (previewFrame.getChildCount() == 0) {
+                TextView placeholder = new TextView(this);
+                placeholder.setText("❄");
+                placeholder.setTextSize(39);
+                placeholder.setTextColor(GLACIER_BLUE);
+                placeholder.setGravity(Gravity.CENTER);
+                previewFrame.addView(placeholder, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+            }
+            tile.addView(previewFrame, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
             TextView domain = new TextView(this);
@@ -816,6 +1005,7 @@ public final class MainActivity extends Activity {
         } else {
             updateChrome();
         }
+        scheduleTabsSave();
     }
 
     private void closeActiveTab() {
@@ -844,7 +1034,10 @@ public final class MainActivity extends Activity {
             }
         }
         if (newTabPage != null) newTabPage.setVisibility(View.GONE);
+        active.url = url;
+        active.title = url;
         active.session.loadUri(url);
+        scheduleTabsSave();
         address.clearFocus();
         InputMethodManager imm =
                 (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -1029,7 +1222,15 @@ public final class MainActivity extends Activity {
             String bootUrl = debugBuild()
                     && "mock-socks".equals(getIntent().getStringExtra("glacier.ci.network"))
                     ? "http://glacier-ci.invalid/" : START_URL;
-            openTab(PRIVATE, bootUrl);
+            // Synthetic offline/mock SOCKS CI uses a known fixture URL and
+            // must never read a previous tab snapshot from another network.
+            String ciNetwork = getIntent().getStringExtra("glacier.ci.network");
+            if (!"offline-socks".equals(ciNetwork) && !"mock-socks".equals(ciNetwork)
+                    && restoreSavedTabs()) {
+                // Persisted sessions retain their original Gecko context IDs.
+            } else {
+                openTab(PRIVATE, bootUrl);
+            }
         } catch (Exception ex) {
             NativeProxy.stop();
             showNetworkError("GeckoView 无法使用当前网络配置初始化");
@@ -1116,7 +1317,24 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStop() {
+        tabSaveHandler.removeCallbacks(saveTabsTask);
+        persistTabs();
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
+        tabSaveHandler.removeCallbacks(saveTabsTask);
+        if (isFinishing() && !tabs.isEmpty()) {
+            try {
+                // This path deliberately terminates the process, so flush
+                // synchronously before Gecko sessions are closed.
+                BrowserTabStore.save(this, snapshotTabs());
+            } catch (Exception ignored) {
+                // Never log browsing metadata.
+            }
+        }
         if (transfers != null && isFinishing()) transfers.dispose();
         if (isFinishing()) {
             if (web != null && web.getSession() != null) web.releaseSession();
