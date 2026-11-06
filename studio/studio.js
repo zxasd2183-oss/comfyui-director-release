@@ -577,6 +577,7 @@
     tasks:"tasks",settings:"settings"
   };
   const wfKinds=Object.keys(wfPageKind).map(p=>wfPageKind[p]);
+  let videoReadiness=null;
   const wfState=Object.fromEntries(wfKinds.map(kind=>[
     kind,{project:"",episode:"",items:null,selected:"",editing:false,
           image:"",shots:[],scope:"",fields:null}
@@ -674,8 +675,82 @@
     const state=wfState[kind];
     if(!microsoftOwner||!state.project)return;
     $("wfMessage_"+kind).textContent="正在读取真实项目数据…";
-    try{await workflowFetch(kind,state);}
-    catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
+    try{
+      await workflowFetch(kind,state);
+      if(kind==="video_plans")await workflowLoadReadiness(state);
+    }catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
+  }
+
+  const readinessNames={
+    project_spec_not_approved:"交付规格未批准",
+    shot_plans_not_approved:"分镜规划未批准",
+    storyboards_not_approved:"分镜图未批准",
+    white_models_not_approved:"粗白模未批准",
+    scene_revision_not_approved:"场景版本未批准",
+    video_render_executor_not_connected:"GPU 视频执行器未连接"
+  };
+  async function workflowLoadReadiness(state){
+    const root=$("wfReadiness_video_plans");
+    if(!root||!state.project||!state.episode)return;
+    const pid=state.project,eid=state.episode;
+    root.replaceChildren(el("p","","正在读取每一镜头的实际前置条件…"));
+    const qs=new URLSearchParams({project:pid,episode:eid});
+    try{
+      const response=await fetch("./api/v1/workflow/readiness?"+qs.toString(),
+        {cache:"no-store"});
+      const data=await response.json();
+      if(!response.ok)throw Error(data.reason||"读取镜头就绪状态失败");
+      if(pid!==state.project||eid!==state.episode)return;
+      videoReadiness=data;
+      root.replaceChildren();
+      const header=el("div","workflow-readiness-head");
+      header.appendChild(el("strong","",
+        "EP "+eid+" · "+data.shot_count+" 镜头 · "+(data.total_duration_ms/1000)+
+        " 秒"));
+      header.appendChild(el("span","",
+        data.upstream_ready_count+" / "+data.shot_count+
+        " 镜头满足素材前置条件 · 渲染执行器尚未接通"));
+      root.appendChild(header);
+      const legend=el("div","workflow-readiness-stats");
+      for(const [kind,name] of [["shot_plans","镜头规划"],["storyboards","分镜图"],
+          ["white_models","白模"]]){
+        legend.appendChild(el("span","",
+          name+" "+(data.approved_counts[kind]||0)+"/"+data.shot_count+" 已批准"));
+      }
+      root.appendChild(legend);
+      const entries=el("div","workflow-readiness-rows");
+      for(const shot of data.shots){
+        const row=el("button","workflow-readiness-shot"+(
+          state.selected===shot.shot_id?" active":""));
+        row.type="button";
+        const issue=shot.upstream_blockers.length?
+          shot.upstream_blockers.map(k=>
+            readinessNames[k]||(
+              k.startsWith("prop_not_approved:")?"道具未批准："+k.split(":")[1]:
+              k.startsWith("character_master_not_approved:")?
+              "角色母版未批准："+k.split(":")[1]:k)).join(" · "):
+          "素材已齐，等待安全视频执行器";
+        row.setAttribute("aria-label","镜头 "+shot.shot_id+"："+issue);
+        row.appendChild(el("strong","","SH "+shot.shot_id));
+        row.appendChild(el("small","",issue));
+        row.addEventListener("click",()=>{
+          state.selected=shot.shot_id;
+          state.editing=!state.items.items.some(x=>x.unit_id===shot.shot_id);
+          state.image="";
+          workflowRender("video_plans");
+          for(const elmt of entries.querySelectorAll(".workflow-readiness-shot"))
+            elmt.classList.toggle("active",elmt===row);
+        });
+        entries.appendChild(row);
+      }
+      root.appendChild(entries);
+      root.appendChild(el("p","workflow-readiness-guard",
+        "以上均来自现有制作数据库；待批准不是已完成，不能从此页面直接启动 GPU。"));
+    }catch(error){
+      if(pid===state.project&&eid===state.episode)
+        root.replaceChildren(el("p","workflow-readiness-guard",
+          "镜头就绪情况不可用："+error.message));
+    }
   }
   function workflowEnterPage(page){
     if(page==="review"){workflowLoadReviews();return;}
