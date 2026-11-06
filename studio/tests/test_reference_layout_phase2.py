@@ -91,7 +91,7 @@ class ApprovedDesignLayoutTests(unittest.TestCase):
         self.assertEqual(self.dom.tags.get("wfStoryboardEditDialog"),"dialog")
         self.assertIn('wfStoryboardEditorMount',self.dom.ids)
         self.assertIn('id="storyboardTimeline"',self.html)
-        self.assertIn('class="storyboard-shot-summary"',self.js)
+        self.assertIn('el("div","storyboard-shot-summary")',self.js)
         self.assertIn('const detail=kind==="storyboards"?',self.js)
         self.assertIn('wfStoryboardEditDialog").showModal()',self.js)
         self.assertIn('wfStoryboardEditDialog").close()',self.js)
