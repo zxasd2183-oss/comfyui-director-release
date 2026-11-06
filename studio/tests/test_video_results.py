@@ -63,7 +63,7 @@ class VideoReturnTests(fixture.StudioToGpuHandoffTests):
         with patch.object(vr,"probe_video",return_value=FPS):
             return vr.finish_upload(self.db,{"upload_id":uid},actor,self.lock)
 
-    def review(self,take,decision="approve",reason="导演已核对视频与计划，确认本镜头连续性及音画质量。"):
+    def review_take_result(self,take,decision="approve",reason="导演已核对视频与计划，确认本镜头连续性及音画质量。"):
         return vr.review_take(self.db,{
             "project_id":"WaitingOffice","episode_id":"EP01","shot_id":"01",
             "take_id":take,"decision":decision,"rationale":reason},OWNER)
@@ -102,10 +102,10 @@ class VideoReturnTests(fixture.StudioToGpuHandoffTests):
         self.assertEqual(listed[0]["status"],"in_review")
         with self.assertRaises(vr.VideoResultError):
             vr.get_take_file(self.db,"WaitingOffice","EP01","02",take["take_id"])
-        good=self.review(take["take_id"])
+        good=self.review_take_result(take["take_id"])
         self.assertEqual(good["status"],"approved")
         with self.assertRaises(vr.VideoResultError) as caught:
-            self.review(take["take_id"])
+            self.review_take_result(take["take_id"])
         self.assertEqual(caught.exception.reason,"video_take_already_reviewed")
         with fixture.closing(fixture.core.open_db(self.db,initialize=False)) as db:
             self.assertTrue(fixture.core.verify_chain(db))
@@ -126,7 +126,7 @@ class VideoReturnTests(fixture.StudioToGpuHandoffTests):
         # be viewed but cannot be newly promoted to approved.
         self.review_video_plan_rejected_then_revised()
         with self.assertRaises(vr.VideoResultError) as caught:
-            self.review(take["take_id"])
+            self.review_take_result(take["take_id"])
         self.assertEqual(caught.exception.reason,"video_source_revision_changed")
 
     def review_video_plan_rejected_then_revised(self):
