@@ -5,6 +5,9 @@ plugins {
 android {
     namespace 'cn.borealos.glacier.geckopreview'
     compileSdk 37
+    buildFeatures {
+        buildConfig true
+    }
 
     defaultConfig {
         applicationId 'cn.borealos.glacier.geckopreview'
