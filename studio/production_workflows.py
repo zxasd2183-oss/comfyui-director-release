@@ -225,6 +225,26 @@ def _validated_fields(kind,value):
                     raise WorkflowError("positive_workflow_number_required")
             clean[key]=raw
     if not clean:raise WorkflowError("workflow_details_required")
+    if kind=="white_models" and clean.get("keyframes"):
+        try:
+            frames=json.loads(clean["keyframes"])
+            keys={"t","actor_x","actor_y","prop_x","prop_y",
+                  "camera_x","camera_y","camera_z","camera_yaw"}
+            if not isinstance(frames,list) or not 1<=len(frames)<=60:
+                raise ValueError
+            previous=-1.0
+            for frame in frames:
+                if not isinstance(frame,dict) or not set(frame)<=keys or "t" not in frame:
+                    raise ValueError
+                t=frame["t"]
+                if type(t) not in (float,int) or not 0<=t<=120 or t<=previous:
+                    raise ValueError
+                previous=t
+                for key,value in frame.items():
+                    if type(value) not in (float,int) or not -1000<=value<=1000:
+                        raise ValueError
+        except (ValueError,TypeError,OverflowError):
+            raise WorkflowError("invalid_white_model_keyframes") from None
     return clean
 
 
