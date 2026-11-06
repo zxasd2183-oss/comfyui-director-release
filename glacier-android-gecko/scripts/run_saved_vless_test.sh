@@ -16,5 +16,5 @@ adb install -r "$TEST_APK"
 adb shell am instrument -w -r \
   cn.borealos.glacier.geckopreview.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$OUT/instrumentation.txt"
-grep -q 'OK (7 tests)' "$OUT/instrumentation.txt"
-echo 'M05_STORAGE_TEST_PASS: VLESS, tab and library encryption; updater release validation and SOCKS5 remote-host handshake'
+grep -Eq '^OK \\(([9]|[1-9][0-9]+) tests?\\)' "$OUT/instrumentation.txt"
+echo 'M05_STORAGE_TEST_PASS: VLESS, tab and library encryption; stable-only updater release validation and SOCKS5 remote-host handshake'
