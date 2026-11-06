@@ -667,6 +667,27 @@
       visuals.appendChild(btn);
     }
     if(chosen){
+      if(kind==="video_plans"){
+        const wrap=el("div","workflow-readiness");
+        wrap.appendChild(el("strong","","渲染前置条件核对"));
+        const blockers=chosen.blockers||["video_render_executor_not_connected"];
+        const names={
+          project_spec_not_approved:"缺少已批准的项目输出规格",
+          shot_plans_not_approved:"分镜规划尚未批准",
+          storyboards_not_approved:"分镜图尚未批准",
+          white_models_not_approved:"白模预演尚未批准",
+          scene_revision_not_approved:"当前场景版本尚未批准",
+          video_render_executor_not_connected:"GPU / ComfyUI 正式执行器尚未接入"
+        };
+        for(const reason of blockers){
+          wrap.appendChild(el("p","",
+            "• "+(names[reason]||(
+             reason.startsWith("prop_not_approved:")?"道具尚未批准："+reason.split(":")[1]:
+             reason.startsWith("character_master_not_approved:")?
+                "角色母版尚未批准："+reason.split(":")[1]:reason))));
+        }
+        meta.appendChild(wrap);
+      }
       const dl=el("dl","");
       for(const [key,value] of Object.entries(chosen.fields)){
         dl.appendChild(el("dt","",data.fields[key]?.label||key));
@@ -809,6 +830,24 @@
     const note=el("textarea","");
     note.maxLength=2000;note.rows=2;note.value=current?.note||"";
     noteLabel.appendChild(note);form.appendChild(noteLabel);
+    if(kind==="video_plans"&&current){
+      const exportButton=el("button","prod-new prod-secondary","导出当前镜头制作单 JSON");
+      exportButton.type="button";
+      exportButton.addEventListener("click",()=>{
+        const plan={schema:"director_studio_video_order_v1",
+          project_id:state.project,episode_id:state.episode,
+          shot_id:current.unit_id,revision:current.revision,
+          status:current.status,settings:current.fields,
+          blockers:current.blockers||[],render_execution:"not_connected",
+          generated_at:new Date().toISOString()};
+        const output=new Blob([JSON.stringify(plan,null,2)],{type:"application/json"});
+        const href=URL.createObjectURL(output);
+        const a=document.createElement("a");a.href=href;
+        a.download="video_order_"+current.unit_id+"_V"+current.revision+".json";
+        a.click();URL.revokeObjectURL(href);
+      });
+      form.appendChild(exportButton);
+    }
     const kindVisual=data.image_kind;
     const visualLabel=el("label","","本版参考图片");
     const visualSelect=el("select","");
