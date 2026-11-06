@@ -1,4 +1,4 @@
-name: Glacier Android Mobile v0.2.0 M02 Glacier UI
+name: Glacier Android Mobile v0.2.0 M02R2 Chrome-style compact UI
 
 on:
   push:
@@ -88,13 +88,13 @@ jobs:
               assert 'classes.dex' in names, 'Missing app bytecode'
               assert not any(n.startswith('lib/armeabi-v7a') for n in names), 'Unexpected 32-bit library'
           PY
-          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk"
-          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk'
+          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02R2-ARM64-x86_64-debug.apk"
+          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02R2-ARM64-x86_64-debug.apk'
       - name: Upload real installable test APK
         uses: actions/upload-artifact@v4
         with:
           name: GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug
-          path: glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk
+          path: glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02R2-ARM64-x86_64-debug.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -177,7 +177,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk" bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_emulator_smoke.sh"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02R2-ARM64-x86_64-debug.apk" bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_emulator_smoke.sh"
       - name: Preserve screenshots and ADB/logcat evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -215,7 +215,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02R2-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
       - name: Preserve proxy-failure evidence on success or failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -254,7 +254,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02R2-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
       - name: Preserve synthetic proxy evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -279,16 +279,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='glacier-android-browser-v0.2.0-m02'
-          apk='.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk'
+          tag='glacier-android-browser-v0.2.0-m02r2'
+          apk='.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02R2-ARM64-x86_64-debug.apk'
           test -s "$apk"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "$apk" --clobber
           else
             gh release create "$tag" "$apk" \
               --target feature/glacier-android-browser-v020 \
-              --title 'Glacier Android v0.2.0 M02 · 冰川浅色 Chrome 风格移动端' \
-              --notes 'M02 移动版 UI：冰川浅色 Chrome 风格导航栏、圆角地址栏、搜索跳转、主页/刷新/标签/菜单操作和网络状态提示；保留 M01 本地加密记住 VLESS 节点、GeckoView 159、sing-box 1.14.4、账号空间隔离及文件传输。实验性 Debug APK，非正式安全审计；CI 签名可能变化，安装前备份非敏感数据。' \
+              --title 'Glacier Android v0.2.0 M02R2 · Chrome 风格单行地址栏与标签网格' \
+              --notes 'M02R2 移动版 UI：Chrome 风格单行地址栏、顶部标签按钮和三点菜单、两列标签卡片、新标签页搜索与常用网站、冰川浅色；刷新/后退/前进和网络状态在菜单中；保留 M01 本地加密记住 VLESS 节点、GeckoView 159、sing-box 1.14.4、账号空间隔离及文件传输。实验性 Debug APK，非正式安全审计；CI 签名可能变化，安装前备份非敏感数据。' \
               --prerelease
           fi
           gh release view "$tag" --json tagName,assets

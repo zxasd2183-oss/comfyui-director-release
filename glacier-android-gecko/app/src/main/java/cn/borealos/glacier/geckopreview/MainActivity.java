@@ -15,6 +15,9 @@ import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.FrameLayout;
+import android.widget.GridLayout;
+import android.widget.ScrollView;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -62,6 +65,7 @@ public final class MainActivity extends Activity {
     private TextView identity;
     private TextView tabCounter;
     private TextView engineLabel;
+    private View newTabPage;
     private Button backButton;
     private Button forwardButton;
     private Tab active;
@@ -179,194 +183,208 @@ public final class MainActivity extends Activity {
                 if (debugBuild()) {
                     android.util.Log.i("GlacierSmoke",
                             "SYSTEM_BAR_INSETS top=" + bars.top
-                            + " bottom=" + bars.bottom);
+                                    + " bottom=" + bars.bottom);
                 }
                 return insets;
             });
         }
         setContentView(root);
 
-        // Chrome-like top chrome: understated glacier branding, clear
-        // account-space chip, and one rounded address/search field.
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.VERTICAL);
-        top.setBackgroundColor(PALE);
+        // Android Chrome-style compact toolbar: no persistent logo, profile
+        // badge, diagnostic banner, or second row of navigation buttons.
+        LinearLayout toolbar = horizontal();
+        toolbar.setPadding(dp(7), dp(6), dp(7), dp(6));
+        toolbar.setBackgroundColor(PALE);
 
-        LinearLayout header = horizontal();
-        header.setPadding(dp(16), dp(5), dp(14), dp(1));
-        TextView logo = new TextView(this);
-        logo.setText("❄");
-        logo.setGravity(Gravity.CENTER);
-        logo.setTextColor(Color.WHITE);
-        logo.setTextSize(21);
-        logo.setContentDescription("Glacier");
-        logo.setBackground(surface(GLACIER_BLUE, 13));
-        header.addView(logo, new LinearLayout.LayoutParams(dp(35), dp(35)));
+        Button home = button("⌂");
+        home.setTextSize(22);
+        home.setContentDescription("主页");
+        home.setOnClickListener(v -> showNewTabInCurrentTab());
+        toolbar.addView(home, new LinearLayout.LayoutParams(dp(39), dp(47)));
 
-        TextView brand = new TextView(this);
-        brand.setText("  Glacier");
-        brand.setTextSize(19);
-        brand.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        brand.setTextColor(INK);
-        brand.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(brand, new LinearLayout.LayoutParams(0, dp(40), 1));
+        LinearLayout omnibox = new LinearLayout(this);
+        omnibox.setOrientation(LinearLayout.HORIZONTAL);
+        omnibox.setGravity(Gravity.CENTER_VERTICAL);
+        omnibox.setBackground(surface(Color.rgb(235, 243, 250), 25));
 
-        identity = new TextView(this);
-        identity.setTextSize(12);
-        identity.setTextColor(Color.rgb(59, 111, 140));
-        identity.setGravity(Gravity.CENTER);
-        identity.setPadding(dp(12), dp(7), dp(12), dp(7));
-        identity.setBackground(surfaceBorder(ICE, 18, HAIRLINE));
-        identity.setOnClickListener(v -> chooseProfile());
-        header.addView(identity);
-        top.addView(header);
-
-        LinearLayout nav = horizontal();
-        nav.setPadding(dp(12), dp(5), dp(12), dp(9));
-        backButton = button("‹");
-        backButton.setContentDescription("后退");
-        backButton.setOnClickListener(v -> {
-            if (active != null && active.canBack) active.session.goBack();
-        });
-        nav.addView(backButton, new LinearLayout.LayoutParams(dp(34), dp(43)));
-
-        forwardButton = button("›");
-        forwardButton.setContentDescription("前进");
-        forwardButton.setOnClickListener(v -> {
-            if (active != null && active.canForward) active.session.goForward();
-        });
-        LinearLayout.LayoutParams forwardParams =
-                new LinearLayout.LayoutParams(dp(34), dp(43));
-        forwardParams.setMargins(dp(4), 0, dp(6), 0);
-        nav.addView(forwardButton, forwardParams);
-
-        LinearLayout addressPill = new LinearLayout(this);
-        addressPill.setOrientation(LinearLayout.HORIZONTAL);
-        addressPill.setGravity(Gravity.CENTER_VERTICAL);
-        addressPill.setBackground(surfaceBorder(Color.WHITE, 23, HAIRLINE));
-        addressPill.setElevation(dp(1));
-
-        TextView lens = new TextView(this);
-        lens.setText("⌕");
-        lens.setTextSize(24);
-        lens.setGravity(Gravity.CENTER);
-        lens.setTextColor(GLACIER_BLUE);
-        lens.setContentDescription("搜索");
-        addressPill.addView(lens, new LinearLayout.LayoutParams(dp(30), dp(43)));
+        TextView siteIcon = new TextView(this);
+        siteIcon.setText("⌕");
+        siteIcon.setTextSize(25);
+        siteIcon.setTextColor(MUTED);
+        siteIcon.setGravity(Gravity.CENTER);
+        siteIcon.setContentDescription("搜索");
+        omnibox.addView(siteIcon, new LinearLayout.LayoutParams(dp(38), dp(47)));
 
         address = new EditText(this);
         address.setSingleLine(true);
-        address.setTextSize(13);
+        address.setTextSize(14);
         address.setTextColor(INK);
         address.setHintTextColor(MUTED);
         address.setHint("搜索或输入网址");
         address.setContentDescription("Glacier 地址栏");
         address.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         address.setSelectAllOnFocus(true);
-        address.setPadding(0, 0, dp(2), 0);
+        address.setPadding(0, 0, dp(9), 0);
         address.setBackgroundColor(Color.TRANSPARENT);
         address.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         address.setOnEditorActionListener((v, actionId, event) -> {
             navigate(address.getText().toString());
             return true;
         });
-        addressPill.addView(address, new LinearLayout.LayoutParams(0, dp(43), 1));
+        omnibox.addView(address, new LinearLayout.LayoutParams(0, dp(47), 1));
 
-        Button go = button("→");
-        go.setTextSize(19);
-        go.setTextColor(Color.WHITE);
-        go.setBackground(surface(GLACIER_BLUE, 16));
-        go.setContentDescription("打开网址");
-        go.setOnClickListener(v -> navigate(address.getText().toString()));
-        LinearLayout.LayoutParams goParams =
-                new LinearLayout.LayoutParams(dp(33), dp(33));
-        goParams.setMargins(dp(2), 0, dp(5), 0);
-        addressPill.addView(go, goParams);
-
-        nav.addView(addressPill, new LinearLayout.LayoutParams(0, dp(44), 1));
-        top.addView(nav);
-        root.addView(top);
-
-        // Small connection chip, not a full-width intrusive warning banner.
-        LinearLayout connection = horizontal();
-        connection.setPadding(dp(15), dp(0), dp(15), dp(6));
-        connection.setBackgroundColor(PALE);
-        engineLabel = new TextView(this);
-        engineLabel.setTextSize(10);
-        engineLabel.setTextColor(Color.rgb(68, 119, 141));
-        engineLabel.setPadding(dp(11), dp(5), dp(11), dp(5));
-        engineLabel.setBackground(surface(ICE, 14));
-        engineLabel.setOnClickListener(v -> showNetworkStatus());
-        engineLabel.setContentDescription("网络连接信息");
-        connection.addView(engineLabel);
-        root.addView(connection);
-
-        web = new GeckoView(this);
-        web.setBackgroundColor(Color.WHITE);
-        root.addView(web, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-
-        // Mobile tab and navigation controls remain reachable with one thumb.
-        View hairline = new View(this);
-        hairline.setBackgroundColor(HAIRLINE);
-        root.addView(hairline, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
-
-        LinearLayout bottom = horizontal();
-        bottom.setPadding(dp(14), dp(6), dp(14), dp(6));
-        bottom.setBackgroundColor(Color.WHITE);
-
-        Button home = button("⌂");
-        home.setTextSize(23);
-        home.setContentDescription("主页");
-        home.setOnClickListener(v -> {
-            if (active != null) active.session.loadUri(START_URL);
-        });
-        bottom.addView(home, new LinearLayout.LayoutParams(dp(45), dp(44)));
-
-        Button refresh = button("⟳");
-        refresh.setContentDescription("刷新");
-        refresh.setOnClickListener(v -> {
-            if (active != null) active.session.reload();
-        });
-        LinearLayout.LayoutParams refreshParams =
-                new LinearLayout.LayoutParams(dp(45), dp(44));
-        refreshParams.setMargins(dp(8), 0, 0, 0);
-        bottom.addView(refresh, refreshParams);
-
-        TextView space = new TextView(this);
-        space.setText("冰川 · 浏览");
-        space.setGravity(Gravity.CENTER);
-        space.setTextColor(MUTED);
-        space.setTextSize(11);
-        bottom.addView(space, new LinearLayout.LayoutParams(0, dp(44), 1));
-
-        Button plus = button("+");
-        plus.setContentDescription("新建标签页");
-        plus.setOnClickListener(v -> openTab(selectedProfile, START_URL));
-        bottom.addView(plus, new LinearLayout.LayoutParams(dp(42), dp(44)));
+        LinearLayout.LayoutParams addressParams =
+                new LinearLayout.LayoutParams(0, dp(47), 1);
+        addressParams.setMargins(dp(4), 0, dp(8), 0);
+        toolbar.addView(omnibox, addressParams);
 
         tabCounter = new TextView(this);
-        tabCounter.setTextSize(15);
+        tabCounter.setTextSize(14);
         tabCounter.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         tabCounter.setGravity(Gravity.CENTER);
         tabCounter.setTextColor(INK);
         tabCounter.setContentDescription("标签页");
-        tabCounter.setBackground(surfaceBorder(Color.WHITE, 12, GLACIER_BLUE));
+        tabCounter.setBackground(surfaceBorder(Color.WHITE, 10, INK));
         tabCounter.setOnClickListener(v -> showTabs());
-        LinearLayout.LayoutParams countParams =
-                new LinearLayout.LayoutParams(dp(40), dp(40));
-        countParams.setMargins(dp(8), 0, 0, 0);
-        bottom.addView(tabCounter, countParams);
+        toolbar.addView(tabCounter, new LinearLayout.LayoutParams(dp(34), dp(34)));
 
         Button menu = button("⋮");
-        // Retain this stable selector so existing functional CI keeps working.
-        menu.setContentDescription("内核测试菜单");
+        menu.setTextSize(23);
+        menu.setContentDescription("更多选项");
         menu.setOnClickListener(v -> showBrowserMenu());
-        LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(41), dp(44));
-        dots.setMargins(dp(8), 0, 0, 0);
-        bottom.addView(menu, dots);
-        root.addView(bottom);
+        LinearLayout.LayoutParams menuParams =
+                new LinearLayout.LayoutParams(dp(36), dp(47));
+        menuParams.setMargins(dp(5), 0, 0, 0);
+        toolbar.addView(menu, menuParams);
+        root.addView(toolbar);
+
+        // Keep existing navigation delegates working; backward/forward/reload
+        // live in the overflow menu and Android system back gesture.
+        backButton = button("‹");
+        forwardButton = button("›");
+        identity = new TextView(this);
+        engineLabel = null;
+
+        FrameLayout viewport = new FrameLayout(this);
+        web = new GeckoView(this);
+        web.setBackgroundColor(Color.WHITE);
+        viewport.addView(web, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        newTabPage = createNewTabPage();
+        viewport.addView(newTabPage, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        root.addView(viewport, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+
+        View separator = new View(this);
+        separator.setBackgroundColor(HAIRLINE);
+        root.addView(separator, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+        updateChrome();
+    }
+
+    private View createNewTabPage() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Color.WHITE);
+        LinearLayout page = new LinearLayout(this);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(22), dp(68), dp(22), dp(30));
+
+        TextView symbol = new TextView(this);
+        symbol.setText("❄");
+        symbol.setTextSize(35);
+        symbol.setGravity(Gravity.CENTER);
+        symbol.setTextColor(GLACIER_BLUE);
+        page.addView(symbol, new LinearLayout.LayoutParams(dp(65), dp(65)));
+
+        TextView brand = new TextView(this);
+        brand.setText("Glacier");
+        brand.setTextSize(30);
+        brand.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        brand.setTextColor(INK);
+        brand.setGravity(Gravity.CENTER);
+        page.addView(brand);
+
+        TextView search = new TextView(this);
+        search.setText("⌕   搜索或输入网址");
+        search.setTextSize(16);
+        search.setTextColor(MUTED);
+        search.setGravity(Gravity.CENTER_VERTICAL);
+        search.setPadding(dp(22), 0, dp(15), 0);
+        search.setBackground(surfaceBorder(PALE, 28, HAIRLINE));
+        search.setContentDescription("新标签页搜索");
+        search.setOnClickListener(v -> {
+            address.requestFocus();
+            InputMethodManager keyboard = (InputMethodManager)
+                    getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (keyboard != null) keyboard.showSoftInput(address,
+                    InputMethodManager.SHOW_IMPLICIT);
+        });
+        LinearLayout.LayoutParams searchParams =
+                new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56));
+        searchParams.setMargins(0, dp(32), 0, dp(30));
+        page.addView(search, searchParams);
+
+        TextView caption = new TextView(this);
+        caption.setText("常用网站");
+        caption.setTextSize(14);
+        caption.setTextColor(MUTED);
+        caption.setGravity(Gravity.START);
+        page.addView(caption, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+
+        LinearLayout shortcuts = horizontal();
+        shortcuts.setPadding(0, 0, 0, 0);
+        String[] labels = {"Google", "GitHub", "ChatGPT"};
+        String[] hosts = {"google.com", "github.com", "chatgpt.com"};
+        String[] glyphs = {"G", "⌘", "✦"};
+        for (int i = 0; i < labels.length; i++) {
+            final String url = "https://" + hosts[i] + "/";
+            LinearLayout item = new LinearLayout(this);
+            item.setGravity(Gravity.CENTER_HORIZONTAL);
+            item.setOrientation(LinearLayout.VERTICAL);
+
+            TextView icon = new TextView(this);
+            icon.setText(glyphs[i]);
+            icon.setTextSize(24);
+            icon.setTextColor(GLACIER_BLUE);
+            icon.setGravity(Gravity.CENTER);
+            icon.setBackground(surface(ICE, 26));
+            item.addView(icon, new LinearLayout.LayoutParams(dp(53), dp(53)));
+
+            TextView label = new TextView(this);
+            label.setText(labels[i]);
+            label.setTextSize(12);
+            label.setGravity(Gravity.CENTER);
+            label.setTextColor(INK);
+            LinearLayout.LayoutParams lp =
+                    new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, dp(28));
+            item.addView(label, lp);
+            item.setContentDescription("打开 " + labels[i]);
+            item.setOnClickListener(v -> navigate(url));
+            shortcuts.addView(item, new LinearLayout.LayoutParams(0, dp(95), 1));
+        }
+        page.addView(shortcuts, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        scroll.addView(page, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        return scroll;
+    }
+
+    private void showNewTabInCurrentTab() {
+        if (active == null) return;
+        active.session.loadUri("about:blank");
+        active.url = "about:blank";
+        active.title = "新标签页";
         updateChrome();
     }
 
@@ -376,33 +394,57 @@ public final class MainActivity extends Activity {
     }
 
     private void showBrowserMenu() {
-        final String[] choices = debugBuild() && !proxyMode
-                ? new String[]{
-                    "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
-                    "切换账号空间", "网络连接信息", "测试说明",
-                    "隔离自测：私人写入", "隔离自测：工作检查", "隔离自测：私人复查",
-                    "传输自测：打开测试页面"
-                }
-                : new String[]{
-                    "打开 Gecko 内核信息", "打开 ChatGPT", "打开 GitHub",
-                    "切换账号空间", "网络连接信息", "测试说明"
-                };
+        final List<String> actions = new ArrayList<>();
+        actions.add("新建标签页");
+        actions.add("刷新");
+        actions.add("后退");
+        actions.add("前进");
+        actions.add("切换账号空间");
+        actions.add("网络连接信息");
+        actions.add("打开 ChatGPT");
+        actions.add("打开 GitHub");
+        actions.add("打开 Gecko 内核信息");
+        actions.add("测试说明");
+        if (debugBuild() && !proxyMode) {
+            actions.add("隔离自测：私人写入");
+            actions.add("隔离自测：工作检查");
+            actions.add("隔离自测：私人复查");
+            actions.add("传输自测：打开测试页面");
+        }
         new AlertDialog.Builder(this)
-                .setTitle("Glacier · GeckoView 内核")
-                .setItems(choices, (dialog, index) -> {
-                    if (index == 0) navigate("about:buildconfig");
-                    if (index == 1) navigate("https://chatgpt.com/");
-                    if (index == 2) navigate("https://github.com/");
-                    if (index == 3) chooseProfile();
-                    if (index == 4) showNetworkStatus();
-                    if (index == 5) showLabWarning();
-                    // Only artificial CI data on loopback and only in direct
-                    // debug mode. Never mix localhost diagnostics into VLESS.
-                    if (index >= 6 && index <= 8 && debugBuild() && !proxyMode && active != null) {
-                        String phase = index == 6 ? "seed" : index == 7 ? "work" : "return";
-                        active.session.loadUri("http://127.0.0.1:18765/profile?phase=" + phase);
-                    }
-                    if (index == 9 && debugBuild() && !proxyMode && active != null) {
+                .setTitle("Glacier · 更多选项")
+                .setItems(actions.toArray(new String[0]), (dialog, index) -> {
+                    String item = actions.get(index);
+                    if ("新建标签页".equals(item)) {
+                        openTab(selectedProfile, "about:blank");
+                    } else if ("刷新".equals(item)) {
+                        if (active != null) active.session.reload();
+                    } else if ("后退".equals(item)) {
+                        if (active != null && active.canBack) active.session.goBack();
+                    } else if ("前进".equals(item)) {
+                        if (active != null && active.canForward) active.session.goForward();
+                    } else if ("切换账号空间".equals(item)) {
+                        chooseProfile();
+                    } else if ("网络连接信息".equals(item)) {
+                        showNetworkStatus();
+                    } else if ("打开 ChatGPT".equals(item)) {
+                        navigate("https://chatgpt.com/");
+                    } else if ("打开 GitHub".equals(item)) {
+                        navigate("https://github.com/");
+                    } else if ("打开 Gecko 内核信息".equals(item)) {
+                        navigate("about:buildconfig");
+                    } else if ("测试说明".equals(item)) {
+                        showLabWarning();
+                    } else if ("隔离自测：私人写入".equals(item)
+                            || "隔离自测：工作检查".equals(item)
+                            || "隔离自测：私人复查".equals(item)) {
+                        // CI fixture never appears in the production menu.
+                        String phase = item.contains("私人写入") ? "seed"
+                                : item.contains("工作检查") ? "work" : "return";
+                        if (debugBuild() && !proxyMode && active != null)
+                            active.session.loadUri("http://127.0.0.1:18765/profile?phase=" + phase);
+                    } else if ("传输自测：打开测试页面".equals(item)
+                            && debugBuild() && !proxyMode && active != null) {
                         active.session.loadUri("http://127.0.0.1:18765/transfer");
                     }
                 }).show();
@@ -553,7 +595,10 @@ public final class MainActivity extends Activity {
     private void openTab(String profile, String url) {
         Tab t = createTab(profile);
         switchTo(t);
+        t.url = url;
+        t.title = "about:blank".equals(url) ? "新标签页" : url;
         t.session.loadUri(url);
+        updateChrome();
     }
 
     private void switchTo(Tab next) {
@@ -567,8 +612,11 @@ public final class MainActivity extends Activity {
 
     private void updateChrome() {
         if (address == null) return;
-        identity.setText(WORK.equals(selectedProfile) ? "工作空间  ▾" : "私人空间  ▾");
         tabCounter.setText(Integer.toString(tabs.size()));
+        if (newTabPage != null) {
+            newTabPage.setVisibility(active != null && "about:blank".equals(active.url)
+                    ? View.VISIBLE : View.GONE);
+        }
         if (engineLabel != null) {
             if (proxyMode) {
                 boolean connected = NativeProxy.alive();
@@ -613,39 +661,114 @@ public final class MainActivity extends Activity {
 
     private void showTabs() {
         if (tabs.isEmpty()) return;
-        String[] choices = new String[tabs.size() + 2];
-        for (int i = 0; i < tabs.size(); i++) {
-            Tab t = tabs.get(i);
-            choices[i] = (t == active ? "● " : "○ ")
-                    + (WORK.equals(t.profile) ? "工作" : "私人")
-                    + " · " + t.title;
+        ScrollView scroll = new ScrollView(this);
+        GridLayout grid = new GridLayout(this);
+        grid.setColumnCount(2);
+        grid.setPadding(dp(9), dp(10), dp(9), dp(10));
+        grid.setBackgroundColor(PALE);
+        scroll.addView(grid);
+        final AlertDialog[] holder = new AlertDialog[1];
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int cardWidth = (screenWidth - dp(60)) / 2;
+
+        for (Tab tab : new ArrayList<>(tabs)) {
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setPadding(dp(10), dp(8), dp(10), dp(10));
+            tile.setBackground(surfaceBorder(Color.WHITE, 18,
+                    tab == active ? GLACIER_BLUE : HAIRLINE));
+            tile.setContentDescription("标签卡片 · " + tab.title);
+
+            LinearLayout head = horizontal();
+            head.setPadding(0, 0, 0, 0);
+            TextView favicon = new TextView(this);
+            favicon.setText("◉");
+            favicon.setTextColor(GLACIER_BLUE);
+            favicon.setTextSize(17);
+            head.addView(favicon, new LinearLayout.LayoutParams(dp(23), dp(28)));
+
+            TextView title = new TextView(this);
+            title.setSingleLine(true);
+            title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            title.setText(tab.title);
+            title.setTextSize(12);
+            title.setTextColor(INK);
+            head.addView(title, new LinearLayout.LayoutParams(0, dp(32), 1));
+
+            Button close = button("×");
+            close.setTextSize(20);
+            close.setContentDescription("关闭标签页");
+            close.setOnClickListener(v -> {
+                holder[0].dismiss();
+                closeTab(tab);
+                showTabs();
+            });
+            head.addView(close, new LinearLayout.LayoutParams(dp(33), dp(33)));
+            tile.addView(head);
+
+            TextView preview = new TextView(this);
+            preview.setText("❄");
+            preview.setTextSize(39);
+            preview.setTextColor(GLACIER_BLUE);
+            preview.setGravity(Gravity.CENTER);
+            preview.setBackground(surface(PALE, 12));
+            tile.addView(preview, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+
+            TextView domain = new TextView(this);
+            domain.setText(WORK.equals(tab.profile) ? "工作 · " + tab.url
+                    : "私人 · " + tab.url);
+            domain.setSingleLine(true);
+            domain.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            domain.setTextSize(10);
+            domain.setTextColor(MUTED);
+            LinearLayout.LayoutParams domainParams =
+                    new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, dp(25));
+            tile.addView(domain, domainParams);
+            tile.setOnClickListener(v -> {
+                holder[0].dismiss();
+                switchTo(tab);
+            });
+
+            GridLayout.LayoutParams cell = new GridLayout.LayoutParams();
+            cell.width = cardWidth;
+            cell.height = dp(190);
+            cell.setMargins(dp(5), dp(5), dp(5), dp(5));
+            grid.addView(tile, cell);
         }
-        choices[tabs.size()] = "＋ 新建标签页";
-        choices[tabs.size() + 1] = "× 关闭当前标签页";
-        new AlertDialog.Builder(this).setTitle("标签页")
-                .setItems(choices, (d, which) -> {
-                    if (which < tabs.size()) {
-                        switchTo(tabs.get(which));
-                    } else if (which == tabs.size()) {
-                        openTab(selectedProfile, START_URL);
-                    } else {
-                        closeActiveTab();
-                    }
-                }).show();
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("标签页 · " + tabs.size())
+                .setView(scroll)
+                .setPositiveButton("＋ 新建标签页",
+                        (d, which) -> openTab(selectedProfile, "about:blank"))
+                .setNegativeButton("关闭", null)
+                .create();
+        holder[0] = dialog;
+        dialog.show();
+    }
+
+    private void closeTab(Tab target) {
+        if (target == null || !tabs.contains(target)) return;
+        boolean wasActive = target == active;
+        if (wasActive) {
+            if (web.getSession() != null) web.releaseSession();
+            active = null;
+        }
+        tabs.remove(target);
+        target.session.close();
+        if (tabs.isEmpty()) {
+            openTab(selectedProfile, "about:blank");
+        } else if (wasActive) {
+            switchTo(tabs.get(tabs.size() - 1));
+        } else {
+            updateChrome();
+        }
     }
 
     private void closeActiveTab() {
-        if (active == null) return;
-        Tab closing = active;
-        if (web.getSession() != null) web.releaseSession();
-        active = null;
-        tabs.remove(closing);
-        closing.session.close();
-        if (tabs.isEmpty()) {
-            openTab(selectedProfile, START_URL);
-        } else {
-            switchTo(tabs.get(tabs.size() - 1));
-        }
+        closeTab(active);
     }
 
     private void navigate(String raw) {
@@ -669,6 +792,7 @@ public final class MainActivity extends Activity {
                 return;
             }
         }
+        if (newTabPage != null) newTabPage.setVisibility(View.GONE);
         active.session.loadUri(url);
         address.clearFocus();
         InputMethodManager imm =
