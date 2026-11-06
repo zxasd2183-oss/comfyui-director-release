@@ -688,6 +688,60 @@ def get_video_handoff_package(db_path,project_id,episode_id,shot_id):
             "gpu_action":False}
 
 
+def get_episode_video_handoffs(db_path,project_id,episode_id):
+    """Version-locked package for ALL shots, never silently omits a blocker.
+
+    The client can archive this private planning bundle even if incomplete;
+    the GPU offline importer rejects it unless every shot is fully approved.
+    """
+    pid=_ident_safe(project_id)
+    eid=_ident_safe(episode_id)
+    with closing(open_db(db_path,initialize=False)) as db:
+        if db.execute("SELECT 1 FROM episodes WHERE project_id=? AND "
+                      "episode_id=?",(pid,eid)).fetchone() is None:
+            raise WorkflowError("episode_not_found",404)
+        rows=db.execute("SELECT shot_id,ordinal,duration_ms FROM production_shots "
+            "WHERE project_id=? AND episode_id=? ORDER BY ordinal,shot_id LIMIT 701",
+            (pid,eid)).fetchall()
+        if len(rows)>700:raise WorkflowError("too_many_episode_shots",409)
+        packages=[]
+        blocked=[]
+        for row in rows:
+            sid=row["shot_id"]
+            try:
+                single=get_video_handoff_package(db_path,pid,eid,sid)
+            except WorkflowError as exc:
+                if exc.reason!="video_plan_not_found":raise
+                blocked.append({"shot_id":sid,"ordinal":row["ordinal"],
+                    "reasons":["video_plan_not_found"]})
+                continue
+            pkg=single["package"]
+            reasons=[x for x in pkg["blockers"]
+                     if x!="video_render_executor_not_connected"]
+            if pkg["video_plan"]["status"]!="in_review":
+                reasons.append("video_plan_not_submitted")
+            if reasons:
+                blocked.append({"shot_id":sid,"ordinal":row["ordinal"],
+                    "reasons":reasons})
+            packages.append(single)
+        bundle={"schema":"director_studio_episode_handoff_v1",
+            "project_id":pid,"episode_id":eid,
+            "shot_count":len(rows),"total_duration_ms":sum(
+                row["duration_ms"] for row in rows),
+            "shot_ids":[r["shot_id"] for r in rows],
+            "packages":packages,
+            "blocked":blocked,
+            "all_ready":len(rows)>0 and not blocked and
+                len(packages)==len(rows),
+            "gpu_dispatch_authorized":False}
+        canonical=json.dumps(bundle,sort_keys=True,ensure_ascii=False,
+            separators=(",",":")).encode()
+        return {"ok":True,"bundle":bundle,
+            "bundle_sha256":hashlib.sha256(canonical).hexdigest(),
+            "checksum_type":"sha256_canonical_json_not_signature",
+            "gpu_action":False}
+
+
 def get_episode_readiness(db_path,project_id,episode_id):
     """Current per-shot production gates; never claims GPU runner is ready.
 
