@@ -84,6 +84,57 @@ class VideoPipelineTests(unittest.TestCase):
             network.assert_not_called()
         self.assertEqual(dv.load_plan(output)["shot_count"],1)
 
+    def test_studio_full_episode_import_and_no_partial_queue(self):
+        single=self.studio_handoff()
+        bundle={"schema":"director_studio_episode_handoff_v1",
+            "project_id":"WaitingOffice","episode_id":"EP01",
+            "shot_count":1,"total_duration_ms":5000,"shot_ids":["01"],
+            "packages":[single],"blocked":[],"all_ready":True,
+            "gpu_dispatch_authorized":False}
+        def doc(data):
+            return {"ok":True,"bundle":data,
+                "bundle_sha256":hashlib.sha256(json.dumps(
+                    data,sort_keys=True,ensure_ascii=False,
+                    separators=(",",":")).encode()).hexdigest(),
+                "checksum_type":"sha256_canonical_json_not_signature",
+                "gpu_action":False}
+        ready=doc(bundle)
+        with patch.object(dv,"comfy_json") as network:
+            plan=dv.build_studio_episode_plan(
+                ready,self.workflow,self.binding)
+            network.assert_not_called()
+        self.assertEqual(plan["shot_count"],1)
+        self.assertEqual(plan["total_seconds"],5)
+        self.assertEqual(plan["jobs"][0]["frames"],120)
+        self.assertEqual(plan["studio_episode_handoff"]["bundle_sha256"],
+                         ready["bundle_sha256"])
+        self.assertFalse(plan["gpu_actions_performed"])
+        file=self.root/"episode.json"
+        graph=self.root/"workflow.json"
+        mapping=self.root/"bindings.json"
+        output=self.root/"episode-plan.json"
+        for path,value in ((file,ready),(graph,self.workflow),
+                           (mapping,self.binding)):
+            dv.atomic_json(path,value)
+        with patch.object(dv,"comfy_json") as network:
+            self.assertEqual(dv.run_cli(["prepare-studio-batch",
+                "--package",str(file),"--workflow",str(graph),
+                "--bindings",str(mapping),"--out",str(output)]),0)
+            network.assert_not_called()
+        self.assertEqual(dv.load_plan(output)["shot_count"],1)
+        incomplete=copy.deepcopy(bundle)
+        incomplete["shot_count"]=2
+        incomplete["shot_ids"].append("02")
+        incomplete["total_duration_ms"]=8000
+        incomplete["blocked"]=[{"shot_id":"02","reasons":["video_plan_not_found"]}]
+        incomplete["all_ready"]=False
+        with self.assertRaisesRegex(dv.PlanError,"blocked shots"):
+            dv.build_studio_episode_plan(doc(incomplete),self.workflow,self.binding)
+        wrong=copy.deepcopy(ready)
+        wrong["bundle"]["shot_ids"]=["02"]
+        with self.assertRaisesRegex(dv.PlanError,"checksum mismatch"):
+            dv.build_studio_episode_plan(wrong,self.workflow,self.binding)
+
     def test_studio_handoff_blocks_tampering_and_missing_approvals(self):
         package=self.studio_handoff()
         altered=copy.deepcopy(package)
