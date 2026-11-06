@@ -14,6 +14,7 @@
   let currentVisual = null;
   let characterProjectId = "", characterCurrentId = "", characterData = null;
   let characterEditingId = null;
+  let characterV2Data = null, characterV2Category = "profile";
   let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
   let visualRefreshInFlight = false;
   const clock = () => {
@@ -226,6 +227,7 @@
       characterProjectId=valid[0]||"";
       characterCurrentId="";
       characterData=null;
+      characterV2Data=null;
     }
     select.value=characterProjectId;
     $("characterSeedBtn").hidden=characterProjectId!=="WaitingOffice";
@@ -257,6 +259,7 @@
     if(!value.characters.some(c=>c.character_id===characterCurrentId))
       characterCurrentId=value.characters[0]?.character_id||"";
     renderCharacterLibrary();
+    await loadCharacterV2();
   }
 
   function renderCharacterLibrary() {
@@ -283,8 +286,10 @@
       button.append(icon,desc);
       button.addEventListener("click",()=>{
         characterCurrentId=c.character_id;
+        characterV2Data=null; characterV2Category="profile";
         $("characterEditForm").hidden=true;
         renderCharacterLibrary();
+        loadCharacterV2().catch(err=>$("characterMessage").textContent=err.message);
       });
       list.appendChild(button);
     }
@@ -316,6 +321,9 @@
     detail.appendChild(el("p","character-master-label",master?
       "✓ 当前批准母版："+master.visual_id+"（可审计追溯）":
       "尚无批准的角色母版 · 当前图片均为候选"));
+    const v2Section=el("section","character-v2-section");
+    detail.appendChild(v2Section);
+    renderCharacterV2(c,v2Section);
     const gallery=el("div","character-ref-grid");
     for(const v of c.visuals){
       const item=el("div","character-ref");
@@ -408,6 +416,298 @@
     }
   }
 
+
+  const v2CategoryNames={
+    profile:"01 主档硬约束",master:"02 批准母版",turnaround:"03 八方向视图",
+    face:"04 表情与口型",hair:"05 发型与五官",costume:"06 服装结构",
+    palette:"07 配色材质",prop:"08 道具",motion:"09 动作模板",
+    relationship:"10 同框关系",continuity:"11 镜头连续性",
+    rules:"12 禁止项与质检"
+  };
+  const v2FieldNames={
+    identity_lock:"身份锁定特征",story_function:"剧情功能",personality:"性格",
+    story_notes:"故事备注",framing:"景别",body_proportions:"身体比例",
+    outfit_id:"服装编号",hair_variant_id:"发型编号",direction:"朝向",
+    camera_height:"机位高度",proportions:"比例",expression:"表情",
+    intensity:"强度",eyeline:"视线",viseme:"口型",region:"发型区域",
+    fringe_partition:"刘海分区",length_boundary:"发尾边界",
+    ornament_position:"发饰位置",piece_id:"服装部件编号",
+    layer_order:"穿衣层序",silhouette_lock:"不可变化的外轮廓",
+    far_view_rule:"远景简化规则",scope:"色板作用域",hex_srgb:"sRGB 颜色",
+    material:"材质",lighting_rule:"不同光照规则",prop_id:"道具编号",
+    grip_hand:"持握手",scale_rule:"大小比例",state_rule:"道具状态",
+    action_id:"动作编号",key_pose_start:"起始关键姿势",
+    key_pose_middle:"中间关键姿势",key_pose_end:"结束关键姿势",
+    other_character_ids:"对方角色编号",height_rule:"身高关系",
+    blocking:"同框走位",episode_id:"剧集编号",shot_id:"镜头编号",
+    screen_side:"画面站位",before_state:"前镜头状态",
+    after_state:"后镜头状态",severity:"严重程度",
+    locked_attribute:"锁定属性",forbidden_change:"禁止变化内容",
+    check_method:"检查办法"
+  };
+  const v2StatusName={draft:"草稿",in_review:"待审核",
+    approved:"已批准",rejected:"已驳回"};
+  const v2JipiteDefaults=[
+    ["profile","identity","身份视觉锁定",
+      "以 Revision 2 为文字约束；没有批准的视觉母版时不得标记角色就绪。",
+      {identity_lock:"深栗色齐颈短发、自然侧分、琥珀棕瞳，原创人物",
+       story_function:"事务所协调者；接纳零并调查异常连接",
+       personality:"温和、理性、可靠"}],
+    ["hair","standard","标准发型与五官约束",
+      "详细发流和具体五官比例待第一张正确主立绘通过后补充。",
+      {region:"头部整体",fringe_partition:"自然侧分，禁止银白色长发",
+       length_boundary:"齐颈短发，长度不得超过锁骨"}],
+    ["costume","daily","标准服装结构约束",
+      "裁片与服装正背图片尚未制作，禁止将旧银发角色图作为服装母版。",
+      {outfit_id:"GPT_DAILY_01",piece_id:"日常制服整体",
+       layer_order:"象牙白外套、青绿色内衬、深灰下装",
+       silhouette_lock:"克制的层次和交错衣襟；禁止拼成官方商标轮廓"}],
+    ["rules","hard_identity","头发与眼睛绝对禁止变化",
+      "任何违反发色、长度或眼睛颜色的图像一律退回。",
+      {severity:"hard",locked_attribute:"发型、发色、瞳色",
+       forbidden_change:"银白长发、青绿或蓝色眼睛、发型超出锁骨",
+       check_method:"逐张比较正面、侧面、背面和特写"}],
+    ["rules","brand_no_logo","原创性与品牌规则",
+      "仅可抽象借鉴连接、协作、秩序与留白；不使用官方标志。",
+      {severity:"hard",locked_attribute:"任何立绘、配饰、道具、卡面与视频",
+       forbidden_change:"直接放入、描摹、拼接、隐藏、近似复刻任何官方 Logo",
+       check_method:"人工检查全图、局部配饰和反向构图"}]
+  ];
+
+  async function loadCharacterV2() {
+    const pid=characterProjectId,cid=characterCurrentId;
+    if(!pid||!cid||!microsoftOwner)return;
+    const res=await fetch("./api/v1/characters/assets?project="+
+      encodeURIComponent(pid)+"&character="+encodeURIComponent(cid),
+      {cache:"no-store"});
+    const body=await res.json();
+    if(!res.ok)throw Error(body.reason||"V2 资产库暂不可用");
+    if(pid!==characterProjectId||cid!==characterCurrentId)return;
+    characterV2Data=body;
+    const profile=characterData?.characters.find(p=>p.character_id===cid);
+    const panel=document.querySelector(".character-v2-section");
+    if(panel&&profile)renderCharacterV2(profile,panel);
+  }
+
+  function renderCharacterV2(profile,panel) {
+    panel.replaceChildren();
+    const head=el("div","character-v2-header");
+    head.appendChild(el("strong","","V2 · 分类资产库"));
+    head.appendChild(el("span","character-v2-summary",
+      "可追溯版本 · 原图不移动 · 未审核不成为正式母版"));
+    panel.appendChild(head);
+    if(!characterV2Data||characterV2Data.project_id!==characterProjectId||
+        characterV2Data.character_id!==profile.character_id){
+      panel.appendChild(el("p","character-message","正在加载 12 类角色资产…"));
+      return;
+    }
+    const tabs=el("div","character-v2-tabs");
+    for(const [key,name] of Object.entries(v2CategoryNames)){
+      const tally=characterV2Data.counts[key];
+      const btn=el("button","character-v2-tab"+(
+        characterV2Category===key?" active":""),name+
+        " · "+tally.total+(tally.approved?"（通过 "+tally.approved+"）":""));
+      btn.type="button";
+      btn.addEventListener("click",()=>{characterV2Category=key;renderCharacterV2(profile,panel);});
+      tabs.appendChild(btn);
+    }
+    panel.appendChild(tabs);
+    const group=el("div","character-v2-body");
+    panel.appendChild(group);
+    const category=characterV2Category;
+    const assets=characterV2Data.assets.filter(item=>item.category===category);
+    const summary=el("div","character-v2-group-head");
+    summary.appendChild(el("strong","",v2CategoryNames[category]));
+    const create=el("button","prod-new prod-secondary","＋ 新增分类资产");
+    create.type="button";
+    create.addEventListener("click",()=>v2AssetEditor(profile,category,null,group));
+    summary.appendChild(create);
+    group.appendChild(summary);
+    if(category==="profile" && profile.character_id==="CHAR_GPT" &&
+        characterV2Data.assets.length===0){
+      const seed=el("button","prod-new","建立吉皮提 V2 样板（5 条草稿）");
+      seed.type="button";
+      seed.addEventListener("click",async()=>{
+        seed.disabled=true;
+        let count=0;
+        try{
+          for(const [cat,sub,label,note,details] of v2JipiteDefaults){
+            await characterPost("assets/create",{
+              project_id:characterProjectId,character_id:profile.character_id,
+              category:cat,subtype:sub,label,note,details,source_visual_id:null
+            });count++;
+          }
+          await loadCharacterV2();
+          $("characterMessage").textContent="已创建 "+count+
+            " 条吉皮提 V2 文字草稿；图片和正式审核仍待制作。";
+        }catch(err){
+          await loadCharacterV2();
+          $("characterMessage").textContent="已创建 "+count+" 条；"+err.message;
+        }finally{seed.disabled=false;}
+      });
+      group.appendChild(seed);
+    }
+    if(!assets.length){
+      group.appendChild(el("div","production-empty",
+        "暂无本分类资产。新增文字约束或绑定已有角色候选图；不会自动获批。"));
+    }
+    for(const item of assets){
+      const card=el("div","character-v2-asset");
+      const cardHead=el("div","character-v2-asset-head");
+      cardHead.appendChild(el("strong","",item.label+" · V"+item.revision));
+      cardHead.appendChild(el("span","character-v2-status "+item.status,
+        v2StatusName[item.status]||item.status));
+      card.appendChild(cardHead);
+      card.appendChild(el("p","",item.note||"未填备注"));
+      const description=el("dl","character-v2-attributes");
+      for(const [key,value] of Object.entries(item.details)){
+        description.appendChild(el("dt","",v2FieldNames[key]||key));
+        description.appendChild(el("dd","",value||"—"));
+      }
+      card.appendChild(description);
+      if(item.source_visual_id){
+        const thumbnail=el("img","character-v2-image");
+        thumbnail.loading="lazy";
+        thumbnail.alt=item.source_filename||"角色候选";
+        thumbnail.src=visualURL(characterProjectId,item.source_episode_id,
+                                item.source_visual_id);
+        card.appendChild(thumbnail);
+        card.appendChild(el("small","",item.source_episode_id+" · "+
+          item.source_filename+" · 原图仅关联"));
+      }
+      if(item.reviews.length)card.appendChild(el("small","",
+        "最近审核："+v2StatusName[item.status]+"；"+
+        item.reviews[0].rationale));
+      const actions=el("div","character-v2-actions");
+      if(item.status==="draft"||item.status==="rejected"){
+        const edit=el("button","prod-new prod-secondary","编辑草稿");
+        edit.type="button";
+        edit.addEventListener("click",()=>v2AssetEditor(profile,category,item,group));
+        actions.appendChild(edit);
+      }
+      if(item.status==="draft"||item.status==="in_review"){
+        for(const [decision,label] of (item.status==="draft"?
+              [["submit","提交审核"]]:
+              [["approve","审核通过"],["reject","驳回"]])){
+          const btn=el("button","prod-new prod-secondary",label);
+          btn.type="button";
+          btn.addEventListener("click",async()=>{
+            const reason=window.prompt("请填写不少于 8 个字的"+label+"理由");
+            if(reason===null)return;
+            if(reason.trim().length<8){
+              $("characterMessage").textContent="审核理由至少 8 个字";return;
+            }
+            if(decision==="approve" &&
+                !window.confirm("确认人工批准 "+item.label+
+                  "？请先核对完整身份特征与官方 Logo 禁用规则。"))return;
+            btn.disabled=true;
+            try{
+              await characterPost("assets/review",{project_id:characterProjectId,
+                character_id:profile.character_id,item_id:item.item_id,
+                expected_revision:item.revision,decision,rationale:reason.trim()});
+              await loadCharacterV2();
+            }catch(err){
+              $("characterMessage").textContent="审核失败："+err.message;
+              btn.disabled=false;
+            }
+          });
+          actions.appendChild(btn);
+        }
+      }
+      card.appendChild(actions);group.appendChild(card);
+    }
+  }
+
+  function v2AssetEditor(profile,category,item,mount){
+    mount.querySelector(".character-v2-editor")?.remove();
+    const form=el("form","character-v2-editor");
+    const heading=el("div","character-v2-group-head");
+    heading.appendChild(el("strong","",item?"编辑 V"+item.revision+" 草稿":"新增分类资产"));
+    const cancel=el("button","prod-new prod-secondary","取消");
+    cancel.type="button";
+    cancel.addEventListener("click",()=>form.remove());
+    heading.appendChild(cancel);form.appendChild(heading);
+    function field(title,control){
+      const label=el("label","",title);
+      label.appendChild(control);form.appendChild(label);
+      return control;
+    }
+    const subtype=field("类型编号",el("input",""));
+    subtype.required=true;subtype.maxLength=55;
+    subtype.placeholder="front / expression_smile / daily_outfit";
+    subtype.value=item?.subtype||"";
+    const name=field("素材名称",el("input",""));
+    name.required=true;name.maxLength=110;name.value=item?.label||"";
+    const note=field("用途与连续性说明",el("textarea",""));
+    note.maxLength=1800;note.rows=2;note.value=item?.note||"";
+    const source=field("关联现有候选图（可不选）",el("select",""));
+    let opt=el("option","","无图：仅录入结构资料");opt.value="";source.appendChild(opt);
+    for(const image of profile.visuals){
+      opt=el("option","",image.episode_id+" · "+image.filename);
+      opt.value=image.visual_id;source.appendChild(opt);
+    }
+    source.value=item?.source_visual_id||"";
+    const info=el("div","character-v2-fields");
+    const inputs={};
+    for(const key of characterV2Data.fields[category]){
+      const wrap=el("label","",v2FieldNames[key]||key);
+      const input=el("input","");input.maxLength=220;
+      input.value=item?.details[key]||"";
+      if(category==="turnaround"&&key==="direction"){
+        const picker=el("select","");
+        for(const dir of ["front","left","right","back","front_left_45",
+                          "front_right_45","back_left_45","back_right_45"]){
+          const option=el("option","",dir);option.value=dir;picker.appendChild(option);
+        }
+        picker.value=item?.details.direction||"front";
+        inputs[key]=picker;wrap.appendChild(picker);
+      }else if(category==="rules"&&key==="severity"){
+        const picker=el("select","");
+        for(const level of ["hard","soft"]){
+          const option=el("option","",level==="hard"?"硬约束":"软约束");
+          option.value=level;picker.appendChild(option);
+        }
+        picker.value=item?.details.severity||"hard";
+        inputs[key]=picker;wrap.appendChild(picker);
+      }else{
+        inputs[key]=input;wrap.appendChild(input);
+      }
+      info.appendChild(wrap);
+    }
+    form.appendChild(info);
+    const save=el("button","prod-new","保存为草稿");
+    save.type="submit";form.appendChild(save);
+    form.addEventListener("submit",async e=>{
+      e.preventDefault();
+      const details={};
+      for(const [key,control] of Object.entries(inputs)){
+        if(control.value.trim())details[key]=control.value.trim();
+      }
+      if(!Object.keys(details).length){
+        $("characterMessage").textContent="请至少填写一个分类字段";return;
+      }
+      save.disabled=true;
+      const payload={project_id:characterProjectId,
+        character_id:profile.character_id,category,
+        subtype:subtype.value.trim(),label:name.value.trim(),
+        note:note.value.trim(),details,
+        source_visual_id:source.value||null};
+      if(item){
+        payload.item_id=item.item_id;
+        payload.expected_revision=item.revision;
+      }
+      try{
+        await characterPost(item?"assets/revise":"assets/create",payload);
+        await loadCharacterV2();
+      }catch(err){
+        $("characterMessage").textContent="保存 V2 分类资产失败："+err.message;
+        save.disabled=false;
+      }
+    });
+    mount.prepend(form);
+    form.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+
   function openCharacterEditor(profile=null){
     if(!microsoftOwner||!characterProjectId)return;
     characterEditingId=profile?.character_id||null;
@@ -425,7 +725,8 @@
   }
   $("characterProject").addEventListener("change",()=>{
     characterProjectId=$("characterProject").value;
-    characterCurrentId="";characterData=null;
+    characterCurrentId="";characterData=null;characterV2Data=null;
+    characterV2Category="profile";
     $("characterEditForm").hidden=true;
     loadCharacters().catch(err=>$("characterMessage").textContent=err.message);
   });
