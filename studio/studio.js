@@ -23,6 +23,7 @@
   let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
   let visualRefreshInFlight = false;
   let homeEpisodeScope="",homeTaskScope="",homeTaskInFlight=false;
+  let homeEpisodeFetchedAt=0,homeTasksFetchedAt=0;
   const clock = () => {
     $("clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false});
   };
@@ -160,8 +161,8 @@
 
   async function loadHomeEpisodeStats(pid,eid) {
     const scope=pid+"/"+eid;
-    if(homeEpisodeScope===scope)return;
-    homeEpisodeScope=scope;
+    if(homeEpisodeScope===scope&&Date.now()-homeEpisodeFetchedAt<30000)return;
+    homeEpisodeScope=scope;homeEpisodeFetchedAt=Date.now();
     try{
       const response=await fetch("./api/v1/production/episode?project="+
         encodeURIComponent(pid)+"&episode="+encodeURIComponent(eid),
@@ -204,8 +205,9 @@
   }
 
   async function loadHomeRecentTasks(pid) {
-    if(homeTaskScope===pid||homeTaskInFlight)return;
-    homeTaskScope=pid;homeTaskInFlight=true;
+    if(homeTaskInFlight||(homeTaskScope===pid&&
+       Date.now()-homeTasksFetchedAt<60000))return;
+    homeTaskScope=pid;homeTaskInFlight=true;homeTasksFetchedAt=Date.now();
     const root=$("homeRecentTasks");
     root.replaceChildren(el("p","icebound-tasks-empty","正在读取真实任务…"));
     try{
