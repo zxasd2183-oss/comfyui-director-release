@@ -16,7 +16,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from production_core import (ProductionError, _ident, _audit, open_db,
+from production_core import (ProductionError, _ident, _shot_ident, _audit, open_db,
                              transaction, verify_chain)
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -120,6 +120,16 @@ def _validate_scope(db, project_id, episode_id):
     return pid, eid
 
 
+def _subject_for_kind(kind,subject_id):
+    # Production shot IDs deliberately include numeric values such as "01".
+    # Keep the stricter project-style identifiers for characters/scenes/props.
+    try:
+        return (_shot_ident(subject_id) if kind=="storyboard"
+                else _ident(subject_id))
+    except ProductionError:
+        raise VisualError("invalid_subject_id") from None
+
+
 def _clean_filename(name):
     if not isinstance(name, str) or not 1 <= len(name) <= 120:
         raise VisualError("invalid_filename")
@@ -160,10 +170,7 @@ def upload_visual(db_path, data, actor):
     kind = data["kind"]
     if kind not in ALLOWED_KINDS:
         raise VisualError("invalid_visual_kind")
-    try:
-        subject = _ident(data["subject_id"])
-    except ProductionError:
-        raise VisualError("invalid_subject_id") from None
+    subject=_subject_for_kind(kind,data["subject_id"])
     filename = _clean_filename(data["filename"])
     if not isinstance(data["image_base64"],str):
         raise VisualError("invalid_image_payload")
@@ -237,10 +244,7 @@ def ingest_chatgpt_image(db_path, data, actor="chatgpt_sync"):
     kind=data["kind"]
     if kind not in ALLOWED_KINDS:
         raise VisualError("invalid_visual_kind")
-    try:
-        subject=_ident(data["subject_id"])
-    except ProductionError:
-        raise VisualError("invalid_subject_id") from None
+    subject=_subject_for_kind(kind,data["subject_id"])
     filename=_clean_filename(data["filename"])
     encoded=data["image_base64"]
     if not isinstance(encoded,str):
