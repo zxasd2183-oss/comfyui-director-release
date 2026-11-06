@@ -274,7 +274,7 @@ def append_chunk(db_path,data,actor,lock):
                 target=root/(uid+".part")
                 if target.is_symlink() or not target.is_file():
                     raise VideoResultError("video_upload_file_missing",409)
-                fd=os.open(target,os.O_WRONLY|os.O_NOFOLLOW)
+                fd=os.open(target,os.O_RDWR|os.O_NOFOLLOW)
                 try:
                     with os.fdopen(fd,"r+b") as stream:
                         fd=None
