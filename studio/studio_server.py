@@ -58,6 +58,16 @@ from production_workflows import (
     get_episode_readiness as get_workflow_readiness,
     get_video_handoff_package as get_workflow_handoff,
 )
+from video_results import (
+    VideoResultError, CHUNK_BYTES as VIDEO_CHUNK_BYTES,
+    prepare_schema as prepare_video_results,
+    begin_upload as begin_video_upload,
+    append_chunk as append_video_chunk,
+    finish_upload as finish_video_upload,
+    list_takes as list_video_takes,
+    get_take_file as get_video_take_file,
+    review_take as review_video_take
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -67,7 +77,8 @@ BASE = Path(__file__).resolve().parent
 HOSTS = {"127.0.0.1:8900", "localhost:8900"}
 MAX_BODY = 8192
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
-       "connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'")
+       "connect-src 'self'; img-src 'self' data:; media-src 'self'; "
+       "base-uri 'none'; frame-ancestors 'none'")
 
 # Fixed vocabulary only. Never log arbitrary keys because an attacker can put
 # tokens, newlines or PII in an OAuth query *parameter name* as well as a value.
@@ -147,6 +158,7 @@ class StudioServer(ThreadingHTTPServer):
         self.production_db_path = str(Path(db_path).with_name("production.sqlite"))
         self.poller = poller if poller is not None else Poller()
         self.csrf_token = secrets.token_urlsafe(32)
+        self.video_upload_lock = threading.Lock()
         self.identity = from_systemd()
         # Private signed Hub->Studio channel, independent from browser OIDC.
         self.brain_auth = BrainAuthenticator(systemd_secret())
@@ -161,6 +173,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_shot_character(db)
             prepare_scenes(db)
             prepare_workflows(db)
+            prepare_video_results(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -383,6 +396,67 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path in ("/api/v1/video-results","/api/v1/video-results/file"):
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                fields={"project","episode","shot"}
+                if path.endswith("/file"):
+                    fields.add("take")
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=5)
+                if len(pairs)!=len(fields) or len({k for k,v in pairs})!=len(pairs) or (
+                    set(dict(pairs))!=fields):
+                    raise VideoResultError("invalid_video_result_query")
+                args=dict(pairs)
+                if not path.endswith("/file"):
+                    return self.reply(200,list_video_takes(
+                        self.server.production_db_path,args["project"],
+                        args["episode"],args["shot"]))
+                filename,size=get_video_take_file(
+                    self.server.production_db_path,args["project"],
+                    args["episode"],args["shot"],args["take"])
+                # One exact HTTP Range only; video player seeking must not
+                # trigger a 250MB in-memory response.
+                header=self.headers.get("Range")
+                start,end=0,size-1
+                if header:
+                    import re
+                    match=re.fullmatch(r"bytes=(\d+)-(\d*)",header)
+                    if not match:
+                        return self.reply(416,{"ok":False,"reason":"invalid_video_range"})
+                    start=int(match.group(1))
+                    if match.group(2):end=int(match.group(2))
+                    if start>=size or end<start or end>=size:
+                        return self.reply(416,{"ok":False,"reason":"invalid_video_range"})
+                fd=os.open(filename,os.O_RDONLY|os.O_NOFOLLOW)
+                try:
+                    import stat
+                    info=os.fstat(fd)
+                    if not stat.S_ISREG(info.st_mode) or info.st_size!=size:
+                        raise VideoResultError("video_take_storage_mismatch",503)
+                    self.send_response(206 if header else 200)
+                    self.common_headers("video/mp4")
+                    self.send_header("Accept-Ranges","bytes")
+                    self.send_header("Content-Length",str(end-start+1))
+                    if header:
+                        self.send_header("Content-Range",f"bytes {start}-{end}/{size}")
+                    self.end_headers()
+                    with os.fdopen(fd,"rb") as media:
+                        fd=None
+                        media.seek(start)
+                        left=end-start+1
+                        while left:
+                            chunk=media.read(min(left,1<<20))
+                            if not chunk:break
+                            self.wfile.write(chunk)
+                            left-=len(chunk)
+                finally:
+                    if fd is not None:os.close(fd)
+                return
+            except VideoResultError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (OSError,sqlite3.Error,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"video_storage_unavailable"})
         if path == "/api/v1/workflow/video-package":
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
@@ -636,12 +710,17 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/scenes/link",
                         "/api/v1/scenes/review",
                         "/api/v1/workflow/save",
-                        "/api/v1/workflow/review"):
+                        "/api/v1/workflow/review",
+                        "/api/v1/video-results/start",
+                        "/api/v1/video-results/chunk",
+                        "/api/v1/video-results/finish",
+                        "/api/v1/video-results/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
                 path.startswith("/api/v1/scenes/") or
-                path.startswith("/api/v1/workflow/")) and not secured:
+                path.startswith("/api/v1/workflow/") or
+                path.startswith("/api/v1/video-results/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -674,7 +753,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 or not raw_len.isascii() or not raw_len.isdigit() or len(raw_len)>9):
             return self.reply(400,{"ok":False,"reason":"invalid_content_length"})
         length=int(raw_len)
-        max_allowed=MAX_POST_BYTES if path.endswith("/visual/upload") else MAX_BODY
+        max_allowed=(MAX_POST_BYTES if path.endswith("/visual/upload") else
+                     VIDEO_CHUNK_BYTES*4//3+4096 if path=="/api/v1/video-results/chunk"
+                     else MAX_BODY)
         if not 1 <= length <= max_allowed:
             return self.reply(413, {"ok": False, "reason": "invalid_request_size"})
         try:
@@ -689,6 +770,29 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path.startswith("/api/v1/video-results/"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                actions={
+                    "/api/v1/video-results/start": lambda:begin_video_upload(
+                        self.server.production_db_path,fields,actor),
+                    "/api/v1/video-results/chunk": lambda:append_video_chunk(
+                        self.server.production_db_path,fields,actor,
+                        self.server.video_upload_lock),
+                    "/api/v1/video-results/finish": lambda:finish_video_upload(
+                        self.server.production_db_path,fields,actor,
+                        self.server.video_upload_lock),
+                    "/api/v1/video-results/review": lambda:review_video_take(
+                        self.server.production_db_path,fields,actor)
+                }
+                return self.reply(200,actions[path]())
+            except VideoResultError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,TypeError,ValueError):
+                return self.reply(400,{"ok":False,"reason":"invalid_video_result_fields"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"video_storage_unavailable"})
         if path.startswith("/api/v1/workflow/"):
             try:
                 actor=operator_from_verified_session(session)
