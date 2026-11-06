@@ -15,11 +15,13 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import threading
 import time
 from urllib.parse import urlsplit
 from http.cookies import SimpleCookie
 from pathlib import Path
+from session_store import PersistentSessions, SessionStoreError
 
 PERSONAL_TID = "9188040d-6c67-4c5b-b112-36a304b66dad"
 ISSUER = "https://login.microsoftonline.com/" + PERSONAL_TID + "/v2.0"
@@ -31,8 +33,8 @@ COOKIE_STATE = "__Secure-director_studio_flow"
 MAX_PENDING = 32
 MAX_SESSIONS = 20
 FLOW_TTL = 300
-SESSION_TTL = 7200
-SESSION_IDLE = 1800
+SESSION_TTL = 30 * 24 * 60 * 60  # 30 days from the original login
+SESSION_IDLE = 14 * 24 * 60 * 60  # 14 days with no visits
 _CLIENT_ID = re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
 _OWNER_SUB = re.compile(r"^[A-Za-z0-9_-]{8,256}$")
 _TOKEN_ID = re.compile(r"^[A-Za-z0-9_-]{24,96}$")
@@ -111,7 +113,8 @@ def session_cookie(sid):
     if not _TOKEN_ID.fullmatch(sid):
         raise IdentityError("invalid_session_id")
     return (COOKIE_SID + "=" + sid +
-            "; Path=/studio/; Max-Age=7200; Secure; HttpOnly; SameSite=Lax")
+            "; Path=/studio/; Max-Age=" + str(SESSION_TTL) +
+            "; Secure; HttpOnly; SameSite=Lax")
 
 
 def state_cookie(state):
@@ -145,7 +148,8 @@ def _now():
 
 
 class MicrosoftStudioIdentity:
-    def __init__(self, config, *, msal_app=None, validator=None, clock=_now):
+    def __init__(self, config, *, msal_app=None, validator=None, clock=_now,
+                 session_db_path=None):
         self.config = _valid_config(config)
         self.clock = clock
         if msal_app is None:
@@ -164,7 +168,9 @@ class MicrosoftStudioIdentity:
         self.validate = validator
         self.lock = threading.Lock()
         self.pending = {}
-        self.sessions = {}
+        self.sessions = {}  # legacy in-memory mode for isolated test harnesses
+        self.session_store = (PersistentSessions(session_db_path,max_sessions=MAX_SESSIONS)
+                              if session_db_path is not None else None)
 
     def start(self):
         flow = self.app.initiate_auth_code_flow(
@@ -247,20 +253,36 @@ class MicrosoftStudioIdentity:
                 not hmac.compare_digest(str(claims.get("sub","")),self.config["owner_sub"])):
             raise IdentityError("microsoft_owner_not_authorized")
         sid=secrets.token_urlsafe(32)
+        csrf=secrets.token_urlsafe(32)
         with self.lock:
-            self.sessions={s:item for s,item in self.sessions.items()
-                           if item["expires"] > now and item["last"]+SESSION_IDLE > now}
-            if len(self.sessions)>=MAX_SESSIONS:
-                # Do not revoke legitimate current sessions to make space for attackers.
-                raise IdentityError("too_many_sessions")
-            self.sessions[sid]={"sub":claims["sub"],"expires":now+SESSION_TTL,
-                                "last":now,"csrf":secrets.token_urlsafe(32)}
+            if self.session_store is not None:
+                try:
+                    self.session_store.save(
+                        sid,claims["sub"],csrf,now,now+SESSION_TTL,SESSION_IDLE)
+                except SessionStoreError as exc:
+                    raise IdentityError("too_many_sessions" if str(exc)=="too_many_sessions"
+                                        else "identity_session_storage_unavailable") from None
+                except (OSError,sqlite3.Error):
+                    raise IdentityError("identity_session_storage_unavailable") from None
+            else:
+                self.sessions={s:item for s,item in self.sessions.items()
+                               if item["expires"] > now and item["last"]+SESSION_IDLE > now}
+                if len(self.sessions)>=MAX_SESSIONS:
+                    raise IdentityError("too_many_sessions")
+                self.sessions[sid]={"sub":claims["sub"],"expires":now+SESSION_TTL,
+                                    "last":now,"csrf":csrf}
         return sid
 
     def check(self, sid):
         if not isinstance(sid,str) or not _TOKEN_ID.fullmatch(sid):
             return None
         now=self.clock()
+        if self.session_store is not None:
+            try:
+                return self.session_store.lookup(
+                    sid,self.config["owner_sub"],now,SESSION_IDLE)
+            except (OSError,sqlite3.Error,SessionStoreError):
+                return None  # private session storage unavailable: fail closed
         with self.lock:
             data=self.sessions.get(sid)
             if not data:
@@ -274,6 +296,12 @@ class MicrosoftStudioIdentity:
     def logout(self, sid):
         if not isinstance(sid,str):
             return
+        if self.session_store is not None:
+            try:
+                self.session_store.remove(sid)
+            except (OSError,sqlite3.Error,SessionStoreError):
+                pass
+            return
         with self.lock:
             self.sessions.pop(sid,None)
 
@@ -285,6 +313,7 @@ def from_systemd():
     if config is None:
         return None
     try:
-        return MicrosoftStudioIdentity(config)
+        return MicrosoftStudioIdentity(
+            config,session_db_path="/var/lib/director-studio/studio_owner_sessions.sqlite")
     except Exception:
         return None  # Unconfigured/public callers will receive 503.

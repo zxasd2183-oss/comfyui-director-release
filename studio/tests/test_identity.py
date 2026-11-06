@@ -251,7 +251,9 @@ class IdentityTests(unittest.TestCase):
         _,state=self.id.start()
         sid=self.id.finish({"state":state,"code":"some-secure-auth-code"},state)
         for t in range(4):
-            self.now[0]+=identity.SESSION_IDLE-1
+            # Exercise idle renewal WITHOUT crossing the new 30-day absolute
+            # maximum; four full 14-day idle windows would exceed that limit.
+            self.now[0]+=min(identity.SESSION_IDLE-1,identity.SESSION_TTL//8)
             self.assertIsNotNone(self.id.check(sid))
         self.now[0]+=identity.SESSION_TTL
         self.assertIsNone(self.id.check(sid))
