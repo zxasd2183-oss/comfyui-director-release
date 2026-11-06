@@ -105,10 +105,16 @@ class VideoReturnTests(unittest.TestCase):
         listed=vr.list_takes(self.db,"WaitingOffice","EP01","01")["takes"]
         self.assertEqual(len(listed),1)
         self.assertEqual(listed[0]["status"],"in_review")
+        before=fixture.work.get_episode_readiness(self.db,"WaitingOffice","EP01")
+        self.assertEqual(before["approved_take_count"],0)
+        self.assertEqual(before["shots"][0]["video_take_status"],"in_review")
         with self.assertRaises(vr.VideoResultError):
             vr.get_take_file(self.db,"WaitingOffice","EP01","02",take["take_id"])
         good=self.review_take_result(take["take_id"])
         self.assertEqual(good["status"],"approved")
+        complete=fixture.work.get_episode_readiness(self.db,"WaitingOffice","EP01")
+        self.assertEqual(complete["approved_take_count"],1)
+        self.assertEqual(complete["shots"][0]["video_take_status"],"approved")
         with self.assertRaises(vr.VideoResultError) as caught:
             self.review_take_result(take["take_id"])
         self.assertEqual(caught.exception.reason,"video_take_already_reviewed")
@@ -133,6 +139,9 @@ class VideoReturnTests(unittest.TestCase):
         with self.assertRaises(vr.VideoResultError) as caught:
             self.review_take_result(take["take_id"])
         self.assertEqual(caught.exception.reason,"video_source_revision_changed")
+        stale=fixture.work.get_episode_readiness(self.db,"WaitingOffice","EP01")
+        self.assertEqual(stale["approved_take_count"],0)
+        self.assertEqual(stale["shots"][0]["video_take_status"],"stale")
 
     def review_video_plan_rejected_then_revised(self):
         fixture.work.review_unit(self.db,{
