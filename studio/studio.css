@@ -1572,3 +1572,12 @@ body[data-page="home"] .workspace>.notice{display:none}
   body[data-page="scenes"] .scene-inspector[open],
   body[data-page="characters"] .character-inspector[open]{height:min(760px,92vh);max-height:92vh}
 }
+
+/* Keep the category rail reachable when the optional media tray is expanded. */
+body[data-page="characters"] .character-center:has(#characterMediaDrawer[open]) .character-stage{
+  min-height:130px
+}
+body[data-page="characters"] .character-center:has(#characterMediaDrawer[open]) .character-v2-section{
+  flex-basis:145px;min-height:135px
+}
+body[data-page="characters"] .character-media-drawer[open]{max-height:42%}
