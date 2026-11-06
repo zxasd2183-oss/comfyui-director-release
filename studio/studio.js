@@ -887,7 +887,9 @@
     return "./api/v1/video-results/file?"+new URLSearchParams({
       project:scope.project,episode:scope.episode,shot:scope.shot,take:take_id});
   }
+  let videoTakesRequestSerial=0;
   async function loadVideoTakes(state){
+    const requestId=++videoTakesRequestSerial;
     const root=$("wfVideoTakes_video_plans");
     if(!root)return;
     const pid=state.project,eid=state.episode,sid=state.selected;
@@ -898,7 +900,8 @@
     }
     const query=new URLSearchParams({project:pid,episode:eid,shot:sid});
     const record=state.items?.items.find(x=>x.unit_id===sid);
-    const current=()=>pid===state.project&&eid===state.episode&&sid===state.selected;
+    const current=()=>requestId===videoTakesRequestSerial&&
+      pid===state.project&&eid===state.episode&&sid===state.selected;
     const heading=el("div","workflow-readiness-head");
     heading.appendChild(el("strong","","SH"+sid+" · 实际视频 / 结果审核"));
     heading.appendChild(el("small","","只认可校验过的 MP4；上传不等于批准"));
