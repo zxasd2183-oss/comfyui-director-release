@@ -41,6 +41,11 @@ from character_library_v2 import (
     revise_asset as revise_character_v2_asset,
     review_asset as review_character_v2_asset,
 )
+from shot_character_bindings import (
+    prepare_schema as prepare_shot_character,
+    list_bindings as list_shot_character,
+    bind_character as save_shot_character,
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -141,6 +146,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_schema(db)
             prepare_characters(db)
             prepare_character_v2(db)
+            prepare_shot_character(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -344,6 +350,21 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(400,{"ok":False,"reason":"invalid_episode_query"})
             except Exception:
                 return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
+        if path == "/api/v1/characters/shot-bindings":
+            if not secured:
+                return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=3)
+                if len(pairs)!=2 or len({k for k,v in pairs})!=2 or {
+                        k for k,v in pairs}!={"project","episode"}:
+                    raise CharacterError("invalid_shot_binding_query")
+                args=dict(pairs)
+                return self.reply(200,list_shot_character(
+                    self.server.production_db_path,args["project"],args["episode"]))
+            except CharacterError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"shot_binding_storage_unavailable"})
         if path == "/api/v1/characters/assets":
             if not secured:
                 return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
@@ -515,7 +536,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/characters/approve",
                         "/api/v1/characters/assets/create",
                         "/api/v1/characters/assets/revise",
-                        "/api/v1/characters/assets/review"):
+                        "/api/v1/characters/assets/review",
+                        "/api/v1/characters/shot-bindings/save"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/")) and not secured:
@@ -577,7 +599,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                     "/api/v1/characters/approve":approve_character_master,
                     "/api/v1/characters/assets/create":create_character_v2_asset,
                     "/api/v1/characters/assets/revise":revise_character_v2_asset,
-                    "/api/v1/characters/assets/review":review_character_v2_asset
+                    "/api/v1/characters/assets/review":review_character_v2_asset,
+                    "/api/v1/characters/shot-bindings/save":save_shot_character
                 }[path]
                 result=action(self.server.production_db_path,fields,actor)
                 return self.reply(201 if path.endswith("/create") else 200,result)
