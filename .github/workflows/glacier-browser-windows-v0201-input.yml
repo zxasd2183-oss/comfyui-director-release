@@ -1,4 +1,4 @@
-name: Glacier Browser v0.20.1 Windows input/drag diagnostics preview
+name: Glacier Browser v0.20.1 Windows input compatibility preview r2
 on:
   push:
     branches:
@@ -11,6 +11,9 @@ on:
 permissions:
   contents: write
   actions: write
+concurrency:
+  group: glacier-windows-v0201-input
+  cancel-in-progress: true
 jobs:
   build-publish:
     if: vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX != ''
@@ -61,6 +64,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python ../scripts/glacier_prepare_rotated_update.py windows .
           if ($LASTEXITCODE -ne 0) { throw 'New Glacier v0.20 updater public key is missing or invalid' }
+          # Keep the exact historical trust-root rotation guard intact.
+          # Only after the public key is safely patched can the preview
+          # application's displayed patch version be updated.
+          python -c "from pathlib import Path; p=Path('secure_update.py'); s=p.read_text(encoding='utf8'); old='CURRENT_VERSION = '+chr(39)+'0.20.0'+chr(39); assert s.count(old)==1; p.write_text(s.replace(old,'CURRENT_VERSION = '+chr(39)+'0.20.1'+chr(39)),encoding='utf8'); print('Preview signed-updater UI version 0.20.1')"
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to set preview version after secure key rotation' }
           python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python -c "import ui12; assert ui12.normalize_input('example.com') == 'https://example.com'; assert ui12.normalize_input('https://example.com').startswith('https:'); print('New window module import checks passed')"
@@ -126,7 +134,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = '0.20.1'
-          $tag = "glacier-v$version-input-preview"
+          $tag = "glacier-v$version-input-preview-r2"
           $name = "GlacierBrowser-v$version-Windows-Setup-x64.exe"
           $installer = "dist/$name"
           if (-not (Test-Path $installer)) { throw 'Windows setup missing.' }
