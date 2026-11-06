@@ -281,6 +281,9 @@ def main():
     await_ui(text="5",timeout=30)
     time.sleep(4)
     adb("shell","am","force-stop",PKG,timeout=15)
+    # Clear old markers so M04 can only pass if the restarted process
+    # genuinely reloads the encrypted bookmark/history database.
+    adb("logcat","-c",timeout=15)
     adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=75)
     tap(text="明确使用直连")
     await_ui(desc="更多选项",timeout=120)
@@ -319,8 +322,8 @@ def main():
     tap(text="历史记录")
     await_ui(text="私人空间 · 历史记录",timeout=30)
     m04_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
-    if "M04_LIBRARY_LIST kind=history profile=private count=" not in m04_log:
-        raise RuntimeError("M04_HISTORY_NOT_LISTED")
+    if not re.search(r"M04_LIBRARY_LIST kind=history profile=private count=[1-9]\\d*",m04_log):
+        raise RuntimeError("M04_HISTORY_NOT_PERSISTED")
     record("m04_history_persisted","private history reopened after force-stop")
     tap(text="关闭")
     # Real Gecko HTML file controls -> Android Storage Access Framework.
