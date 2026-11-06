@@ -87,6 +87,68 @@
             <p class="production-warning">创作大纲由 ChatGPT 通过 Director Hub 保存，仅供导演审阅；不是已批准剧本，也不会自动启动 GPU。</p>
           </div>
           <div id="episodeShotGrid" class="episode-shot-grid" role="list"></div>
+          <section class="shot-character-panel" id="shotCharacterPanel" aria-label="镜头角色连续性">
+            <div class="episode-outline-header">
+              <strong>镜头角色绑定 · V2</strong>
+              <span class="small-tag" id="shotCharacterCount">0 条规划绑定</span>
+            </div>
+            <p class="production-warning">绑定仅用于分镜规划。角色母版未获完整批准前，不得当作正式分镜或视频生成依据。</p>
+            <p class="shot-character-status" id="shotCharacterStatus">选择镜头后绑定角色及参考资产。</p>
+            <div id="shotCharacterFindings" class="shot-character-findings"></div>
+            <div id="shotCharacterEntries" class="shot-character-entries"></div>
+            <form id="shotCharacterForm" class="shot-character-form" hidden>
+              <div class="episode-outline-header">
+                <strong id="shotCharacterFormTitle">绑定镜头角色</strong>
+                <button type="button" class="prod-new prod-secondary" id="shotCharacterCancel">取消</button>
+              </div>
+              <div class="shot-character-fields">
+                <label>角色
+                  <select id="shotCharacterId" required></select>
+                </label>
+                <label>朝向（角色自身）
+                  <select id="shotCharacterDirection">
+                    <option value="front">正面</option><option value="left">左侧面</option>
+                    <option value="right">右侧面</option><option value="back">背面</option>
+                    <option value="front_left_45">左前 45°</option>
+                    <option value="front_right_45">右前 45°</option>
+                    <option value="back_left_45">左后 45°</option>
+                    <option value="back_right_45">右后 45°</option>
+                  </select>
+                </label>
+                <label>画面站位
+                  <select id="shotCharacterSide">
+                    <option value="left">画面左</option><option value="center">中央</option>
+                    <option value="right">画面右</option><option value="offscreen">画外</option>
+                  </select>
+                </label>
+                <label>服装版本 / 编号
+                  <input id="shotCharacterOutfit" maxlength="180" placeholder="例如 GPT_DAILY_01">
+                </label>
+                <label>发型版本 / 编号
+                  <input id="shotCharacterHair" maxlength="180" placeholder="例如 GPT_HAIR_01">
+                </label>
+                <label>表情
+                  <input id="shotCharacterExpression" maxlength="180" placeholder="例如 思考 / 惊讶">
+                </label>
+                <label>姿势 / 动作
+                  <input id="shotCharacterPose" maxlength="180" placeholder="例如 坐姿、翻阅">
+                </label>
+                <label>镜头前道具状态
+                  <input id="shotCharacterPropBefore" maxlength="180" placeholder="例如 右手拿资料板">
+                </label>
+                <label>镜头后道具状态
+                  <input id="shotCharacterPropAfter" maxlength="180" placeholder="例如 右手放下资料板">
+                </label>
+              </div>
+              <label>本镜头参考的已批准角色资产（多选，未审核图不会显示）
+                <select id="shotCharacterAssets" multiple size="4" aria-label="已批准角色参考素材"></select>
+              </label>
+              <label>导演备注
+                <textarea id="shotCharacterNote" maxlength="800" rows="2"></textarea>
+              </label>
+              <button type="submit" class="prod-new" id="shotCharacterSave">保存规划绑定（不批准母版）</button>
+            </form>
+          </section>
           <div id="episodeAssetSummary" class="episode-asset-summary"></div>
           <section id="visualLibraryPanel" class="visual-library" hidden aria-label="视觉素材库">
             <div class="visual-library-head">
