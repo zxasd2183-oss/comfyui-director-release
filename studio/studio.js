@@ -14,6 +14,8 @@
   let currentVisual = null;
   let characterProjectId = "", characterCurrentId = "", characterData = null;
   let characterEditingId = null;
+  let sceneProjectId = "", sceneCurrentId = "", sceneData = null, sceneEditId = null;
+  let sceneEpisodes = [];
   let shotBindingData=null, shotBindingCharacters=[], shotBindingFocus=null;
   let characterV2Data = null, characterV2Category = "profile";
   let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
@@ -87,6 +89,7 @@
     const projects=production?.projects || [];
     const episodes=production?.episodes || [];
     syncCharacterProjects(projects);
+    syncSceneProjects(projects,episodes);
     if(!projects.length) {
       list.appendChild(el("div","production-empty",
         microsoftOwner?"尚未建立项目。点击「新建项目」，开始第一部作品。":
@@ -395,6 +398,357 @@
   const charRoleName={main:"主角",extended:"扩展角色"};
   const charRefName={character_card:"角色卡",three_view:"三视图",
     expression:"表情集",costume:"服装",prop:"道具",inspiration:"创意参考"};
+
+
+  const functionalPages={
+    home:"工作台首页",projects:"项目与剧集",characters:"角色库 V2",
+    scenes:"场景库",shots:"镜头规划",review:"监审工作台",audit:"操作审计"
+  };
+  function navigateWorkspace(name,changeHistory=true){
+    const page=Object.prototype.hasOwnProperty.call(functionalPages,name)?
+      name:"home";
+    document.body.dataset.page=page;
+    $("workspacePageTitle").textContent=functionalPages[page];
+    for(const nav of document.querySelectorAll(".nav-items a[data-page]")){
+      const active=nav.dataset.page===page;
+      nav.classList.toggle("active",active);
+      if(active)nav.setAttribute("aria-current","page");
+      else nav.removeAttribute("aria-current");
+    }
+    if(changeHistory){
+      const url=new URL(window.location.href);
+      url.searchParams.set("page",page);
+      window.history.pushState({page},"",url.pathname+url.search);
+    }
+    window.scrollTo(0,0);
+    if(page==="scenes"&&sceneProjectId&&!sceneData&&microsoftOwner)
+      loadScenes().catch(error=>$("sceneMessage").textContent=error.message);
+  }
+  for(const nav of document.querySelectorAll(".nav-items a[data-page]")){
+    nav.addEventListener("click",event=>{
+      event.preventDefault();
+      navigateWorkspace(nav.dataset.page);
+    });
+  }
+  window.addEventListener("popstate",()=>navigateWorkspace(
+    new URLSearchParams(window.location.search).get("page")||"home",false));
+
+  const sceneTypeName={interior:"室内",exterior:"室外",
+    transition:"过渡场景",abstract:"抽象空间"};
+  const sceneStatusName={draft:"草稿",in_review:"待审核",
+    approved:"已批准",rejected:"已驳回"};
+  const sceneRefName={overview:"总览",camera_angle:"机位参考",
+    lighting:"光照",layout:"结构布局",inspiration:"创意参考"};
+
+  function syncSceneProjects(projects,episodes){
+    const select=$("sceneProject");
+    if(!microsoftOwner){select.disabled=true;return;}
+    const valid=projects.map(p=>p.project_id);
+    const previous=sceneProjectId;
+    const signature=JSON.stringify(valid);
+    if(select.dataset.projects!==signature){
+      select.dataset.projects=signature;
+      select.replaceChildren();
+      for(const project of projects){
+        const option=el("option","",project.title+" · "+project.project_id);
+        option.value=project.project_id;select.appendChild(option);
+      }
+    }
+    if(!valid.includes(sceneProjectId)){
+      sceneProjectId=valid[0]||"";
+      sceneData=null;sceneCurrentId="";
+    }
+    select.value=sceneProjectId;
+    select.disabled=!sceneProjectId;
+    $("sceneCreateBtn").disabled=!sceneProjectId;
+    sceneEpisodes=episodes.filter(e=>e.project_id===sceneProjectId);
+    if(previous!==sceneProjectId&&sceneProjectId)
+      loadScenes().catch(err=>$("sceneMessage").textContent="读取场景失败："+err.message);
+  }
+
+  async function scenePost(action,body){
+    if(!microsoftOwner||!csrf)throw Error("仅 Microsoft 所有者可以修改场景");
+    const response=await fetch("./api/v1/scenes/"+action,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({csrf,...body}),cache:"no-store"
+    });
+    const data=await response.json();
+    if(!response.ok)throw Error(data.reason||"场景保存失败");
+    return data;
+  }
+
+  async function loadScenes(){
+    const pid=sceneProjectId;
+    if(!microsoftOwner||!pid)return;
+    const response=await fetch("./api/v1/scenes?project="+encodeURIComponent(pid),
+      {cache:"no-store"});
+    const value=await response.json();
+    if(!response.ok)throw Error(value.reason||"场景库不可读");
+    if(pid!==sceneProjectId)return;
+    sceneData=value;
+    if(!value.scenes.some(scene=>scene.scene_id===sceneCurrentId))
+      sceneCurrentId=value.scenes[0]?.scene_id||"";
+    renderScenes();
+  }
+
+  function renderScenes(){
+    const data=sceneData;if(!data)return;
+    const list=$("sceneList"),detail=$("sceneDetail");
+    list.replaceChildren();detail.replaceChildren();
+    $("sceneCount").textContent=data.scenes.length+" 处场景";
+    $("sceneMessage").textContent=data.scenes.length?
+      "场景设定跨剧集复用；原图仍在对应剧集，正式版必须明确人工审核。":
+      "当前项目暂无场景。先新建场景，再上传参考图并提交人工审核。";
+    for(const scene of data.scenes){
+      const button=el("button","scene-entry"+(
+        sceneCurrentId===scene.scene_id?" active":""));
+      button.type="button";
+      const img=scene.visuals.find(v=>v.visual_id===scene.canonical?.visual_id)||
+        scene.visuals[0];
+      if(img){
+        const cover=el("img","scene-entry-cover");
+        cover.loading="lazy";cover.alt=scene.display_name;
+        cover.src=visualURL(data.project_id,img.episode_id,img.visual_id);
+        button.appendChild(cover);
+      }else button.appendChild(el("span","scene-entry-cover scene-cover-empty","▧"));
+      const desc=el("span","");
+      desc.appendChild(el("strong","",scene.display_name));
+      desc.appendChild(el("small","",scene.scene_id+" · "+
+        sceneTypeName[scene.scene_type]+" · "+sceneStatusName[scene.status]));
+      button.appendChild(desc);
+      button.addEventListener("click",()=>{
+        sceneCurrentId=scene.scene_id;
+        $("sceneEditor").hidden=true;
+        renderScenes();
+      });
+      list.appendChild(button);
+    }
+    const scene=data.scenes.find(s=>s.scene_id===sceneCurrentId);
+    if(!scene){
+      detail.appendChild(el("div","production-empty",
+        "没有场景资料。点击「新建场景」录入布局、光照和机位约束。"));
+      return;
+    }
+    const head=el("div","scene-detail-head");
+    const meta=el("div","");
+    meta.appendChild(el("h3","",scene.display_name));
+    meta.appendChild(el("p","",scene.scene_id+" · "+
+      sceneTypeName[scene.scene_type]+" · 草稿 V"+scene.revision+
+      " · "+sceneStatusName[scene.status]));
+    if(scene.approved_revision!==null)
+      meta.appendChild(el("small","", "已批准的独立快照 V"+
+        scene.approved_revision+" 仍可追溯"));
+    const edit=el("button","prod-new prod-secondary","编辑 / 新建修订");
+    edit.type="button";edit.disabled=scene.status==="in_review";
+    edit.addEventListener("click",()=>openSceneEditor(scene));
+    head.append(meta,edit);detail.appendChild(head);
+    const info=el("div","scene-detail-grid");
+    for(const [label,value] of [["固定空间布局",scene.layout_notes],
+         ["照明与时间",scene.lighting_notes],["镜头机位规则",scene.camera_rules],
+         ["跨镜头连续性",scene.continuity_rules],["剧情与制作备注",scene.scene_notes]]){
+      const box=el("div","scene-info");
+      box.appendChild(el("strong","",label));
+      box.appendChild(el("p","",value||"尚未填写"));
+      info.appendChild(box);
+    }
+    detail.appendChild(info);
+    detail.appendChild(el("h4","","场景参考图片 · 原图保持在剧集内"));
+    const gallery=el("div","scene-gallery");
+    for(const visual of scene.visuals){
+      const item=el("div","scene-visual");
+      const picture=el("img","");
+      picture.loading="lazy";picture.alt=visual.filename;
+      picture.src=visualURL(data.project_id,visual.episode_id,visual.visual_id);
+      item.appendChild(picture);
+      item.appendChild(el("small","",visual.episode_id+" · "+
+        visual.filename+" · "+(visual.linked?"已关联":"未关联")));
+      if(scene.canonical?.visual_id===visual.visual_id)
+        item.appendChild(el("strong","scene-approved-label","✓ V"+
+          scene.approved_revision+" 正式视觉参考"));
+      if(!visual.linked){
+        const btn=el("button","prod-new prod-secondary","关联为候选");
+        btn.type="button";
+        btn.addEventListener("click",async()=>{
+          btn.disabled=true;
+          try{
+            await scenePost("link",{project_id:data.project_id,
+              scene_id:scene.scene_id,visual_id:visual.visual_id,
+              reference_type:"overview"});
+            await loadScenes();
+          }catch(error){$("sceneMessage").textContent=error.message;
+            btn.disabled=false;}
+        });item.appendChild(btn);
+      }
+      gallery.appendChild(item);
+    }
+    if(!scene.visuals.length)gallery.appendChild(el("p","production-empty",
+      "尚无图片。下方可上传场景参考图。"));
+    detail.appendChild(gallery);
+    const remaining=data.available_visuals.filter(v=>
+      !scene.visuals.some(x=>x.visual_id===v.visual_id));
+    if(remaining.length){
+      const controls=el("div","scene-link-controls");
+      const picker=el("select","");
+      for(const v of remaining){
+        const option=el("option","",v.episode_id+" · "+v.filename+
+          " · "+v.subject_id);
+        option.value=v.visual_id;picker.appendChild(option);
+      }
+      const type=el("select","");
+      for(const [key,label] of Object.entries(sceneRefName)){
+        const opt=el("option","",label);opt.value=key;type.appendChild(opt);
+      }
+      const button=el("button","prod-new prod-secondary","关联其他现有图片");
+      button.type="button";
+      button.addEventListener("click",async()=>{
+        button.disabled=true;
+        try{await scenePost("link",{project_id:data.project_id,
+          scene_id:scene.scene_id,visual_id:picker.value,
+          reference_type:type.value});await loadScenes();}
+        catch(e){$("sceneMessage").textContent=e.message;button.disabled=false;}
+      });
+      controls.append(picker,type,button);detail.appendChild(controls);
+    }
+    const upload=el("form","scene-upload-form");
+    const uploadHead=el("strong","","上传此场景的新参考图");
+    const episodeSelect=el("select","");
+    for(const episode of sceneEpisodes){
+      const option=el("option","",episode.episode_id+" · "+episode.title);
+      option.value=episode.episode_id;episodeSelect.appendChild(option);
+    }
+    const file=el("input","");file.type="file";
+    file.accept="image/png,image/jpeg,image/webp";file.required=true;
+    const uploadBtn=el("button","prod-new","上传并关联候选");
+    uploadBtn.type="submit";uploadBtn.disabled=!sceneEpisodes.length;
+    upload.append(uploadHead,episodeSelect,file,uploadBtn);
+    upload.addEventListener("submit",async event=>{
+      event.preventDefault();if(!file.files?.length)return;
+      const f=file.files[0];
+      if(f.size<32||f.size>8*1024*1024||
+         !["image/png","image/jpeg","image/webp"].includes(f.type)){
+        $("sceneMessage").textContent="仅支持 8MB 内的 PNG/JPG/WebP 图片";
+        return;
+      }
+      uploadBtn.disabled=true;
+      try{
+        const image_base64=await fileAsBase64(f);
+        const response=await fetch("./api/v1/production/visual/upload",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({csrf,project_id:data.project_id,
+            episode_id:episodeSelect.value,kind:"scene",
+            subject_id:scene.scene_id,filename:f.name,image_base64}),
+          cache:"no-store"});
+        const result=await response.json();
+        if(!response.ok)throw Error(result.reason||"上传失败");
+        await scenePost("link",{project_id:data.project_id,
+          scene_id:scene.scene_id,visual_id:result.visual_id,
+          reference_type:"overview"});
+        await loadScenes();
+        $("sceneMessage").textContent="已保存并关联候选图 V"+result.version+
+          "；尚未提交人工审核。";
+      }catch(error){$("sceneMessage").textContent="上传失败："+error.message;
+        uploadBtn.disabled=false;}
+    });
+    detail.appendChild(upload);
+    const actions=el("div","scene-review");
+    actions.appendChild(el("strong","","场景版本审核"));
+    const rationale=el("textarea","");
+    rationale.placeholder="审核理由（至少 8 个字；检查场景布局、光照与机位一致性）";
+    rationale.maxLength=600;
+    actions.appendChild(rationale);
+    const photoSelect=el("select","");
+    const valid=scene.visuals.filter(v=>v.linked&&v.subject_id===scene.scene_id);
+    for(const v of valid){
+      const option=el("option","",v.episode_id+" · "+v.filename+" / V"+v.version);
+      option.value=v.visual_id;photoSelect.appendChild(option);
+    }
+    if(!valid.length){
+      const option=el("option","","尚无本场景已关联的独立参考图");
+      option.disabled=true;photoSelect.appendChild(option);
+    }
+    photoSelect.disabled=!valid.length;actions.appendChild(photoSelect);
+    const commands=el("div","scene-review-actions");
+    const choices=scene.status==="draft"?[["submit","提交审核"]]:
+      scene.status==="in_review"?[["approve","人工批准"],["reject","驳回"]]:[];
+    for(const [decision,title] of choices){
+      const btn=el("button","prod-new prod-secondary",title);
+      btn.type="button";
+      btn.disabled=decision==="approve"&&!valid.length;
+      btn.addEventListener("click",async()=>{
+        if(rationale.value.trim().length<8){
+          $("sceneMessage").textContent="审核理由至少 8 个字";return;
+        }
+        if(decision==="approve"&&!window.confirm(
+          "确认将此场景版本及所选图片批准为正式参考？旧版仍保留。"))return;
+        btn.disabled=true;
+        try{
+          await scenePost("review",{project_id:data.project_id,
+            scene_id:scene.scene_id,expected_revision:scene.revision,
+            decision,visual_id:decision==="approve"?photoSelect.value:null,
+            rationale:rationale.value.trim()});
+          await loadScenes();
+        }catch(e){$("sceneMessage").textContent="审核失败："+e.message;
+          btn.disabled=false;}
+      });
+      commands.appendChild(btn);
+    }
+    if(!choices.length)commands.appendChild(el("p","",
+      "此修订已处理。需要改变布局或光照请新建修订。"));
+    actions.appendChild(commands);detail.appendChild(actions);
+  }
+
+  function openSceneEditor(scene=null){
+    if(!microsoftOwner||!sceneProjectId)return;
+    sceneEditId=scene?.scene_id||null;
+    $("sceneEditorTitle").textContent=scene?"修订 "+scene.display_name:"创建场景";
+    $("sceneId").value=scene?.scene_id||"";
+    $("sceneId").disabled=!!scene;
+    $("sceneName").value=scene?.display_name||"";
+    $("sceneType").value=scene?.scene_type||"interior";
+    $("sceneLayoutNotes").value=scene?.layout_notes||"";
+    $("sceneLighting").value=scene?.lighting_notes||"";
+    $("sceneCamera").value=scene?.camera_rules||"";
+    $("sceneContinuity").value=scene?.continuity_rules||"";
+    $("sceneNotes").value=scene?.scene_notes||"";
+    $("sceneEditor").hidden=false;
+    $("sceneEditor").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+  $("sceneProject").addEventListener("change",()=>{
+    sceneProjectId=$("sceneProject").value;
+    sceneCurrentId="";sceneData=null;
+    $("sceneEditor").hidden=true;
+    // Render's next production snapshot provides episodes for this project;
+    // the latest dashboard is already loaded when a project is selected.
+    sceneEpisodes=(latest?.production?.episodes||[]).filter(
+      e=>e.project_id===sceneProjectId);
+    loadScenes().catch(error=>$("sceneMessage").textContent=error.message);
+  });
+  $("sceneCreateBtn").addEventListener("click",()=>openSceneEditor());
+  $("sceneEditorCancel").addEventListener("click",()=>{$("sceneEditor").hidden=true;});
+  $("sceneEditor").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const existing=sceneData?.scenes.find(x=>x.scene_id===sceneEditId);
+    const values={project_id:sceneProjectId,
+      scene_id:existing?.scene_id||$("sceneId").value.trim(),
+      display_name:$("sceneName").value.trim(),scene_type:$("sceneType").value,
+      layout_notes:$("sceneLayoutNotes").value.trim(),
+      lighting_notes:$("sceneLighting").value.trim(),
+      camera_rules:$("sceneCamera").value.trim(),
+      continuity_rules:$("sceneContinuity").value.trim(),
+      scene_notes:$("sceneNotes").value.trim()};
+    const button=$("sceneSaveBtn");button.disabled=true;
+    try{
+      if(existing){
+        await scenePost("update",{...values,expected_revision:existing.revision});
+      }else{
+        await scenePost("create",values);
+      }
+      sceneCurrentId=values.scene_id;
+      $("sceneEditor").hidden=true;
+      await loadScenes();
+    }catch(e){$("sceneMessage").textContent="保存失败："+e.message;}
+    finally{button.disabled=false;}
+  });
 
   function syncCharacterProjects(projects) {
     const select=$("characterProject"), valid=projects.map(p=>p.project_id);
@@ -1318,6 +1672,7 @@
         });
       }
       await refresh();
+      navigateWorkspace(new URLSearchParams(window.location.search).get("page")||"home",false);
       const es=new EventSource("./api/v1/stream");
       es.addEventListener("snapshot",event=>{
         try{render(JSON.parse(event.data));}catch(_error){/* next tick will recover */}
