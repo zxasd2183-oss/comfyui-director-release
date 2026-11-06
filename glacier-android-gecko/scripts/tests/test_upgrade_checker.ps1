@@ -1,6 +1,6 @@
 # Deterministic mock CLI tests of the read-only compatibility gate; never touch a phone.
 $ErrorActionPreference = 'Stop'
-$root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$root = Split-Path $PSScriptRoot -Parent
 $checker = Join-Path $root 'check_installed_apk_upgrade.ps1'
 $adb = Join-Path $PSScriptRoot 'mock_upgrade_adb.ps1'
 $aapt = Join-Path $PSScriptRoot 'mock_upgrade_aapt.ps1'
