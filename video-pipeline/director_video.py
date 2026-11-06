@@ -305,6 +305,78 @@ def build_studio_handoff_plan(document, workflow, bindings, image=""):
     return plan
 
 
+def build_studio_episode_plan(document,workflow,bindings,images=None):
+    """Prepare a complete approved episode as ONE offline local queue plan.
+
+    No networking, GPU requests or implicit skipping of blocked shots.
+    """
+    images=images or {}
+    if not isinstance(images,dict) or any(
+        not isinstance(k,str) or not isinstance(v,str)
+        for k,v in images.items()):
+        raise PlanError("Invalid per-shot Comfy input image map")
+    if not isinstance(document,dict) or document.get("ok") is not True:
+        raise PlanError("Invalid Studio episode handoff")
+    bundle=document.get("bundle")
+    digest=document.get("bundle_sha256")
+    if (not isinstance(bundle,dict) or not isinstance(digest,str) or
+        document.get("checksum_type")!="sha256_canonical_json_not_signature"):
+        raise PlanError("Missing Studio episode checksum")
+    canonical=json.dumps(bundle,sort_keys=True,ensure_ascii=False,
+        separators=(",",":")).encode()
+    if hashlib.sha256(canonical).hexdigest()!=digest:
+        raise PlanError("Studio episode handoff checksum mismatch")
+    if bundle.get("schema")!="director_studio_episode_handoff_v1":
+        raise PlanError("Unsupported Studio episode handoff schema")
+    if bundle.get("gpu_dispatch_authorized") is not False:
+        raise PlanError("Studio episode bundle cannot authorize GPU execution")
+    if bundle.get("blocked") or bundle.get("all_ready") is not True:
+        raise PlanError("Episode has blocked shots; no partial execution plan")
+    ids=bundle.get("shot_ids")
+    packages=bundle.get("packages")
+    shot_count=bundle.get("shot_count")
+    if (not isinstance(ids,list) or not isinstance(packages,list) or
+        type(shot_count)!=int or not 1<=shot_count<=500 or
+        len(ids)!=shot_count or len(packages)!=shot_count or
+        len(set(ids))!=shot_count or not all(
+            isinstance(x,str) and SHOT.fullmatch(x) for x in ids)):
+        raise PlanError("Invalid Studio episode shot inventory")
+    if set(images)-set(ids):
+        raise PlanError("Per-shot image map contains unknown shots")
+    jobs=[]
+    receipts=[]
+    fps=None
+    duration_ms=0
+    for sid,entry in zip(ids,packages):
+        pkg=entry.get("package") if isinstance(entry,dict) else None
+        if not isinstance(pkg,dict) or pkg.get("shot_id")!=sid or (
+            pkg.get("project_id")!=bundle.get("project_id") or
+            pkg.get("episode_id")!=bundle.get("episode_id")):
+            raise PlanError("Studio episode shot order/source mismatch")
+        single=build_studio_handoff_plan(entry,workflow,bindings,
+                                          images.get(sid,""))
+        if fps is None:fps=single["fps"]
+        if single["fps"]!=fps:
+            raise PlanError("Studio episode contains inconsistent frame rates")
+        jobs.extend(single["jobs"])
+        duration_ms+=pkg["duration_ms"]
+        receipts.append(single["studio_handoff"])
+    if type(bundle.get("total_duration_ms"))!=int or (
+        duration_ms!=bundle["total_duration_ms"]):
+        raise PlanError("Studio episode total duration mismatch")
+    return {"schema":1,"fps":fps,"shot_count":shot_count,
+        "total_seconds":round(duration_ms/1000,3),
+        "jobs":jobs,"api_format_only":True,
+        "gpu_actions_performed":False,
+        "studio_episode_handoff":{
+            "project_id":bundle["project_id"],
+            "episode_id":bundle["episode_id"],
+            "bundle_sha256":digest,
+            "shot_receipts":receipts,
+            "checksum_is_signature":False,
+            "manual_gpu_execution_required":True}}
+
+
 def load_plan(path):
     data = read_json(path)
     if not isinstance(data, dict) or data.get("schema") != 1:
@@ -745,6 +817,14 @@ def run_cli(argv=None):
     studio.add_argument("--image", default="",
         help="Already-approved basename in ComfyUI input directory, if bound")
     studio.add_argument("--out", required=True)
+    batch = sub.add_parser("prepare-studio-batch",
+        help="Offline ALL-shot Studio episode import; refuses incomplete bundles")
+    batch.add_argument("--package", required=True)
+    batch.add_argument("--workflow", required=True)
+    batch.add_argument("--bindings", required=True)
+    batch.add_argument("--images",
+        help="JSON object mapping shot IDs to approved local image basenames")
+    batch.add_argument("--out", required=True)
     for cmd in ("preflight", "submit", "collect", "status"):
         item = sub.add_parser(cmd)
         item.add_argument("--plan", required=True)
@@ -770,6 +850,15 @@ def run_cli(argv=None):
                           load_shots(args.shots, load_prompt_notes(args.prompts)), args.fps)
         atomic_json(args.out, plan)
         print(f"Prepared {plan['shot_count']} shots, {plan['total_seconds']} seconds; NO GPU call")
+        return 0
+    if args.command == "prepare-studio-batch":
+        image_map=read_json(args.images) if args.images else {}
+        plan=build_studio_episode_plan(read_json(args.package),
+            read_json(args.workflow),read_json(args.bindings),image_map)
+        atomic_json(args.out,plan)
+        print("Prepared %d Studio shots / %.3f s OFFLINE; no GPU call. "
+              "Any future submit requires --execute AND --acknowledge-gpu-cost."
+              %(plan["shot_count"],plan["total_seconds"]))
         return 0
     if args.command == "prepare-studio":
         plan=build_studio_handoff_plan(read_json(args.package),
