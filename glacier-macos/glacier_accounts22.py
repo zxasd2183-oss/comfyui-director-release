@@ -67,11 +67,12 @@ def clean_accounts22(payload):
                 or not (1 <= len(name.strip()) <= 60)
                 or not (1 <= len(username) <= 250) or len(password) > 2048):
             raise ValueError("Invalid account entry")
-        key = (domain, name)
+        normalized_name = name.strip()
+        key = (domain, normalized_name.casefold())
         if key in seen:
             raise ValueError("Duplicate account")
         seen.add(key)
-        result.append({"site": domain, "name": name.strip(),
+        result.append({"site": domain, "name": normalized_name,
                        "username": username, "password": password})
     return {"schema": 1, "accounts": result}
 
