@@ -16,12 +16,15 @@
       <div><strong>Director</strong><small>STUDIO / CONTROL</small></div>
     </div>
     <div class="side-caption">工作空间</div>
-    <nav class="nav-items" aria-label="工作台导航">
-      <a class="active" href="#overview"><span>▦</span> 制作总览</a>
-      <a href="#characters"><span>♙</span> 角色库</a>
-      <a href="#shots"><span>▥</span> 镜头生产线</a>
-      <a href="#inspector"><span>◎</span> 人工监审</a>
-      <a href="#activity"><span>≋</span> 操作审计</a>
+    <nav class="nav-items" aria-label="工作台功能页面">
+      <a class="active" href="?page=home" data-page="home"><span>▦</span> 工作台首页</a>
+      <a href="?page=projects" data-page="projects"><span>▤</span> 项目与剧集</a>
+      <a href="?page=characters" data-page="characters"><span>♙</span> 角色库 V2</a>
+      <a href="?page=scenes" data-page="scenes"><span>▧</span> 场景库</a>
+      <a href="?page=shots" data-page="shots"><span>▥</span> 镜头规划</a>
+      <a href="?page=review" data-page="review"><span>◎</span> 监审工作台</a>
+      <a href="?page=audit" data-page="audit"><span>≋</span> 操作审计</a>
+      <div class="nav-placeholder" aria-label="开发排期中的功能">后续阶段：道具库、分镜图、白模、视频制作、任务管理</div>
     </nav>
     <div class="sidebar-bottom">
       <div class="safety-indicator"><span class="safety-dot"></span>安全控制模式</div>
@@ -31,7 +34,7 @@
   </aside>
   <main id="overview">
     <header class="topbar">
-      <div class="crumb"><span>WORKSPACE</span><b>/</b><strong>Production Control</strong></div>
+      <div class="crumb"><span>DIRECTOR STUDIO</span><b>/</b><strong id="workspacePageTitle">工作台首页</strong></div>
       <div class="topbar-right"><span id="streamDot" class="dot neutral"></span><span id="streamLabel">连接中</span><span class="top-divider"></span><span id="clock"></span><button id="logoutMicrosoft" hidden type="button" class="logout-mini">退出登录</button></div>
     </header>
     <div class="workspace">
@@ -184,6 +187,67 @@
           </section>
           <p class="production-warning">图片由所有者主动上传后才能在此预览。Studio 不会自动读取 ChatGPT 私人素材库，不会触发 GPU 任务。</p>
         </div>
+      </section>
+      <section id="scenes" class="panel scene-library-panel" aria-label="项目级场景库">
+        <div class="panel-header">
+          <div><div class="kicker">SCENE LIBRARY · PROJECT-WIDE</div>
+            <h2>场景库</h2>
+            <p>独立场景建档 · 布局 / 光照 / 机位 / 连续性 · 版本和人工审核</p></div>
+          <span id="sceneCount" class="small-tag">待加载</span>
+        </div>
+        <div class="scene-toolbar">
+          <label>所属项目 <select id="sceneProject" disabled></select></label>
+          <button type="button" class="prod-new" id="sceneCreateBtn" disabled>＋ 新建场景</button>
+        </div>
+        <p id="sceneMessage" class="character-message" role="status">登录后读取真实场景资料；不会自动生成或批准图片。</p>
+        <div class="scene-layout">
+          <div id="sceneList" class="scene-list">
+            <div class="production-empty">当前项目没有场景。可以新建场景设定。</div>
+          </div>
+          <div id="sceneDetail" class="scene-detail">
+            <div class="production-empty">选择场景，管理结构、光线、镜头参考与审核版本。</div>
+          </div>
+        </div>
+        <form id="sceneEditor" class="scene-editor" hidden>
+          <div class="character-editor-heading">
+            <strong id="sceneEditorTitle">新建场景</strong>
+            <button type="button" class="prod-new prod-secondary" id="sceneEditorCancel">取消</button>
+          </div>
+          <div class="scene-form-grid">
+            <label>场景编号
+              <input id="sceneId" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9_-]{1,47}" placeholder="SCN_HALL">
+            </label>
+            <label>场景名称
+              <input id="sceneName" required maxlength="100" placeholder="例如：事务所大厅">
+            </label>
+            <label>场景类别
+              <select id="sceneType">
+                <option value="interior">室内</option><option value="exterior">室外</option>
+                <option value="transition">过渡场景</option><option value="abstract">抽象空间</option>
+              </select>
+            </label>
+          </div>
+          <label>空间布局与固定结构（必填）
+            <textarea id="sceneLayoutNotes" required maxlength="1500" rows="3" placeholder="墙面、门窗、桌椅、走道、尺寸关系；不会因镜头变化随意移动。"></textarea>
+          </label>
+          <div class="scene-form-grid">
+            <label>照明与时间条件
+              <textarea id="sceneLighting" maxlength="1200" rows="3" placeholder="主光源、窗光、阴影方向、昼夜版。"></textarea>
+            </label>
+            <label>镜头与机位约束
+              <textarea id="sceneCamera" maxlength="1200" rows="3" placeholder="入口朝向、180°轴线、可用机位。"></textarea>
+            </label>
+            <label>跨镜头连续性
+              <textarea id="sceneContinuity" maxlength="1200" rows="3" placeholder="常驻道具位置、不可随意改变的结构。"></textarea>
+            </label>
+            <label>剧情与制作备注
+              <textarea id="sceneNotes" maxlength="1200" rows="3" placeholder="可复用剧集、环境音与特殊镜头。"></textarea>
+            </label>
+          </div>
+          <p class="production-warning">已批准的版本作为历史快照保留。编辑会产生新草稿，不会自动替换之前的批准版。</p>
+          <button type="submit" id="sceneSaveBtn" class="prod-new">保存场景草稿</button>
+        </form>
+        <p class="production-warning">场景图可从项目剧集中上传并在此关联；只有 Microsoft 所有者明确批准后，才可作为场景的正式视觉参考。此页不会启动 GPU。</p>
       </section>
       <section id="characters" class="panel character-library" aria-label="独立角色库">
         <div class="panel-header">
