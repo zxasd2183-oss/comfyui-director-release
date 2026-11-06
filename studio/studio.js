@@ -227,6 +227,7 @@
       characterProjectId=valid[0]||"";
       characterCurrentId="";
       characterData=null;
+      characterV2Data=null;
     }
     select.value=characterProjectId;
     $("characterSeedBtn").hidden=characterProjectId!=="WaitingOffice";
@@ -495,7 +496,8 @@
     head.appendChild(el("span","character-v2-summary",
       "可追溯版本 · 原图不移动 · 未审核不成为正式母版"));
     panel.appendChild(head);
-    if(!characterV2Data||characterV2Data.character_id!==profile.character_id){
+    if(!characterV2Data||characterV2Data.project_id!==characterProjectId||
+        characterV2Data.character_id!==profile.character_id){
       panel.appendChild(el("p","character-message","正在加载 12 类角色资产…"));
       return;
     }
