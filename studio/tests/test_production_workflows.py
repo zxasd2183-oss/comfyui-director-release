@@ -237,6 +237,73 @@ class WorkflowTests(unittest.TestCase):
         self.decide("tasks","TASK_2","submit")
         self.assertEqual(self.decide("tasks","TASK_2","approve")["status"],"approved")
 
+    def test_review_queue_without_episode_includes_all_episodes(self):
+        with closing(core.open_db(self.path)) as db:
+            core.create_episode(db,"WaitingOffice","EP02","Episode 2",2)
+            core.create_shot(db,"WaitingOffice","EP02","01",1,5000)
+        self.save("tasks",uid="TASK_1",fields={"title":"跨集制作任务"})
+        self.decide("tasks","TASK_1","submit")
+        self.save("shot_plans",uid="01",fields={"title":"第一集镜头"})
+        self.decide("shot_plans","01","submit")
+        w.save_unit(self.path,self.unit("shot_plans",uid="01",
+            episode_id="EP02",fields={"title":"第二集镜头"}),"test_operator")
+        w.review_unit(self.path,{"project_id":"WaitingOffice","episode_id":"EP02",
+            "kind":"shot_plans","unit_id":"01","expected_revision":1,
+            "decision":"submit","rationale":"第二集镜头审阅并提交复核。"},
+            "test_operator")
+        every=w.list_reviews(self.path,"WaitingOffice")["pending"]
+        self.assertEqual(len(every),3)
+        self.assertEqual({r["episode_id"] for r in every},{"","EP01","EP02"})
+        ep1=w.list_reviews(self.path,"WaitingOffice","EP01")["pending"]
+        self.assertEqual({r["episode_id"] for r in ep1},{"","EP01"})
+        with self.assertRaises(w.WorkflowError) as ctx:
+            w.list_reviews(self.path,"WaitingOffice","EP03")
+        self.assertEqual(ctx.exception.reason,"episode_not_found")
+
+    def test_task_graph_rejects_missing_and_circular_dependencies(self):
+        self.save("tasks",uid="TASK_A",fields={"title":"前置任务"})
+        self.save("tasks",uid="TASK_B",fields={
+            "title":"后续任务","prerequisites":"TASK_A"})
+        for uid,rev,dependency,reason in (
+            ("TASK_A",1,"TASK_A","circular_task_dependency"),
+            ("TASK_A",1,"TASK_B","circular_task_dependency"),
+            ("TASK_A",1,"TASK_MISSING","task_dependency_not_found"),
+            ("TASK_NEW",0,"TASK_B, TASK_MISSING","task_dependency_not_found")):
+            with self.subTest(uid=uid,dependency=dependency):
+                with self.assertRaises(w.WorkflowError) as ctx:
+                    self.save("tasks",uid=uid,expected_revision=rev,
+                        fields={"title":"测试任务","prerequisites":dependency})
+                self.assertEqual(ctx.exception.reason,reason)
+        self.assertEqual(len(w.list_units(self.path,"WaitingOffice","tasks")["items"]),2)
+        with closing(core.open_db(self.path,initialize=False)) as db:
+            self.assertTrue(core.verify_chain(db))
+
+    def test_readiness_never_calls_a_planning_record_a_render(self):
+        before=w.get_episode_readiness(self.path,"WaitingOffice","EP01")
+        self.assertEqual(before["shot_count"],2)
+        self.assertEqual(before["total_duration_ms"],8000)
+        self.assertEqual(before["upstream_ready_count"],0)
+        self.assertFalse(before["runner_connected"])
+        for shot in before["shots"]:
+            self.assertIn("project_spec_not_approved",shot["upstream_blockers"])
+            self.assertIn("shot_plans_not_approved",shot["upstream_blockers"])
+            self.assertFalse(shot["runner_connected"])
+            self.assertEqual(shot["execution_blocker"],
+                             "video_render_executor_not_connected")
+        self.save("settings")
+        self.decide("settings","SPEC","submit")
+        self.decide("settings","SPEC","approve")
+        self.save("shot_plans",uid="01",fields={"title":"实际镜头草稿"})
+        after=w.get_episode_readiness(self.path,"WaitingOffice","EP01")
+        self.assertEqual(after["approved_counts"]["shot_plans"],0)
+        self.assertNotIn("project_spec_not_approved",
+                         after["shots"][0]["upstream_blockers"])
+        self.assertEqual(after["shots"][0]["stages"]["shot_plans"]["status"],"draft")
+        self.assertIn("shot_plans_not_approved",
+                      after["shots"][0]["upstream_blockers"])
+        with self.assertRaises(w.WorkflowError):
+            w.get_episode_readiness(self.path,"WaitingOffice","EP03")
+
     def test_episodes_format_9_by_16_and_approval(self):
         self.save("settings")
         self.decide("settings","SPEC","submit")
@@ -253,6 +320,7 @@ class WorkflowTests(unittest.TestCase):
         try:
             for method,url in (("GET","/api/v1/workflow?project=WaitingOffice&kind=props"),
                                ("GET","/api/v1/workflow/reviews?project=WaitingOffice"),
+                               ("GET","/api/v1/workflow/readiness?project=WaitingOffice&episode=EP01"),
                                ("POST","/api/v1/workflow/save"),
                                ("POST","/api/v1/workflow/review")):
                 con=http.client.HTTPConnection("127.0.0.1",app.server_port,timeout=5)
@@ -289,6 +357,8 @@ class FunctionalPageTests(unittest.TestCase):
         self.assertIn('window.history.pushState',js)
         self.assertIn('workflowPost("save"',js)
         self.assertIn('workflowPost("review"',js)
+        self.assertIn('id="wfReadiness_video_plans"',html)
+        self.assertIn('./api/v1/workflow/readiness?',js)
         self.assertIn('workflowDrawClay(',js)
         self.assertIn('stage_width',js)
         self.assertIn('./api/v1/production/visual/upload',js)
