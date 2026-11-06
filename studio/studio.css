@@ -1827,3 +1827,44 @@ body[data-page="settings"] .workflow-form label{font-size:12px}
   body[data-page="props"] .workflow-stage-wrap{grid-template-columns:minmax(0,1fr) 104px}
   body[data-page="settings"] .workflow-form{grid-template-columns:1fr}
 }
+
+/* Real asset-specific list presentation, no fabricated thumbnails. */
+.scene-list>.scene-rail-empty{grid-column:1/-1;min-height:235px}
+.character-turnaround-silhouette{position:relative;font-size:0}
+.character-turnaround-silhouette:before{content:"";position:absolute;
+  width:25px;height:25px;top:17px;left:50%;transform:translateX(-50%);
+  background:#bed7e7;border-radius:50%;box-shadow:inset 0 3px #a9ccdf}
+.character-turnaround-silhouette:after{content:"";position:absolute;
+  width:44px;height:54px;bottom:4px;left:50%;transform:translateX(-50%);
+  background:linear-gradient(130deg,#c3ddeb,#98bcd5);border-radius:17px 17px 6px 6px;
+  clip-path:polygon(25% 0,75% 0,95% 28%,100% 100%,0 100%,5% 28%)}
+body[data-page="props"] .workflow-record{display:grid;
+  grid-template-columns:minmax(0,1fr);gap:7px;padding:7px}
+body[data-page="props"] .workflow-record-copy{display:grid;gap:4px}
+.icebound-prop-thumb{width:100%;height:93px;display:grid;
+  place-items:center;object-fit:cover;border-radius:7px;
+  background:#e5f4fc;border:1px solid #d9e9f5}
+.icebound-prop-placeholder{color:#85b1cb;font-size:28px;
+  background:radial-gradient(circle at 50% 20%,#f9fdff,#d9edf8)}
+.icebound-task-table-head{display:grid;grid-template-columns:
+  minmax(0,1fr) 100px 75px 87px;gap:10px;align-items:center;
+  color:#7393ab;background:#eaf6ff;font-size:11px;
+  font-weight:800;border-radius:8px;padding:11px 14px}
+body[data-page="tasks"] .workflow-record{display:grid;grid-template-columns:
+  minmax(0,1fr) 265px;gap:10px;padding:11px 14px;align-items:center}
+body[data-page="tasks"] .workflow-record-copy{min-width:0}
+body[data-page="tasks"] .workflow-record-copy strong{font-size:12px}
+.icebound-task-facts{display:grid;grid-template-columns:100px 75px 87px;
+  gap:10px;align-items:center;color:#547b98;font-size:11px;min-width:0}
+.icebound-task-facts>.state{grid-row:auto!important;grid-column:auto!important;
+  justify-self:start;margin:0!important}
+@media(max-width:1140px){
+  .icebound-task-table-head{grid-template-columns:minmax(0,1fr) 75px 65px 75px}
+  .icebound-task-facts{grid-template-columns:75px 65px 75px}
+  body[data-page="tasks"] .workflow-record{grid-template-columns:minmax(0,1fr) 235px}
+}
+@media(max-width:740px){
+  .icebound-task-table-head{display:none}
+  body[data-page="tasks"] .workflow-record{grid-template-columns:1fr}
+  .icebound-task-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
