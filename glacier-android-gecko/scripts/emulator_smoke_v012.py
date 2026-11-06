@@ -84,6 +84,25 @@ def tap(**find):
     # Never automatically replay non-idempotent taps after a timeout.
     adb("shell","input","tap",str((x1+x2)//2),str((y1+y2)//2),timeout=12)
 
+def tap_menu_item(label):
+    """Scroll Android's native overflow ListView, then tap exactly once.
+
+    Longer Chrome-like menus can have inaccessible off-screen rows. Never
+    replay the tap itself, only scroll until the intended item is visible.
+    """
+    for attempt in range(7):
+        try:
+            tap(text=label,timeout=5)
+            return
+        except RuntimeError as exc:
+            if "UI_NOT_FOUND" not in str(exc):
+                raise
+        if attempt==6:
+            break
+        adb("shell","input","swipe","540","1550","540","580","350",timeout=14)
+        time.sleep(1)
+    raise RuntimeError("NATIVE_OVERFLOW_ITEM_NOT_FOUND: "+label)
+
 def urlbar(prefix,timeout=75):
     end=time.monotonic()+timeout
     while time.monotonic()<end:
@@ -256,7 +275,7 @@ def main():
     tap(desc="返回浏览器")
     record("new_tab","tab counter and new-tab page observed; tab persistence not verified")
     tap(desc="更多选项")
-    tap(text="内部测试工具")
+    tap_menu_item("内部测试工具")
     tap(text="隔离自测：私人写入")
     isolation_state("PRIVATE_SEEDED")
     record("private_storage_seed","cookie and localStorage written by JS on loopback fixture")
@@ -264,7 +283,7 @@ def main():
     tap(text="切换账号空间")
     tap(text="工作空间 · 独立 Cookie")
     tap(desc="更多选项")
-    tap(text="内部测试工具")
+    tap_menu_item("内部测试工具")
     tap(text="隔离自测：工作检查")
     isolation_state("WORK_ISOLATED")
     record("work_profile_isolation","work page observed neither private Cookie nor localStorage")
@@ -273,7 +292,7 @@ def main():
     tap(text="切换账号空间")
     tap(text="私人空间 · 独立 Cookie")
     tap(desc="更多选项")
-    tap(text="内部测试工具")
+    tap_menu_item("内部测试工具")
     tap(text="隔离自测：私人复查")
     isolation_state("PRIVATE_RETAINED")
     record("private_storage_retained","private cookie and localStorage retained after switching")
@@ -342,7 +361,7 @@ def main():
     # No real accounts or sensitive documents; only cancel paths in the smoke
     # test until reliable file-byte round trips have been independently proven.
     tap(desc="更多选项")
-    tap(text="内部测试工具")
+    tap_menu_item("内部测试工具")
     tap(text="传输自测：打开测试页面")
     isolation_state("TRANSFER_READY")
     record("transfer_fixture","loopback Gecko transfer page loaded")
@@ -385,7 +404,7 @@ def main():
     record("background_restore","browser UI available")
     shot("03-restored")
     tap(desc="更多选项")
-    tap(text="打开 ChatGPT")
+    tap_menu_item("打开 ChatGPT")
     urlbar("https://chatgpt.com",timeout=100)
     page_event("chatgpt")
     record("chatgpt_navigation","Gecko PAGE_STOP true; login and site rendering not verified")
@@ -393,7 +412,7 @@ def main():
     # GitHub last: in the earlier Google APIs emulator, accessibility and
     # screenshots stopped responding after this heavier page completed.
     tap(desc="更多选项")
-    tap(text="打开 GitHub")
+    tap_menu_item("打开 GitHub")
     await_ui(desc="Glacier 地址栏",timeout=35)
     page_event("github")
     record("github_navigation","Gecko PAGE_STOP true; HTTP content not verified")
