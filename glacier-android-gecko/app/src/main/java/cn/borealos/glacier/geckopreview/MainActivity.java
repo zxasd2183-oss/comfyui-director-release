@@ -66,6 +66,7 @@ public final class MainActivity extends Activity {
     private TextView tabCounter;
     private TextView engineLabel;
     private View newTabPage;
+    private FrameLayout tabOverview;
     private Button backButton;
     private Button forwardButton;
     private Tab active;
@@ -172,11 +173,12 @@ public final class MainActivity extends Activity {
     }
 
     private void buildChrome() {
+        FrameLayout screen = new FrameLayout(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
         if (android.os.Build.VERSION.SDK_INT >= 35) {
-            root.setOnApplyWindowInsetsListener((view, insets) -> {
+            screen.setOnApplyWindowInsetsListener((view, insets) -> {
                 android.graphics.Insets bars = insets.getInsets(
                         android.view.WindowInsets.Type.systemBars());
                 view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
@@ -188,7 +190,16 @@ public final class MainActivity extends Activity {
                 return insets;
             });
         }
-        setContentView(root);
+        screen.addView(root, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        tabOverview = new FrameLayout(this);
+        tabOverview.setVisibility(View.GONE);
+        tabOverview.setBackgroundColor(PALE);
+        screen.addView(tabOverview, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(screen);
 
         // Android Chrome-style compact toolbar: no persistent logo, profile
         // badge, diagnostic banner, or second row of navigation buttons.
@@ -459,6 +470,15 @@ public final class MainActivity extends Activity {
         session.setContentDelegate(new GeckoSession.ContentDelegate() {
             @Override
             public void onTitleChange(GeckoSession source, String title) {
+                // Preserve real site titles for the tab grid, without logging
+                // browsing history or touching profile isolation.
+                Tab titledTab = findBySession(source);
+                if (titledTab != null && title != null && !title.isEmpty()
+                        && !"about:blank".equals(title)
+                        && !title.startsWith("GLACIER_TEST_")) {
+                    titledTab.title = title.length() > 65
+                            ? title.substring(0, 65) + "…" : title;
+                }
                 if (!debugBuild() || title == null || !title.startsWith("GLACIER_TEST_")) return;
                 if ("mock-socks".equals(getIntent().getStringExtra("glacier.ci.network"))
                         && "GLACIER_TEST_PROXY_ROUTE_OK".equals(title)) {
@@ -628,7 +648,8 @@ public final class MainActivity extends Activity {
             }
         }
         if (active != null) {
-            if (!address.hasFocus()) address.setText(active.url);
+            if (!address.hasFocus()) address.setText(
+                    "about:blank".equals(active.url) ? "" : active.url);
             backButton.setEnabled(active.canBack);
             forwardButton.setEnabled(active.canForward);
         } else {
@@ -660,16 +681,51 @@ public final class MainActivity extends Activity {
     }
 
     private void showTabs() {
-        if (tabs.isEmpty()) return;
+        if (tabs.isEmpty() || tabOverview == null) return;
+        // Full-screen grid like the Android Chrome switcher, not a small
+        // clipped AlertDialog. Data is an in-memory per-tab placeholder;
+        // M03 will add persistent thumbnails and session restoration.
+        tabOverview.removeAllViews();
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(PALE);
+
+        LinearLayout header = horizontal();
+        header.setPadding(dp(20), dp(10), dp(14), dp(10));
+        TextView title = new TextView(this);
+        title.setText("标签页 · " + tabs.size());
+        title.setTextSize(20);
+        title.setTextColor(INK);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        header.addView(title, new LinearLayout.LayoutParams(0, dp(49), 1));
+
+        Button add = button("+");
+        add.setTextSize(26);
+        add.setTextColor(GLACIER_BLUE);
+        add.setContentDescription("新建标签页");
+        add.setOnClickListener(v -> {
+            tabOverview.setVisibility(View.GONE);
+            openTab(selectedProfile, "about:blank");
+        });
+        header.addView(add, new LinearLayout.LayoutParams(dp(45), dp(45)));
+
+        Button dismiss = button("×");
+        dismiss.setTextSize(25);
+        dismiss.setContentDescription("返回浏览器");
+        dismiss.setOnClickListener(v -> tabOverview.setVisibility(View.GONE));
+        LinearLayout.LayoutParams dismissParams =
+                new LinearLayout.LayoutParams(dp(45), dp(45));
+        dismissParams.setMargins(dp(8), 0, 0, 0);
+        header.addView(dismiss, dismissParams);
+        page.addView(header);
+
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
-        grid.setPadding(dp(9), dp(10), dp(9), dp(10));
-        grid.setBackgroundColor(PALE);
-        scroll.addView(grid);
-        final AlertDialog[] holder = new AlertDialog[1];
+        grid.setPadding(dp(8), dp(8), dp(8), dp(12));
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        int cardWidth = (screenWidth - dp(60)) / 2;
+        int cardWidth = (screenWidth - dp(62)) / 2;
 
         for (Tab tab : new ArrayList<>(tabs)) {
             LinearLayout tile = new LinearLayout(this);
@@ -679,32 +735,31 @@ public final class MainActivity extends Activity {
                     tab == active ? GLACIER_BLUE : HAIRLINE));
             tile.setContentDescription("标签卡片 · " + tab.title);
 
-            LinearLayout head = horizontal();
-            head.setPadding(0, 0, 0, 0);
-            TextView favicon = new TextView(this);
-            favicon.setText("◉");
-            favicon.setTextColor(GLACIER_BLUE);
-            favicon.setTextSize(17);
-            head.addView(favicon, new LinearLayout.LayoutParams(dp(23), dp(28)));
+            LinearLayout cardHeader = horizontal();
+            cardHeader.setPadding(0, 0, 0, 0);
+            TextView marker = new TextView(this);
+            marker.setText("◉");
+            marker.setTextColor(GLACIER_BLUE);
+            marker.setTextSize(17);
+            cardHeader.addView(marker, new LinearLayout.LayoutParams(dp(23), dp(28)));
 
-            TextView title = new TextView(this);
-            title.setSingleLine(true);
-            title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            title.setText(tab.title);
-            title.setTextSize(12);
-            title.setTextColor(INK);
-            head.addView(title, new LinearLayout.LayoutParams(0, dp(32), 1));
+            TextView caption = new TextView(this);
+            caption.setSingleLine(true);
+            caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            caption.setText(tab.title);
+            caption.setTextSize(12);
+            caption.setTextColor(INK);
+            cardHeader.addView(caption, new LinearLayout.LayoutParams(0, dp(32), 1));
 
             Button close = button("×");
             close.setTextSize(20);
             close.setContentDescription("关闭标签页");
             close.setOnClickListener(v -> {
-                holder[0].dismiss();
                 closeTab(tab);
                 showTabs();
             });
-            head.addView(close, new LinearLayout.LayoutParams(dp(33), dp(33)));
-            tile.addView(head);
+            cardHeader.addView(close, new LinearLayout.LayoutParams(dp(33), dp(33)));
+            tile.addView(cardHeader);
 
             TextView preview = new TextView(this);
             preview.setText("❄");
@@ -722,15 +777,13 @@ public final class MainActivity extends Activity {
             domain.setEllipsize(android.text.TextUtils.TruncateAt.END);
             domain.setTextSize(10);
             domain.setTextColor(MUTED);
-            LinearLayout.LayoutParams domainParams =
-                    new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT, dp(25));
-            tile.addView(domain, domainParams);
+            tile.addView(domain, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(25)));
+
             tile.setOnClickListener(v -> {
-                holder[0].dismiss();
+                tabOverview.setVisibility(View.GONE);
                 switchTo(tab);
             });
-
             GridLayout.LayoutParams cell = new GridLayout.LayoutParams();
             cell.width = cardWidth;
             cell.height = dp(190);
@@ -738,15 +791,13 @@ public final class MainActivity extends Activity {
             grid.addView(tile, cell);
         }
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("标签页 · " + tabs.size())
-                .setView(scroll)
-                .setPositiveButton("＋ 新建标签页",
-                        (d, which) -> openTab(selectedProfile, "about:blank"))
-                .setNegativeButton("关闭", null)
-                .create();
-        holder[0] = dialog;
-        dialog.show();
+        scroll.addView(grid);
+        page.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        tabOverview.addView(page, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        tabOverview.setVisibility(View.VISIBLE);
     }
 
     private void closeTab(Tab target) {
@@ -1047,6 +1098,10 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (tabOverview != null && tabOverview.getVisibility() == View.VISIBLE) {
+            tabOverview.setVisibility(View.GONE);
+            return;
+        }
         if (active != null && active.canBack) {
             active.session.goBack();
         } else {

@@ -229,7 +229,7 @@ def main():
     await_ui(text="标签页 · 2")
     shot("02-tab-grid")
     record("chrome_tab_grid","two-column tab overview opened")
-    tap(text="关闭")
+    tap(desc="返回浏览器")
     record("new_tab","tab counter and new-tab page observed; tab persistence not verified")
     tap(desc="更多选项")
     tap(text="隔离自测：私人写入")
