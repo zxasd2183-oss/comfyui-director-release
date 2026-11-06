@@ -731,7 +731,7 @@ def get_episode_video_handoffs(db_path,project_id,episode_id):
         rows=db.execute("SELECT shot_id,ordinal,duration_ms FROM production_shots "
             "WHERE project_id=? AND episode_id=? ORDER BY ordinal,shot_id LIMIT 701",
             (pid,eid)).fetchall()
-        if len(rows)>700:raise WorkflowError("too_many_episode_shots",409)
+        if len(rows)>500:raise WorkflowError("too_many_episode_shots",409)
         packages=[]
         blocked=[]
         for row in rows:
