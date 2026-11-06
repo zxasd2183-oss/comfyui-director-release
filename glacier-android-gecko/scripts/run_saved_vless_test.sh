@@ -6,7 +6,7 @@ OUT="$GITHUB_WORKSPACE/emulator-storage-evidence"
 mkdir -p "$OUT"
 trap 'adb logcat -d -t 2500 > "$OUT/logcat.txt" 2>/dev/null || true' EXIT
 
-APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M05-ARM64-x86_64-debug.apk"
+APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk"
 TEST_APK="$GITHUB_WORKSPACE/.glacier-test-app/app-debug-androidTest.apk"
 test -s "$APK"
 test -s "$TEST_APK"
