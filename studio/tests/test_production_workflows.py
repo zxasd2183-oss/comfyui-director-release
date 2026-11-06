@@ -15,6 +15,7 @@ import production_workflows as w
 import visual_library as v
 import scene_library as scenes
 import character_library as characters
+import character_library_v2 as characters_v2
 import studio_server as server
 import shot_character_bindings as bindings
 
@@ -30,6 +31,7 @@ class WorkflowTests(unittest.TestCase):
         self.path=str(Path(self.tmp.name)/"production.sqlite")
         with closing(core.open_db(self.path)) as db:
             v.prepare_schema(db);characters.prepare_schema(db)
+            characters_v2.prepare_schema(db)
             scenes.prepare_schema(db);bindings.prepare_schema(db)
             w.prepare_schema(db)
             for project in ("WaitingOffice","AnotherProject"):
