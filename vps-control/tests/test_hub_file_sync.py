@@ -154,6 +154,20 @@ class TestHubFileTransfer(unittest.TestCase):
         with self.assertRaises(fs.SyncError):
             fs._safe_filename("x"*121)
 
+    def test_numeric_storyboard_ids_reach_signed_transfer_validation(self):
+        # Validate scopes without any network calls: an intentionally rejected
+        # URL must fail on the host allowlist, not on the numeric shot ID.
+        unsafe={**REF,"download_url":"https://example.com/not-allowed"}
+        result=fs.sync_chatgpt_visual(
+            "WaitingOffice","EP01","storyboard","01",unsafe)
+        self.assertEqual(result["reason"],"untrusted_chatgpt_file_host")
+        for kind,subject in (("character","01"),("scene","01"),
+                             ("storyboard","../01"),("storyboard","镜头01")):
+            with self.subTest(kind=kind,subject=subject):
+                result=fs.sync_chatgpt_visual(
+                    "WaitingOffice","EP01",kind,subject,unsafe)
+                self.assertEqual(result["reason"],"invalid_studio_scope")
+
     def test_no_http_access_with_invalid_project(self):
         result=fs.sync_chatgpt_visual("bad/project","EP01",
                                       "character","CHAR_GEM",REF)
