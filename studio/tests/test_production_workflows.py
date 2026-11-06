@@ -220,6 +220,35 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(row["execution_status"],"not_connected")
         self.assertEqual(row["items"][0]["status"],"in_review")
 
+    def test_video_handoff_is_deterministic_and_never_dispatches(self):
+        self.save("video_plans",fields={
+            "model":"H3 planning reference","fps":"24","width":"1080",
+            "height":"1920","duration":"4","prompt":"慢速推镜头"})
+        first=w.get_video_handoff_package(
+            self.path,"WaitingOffice","EP01","01")
+        second=w.get_video_handoff_package(
+            self.path,"WaitingOffice","EP01","01")
+        self.assertEqual(first["package_sha256"],second["package_sha256"])
+        self.assertEqual(len(first["package_sha256"]),64)
+        pkg=first["package"]
+        self.assertFalse(first["gpu_action"])
+        self.assertFalse(pkg["gpu_dispatch_authorized"])
+        self.assertFalse(pkg["renderer_connected"])
+        self.assertEqual(pkg["video_plan"]["fields"]["prompt"],"慢速推镜头")
+        self.assertEqual(pkg["ordinal"],1)
+        self.assertEqual(pkg["duration_ms"],4000)
+        self.assertIn("video_render_executor_not_connected",pkg["blockers"])
+        self.assertIsNone(pkg["upstream"]["settings"])
+        self.save("settings")
+        third=w.get_video_handoff_package(
+            self.path,"WaitingOffice","EP01","01")
+        self.assertNotEqual(first["package_sha256"],third["package_sha256"])
+        with self.assertRaises(w.WorkflowError) as ctx:
+            w.get_video_handoff_package(self.path,"WaitingOffice","EP01","02")
+        self.assertEqual(ctx.exception.reason,"video_plan_not_found")
+        with closing(core.open_db(self.path,initialize=False)) as db:
+            self.assertTrue(core.verify_chain(db))
+
     def test_task_dependency_and_result_proof(self):
         self.save("tasks",uid="TASK_1",fields={"title":"母版验收"})
         self.decide("tasks","TASK_1","submit")
@@ -321,6 +350,7 @@ class WorkflowTests(unittest.TestCase):
             for method,url in (("GET","/api/v1/workflow?project=WaitingOffice&kind=props"),
                                ("GET","/api/v1/workflow/reviews?project=WaitingOffice"),
                                ("GET","/api/v1/workflow/readiness?project=WaitingOffice&episode=EP01"),
+                               ("GET","/api/v1/workflow/video-package?project=WaitingOffice&episode=EP01&shot=01"),
                                ("POST","/api/v1/workflow/save"),
                                ("POST","/api/v1/workflow/review")):
                 con=http.client.HTTPConnection("127.0.0.1",app.server_port,timeout=5)
@@ -359,6 +389,7 @@ class FunctionalPageTests(unittest.TestCase):
         self.assertIn('workflowPost("review"',js)
         self.assertIn('id="wfReadiness_video_plans"',html)
         self.assertIn('./api/v1/workflow/readiness?',js)
+        self.assertIn('./api/v1/workflow/video-package?',js)
         self.assertIn('workflowDrawClay(',js)
         self.assertIn('stage_width',js)
         self.assertIn('./api/v1/production/visual/upload',js)
