@@ -16,6 +16,7 @@
   let characterEditingId = null;
   let sceneProjectId = "", sceneCurrentId = "", sceneData = null, sceneEditId = null;
   let sceneEpisodes = [];
+  let sceneActiveVisualId = "";
   let shotBindingData=null, shotBindingCharacters=[], shotBindingFocus=null;
   let characterV2Data = null, characterV2Category = "profile";
   let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
@@ -88,6 +89,11 @@
     list.replaceChildren();
     const projects=production?.projects || [];
     const episodes=production?.episodes || [];
+    const displayProject=projects.find(p=>p.project_id===sceneProjectId)||
+      projects[0];
+    $("workspaceProjectName").textContent=displayProject?.title||"尚无项目";
+    const currentEpisode=episodes.find(e=>e.project_id===displayProject?.project_id);
+    $("workspaceEpisodeName").textContent=currentEpisode?.episode_id||"NO EPISODE";
     syncCharacterProjects(projects);
     syncSceneProjects(projects,episodes);
     if(!projects.length) {
@@ -456,7 +462,7 @@
     }
     if(!valid.includes(sceneProjectId)){
       sceneProjectId=valid[0]||"";
-      sceneData=null;sceneCurrentId="";
+      sceneData=null;sceneCurrentId="";sceneActiveVisualId="";
     }
     select.value=sceneProjectId;
     select.disabled=!sceneProjectId;
@@ -491,209 +497,310 @@
     renderScenes();
   }
 
-  function renderScenes(){
-    const data=sceneData;if(!data)return;
-    const list=$("sceneList"),detail=$("sceneDetail");
-    list.replaceChildren();detail.replaceChildren();
-    $("sceneCount").textContent=data.scenes.length+" 处场景";
-    $("sceneMessage").textContent=data.scenes.length?
-      "场景设定跨剧集复用；原图仍在对应剧集，正式版必须明确人工审核。":
-      "当前项目暂无场景。先新建场景，再上传参考图并提交人工审核。";
-    for(const scene of data.scenes){
+  function renderSceneList(){
+    const list=$("sceneList");list.replaceChildren();
+    const scenes=sceneData?.scenes||[];
+    const search=$("sceneSearch").value.trim().toLocaleLowerCase();
+    const filter=$("sceneTypeFilter").value;
+    const visible=scenes.filter(scene=>
+      (!filter||scene.scene_type===filter) &&
+      (!search||(scene.display_name+" "+scene.scene_id).toLocaleLowerCase().includes(search)));
+    $("sceneVisibleCount").textContent=String(visible.length);
+    if(!visible.length){
+      const empty=el("div","scene-rail-empty");
+      empty.appendChild(el("span","scene-rail-empty-icon","▧"));
+      empty.appendChild(el("strong","",scenes.length?"没有符合条件的场景":"暂无场景档案"));
+      empty.appendChild(el("p","",scenes.length?"试试清除搜索或筛选条件。":"点击右上角「新建场景」，建立第一份真实场景资料。"));
+      list.appendChild(empty);return;
+    }
+    for(const scene of visible){
       const button=el("button","scene-entry"+(
         sceneCurrentId===scene.scene_id?" active":""));
       button.type="button";
-      const img=scene.visuals.find(v=>v.visual_id===scene.canonical?.visual_id)||
+      button.setAttribute("aria-pressed",String(sceneCurrentId===scene.scene_id));
+      const coverData=scene.visuals.find(v=>v.visual_id===scene.canonical?.visual_id)||
         scene.visuals[0];
-      if(img){
+      if(coverData){
         const cover=el("img","scene-entry-cover");
         cover.loading="lazy";cover.alt=scene.display_name;
-        cover.src=visualURL(data.project_id,img.episode_id,img.visual_id);
+        cover.src=visualURL(sceneData.project_id,coverData.episode_id,coverData.visual_id);
         button.appendChild(cover);
       }else button.appendChild(el("span","scene-entry-cover scene-cover-empty","▧"));
-      const desc=el("span","");
+      const desc=el("span","scene-entry-copy");
       desc.appendChild(el("strong","",scene.display_name));
-      desc.appendChild(el("small","",scene.scene_id+" · "+
-        sceneTypeName[scene.scene_type]+" · "+sceneStatusName[scene.status]));
+      desc.appendChild(el("small","",scene.scene_id+" · "+(sceneTypeName[scene.scene_type]||"场景")));
+      const status=el("span","scene-list-status "+scene.status,
+        sceneStatusName[scene.status]||scene.status);
+      desc.appendChild(status);
       button.appendChild(desc);
       button.addEventListener("click",()=>{
-        sceneCurrentId=scene.scene_id;
-        $("sceneEditor").hidden=true;
+        sceneCurrentId=scene.scene_id;sceneActiveVisualId="";
+        if($("sceneEditorDialog").open)$("sceneEditorDialog").close();
         renderScenes();
       });
       list.appendChild(button);
     }
-    const scene=data.scenes.find(s=>s.scene_id===sceneCurrentId);
+  }
+
+  function renderScenes(){
+    const data=sceneData;if(!data)return;
+    const detail=$("sceneDetail"),stage=$("sceneStage"),
+      gallery=$("sceneGallery"),tools=$("sceneAssetTools");
+    detail.replaceChildren();stage.replaceChildren();
+    gallery.replaceChildren();tools.replaceChildren();
+    $("sceneCount").textContent=data.scenes.length+" 处场景";
+    $("sceneMessage").textContent=data.scenes.length?
+      "当前显示真实场景资料。图片和版本由项目数据库提供，候选不会自动获批。":
+      "此项目还没有场景。先创建空间结构，再上传候选图并提交审核。";
+    renderSceneList();
+    const scene=data.scenes.find(x=>x.scene_id===sceneCurrentId);
     if(!scene){
-      detail.appendChild(el("div","production-empty",
-        "没有场景资料。点击「新建场景」录入布局、光照和机位约束。"));
+      $("sceneActiveName").textContent="请选择场景";
+      $("sceneActiveStatus").textContent="尚无场景";
+      $("sceneActiveStatus").className="scene-status-pill";
+      $("sceneImageCount").textContent="0 张图片";
+      const empty=el("div","scene-stage-empty");
+      empty.appendChild(el("div","scene-stage-emblem","▧"));
+      empty.appendChild(el("strong","","从这里开始建立场景世界"));
+      empty.appendChild(el("p","","每处场景拥有独立的空间布局、光照、机位规则和参考图。"));
+      const start=el("button","prod-new scene-primary-button","＋ 创建第一个场景");
+      start.type="button";start.addEventListener("click",()=>openSceneEditor());
+      empty.appendChild(start);stage.appendChild(empty);
+      detail.appendChild(el("p","scene-inspector-placeholder",
+        "尚无场景属性。创建或选择场景后，可以查看布局说明、上传图片并进行人工审核。"));
       return;
     }
-    const head=el("div","scene-detail-head");
-    const meta=el("div","");
-    meta.appendChild(el("h3","",scene.display_name));
-    meta.appendChild(el("p","",scene.scene_id+" · "+
-      sceneTypeName[scene.scene_type]+" · 草稿 V"+scene.revision+
-      " · "+sceneStatusName[scene.status]));
-    if(scene.approved_revision!==null)
-      meta.appendChild(el("small","", "已批准的独立快照 V"+
-        scene.approved_revision+" 仍可追溯"));
-    const edit=el("button","prod-new prod-secondary","编辑 / 新建修订");
-    edit.type="button";edit.disabled=scene.status==="in_review";
-    edit.addEventListener("click",()=>openSceneEditor(scene));
-    head.append(meta,edit);detail.appendChild(head);
-    const info=el("div","scene-detail-grid");
-    for(const [label,value] of [["固定空间布局",scene.layout_notes],
-         ["照明与时间",scene.lighting_notes],["镜头机位规则",scene.camera_rules],
-         ["跨镜头连续性",scene.continuity_rules],["剧情与制作备注",scene.scene_notes]]){
-      const box=el("div","scene-info");
-      box.appendChild(el("strong","",label));
-      box.appendChild(el("p","",value||"尚未填写"));
-      info.appendChild(box);
+    $("sceneActiveName").textContent=scene.display_name;
+    $("sceneActiveStatus").textContent=sceneStatusName[scene.status]||scene.status;
+    $("sceneActiveStatus").className="scene-status-pill "+scene.status;
+    const preferred=scene.visuals.find(v=>v.visual_id===sceneActiveVisualId)||
+      scene.visuals.find(v=>v.visual_id===scene.canonical?.visual_id)||
+      scene.visuals[0];
+    sceneActiveVisualId=preferred?.visual_id||"";
+    $("sceneImageCount").textContent=scene.visuals.length+" 张图片";
+    if(preferred){
+      const picture=el("img","scene-main-image");
+      picture.src=visualURL(data.project_id,preferred.episode_id,preferred.visual_id);
+      picture.alt=scene.display_name+" · "+preferred.filename;
+      stage.appendChild(picture);
+      const overlay=el("div","scene-image-overlay");
+      overlay.appendChild(el("span","",preferred.episode_id+" · "+preferred.filename));
+      if(scene.canonical?.visual_id===preferred.visual_id)
+        overlay.appendChild(el("span","scene-stage-approved","✓ 已批准参考"));
+      else overlay.appendChild(el("span","scene-stage-draft","候选图片"));
+      stage.appendChild(overlay);
+      const zoom=el("button","scene-zoom","⤢ 放大预览");
+      zoom.type="button";
+      zoom.addEventListener("click",()=>{
+        $("sceneImageTitle").textContent=scene.display_name+" · "+preferred.filename;
+        $("sceneImageFull").src=picture.src;
+        $("sceneImageFull").alt=picture.alt;
+        $("sceneImageDialog").showModal();
+      });
+      stage.appendChild(zoom);
+    }else{
+      const empty=el("div","scene-stage-empty");
+      empty.appendChild(el("div","scene-stage-emblem","▧"));
+      empty.appendChild(el("strong","","尚无场景预览"));
+      empty.appendChild(el("p","","空间设定已保存。上传场景图后，将在这里显示实际的参考图片。"));
+      const add=el("button","prod-new scene-primary-button","＋ 上传第一张参考图");
+      add.type="button";
+      add.addEventListener("click",()=>tools.querySelector('input[type="file"]')?.click());
+      empty.appendChild(add);stage.appendChild(empty);
     }
-    detail.appendChild(info);
-    detail.appendChild(el("h4","","场景参考图片 · 原图保持在剧集内"));
-    const gallery=el("div","scene-gallery");
+
     for(const visual of scene.visuals){
-      const item=el("div","scene-visual");
+      const card=el("button","scene-visual"+(
+        sceneActiveVisualId===visual.visual_id?" active":""));
+      card.type="button";
+      card.setAttribute("aria-label","预览 "+visual.filename);
+      card.setAttribute("aria-pressed",String(sceneActiveVisualId===visual.visual_id));
       const picture=el("img","");
       picture.loading="lazy";picture.alt=visual.filename;
       picture.src=visualURL(data.project_id,visual.episode_id,visual.visual_id);
-      item.appendChild(picture);
-      item.appendChild(el("small","",visual.episode_id+" · "+
-        visual.filename+" · "+(visual.linked?"已关联":"未关联")));
+      card.appendChild(picture);
+      const caption=el("span","",visual.filename);
+      card.appendChild(caption);
       if(scene.canonical?.visual_id===visual.visual_id)
-        item.appendChild(el("strong","scene-approved-label","✓ V"+
-          scene.approved_revision+" 正式视觉参考"));
-      if(!visual.linked){
-        const btn=el("button","prod-new prod-secondary","关联为候选");
-        btn.type="button";
-        btn.addEventListener("click",async()=>{
-          btn.disabled=true;
-          try{
-            await scenePost("link",{project_id:data.project_id,
-              scene_id:scene.scene_id,visual_id:visual.visual_id,
-              reference_type:"overview"});
-            await loadScenes();
-          }catch(error){$("sceneMessage").textContent=error.message;
-            btn.disabled=false;}
-        });item.appendChild(btn);
-      }
-      gallery.appendChild(item);
+        card.appendChild(el("small","scene-approved-label","✓ 已批准 V"+scene.approved_revision));
+      else if(!visual.linked)card.appendChild(el("small","","未关联"));
+      else card.appendChild(el("small","","候选 V"+visual.version));
+      card.addEventListener("click",()=>{
+        sceneActiveVisualId=visual.visual_id;
+        renderScenes();
+      });
+      gallery.appendChild(card);
     }
-    if(!scene.visuals.length)gallery.appendChild(el("p","production-empty",
-      "尚无图片。下方可上传场景参考图。"));
-    detail.appendChild(gallery);
-    const remaining=data.available_visuals.filter(v=>
+    if(!scene.visuals.length)gallery.appendChild(
+      el("p","scene-gallery-empty","暂无图片版本。点击下方上传真实参考图。"));
+
+    const box=el("div","scene-inspector-header");
+    box.appendChild(el("h3","",scene.display_name));
+    box.appendChild(el("span","scene-inspector-meta",
+      scene.scene_id+" · "+sceneTypeName[scene.scene_type]+" · Revision "+scene.revision));
+    if(scene.approved_revision!==null)
+      box.appendChild(el("span","scene-preserved-version",
+        "历史批准版 V"+scene.approved_revision+" 保留不变"));
+    detail.appendChild(box);
+    const edit=el("button","prod-new prod-secondary scene-edit-button","✎ 编辑场景设定");
+    edit.type="button";edit.disabled=scene.status==="in_review";
+    edit.addEventListener("click",()=>openSceneEditor(scene));
+    detail.appendChild(edit);
+    for(const [name,value] of [
+        ["固定空间布局",scene.layout_notes],
+        ["光照与时间",scene.lighting_notes],
+        ["机位规则",scene.camera_rules],
+        ["连续性锁定",scene.continuity_rules],
+        ["剧情备注",scene.scene_notes]]){
+      const row=el("section","scene-info");
+      row.appendChild(el("strong","",name));
+      row.appendChild(el("p","",value||"尚未填写"));
+      detail.appendChild(row);
+    }
+
+    if(preferred&&!preferred.linked){
+      const link=el("button","prod-new prod-secondary","＋ 将当前图片关联为候选");
+      link.type="button";
+      link.addEventListener("click",async()=>{
+        link.disabled=true;
+        try{
+          await scenePost("link",{project_id:data.project_id,
+            scene_id:scene.scene_id,visual_id:preferred.visual_id,
+            reference_type:"overview"});
+          await loadScenes();
+        }catch(error){$("sceneMessage").textContent=error.message;link.disabled=false;}
+      });
+      detail.appendChild(link);
+    }
+    const other=data.available_visuals.filter(v=>
       !scene.visuals.some(x=>x.visual_id===v.visual_id));
-    if(remaining.length){
-      const controls=el("div","scene-link-controls");
+    if(other.length){
+      const wrap=el("div","scene-link-controls");
+      wrap.appendChild(el("strong","", "关联项目中已有的其他场景图片"));
       const picker=el("select","");
-      for(const v of remaining){
-        const option=el("option","",v.episode_id+" · "+v.filename+
-          " · "+v.subject_id);
-        option.value=v.visual_id;picker.appendChild(option);
+      for(const image of other){
+        const option=el("option","",image.episode_id+" · "+image.filename+
+          " · "+image.subject_id);
+        option.value=image.visual_id;picker.appendChild(option);
       }
       const type=el("select","");
       for(const [key,label] of Object.entries(sceneRefName)){
         const opt=el("option","",label);opt.value=key;type.appendChild(opt);
       }
-      const button=el("button","prod-new prod-secondary","关联其他现有图片");
+      const button=el("button","prod-new prod-secondary","关联候选");
       button.type="button";
       button.addEventListener("click",async()=>{
         button.disabled=true;
-        try{await scenePost("link",{project_id:data.project_id,
-          scene_id:scene.scene_id,visual_id:picker.value,
-          reference_type:type.value});await loadScenes();}
-        catch(e){$("sceneMessage").textContent=e.message;button.disabled=false;}
+        try{
+          await scenePost("link",{project_id:data.project_id,
+            scene_id:scene.scene_id,visual_id:picker.value,
+            reference_type:type.value});await loadScenes();
+        }catch(error){$("sceneMessage").textContent=error.message;
+          button.disabled=false;}
       });
-      controls.append(picker,type,button);detail.appendChild(controls);
+      wrap.append(picker,type,button);tools.appendChild(wrap);
     }
+
     const upload=el("form","scene-upload-form");
-    const uploadHead=el("strong","","上传此场景的新参考图");
+    upload.appendChild(el("strong","","上传当前场景参考图"));
+    const desc=el("span","scene-upload-hint",
+      "选择所属剧集，将原图保存到该剧集并关联至当前场景。上传仅生成候选。");
+    upload.appendChild(desc);
+    const line=el("div","scene-upload-line");
     const episodeSelect=el("select","");
-    for(const episode of sceneEpisodes){
-      const option=el("option","",episode.episode_id+" · "+episode.title);
-      option.value=episode.episode_id;episodeSelect.appendChild(option);
+    episodeSelect.setAttribute("aria-label","选择图片所属剧集");
+    for(const ep of sceneEpisodes){
+      const opt=el("option","",ep.episode_id+" · "+ep.title);
+      opt.value=ep.episode_id;episodeSelect.appendChild(opt);
     }
     const file=el("input","");file.type="file";
+    file.setAttribute("aria-label","选择场景图片");
     file.accept="image/png,image/jpeg,image/webp";file.required=true;
-    const uploadBtn=el("button","prod-new","上传并关联候选");
-    uploadBtn.type="submit";uploadBtn.disabled=!sceneEpisodes.length;
-    upload.append(uploadHead,episodeSelect,file,uploadBtn);
+    const send=el("button","prod-new scene-primary-button","上传并关联");
+    send.type="submit";send.disabled=!sceneEpisodes.length;
+    line.append(episodeSelect,file,send);
+    upload.appendChild(line);
     upload.addEventListener("submit",async event=>{
-      event.preventDefault();if(!file.files?.length)return;
+      event.preventDefault();
+      if(!file.files?.length)return;
       const f=file.files[0];
       if(f.size<32||f.size>8*1024*1024||
-         !["image/png","image/jpeg","image/webp"].includes(f.type)){
-        $("sceneMessage").textContent="仅支持 8MB 内的 PNG/JPG/WebP 图片";
-        return;
+          !["image/png","image/jpeg","image/webp"].includes(f.type)){
+        $("sceneMessage").textContent="仅支持 8MB 内的 PNG/JPG/WebP 图片";return;
       }
-      uploadBtn.disabled=true;
+      send.disabled=true;
       try{
         const image_base64=await fileAsBase64(f);
         const response=await fetch("./api/v1/production/visual/upload",{
           method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({csrf,project_id:data.project_id,
             episode_id:episodeSelect.value,kind:"scene",
-            subject_id:scene.scene_id,filename:f.name,image_base64}),
-          cache:"no-store"});
+            subject_id:scene.scene_id,filename:f.name,image_base64}),cache:"no-store"
+        });
         const result=await response.json();
-        if(!response.ok)throw Error(result.reason||"上传失败");
+        if(!response.ok)throw Error(result.reason||"图片上传失败");
         await scenePost("link",{project_id:data.project_id,
           scene_id:scene.scene_id,visual_id:result.visual_id,
           reference_type:"overview"});
+        sceneActiveVisualId=result.visual_id;
         await loadScenes();
-        $("sceneMessage").textContent="已保存并关联候选图 V"+result.version+
-          "；尚未提交人工审核。";
+        $("sceneMessage").textContent="已上传并关联候选图 V"+result.version+
+          "。需要人工审核后才能成为正式场景参考。";
       }catch(error){$("sceneMessage").textContent="上传失败："+error.message;
-        uploadBtn.disabled=false;}
+        send.disabled=false;}
     });
-    detail.appendChild(upload);
-    const actions=el("div","scene-review");
-    actions.appendChild(el("strong","","场景版本审核"));
+    tools.appendChild(upload);
+
+    const actions=el("section","scene-review");
+    actions.appendChild(el("strong","","版本审核"));
+    actions.appendChild(el("p","scene-review-hint",
+      "审核将记录当前场景版本、原图哈希与审批理由；旧版永不覆盖。"));
     const rationale=el("textarea","");
-    rationale.placeholder="审核理由（至少 8 个字；检查场景布局、光照与机位一致性）";
+    rationale.placeholder="填写审核依据（至少 8 字）";
+    rationale.setAttribute("aria-label","审核理由");
     rationale.maxLength=600;
     actions.appendChild(rationale);
-    const photoSelect=el("select","");
     const valid=scene.visuals.filter(v=>v.linked&&v.subject_id===scene.scene_id);
+    const photoSelect=el("select","");
+    photoSelect.setAttribute("aria-label","选择正式参考图片");
     for(const v of valid){
       const option=el("option","",v.episode_id+" · "+v.filename+" / V"+v.version);
       option.value=v.visual_id;photoSelect.appendChild(option);
     }
     if(!valid.length){
-      const option=el("option","","尚无本场景已关联的独立参考图");
+      const option=el("option","","暂无合格的独立场景图片");
       option.disabled=true;photoSelect.appendChild(option);
     }
-    photoSelect.disabled=!valid.length;actions.appendChild(photoSelect);
+    photoSelect.disabled=!valid.length;
+    actions.appendChild(photoSelect);
     const commands=el("div","scene-review-actions");
     const choices=scene.status==="draft"?[["submit","提交审核"]]:
-      scene.status==="in_review"?[["approve","人工批准"],["reject","驳回"]]:[];
+      scene.status==="in_review"?[["approve","批准当前版本"],["reject","驳回"]]:[];
     for(const [decision,title] of choices){
-      const btn=el("button","prod-new prod-secondary",title);
-      btn.type="button";
-      btn.disabled=decision==="approve"&&!valid.length;
-      btn.addEventListener("click",async()=>{
+      const button=el("button",decision==="approve"?
+        "prod-new scene-primary-button":"prod-new prod-secondary",title);
+      button.type="button";button.disabled=decision==="approve"&&!valid.length;
+      button.addEventListener("click",async()=>{
         if(rationale.value.trim().length<8){
           $("sceneMessage").textContent="审核理由至少 8 个字";return;
         }
         if(decision==="approve"&&!window.confirm(
-          "确认将此场景版本及所选图片批准为正式参考？旧版仍保留。"))return;
-        btn.disabled=true;
+          "确认将此场景版本和所选图片批准为正式参考？旧版本会保留。"))return;
+        button.disabled=true;
         try{
           await scenePost("review",{project_id:data.project_id,
             scene_id:scene.scene_id,expected_revision:scene.revision,
             decision,visual_id:decision==="approve"?photoSelect.value:null,
             rationale:rationale.value.trim()});
           await loadScenes();
-        }catch(e){$("sceneMessage").textContent="审核失败："+e.message;
-          btn.disabled=false;}
+          $("sceneMessage").textContent="审核操作已记录："+title;
+        }catch(error){$("sceneMessage").textContent="审核失败："+error.message;
+          button.disabled=false;}
       });
-      commands.appendChild(btn);
+      commands.appendChild(button);
     }
-    if(!choices.length)commands.appendChild(el("p","",
-      "此修订已处理。需要改变布局或光照请新建修订。"));
+    if(!choices.length)commands.appendChild(el("p","scene-review-complete",
+      "此版本已处理。如需调整，请建立新的修订草稿。"));
     actions.appendChild(commands);detail.appendChild(actions);
   }
 
@@ -710,13 +817,12 @@
     $("sceneCamera").value=scene?.camera_rules||"";
     $("sceneContinuity").value=scene?.continuity_rules||"";
     $("sceneNotes").value=scene?.scene_notes||"";
-    $("sceneEditor").hidden=false;
-    $("sceneEditor").scrollIntoView({behavior:"smooth",block:"nearest"});
+    $("sceneEditorDialog").showModal();
   }
   $("sceneProject").addEventListener("change",()=>{
     sceneProjectId=$("sceneProject").value;
-    sceneCurrentId="";sceneData=null;
-    $("sceneEditor").hidden=true;
+    sceneCurrentId="";sceneData=null;sceneActiveVisualId="";
+    if($("sceneEditorDialog").open)$("sceneEditorDialog").close();
     // Render's next production snapshot provides episodes for this project;
     // the latest dashboard is already loaded when a project is selected.
     sceneEpisodes=(latest?.production?.episodes||[]).filter(
@@ -724,7 +830,10 @@
     loadScenes().catch(error=>$("sceneMessage").textContent=error.message);
   });
   $("sceneCreateBtn").addEventListener("click",()=>openSceneEditor());
-  $("sceneEditorCancel").addEventListener("click",()=>{$("sceneEditor").hidden=true;});
+  $("sceneEditorCancel").addEventListener("click",()=>$("sceneEditorDialog").close());
+  $("sceneImageClose").addEventListener("click",()=>$("sceneImageDialog").close());
+  $("sceneSearch").addEventListener("input",()=>{if(sceneData)renderSceneList();});
+  $("sceneTypeFilter").addEventListener("change",()=>{if(sceneData)renderSceneList();});
   $("sceneEditor").addEventListener("submit",async event=>{
     event.preventDefault();
     const existing=sceneData?.scenes.find(x=>x.scene_id===sceneEditId);
@@ -744,7 +853,7 @@
         await scenePost("create",values);
       }
       sceneCurrentId=values.scene_id;
-      $("sceneEditor").hidden=true;
+      $("sceneEditorDialog").close();
       await loadScenes();
     }catch(e){$("sceneMessage").textContent="保存失败："+e.message;}
     finally{button.disabled=false;}
