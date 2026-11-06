@@ -192,7 +192,9 @@ def main():
             expect(page.locator("#wfReviewList")).to_contain_text("真实视频成片")
             page.locator("#wfReviewList button").first.click()
             expect(page.locator("body")).to_have_attribute("data-page","video_plans")
+            expect(page.locator(".video-take-player")).to_have_count(1)
             expect(page.locator(".video-take-player")).to_be_visible()
+            expect(page.locator(".video-review-reason")).to_have_count(1)
             expect(page.locator(".video-review-reason")).to_be_visible()
             page.screenshot(path=str(OUT/"real-video-review-ui-1440x900.png"),
                             full_page=True)
