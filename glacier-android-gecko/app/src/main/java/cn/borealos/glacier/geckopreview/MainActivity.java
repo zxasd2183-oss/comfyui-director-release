@@ -14,6 +14,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -107,6 +108,10 @@ public final class MainActivity extends Activity {
                 } catch (Exception e) {
                     showNetworkError("代理测试初始化失败");
                 }
+            } else if (SavedVlessNode.autoConnectEnabled(this)) {
+                // Start the proxy on a worker before creating GeckoRuntime.
+                // A failed restoration never starts the DIRECT runtime.
+                startSavedVlessMode();
             } else {
                 showNetworkGate();
             }
@@ -601,9 +606,27 @@ public final class MainActivity extends Activity {
      * configuration fails. Starting a DIRECT test requires a deliberate tap.
      */
     private void showNetworkGate() {
+        if (SavedVlessNode.exists(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Glacier · 网络连接")
+                    .setMessage("已保存 VLESS 节点，可一键重新连接；也可以更换节点或明确使用直连。")
+                    .setCancelable(false)
+                    .setItems(new String[]{
+                            "连接已保存的 VLESS 节点",
+                            "导入或更换 VLESS 节点",
+                            "明确使用直连"
+                    }, (dialog, which) -> {
+                        if (which == 0) startSavedVlessMode();
+                        if (which == 1) askForNode();
+                        if (which == 2) startDirectMode();
+                    })
+                    .show();
+            return;
+        }
         new AlertDialog.Builder(this)
-                .setTitle("Glacier · 选择网络测试方式")
-                .setMessage("内核测试版支持导入 VLESS（TLS/REALITY），经内置 sing-box 和本地 SOCKS5 访问网页。\n\n也可以明确选择直连模式进行基础对照。\n\nVLESS 配置失败时不会自动切换直连。")
+                .setTitle("Glacier · 选择网络方式")
+                .setMessage("首次导入 VLESS 后可选择记住节点，下次启动自动连接。\n\n"
+                        + "VLESS 失败时不会自动切换直连。")
                 .setCancelable(false)
                 .setPositiveButton("导入 VLESS 节点", (d, w) -> askForNode())
                 .setNegativeButton("明确使用直连", (d, w) -> startDirectMode())
@@ -615,23 +638,33 @@ public final class MainActivity extends Activity {
         input.setSingleLine(false);
         input.setLines(3);
         input.setTextSize(14);
-        input.setHint("粘贴 vless://UUID@服务器:端口?... ");
+        input.setHint("粘贴 vless://UUID@服务器:端口?...");
         input.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        final CheckBox remember = new CheckBox(this);
+        remember.setText("记住节点，下次启动自动连接");
+        remember.setTextSize(14);
+        remember.setChecked(true);
+
         LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
         wrapper.setPadding(dp(20), dp(8), dp(20), dp(8));
         wrapper.addView(input, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+        wrapper.addView(remember, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
         new AlertDialog.Builder(this)
-                .setTitle("导入 VLESS · 仅本次运行")
-                .setMessage("支持 TLS / REALITY、TCP / WS。节点链接不会上传或写入日志；代理运行时会创建应用私有临时配置。")
+                .setTitle("导入 VLESS")
+                .setMessage("节点只保存在本机。勾选后会使用 Android Keystore 加密，不上传到服务器。")
                 .setView(wrapper)
                 .setNegativeButton("返回", (d, w) -> showNetworkGate())
-                .setPositiveButton("启动代理", (d, w) -> {
-                    String value = input.getText().toString().trim();
+                .setPositiveButton("连接", (d, w) -> {
+                    String link = input.getText().toString().trim();
+                    boolean saveForNextTime = remember.isChecked();
                     input.setText("");
-                    startVlessMode(value);
+                    startVlessMode(link, saveForNextTime);
                 })
                 .setCancelable(false)
                 .show();
@@ -639,6 +672,11 @@ public final class MainActivity extends Activity {
 
     private void startDirectMode() {
         try {
+            // Explicit DIRECT selection turns off auto-connect without
+            // silently deleting an already saved encrypted node.
+            if (SavedVlessNode.exists(this)) {
+                SavedVlessNode.disableAutoConnect(this);
+            }
             proxyMode = false;
             String yaml = NativeProxy.prepareGecko(this, false);
             initializeEngine(yaml);
@@ -647,21 +685,28 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void startVlessMode(String value) {
+    private void startVlessMode(String value, boolean remember) {
         final VlessLink node;
         try {
             node = VlessLink.parse(value);
         } catch (Exception e) {
-            showNetworkError(e.getMessage());
+            // Do not include any node text in visible errors.
+            showNetworkError("节点链接不符合当前支持的 VLESS 格式");
             return;
         }
         android.app.ProgressDialog loading = android.app.ProgressDialog.show(this,
-                "Glacier 网络实验", "正在初始化 sing-box 核心和 SOCKS5 代理...",
-                true, false);
+                "Glacier 网络", "正在连接 VLESS…", true, false);
         new Thread(() -> {
             try {
                 NativeProxy.start(getApplicationContext(), node);
                 String yaml = NativeProxy.prepareGecko(getApplicationContext(), true);
+                if (remember) {
+                    SavedVlessNode.save(getApplicationContext(), value);
+                } else {
+                    // An explicitly session-only import must not leave the
+                    // previously saved node enabled for next launch.
+                    SavedVlessNode.clear(getApplicationContext());
+                }
                 runOnUiThread(() -> {
                     loading.dismiss();
                     proxyMode = true;
@@ -671,13 +716,55 @@ public final class MainActivity extends Activity {
                 NativeProxy.stop();
                 runOnUiThread(() -> {
                     loading.dismiss();
-                    // Errors must not include node UUID, host, keys, or URL.
-                    String detail = e.getMessage();
-                    if (detail == null || detail.length() > 120) detail = "代理启动失败";
-                    showNetworkError(detail);
+                    showNetworkError("连接或本地加密保存失败，请重新配置");
                 });
             }
         }, "glacier-vless-start").start();
+    }
+
+    private void startSavedVlessMode() {
+        android.app.ProgressDialog loading = android.app.ProgressDialog.show(this,
+                "Glacier 网络", "正在连接已保存的 VLESS 节点…", true, false);
+        new Thread(() -> {
+            try {
+                String savedLink = SavedVlessNode.load(getApplicationContext());
+                if (savedLink == null) throw new IllegalStateException("No saved node");
+                VlessLink node = VlessLink.parse(savedLink);
+                NativeProxy.start(getApplicationContext(), node);
+                String yaml = NativeProxy.prepareGecko(getApplicationContext(), true);
+                runOnUiThread(() -> {
+                    loading.dismiss();
+                    proxyMode = true;
+                    initializeEngine(yaml);
+                });
+            } catch (Exception ignored) {
+                NativeProxy.stop();
+                runOnUiThread(() -> {
+                    loading.dismiss();
+                    showSavedNodeError();
+                });
+            }
+        }, "glacier-vless-auto-connect").start();
+    }
+
+    private void showSavedNodeError() {
+        // Never reconfigure GeckoRuntime for DIRECT on proxy failure.
+        new AlertDialog.Builder(this)
+                .setTitle("已保存的 VLESS 连接失败")
+                .setMessage("节点或网络暂时不可用，浏览器没有回退直连。\n\n"
+                        + "可以重试、重新导入，或者删除本机保存的节点。")
+                .setCancelable(false)
+                .setPositiveButton("重试", (d,w) -> startSavedVlessMode())
+                .setNeutralButton("重新导入", (d,w) -> askForNode())
+                .setNegativeButton("删除保存", (d,w) -> {
+                    try {
+                        SavedVlessNode.clear(this);
+                        showNetworkGate();
+                    } catch (Exception e) {
+                        showSavedNodeError();
+                    }
+                })
+                .show();
     }
 
     private void initializeEngine(String configPath) {
@@ -717,15 +804,41 @@ public final class MainActivity extends Activity {
                            + "\nDNS：SOCKS5 远端解析"
                            + "\nWebRTC：暂时关闭（降低 IP 泄漏风险）"
                            + "\n\n本地 SOCKS5 启动不代表远端 VLESS 已验证。请在网页里测试出口 IP、断网后是否失败以及 DNS。")
-                        : "当前是主动选择的直连测试模式，没有 VLESS 保护。")
-                .setPositiveButton("知道了", null).show();
+                        : "当前是明确选择的直连模式，没有 VLESS 保护。")
+                .setPositiveButton("知道了", null)
+                .setNeutralButton("管理已保存节点", (d,w) -> manageSavedNode())
+                .show();
+    }
+
+    private void manageSavedNode() {
+        if (!SavedVlessNode.exists(this)) {
+            new AlertDialog.Builder(this).setTitle("网络设置")
+                    .setMessage("当前没有保存的 VLESS 节点。")
+                    .setPositiveButton("知道了", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("管理已保存节点")
+                .setMessage("删除后，下次打开 Glacier 将重新要求选择网络方式。\n"
+                        + "当前连接会持续到本次浏览器关闭。")
+                .setPositiveButton("保留", null)
+                .setNegativeButton("删除已保存节点", (d,w) -> {
+                    try {
+                        SavedVlessNode.clear(this);
+                        android.widget.Toast.makeText(this, "已删除本机保存的节点",
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        new AlertDialog.Builder(this).setTitle("删除失败")
+                                .setMessage("本机密钥存储暂不可用，请重试。")
+                                .setPositiveButton("知道了",null).show();
+                    }
+                }).show();
     }
 
     private void showLabWarning() {
         new AlertDialog.Builder(this)
                 .setTitle("这是内核实验版")
                 .setMessage("已集成 GeckoView 真正的网页内核，可比较网页显示、导航、账号空间隔离和兼容性。"
-                        + "\n\n已接入内置 VLESS/本地 SOCKS5 实验网络；该模式不是 Android 系统级 VPN，也未经过独立审计。"
+                        + "\n\n已接入 VLESS/本地 SOCKS5，可选择加密记住节点、下次启动自动连接。不是 Android 系统级 VPN，也未经过独立安全审计。"
                         + "\n\n现已增加系统文件选择器和实验性下载保存（单文件最大 64 MB）；文件夹上传暂不支持。"
                         + "\n\n仍未提供账号保险箱、验证码 API、云同步、完整权限管理。"
                         + "\n\n直连模式仅用于对照测试；VLESS 模式必须验证真实出口。请勿输入关键账号。")
