@@ -12,8 +12,8 @@
 <div class="app-shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-symbol">D<span>✦</span></div>
-      <div><strong>Director</strong><small>STUDIO / CONTROL</small></div>
+      <div class="brand-symbol" aria-hidden="true"><span class="brand-clapper">▤</span><span class="brand-spark">✦</span></div>
+      <div><strong>Director Studio</strong><small>冰川版 V2 · PRODUCTION</small></div>
     </div>
     <div class="side-caption">STUDIO MODULES</div>
     <nav class="nav-items" aria-label="工作台功能页面">
@@ -44,20 +44,47 @@
   </aside>
   <main id="overview">
     <header class="topbar">
-      <div class="crumb"><span>DIRECTOR STUDIO</span><b>/</b><strong id="workspacePageTitle">工作台首页</strong></div>
+      <div class="crumb"><span>CREATIVE PRODUCTION</span><b>/</b><strong id="workspacePageTitle">工作台首页</strong></div>
       <div class="workspace-context" aria-label="当前制作工程">
         <span class="workspace-context-project" id="workspaceProjectName">读取制作工程…</span>
+        <span class="workspace-context-english" id="workspaceProjectEnglish">THE WAITING OFFICE</span>
         <span class="workspace-context-episode" id="workspaceEpisodeName">PROJECT</span>
+        <span class="workspace-context-summary" id="workspaceEpisodeSummary">读取镜头…</span>
       </div>
-      <div class="topbar-right"><span id="headerAuditStatus" class="header-audit-status">审计读取中</span><span id="headerGpuStatus" class="header-gpu-status">GPU 读取中</span><span id="streamDot" class="dot neutral"></span><span id="streamLabel">连接中</span><span class="top-divider"></span><span id="clock"></span><button id="logoutMicrosoft" hidden type="button" class="logout-mini">退出登录</button></div>
+      <div class="topbar-right"><span id="headerStudioStatus" class="header-studio-status">● Studio 状态读取中</span><span id="headerAuditStatus" class="header-audit-status">审计读取中</span><span id="headerGpuStatus" class="header-gpu-status">GPU 读取中</span><span id="streamDot" class="dot neutral"></span><span id="streamLabel">连接中</span><span class="top-divider"></span><span id="clock"></span><button id="logoutMicrosoft" hidden type="button" class="logout-mini">退出登录</button></div>
     </header>
     <div class="workspace">
-      <section class="hero">
-        <div><div class="eyebrow">DIRECTOR OPERATIONS · 实时监制</div><h1>所有镜头，尽在掌控。</h1>
-        <p>实时观察算力与任务运行状态，逐镜头审核、暂停调度、发起返工，并保留可追溯的导演决策。</p></div>
+      <section class="hero" aria-label="冰川版项目首页横幅">
+        <div class="icebound-hero-copy">
+          <div class="eyebrow">DIRECTOR STUDIO · ORIGINAL ANIMATION</div>
+          <h1 id="homeProjectTitle">《待回答事务所》</h1>
+          <div id="homeProjectEnglish" class="icebound-hero-english">The Waiting Office</div>
+          <p><strong id="homeEpisodeLine">EP01 · 制作状态读取中</strong></p>
+          <p class="icebound-hero-sub">当问题被激活，这里就会给出答案。</p>
+        </div>
         <div class="hero-controls">
           <div class="mode-label"><span class="dot blue"></span>监制模式 · 人工监督</div>
           <button id="dispatchToggle" class="main-button" type="button" disabled>读取状态中…</button>
+        </div>
+      </section>
+      <section class="icebound-quick-actions" aria-label="创作快捷入口">
+        <button type="button" data-jump="projects"><span aria-hidden="true">✦</span>新建项目</button>
+        <button type="button" data-jump="characters"><span aria-hidden="true">♙</span>角色库</button>
+        <button type="button" data-jump="scenes"><span aria-hidden="true">▧</span>场景库</button>
+        <button type="button" data-jump="storyboards"><span aria-hidden="true">▤</span>分镜制作</button>
+        <button type="button" data-jump="video_plans"><span aria-hidden="true">▶</span>视频制作</button>
+      </section>
+      <section class="icebound-home-overview" aria-label="项目真实进度和近期任务">
+        <div class="icebound-home-progress">
+          <header><h2>项目进度 <small id="homeProgressEpisode">EP01</small></h2><span>REAL DATA</span></header>
+          <div class="icebound-progress-layout">
+            <div class="icebound-ring" id="homeProgressRing"><strong id="homeProgressValue">—</strong><small>镜头已批准</small></div>
+            <div class="icebound-progress-stats" id="homeProgressStats"><p>等待读取项目数据</p></div>
+          </div>
+        </div>
+        <div class="icebound-home-tasks">
+          <header><h2>近期任务</h2><span>PROJECT TASKS</span></header>
+          <div id="homeRecentTasks" class="icebound-recent-tasks"><p>正在读取实际任务…</p></div>
         </div>
       </section>
       <section class="notice" aria-label="控制权限提醒">
