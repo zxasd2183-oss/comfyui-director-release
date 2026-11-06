@@ -16,6 +16,7 @@ import visual_library as v
 import scene_library as scenes
 import character_library as characters
 import studio_server as server
+import shot_character_bindings as bindings
 
 PNG=bytes.fromhex(
  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
@@ -29,7 +30,8 @@ class WorkflowTests(unittest.TestCase):
         self.path=str(Path(self.tmp.name)/"production.sqlite")
         with closing(core.open_db(self.path)) as db:
             v.prepare_schema(db);characters.prepare_schema(db)
-            scenes.prepare_schema(db);w.prepare_schema(db)
+            scenes.prepare_schema(db);bindings.prepare_schema(db)
+            w.prepare_schema(db)
             for project in ("WaitingOffice","AnotherProject"):
                 core.create_project(db,project,"project")
                 core.create_episode(db,project,"EP01","Episode 1",1)
