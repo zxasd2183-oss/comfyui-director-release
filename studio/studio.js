@@ -2925,8 +2925,14 @@
     const ref=selectedProductionEpisode;
     if(!microsoftOwner||!csrf||!ref)return;
     const subject=$("visualSubject").value.trim();
-    if(!/^[A-Za-z][A-Za-z0-9_-]{1,47}$/.test(subject)){
-      $("visualMessage").textContent="编号须使用字母开头的字母、数字、下划线或连字符。";
+    const kind=$("visualKind").value;
+    const validSubject=(kind==="storyboard"?
+      /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/:
+      /^[A-Za-z][A-Za-z0-9_-]{1,47}$/).test(subject);
+    if(!validSubject){
+      $("visualMessage").textContent=kind==="storyboard"?
+        "分镜素材编号允许 01～31 等镜头编号，禁止路径或特殊符号。":
+        "编号须使用字母开头的字母、数字、下划线或连字符。";
       return;
     }
     const files=Array.from($("visualFiles").files||[]);
