@@ -253,6 +253,23 @@ class WorkflowTests(unittest.TestCase):
         with closing(core.open_db(self.path,initialize=False)) as db:
             self.assertTrue(core.verify_chain(db))
 
+    def test_video_motion_prompt_and_approved_output_spec_are_required(self):
+        self.save("settings")
+        self.decide("settings","SPEC","submit")
+        self.decide("settings","SPEC","approve")
+        self.save("video_plans",fields={"model":"H3 placeholder",
+            "fps":"30","width":"1080","height":"1920","duration":"4"})
+        item=w.list_units(self.path,"WaitingOffice","video_plans","EP01")["items"][0]
+        self.assertIn("video_motion_prompt_missing",item["blockers"])
+        self.assertIn("video_job_spec_mismatch:fps",item["blockers"])
+        self.assertIn("video_render_executor_not_connected",item["blockers"])
+        info=w.get_episode_video_handoffs(self.path,"WaitingOffice","EP01")
+        self.assertFalse(info["bundle"]["all_ready"])
+        self.assertIn("video_motion_prompt_missing",
+                      info["bundle"]["blocked"][0]["reasons"])
+        self.assertIn("video_job_spec_mismatch:fps",
+                      info["bundle"]["blocked"][0]["reasons"])
+
     def test_task_dependency_and_result_proof(self):
         self.save("tasks",uid="TASK_1",fields={"title":"母版验收"})
         self.decide("tasks","TASK_1","submit")
