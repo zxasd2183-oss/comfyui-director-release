@@ -31,3 +31,11 @@
 移动版分支：`feature/glacier-android-browser-v020`
 独立工作流：`.github/workflows/glacier-android-browser-v020.yml`
 M02 发布标签：`glacier-android-browser-v0.2.0-m02`
+
+## M03 标签持久恢复与页面预览
+- Android Keystore AES-GCM 加密保存私人／工作空间的标签列表、Gecko 会话状态与缩略图；位于应用私有 no-backup 目录。
+- 支持进程结束后恢复最近标签，重新附着到原账号空间。登录状态仍由 GeckoView 的持久隔离存储处理。
+- 标签卡片通过 GeckoView capturePixels 展示真实网页截图；未生成预览时显示冰川占位图。
+- 最多恢复 25 个标签，不会保存仅用于本地测试的 HTTP 页面。
+- M03 模拟器回归包含 Android force-stop 后的双账号空间标签恢复和加密存储校验。
+- 浏览器仍是 Debug 测试 APK，不提供云同步或正式安全审计。
