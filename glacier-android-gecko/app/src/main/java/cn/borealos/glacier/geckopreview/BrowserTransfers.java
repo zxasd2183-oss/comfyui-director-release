@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
+import android.database.Cursor;
+import android.provider.OpenableColumns;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
@@ -16,11 +18,13 @@ import org.mozilla.geckoview.WebResponse;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * User-mediated Android Storage Access Framework upload/download bridge.
@@ -31,6 +35,10 @@ final class BrowserTransfers {
     private static final int PICK_UPLOAD = 5011;
     private static final int PICK_DOWNLOAD_DESTINATION = 5012;
     private static final long MAX_DOWNLOAD_BYTES = 64L * 1024 * 1024;
+    private static final long MAX_UPLOAD_BYTES = 64L * 1024 * 1024;
+    private static final int MAX_UPLOAD_COUNT = 16;
+    private static final long UPLOAD_CACHE_LIFETIME_MS = 24L * 60 * 60 * 1000;
+    private final List<File> preparedUploadFolders = new ArrayList<>();
     private final Activity activity;
     private GeckoSession.PromptDelegate.FilePrompt pendingPrompt;
     private GeckoResult<GeckoSession.PromptDelegate.PromptResponse> pendingResult;
@@ -45,7 +53,104 @@ final class BrowserTransfers {
         }
     }
 
-    BrowserTransfers(Activity activity) { this.activity = activity; }
+    BrowserTransfers(Activity activity) {
+        this.activity = activity;
+        // Old staged files are only removed after a day, so a page has time
+        // to read its selected file before the Gecko prompt/session ends.
+        File folder = new File(activity.getCacheDir(), "glacier-gecko-uploads");
+        File[] entries = folder.listFiles();
+        if (entries != null) {
+            long cutoff = System.currentTimeMillis() - UPLOAD_CACHE_LIFETIME_MS;
+            for (File entry : entries) {
+                if (entry.isDirectory() && entry.lastModified() < cutoff) {
+                    deleteRecursively(entry);
+                }
+            }
+        }
+    }
+
+    private static void deleteRecursively(File f) {
+        if (f.isDirectory()) {
+            File[] children = f.listFiles();
+            if (children != null) for (File child : children) deleteRecursively(child);
+        }
+        f.delete();
+    }
+
+    private String safeUploadName(Uri uri) {
+        String filename = null;
+        try (Cursor cursor = activity.getContentResolver().query(uri,
+                new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int col = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (col >= 0) filename = cursor.getString(col);
+            }
+        } catch (Exception ignored) {
+            // Do not log document paths or metadata.
+        }
+        if (filename == null || filename.isEmpty()) filename = "upload.bin";
+        filename = filename.replaceAll("[^\\p{L}\\p{N}._ -]", "_").trim();
+        if (filename.length() > 120) filename = filename.substring(filename.length() - 120);
+        if (filename.isEmpty() || ".".equals(filename) || "..".equals(filename))
+            filename = "upload.bin";
+        return filename;
+    }
+
+    private Uri copyUploadToInternalFile(Uri selected, List<File> created) throws IOException {
+        if (selected == null || !"content".equalsIgnoreCase(selected.getScheme()))
+            throw new IOException("Unsupported selected file scheme");
+        File base = new File(activity.getCacheDir(), "glacier-gecko-uploads");
+        if (!base.exists() && !base.mkdirs()) throw new IOException("Upload cache unavailable");
+        File folder = new File(base, "u-" + UUID.randomUUID());
+        if (!folder.mkdir()) throw new IOException("Cannot create private upload folder");
+        created.add(folder);
+        File local = new File(folder, safeUploadName(selected));
+        long total = 0;
+        try (InputStream source = activity.getContentResolver().openInputStream(selected)) {
+            if (source == null) throw new IOException("Cannot open selected document");
+            try (OutputStream target = new FileOutputStream(local)) {
+                byte[] buffer = new byte[65536];
+                int n;
+                while ((n = source.read(buffer)) != -1) {
+                    total += n;
+                    if (total > MAX_UPLOAD_BYTES)
+                        throw new IOException("Selected file exceeds experiment size limit");
+                    target.write(buffer, 0, n);
+                }
+                target.flush();
+            }
+        }
+        // GeckoView currently requires a readable file:// filesystem path on
+        // Android for some FilePrompt workflows. All files stay inside the
+        // private app cache; only the user-selected content is copied.
+        return Uri.fromFile(local);
+    }
+
+    private void prepareSelectedFiles(List<Uri> selected) {
+        new Thread(() -> {
+            List<File> created = new ArrayList<>();
+            try {
+                if (selected.isEmpty() || selected.size() > MAX_UPLOAD_COUNT)
+                    throw new IOException("Invalid selection count");
+                Uri[] localFiles = new Uri[selected.size()];
+                for (int i = 0; i < selected.size(); ++i) {
+                    localFiles[i] = copyUploadToInternalFile(selected.get(i), created);
+                }
+                activity.runOnUiThread(() -> {
+                    preparedUploadFolders.addAll(created);
+                    debugEvent("UPLOAD_PRIVATE_COPY_READY");
+                    finishUpload(localFiles);
+                });
+            } catch (Exception ex) {
+                for (File folder : created) deleteRecursively(folder);
+                activity.runOnUiThread(() -> {
+                    finishUpload(null);
+                    Toast.makeText(activity,
+                            "所选文件无法读取或超过 64 MB 限制", Toast.LENGTH_LONG).show();
+                });
+            }
+        }, "glacier-upload-copy").start();
+    }
 
     GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onFilePrompt(
             GeckoSession session, GeckoSession.PromptDelegate.FilePrompt prompt) {
@@ -202,7 +307,8 @@ final class BrowserTransfers {
                         && "content".equalsIgnoreCase(data.getData().getScheme())) {
                     chosen.add(data.getData());
                 }
-                finishUpload(chosen.toArray(new Uri[0]));
+                if (chosen.isEmpty()) finishUpload(null);
+                else prepareSelectedFiles(chosen);
             }
             return true;
         }
@@ -245,6 +351,8 @@ final class BrowserTransfers {
     void dispose() {
         if (pendingPrompt != null) finishUpload(null);
         clearDownload();
+        for (File folder : preparedUploadFolders) deleteRecursively(folder);
+        preparedUploadFolders.clear();
     }
 
     private void clearDownload() {
