@@ -251,6 +251,35 @@ def main():
     isolation_state("PRIVATE_RETAINED")
     record("private_storage_retained","private cookie and localStorage retained after switching")
     shot("03-private-retained")
+    # M03: make one new tab in each account space, force-stop Android,
+    # and prove both work/private survive a fresh process and runtime.
+    tap(desc="更多选项")
+    tap(text="切换账号空间")
+    tap(text="工作空间 · 独立 Cookie")
+    tap(desc="更多选项")
+    tap(text="新建标签页")
+    tap(desc="更多选项")
+    tap(text="切换账号空间")
+    tap(text="私人空间 · 独立 Cookie")
+    tap(desc="更多选项")
+    tap(text="新建标签页")
+    await_ui(text="5",timeout=30)
+    time.sleep(4)
+    adb("shell","am","force-stop",PKG,timeout=15)
+    adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=75)
+    tap(text="明确使用直连")
+    await_ui(desc="更多选项",timeout=120)
+    await_ui(text="3",timeout=45)
+    restore_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+    if "TAB_RESTORE_COUNT=3" not in restore_log:
+        raise RuntimeError("M03_TABS_NOT_RESTORED")
+    tap(desc="标签页")
+    await_ui(text="标签页 · 3",timeout=40)
+    await_ui(text="工作 · about:blank",timeout=40)
+    await_ui(text="私人 · about:blank",timeout=40)
+    record("m03_force_stop_restore","three tabs across both profiles restored after process death")
+    shot("03-restored-tab-grid")
+    tap(desc="返回浏览器")
     # Real Gecko HTML file controls -> Android Storage Access Framework.
     # No real accounts or sensitive documents; only cancel paths in the smoke
     # test until reliable file-byte round trips have been independently proven.
