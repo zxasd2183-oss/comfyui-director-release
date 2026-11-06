@@ -108,6 +108,9 @@ def main():
             page.goto(url,wait_until="load")
             expect(page.locator("body")).to_have_attribute("data-page","home")
             expect(page.locator("#homeProjectTitle")).to_contain_text("视觉验收模拟项目")
+            home_cards=page.locator(".icebound-home-progress").bounding_box()
+            assert home_cards and home_cards["height"]>=214, (
+                "Home dashboard density did not apply at 1440x900")
             page.screenshot(path=str(OUT/"home-1440x900.png"),full_page=True)
 
             page.locator('a[data-page="scenes"]').click()
@@ -142,8 +145,10 @@ def main():
             page.locator("#characterMediaDrawer summary").click()
             assert page.locator("#characterMediaDrawer").evaluate("(e)=>e.open")
 
+            page.locator("#characterMediaDrawer summary").click()
             page.set_viewport_size({"width":390,"height":844})
             page.locator('a[data-page="scenes"]').click()
+            page.locator("#sceneMediaDrawer summary").click()
             expect(page.locator("#sceneStage")).to_be_visible()
             page.screenshot(path=str(OUT/"scenes-mobile-390x844.png"),
                             full_page=True)
