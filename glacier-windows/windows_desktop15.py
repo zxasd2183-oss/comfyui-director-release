@@ -84,6 +84,10 @@ class WindowsDesktop15:
             add("在系统浏览器打开当前页", external)
         if callable(diagnostic) or callable(external):
             menu.addSeparator()
+        if callable(getattr(self, "show_accounts22", None)):
+            add("当前网站账号卡片", self.show_accounts22)
+            add("添加网站账号卡片", self.add_account22)
+            menu.addSeparator()
         add("检测 VLESS 连接", self.start_connection_check)
         add("浏览器设置", self.open_settings)
         add("关于 · 检查更新", self.update_manager.show_dialog)
