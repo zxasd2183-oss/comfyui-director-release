@@ -81,9 +81,8 @@ class AccountCardTests(unittest.TestCase):
                 "username": "test", "password": ""
             })
             with self.assertRaises(ValueError):
-                host._save_accounts22() if False else clean_accounts22({
-                    "schema": 0, "accounts": host._accounts_doc22["accounts"]
-                })
+                host._save_accounts22()
+            self.assertFalse((Path(tmp) / "accounts-d03.dpapi").exists())
 
 
 if __name__ == "__main__":
