@@ -185,3 +185,5 @@ dialog{width:min(440px,calc(100% - 32px));border:1px solid #d9e7f3;border-radius
 .character-editor{margin-left:15px;margin-right:15px}.character-editor-grid{grid-template-columns:1fr}
 .character-ref-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .character-toolbar label,.character-toolbar select{width:100%}}
+
+.character-thumbnail{display:block;width:100%;padding:0;border:0;background:none}
