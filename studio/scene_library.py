@@ -11,8 +11,7 @@ import json
 import time
 from contextlib import closing
 
-from production_core import open_db, transaction, _audit, _ident, ProductionError
-from character_library import CharacterError, _check_audit
+from production_core import open_db, transaction, _audit, _ident, ProductionError, verify_chain
 
 SCENE_TYPES=frozenset(("interior","exterior","transition","abstract"))
 REFERENCE_TYPES=frozenset(("overview","camera_angle","lighting","layout",
@@ -79,6 +78,11 @@ def prepare_schema(db):
     CREATE INDEX IF NOT EXISTS idx_scene_visual_links
       ON scene_visual_links(project_id,scene_id);
     """)
+
+
+def _check_audit(db):
+    if not verify_chain(db):
+        raise SceneError("scene_audit_integrity_failure",409)
 
 
 def _fields(data,expected):
