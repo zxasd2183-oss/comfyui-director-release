@@ -693,3 +693,18 @@ body[data-page="scenes"] .workspace>.footer{margin-top:11px;font-size:10px}
 @media(prefers-reduced-motion:reduce){
   .nav-items a,.prod-new,.main-button{transition:none!important}
 }
+
+/* Glacier navigation sections and evidence-based header statuses */
+.nav-section-label{font-size:10px;letter-spacing:1.3px;font-weight:800;color:#97afc3;
+  padding:17px 13px 7px;margin-top:5px}
+.nav-section-label:first-child{padding-top:4px}
+.header-audit-status,.header-gpu-status{border-radius:16px;padding:7px 11px;
+  font-size:11px;white-space:nowrap;font-weight:750;line-height:1}
+.header-audit-status{background:#edf8f2;color:#398b67;border:1px solid #d7eadf}
+.header-audit-status[data-verified="false"]{background:#fff4df;color:#a07a44;border-color:#f5dfb8}
+.header-gpu-status{background:#f1f5fa;color:#7891a6;border:1px solid #e1eaf3}
+.header-gpu-status[data-state="Running"]{background:#ddf5eb;border-color:#c6eadb;color:#2a895c}
+.header-gpu-status[data-state="Stopped"]{background:#f4ecf0;border-color:#ead9e1;color:#9a6076}
+@media(max-width:1270px){.header-audit-status{display:none}}
+@media(max-width:990px){.header-gpu-status{display:none}}
+@media(max-width:740px){.nav-section-label{display:none}}
