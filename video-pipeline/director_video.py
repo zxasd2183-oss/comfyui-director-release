@@ -201,6 +201,110 @@ def build_plan(workflow, bindings, shots, fps):
             "gpu_actions_performed": False}
 
 
+def build_studio_handoff_plan(document, workflow, bindings, image=""):
+    """Import ONE version-locked Studio shot without network or GPU access.
+
+    A Studio handoff checksum is *not* a signature: the operator must obtain
+    the JSON through their own protected Studio session and review it.
+    This prevents accidentally submitting unapproved/upstream-incomplete clips,
+    and leaves all Comfy execution under the existing explicit double opt-in.
+    """
+    if not isinstance(document, dict) or document.get("ok") is not True:
+        raise PlanError("Invalid Studio handoff response")
+    package = document.get("package")
+    digest = document.get("package_sha256")
+    if not isinstance(package, dict) or not isinstance(digest, str):
+        raise PlanError("Missing Studio handoff checksum")
+    if document.get("checksum_type") != "sha256_canonical_json_not_signature":
+        raise PlanError("Unsupported Studio handoff checksum contract")
+    canonical=json.dumps(package,sort_keys=True,ensure_ascii=False,
+                         separators=(",",":")).encode("utf-8")
+    if hashlib.sha256(canonical).hexdigest()!=digest:
+        raise PlanError("Studio handoff checksum mismatch")
+    if package.get("schema")!="director_studio_video_handoff_v1":
+        raise PlanError("Unsupported Studio handoff schema")
+    if package.get("gpu_dispatch_authorized") is not False or (
+        package.get("renderer_connected") is not False):
+        raise PlanError("Studio package cannot grant GPU authorization")
+    blockers=package.get("blockers")
+    if blockers!=["video_render_executor_not_connected"]:
+        raise PlanError("Studio upstream approvals incomplete; review blockers first")
+    for field in ("project_id","episode_id","shot_id"):
+        value=package.get(field)
+        if not isinstance(value,str) or not SHOT.fullmatch(value):
+            raise PlanError("Invalid Studio scope identifier")
+    source=package.get("video_plan")
+    upstream=package.get("upstream")
+    if not isinstance(source,dict) or not isinstance(upstream,dict):
+        raise PlanError("Missing Studio versioned production inputs")
+    if source.get("status")!="in_review":
+        raise PlanError("Studio video plan must be submitted for human review")
+    if source.get("unit_id")!=package["shot_id"]:
+        raise PlanError("Studio handoff video plan mismatches shot")
+    for kind in ("settings","shot_plans","storyboards","white_models"):
+        record=upstream.get(kind)
+        if not isinstance(record,dict) or record.get("status")!="approved":
+            raise PlanError("Studio upstream approval missing: "+kind)
+    scene=package.get("scene")
+    if not isinstance(scene,dict) or scene.get("status")!="approved":
+        raise PlanError("Studio scene approval missing")
+    props=package.get("props")
+    if not isinstance(props,list) or any(
+        not isinstance(p,dict) or not isinstance(p.get("version"),dict)
+        or p["version"].get("status")!="approved" for p in props):
+        raise PlanError("Studio prop approval missing")
+    settings=upstream["settings"]["fields"]
+    values=source.get("fields")
+    if not isinstance(settings,dict) or not isinstance(values,dict):
+        raise PlanError("Missing Studio video specification")
+    try:
+        fps=int(settings["fps"])
+        width=int(settings["width"])
+        height=int(settings["height"])
+        duration_ms=package["duration_ms"]
+        if type(duration_ms) is not int or not 0<duration_ms<=30000:
+            raise ValueError()
+        duration=duration_ms/1000
+        if not 1<=fps<=120 or not 1<=width<=16384 or not 1<=height<=16384:
+            raise ValueError()
+        if "fps" in values and float(values["fps"])!=fps:
+            raise ValueError()
+        if "width" in values and float(values["width"])!=width:
+            raise ValueError()
+        if "height" in values and float(values["height"])!=height:
+            raise ValueError()
+        if "duration" in values and abs(float(values["duration"])-duration)>.001:
+            raise ValueError()
+    except (KeyError,ValueError,TypeError,OverflowError):
+        raise PlanError("Video job does not match approved Studio output specification") from None
+    prompt=values.get("prompt")
+    if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=12000:
+        raise PlanError("Studio video prompt required")
+    seed=values.get("seed","")
+    if seed!="":
+        try:
+            seed=int(seed)
+            if not 0<=seed<2**63:raise ValueError()
+        except (TypeError,ValueError,OverflowError):
+            raise PlanError("Invalid Studio video seed") from None
+    else:seed=int.from_bytes(hashlib.sha256(package["shot_id"].encode()).digest()[:4],"big")
+    if image and (not isinstance(image,str) or len(image)>200 or
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*",image)):
+        raise PlanError("Studio image must be a safe ComfyUI input basename")
+    graph=validate_workflow(workflow)
+    slots=validate_bindings(bindings,graph)
+    if ("image" in slots)!=bool(image):
+        raise PlanError("Provide --image exactly when H3 binding requires an input image")
+    plan=build_plan(workflow,bindings,[{"shot_id":package["shot_id"],
+        "seconds":duration,"prompt":prompt,"seed":seed,"image":image}],fps)
+    plan["studio_handoff"]={"project_id":package["project_id"],
+        "episode_id":package["episode_id"],"shot_id":package["shot_id"],
+        "video_revision":source["revision"],"package_sha256":digest,
+        "checksum_is_signature":False,
+        "manual_gpu_execution_required":True}
+    return plan
+
+
 def load_plan(path):
     data = read_json(path)
     if not isinstance(data, dict) or data.get("schema") != 1:
@@ -632,6 +736,15 @@ def run_cli(argv=None):
     prepare.add_argument("--prompts", help="Optional markdown per-shot prompt file")
     prepare.add_argument("--fps", type=int, default=24)
     prepare.add_argument("--out", required=True)
+    studio = sub.add_parser("prepare-studio",
+        help="Offline import of a versioned Studio video handoff (no GPU)")
+    studio.add_argument("--package", required=True,
+        help="Owner-exported Studio handoff JSON")
+    studio.add_argument("--workflow", required=True)
+    studio.add_argument("--bindings", required=True)
+    studio.add_argument("--image", default="",
+        help="Already-approved basename in ComfyUI input directory, if bound")
+    studio.add_argument("--out", required=True)
     for cmd in ("preflight", "submit", "collect", "status"):
         item = sub.add_parser(cmd)
         item.add_argument("--plan", required=True)
@@ -657,6 +770,13 @@ def run_cli(argv=None):
                           load_shots(args.shots, load_prompt_notes(args.prompts)), args.fps)
         atomic_json(args.out, plan)
         print(f"Prepared {plan['shot_count']} shots, {plan['total_seconds']} seconds; NO GPU call")
+        return 0
+    if args.command == "prepare-studio":
+        plan=build_studio_handoff_plan(read_json(args.package),
+            read_json(args.workflow),read_json(args.bindings),args.image)
+        atomic_json(args.out,plan)
+        print("Prepared ONE audited Studio shot (no GPU call). "
+              "Future submit requires --execute AND --acknowledge-gpu-cost.")
         return 0
     plan = load_plan(args.plan)
     if args.command == "assemble":
