@@ -535,6 +535,8 @@
     const page=Object.prototype.hasOwnProperty.call(functionalPages,name)?
       name:"home";
     document.body.dataset.page=page;
+    if(page!=="storyboards"&&$("wfStoryboardEditDialog").open)
+      $("wfStoryboardEditDialog").close();
     $("workspacePageTitle").textContent=functionalPages[page];
     for(const nav of document.querySelectorAll(".nav-items a[data-page]")){
       const active=nav.dataset.page===page;
@@ -899,6 +901,33 @@
       }
       meta.appendChild(dl);
     }else meta.appendChild(el("p","",wfHints[kind]));
+    if(kind==="storyboards"){
+      const shot=state.shots.find(x=>x.shot_id===state.selected);
+      const summary=el("div","storyboard-shot-summary");
+      summary.appendChild(el("h3","",
+        state.selected?"镜头信息 · SH"+state.selected:"选择镜头"));
+      const stats=el("dl","storyboard-shot-facts");
+      for(const [name,value] of [
+        ["时长",shot?(shot.duration_ms/1000).toFixed(1)+"s":"未选择"],
+        ["景别",chosen?.fields.shot_size||"待设置"],
+        ["画面构图",chosen?.fields.composition||"待设置"],
+        ["出场人物",chosen?.fields.characters||"待绑定"],
+        ["光照 / 氛围",chosen?.fields.lighting||"待设置"],
+        ["资料版本",chosen?"V"+chosen.revision+" · "+wfStatus[chosen.status]:"未建档"]]){
+        stats.appendChild(el("dt","",name));
+        stats.appendChild(el("dd","",value));
+      }
+      summary.appendChild(stats);
+      const open=el("button","prod-new storyboard-edit-trigger",
+        chosen?"✎ 修改分镜 / 版本审核":"＋ 建立镜头分镜资料");
+      open.type="button";open.disabled=!shot;
+      open.addEventListener("click",()=>$("wfStoryboardEditDialog").showModal());
+      summary.appendChild(open);
+      summary.appendChild(el("p","storyboard-approval-hint",
+        chosen?.source_visual_id?"已有图像引用，仍须通过人工审核。":
+          "尚无正式分镜图。可先建档，再上传真实候选图片。"));
+      detail.appendChild(summary);
+    }
     workflowRenderEditor(kind,chosen,pictures);
   }
 
@@ -996,7 +1025,9 @@
   }
 
   function workflowRenderEditor(kind,record,pictures){
-    const state=wfState[kind],data=state.items,detail=$("wfDetail_"+kind);
+    const state=wfState[kind],data=state.items;
+    const detail=kind==="storyboards"?$("wfStoryboardEditorMount"):$("wfDetail_"+kind);
+    if(kind==="storyboards")detail.replaceChildren();
     const current=record&&!state.editing?record:null;
     const form=el("form","workflow-form");
     const head=el("div","workflow-form-heading",
@@ -1139,6 +1170,8 @@
         await workflowPost("save",dataToSave);
         state.selected=unit_id;state.editing=false;state.image="";
         await workflowLoad(kind);
+        if(kind==="storyboards"&&$("wfStoryboardEditDialog").open)
+          $("wfStoryboardEditDialog").close();
         $("wfMessage_"+kind).textContent="草稿已保存，修订历史已锁定；尚未自动批准。";
       }catch(error){
         $("wfMessage_"+kind).textContent="保存失败："+error.message;
@@ -1182,6 +1215,8 @@
             decision,rationale:reason.value.trim()
           });
           await workflowLoad(kind);
+          if(kind==="storyboards"&&$("wfStoryboardEditDialog").open)
+            $("wfStoryboardEditDialog").close();
         }catch(error){
           $("wfMessage_"+kind).textContent="审核失败："+error.message;
           button.disabled=false;
@@ -1280,6 +1315,8 @@
     });
   }
 
+  $("wfStoryboardEditorClose").addEventListener("click",()=>
+    $("wfStoryboardEditDialog").close());
   // UI handlers are bound once. Project/episode changes discard stale scopes.
   for(const kind of wfKinds){
     const state=wfState[kind];
