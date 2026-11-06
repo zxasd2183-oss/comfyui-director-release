@@ -12,6 +12,8 @@
   let latest = null, selectedId = null, csrf = null, pending = null;
   let microsoftOwner = false, selectedProductionEpisode = null, productionAction = null;
   let currentVisual = null;
+  let characterProjectId = "", characterCurrentId = "", characterData = null;
+  let characterEditingId = null;
   let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
   let visualRefreshInFlight = false;
   const clock = () => {
@@ -82,6 +84,7 @@
     list.replaceChildren();
     const projects=production?.projects || [];
     const episodes=production?.episodes || [];
+    syncCharacterProjects(projects);
     if(!projects.length) {
       list.appendChild(el("div","production-empty",
         microsoftOwner?"尚未建立项目。点击「新建项目」，开始第一部作品。":
@@ -178,6 +181,306 @@
       $("episodeExplorerInfo").textContent=err.message;
     }
   }
+
+  // A project-level catalog deliberately references existing immutable
+  // episode images instead of moving, copying or auto-approving them.
+  const characterPresets = [
+    ["CHAR_GPT","吉皮提","main","ChatGPT / OpenAI：交织与连接、克制的几何秩序",
+     "深栗色短发、琥珀瞳、象牙白与青绿服装；通过衣襟交错与服装结构表达协作，不复制六环官方图案。",
+     "事务所的协调者。温柔、理性；EP01 接纳零，调查异常连接。"],
+    ["CHAR_GEM","杰米奈","main","Gemini / Google：多彩渐变、光感、四向延伸的动势",
+     "紫蓝短层次发、粉紫发尾、渐变外套；用不对称光带呈现活力，不使用官方四尖星形。",
+     "活泼好胜。EP01 发起 AI 争霸赛；需要夸张表情与动作。"],
+    ["CHAR_CLA","克劳德","main","Claude / Anthropic：温暖珊瑚色、简洁人文、放射节奏",
+     "陶土橘盘发、米白与焦糖色书卷气装束；抽象光线节奏，不描摹官方放射星芒。",
+     "细腻温和。EP01 阅读、拒绝排名、对系统异常感到不安。"],
+    ["CHAR_DS","迪普西克","main","DeepSeek：蓝鲸意象、深浅蓝色与流线",
+     "深蓝长编发、冰蓝眼睛、蓝白海洋曲线服装、独立设计的鲸鱼抱枕；不复制官方鲸鱼标志轮廓。",
+     "冷静敏锐。EP01 核查规则与连接数量。"],
+    ["CHAR_ZERO","零","main","原创角色；无对应模型官方 Logo",
+     "黑色低马尾、朴素米色外套、旧帆布包、右手红色手绳；断开的连接点作为原创抽象母题。",
+     "神秘新人。EP01 的身份悬念核心；右手红绳不可左右反转。"],
+    ["CHAR_QWEN","奎文","extended","通义千问 / Qwen：参考官方品牌语言重新研究，禁止复制标志",
+     "保留已入库的紫色角色图作为候选参考，不将其视为正式母版。",
+     "扩展角色，暂不进入 EP01 五位主角与四个连接的剧情。"]
+  ];
+  const charRoleName={main:"主角",extended:"扩展角色"};
+  const charRefName={character_card:"角色卡",three_view:"三视图",
+    expression:"表情集",costume:"服装",prop:"道具",inspiration:"创意参考"};
+
+  function syncCharacterProjects(projects) {
+    const select=$("characterProject"), valid=projects.map(p=>p.project_id);
+    if(!microsoftOwner){select.disabled=true;return;}
+    const previous=characterProjectId;
+    select.disabled=!valid.length;
+    const sig=JSON.stringify(valid);
+    if(select.dataset.projects!==sig){
+      select.dataset.projects=sig;
+      select.replaceChildren();
+      for(const p of projects){
+        const option=el("option","",p.title+" · "+p.project_id);
+        option.value=p.project_id;select.appendChild(option);
+      }
+    }
+    if(!valid.includes(characterProjectId)){
+      characterProjectId=valid[0]||"";
+      characterCurrentId="";
+      characterData=null;
+    }
+    select.value=characterProjectId;
+    $("characterSeedBtn").hidden=characterProjectId!=="WaitingOffice";
+    $("characterCreateBtn").hidden=!valid.length;
+    if(characterProjectId && previous!==characterProjectId)
+      loadCharacters().catch(err=>$("characterMessage").textContent=err.message);
+  }
+
+  async function characterPost(action,body) {
+    if(!microsoftOwner||!csrf)throw Error("仅 Microsoft 所有者可编辑角色库");
+    const res=await fetch("./api/v1/characters/"+action,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({csrf,...body}),cache:"no-store"
+    });
+    const value=await res.json();
+    if(!res.ok)throw Error(value.reason||"角色库操作失败");
+    return value;
+  }
+
+  async function loadCharacters() {
+    const projectId=characterProjectId;
+    if(!projectId||!microsoftOwner)return;
+    const res=await fetch("./api/v1/characters?project="+encodeURIComponent(projectId),
+      {cache:"no-store"});
+    const value=await res.json();
+    if(!res.ok)throw Error(value.reason||"角色库暂不可用");
+    if(projectId!==characterProjectId)return;
+    characterData=value;
+    if(!value.characters.some(c=>c.character_id===characterCurrentId))
+      characterCurrentId=value.characters[0]?.character_id||"";
+    renderCharacterLibrary();
+  }
+
+  function renderCharacterLibrary() {
+    const data=characterData;if(!data)return;
+    const list=$("characterList"),detail=$("characterDetail");
+    const profiles=data.characters||[];
+    $("characterCount").textContent=profiles.filter(p=>p.role==="main").length+
+      " 位主角 · "+profiles.filter(p=>p.role==="extended").length+" 位扩展";
+    $("characterMessage").textContent=profiles.length?
+      "项目级角色库已连接；图片仍保存在原剧集，只有明确审核后才成为正式母版。":
+      "尚无角色档案。可新建角色；《待回答事务所》可一键导入六位建议档案。";
+    list.replaceChildren();
+    detail.replaceChildren();
+    for(const c of profiles) {
+      const button=el("button","character-entry"+(
+        characterCurrentId===c.character_id?" active":""));
+      button.type="button";
+      const icon=el("span","character-avatar",
+        c.character_id==="CHAR_ZERO"?"◌":c.role==="extended"?"✦":"♙");
+      const desc=el("span","");
+      desc.appendChild(el("strong","",c.display_name));
+      desc.appendChild(el("small","",(charRoleName[c.role]||c.role)+" · "+
+        c.character_id+" · "+c.visuals.length+" 张候选"));
+      button.append(icon,desc);
+      button.addEventListener("click",()=>{
+        characterCurrentId=c.character_id;
+        $("characterEditForm").hidden=true;
+        renderCharacterLibrary();
+      });
+      list.appendChild(button);
+    }
+    const c=profiles.find(x=>x.character_id===characterCurrentId);
+    if(!c){
+      detail.appendChild(el("div","production-empty","暂无角色。点击上方按钮建立档案。"));
+      return;
+    }
+    const header=el("div","character-detail-header"),titles=el("div","");
+    titles.appendChild(el("h3","",c.display_name));
+    titles.appendChild(el("p","",c.character_id+" · "+
+      (charRoleName[c.role]||c.role)+" · 资料修订 V"+c.revision));
+    const edit=el("button","prod-new prod-secondary","编辑资料");
+    edit.type="button";
+    edit.addEventListener("click",()=>openCharacterEditor(c));
+    header.append(titles,edit);detail.appendChild(header);
+    const info=el("div","character-detail-body");
+    for(const [title,value] of [["官方视觉依据",c.brand_basis],
+       ["原创设计语言",c.design_language],["角色设定与剧情",c.character_notes]]){
+      const box=el("div","character-info");
+      box.appendChild(el("strong","",title));
+      box.appendChild(el("p","",value||"待补充"));
+      info.appendChild(box);
+    }
+    detail.appendChild(info);
+    detail.appendChild(el("div","character-logo-rule",
+      "原创性规则：只借鉴官方色彩、节奏与抽象视觉语言；不得直接使用、描摹、拼接或隐藏官方 Logo。"));
+    const master=c.master;
+    detail.appendChild(el("p","character-master-label",master?
+      "✓ 当前批准母版："+master.visual_id+"（可审计追溯）":
+      "尚无批准的角色母版 · 当前图片均为候选"));
+    const gallery=el("div","character-ref-grid");
+    for(const v of c.visuals){
+      const item=el("div","character-ref");
+      const thumbnail=el("button","character-thumbnail");
+      thumbnail.type="button";
+      const img=el("img","");
+      img.loading="lazy";img.alt=v.filename;
+      img.src=visualURL(data.project_id,v.episode_id,v.visual_id);
+      thumbnail.appendChild(img);
+      thumbnail.addEventListener("click",()=>{
+        currentVisual=null;
+        $("visualPreviewTitle").textContent=v.filename;
+        $("visualPreviewImg").src=img.src;
+        $("visualPreviewInfo").textContent="角色库候选 · "+v.episode_id+" / V"+v.version;
+        $("visualApproveBtn").disabled=true;
+        $("visualApproveBtn").textContent="请在角色库单独审核";
+        $("visualPreviewDialog").showModal();
+      });
+      item.appendChild(thumbnail);
+      const meta=el("div","character-ref-meta");
+      meta.appendChild(el("strong","",v.filename));
+      meta.appendChild(el("small","",v.episode_id+" · "+
+        (charRefName[v.reference_type]||v.reference_type)+" · V"+v.version));
+      if(master?.visual_id===v.visual_id)
+        meta.appendChild(el("span","character-master-label","✓ 正式母版"));
+      else {
+        const btn=el("button","","审核并设为母版");
+        btn.type="button";
+        btn.addEventListener("click",async()=>{
+          const rationale=detail.querySelector(".character-review-note")?.value.trim()||"";
+          if(rationale.length<8){
+            $("characterMessage").textContent="先填写至少 8 个字的审核理由，再批准母版。";
+            detail.querySelector(".character-review-note")?.focus();
+            return;
+          }
+          if(!window.confirm("确认将 "+v.filename+" 设为 "+c.display_name+
+             " 的项目级正式母版吗？\n原图不会更改，之前的审核历史会保留。"))return;
+          btn.disabled=true;
+          try{
+            await characterPost("approve",{project_id:data.project_id,
+              character_id:c.character_id,visual_id:v.visual_id,rationale});
+            await loadCharacters();
+          }catch(err){$("characterMessage").textContent="审核失败："+err.message;
+            btn.disabled=false;}
+        });
+        meta.appendChild(btn);
+      }
+      item.appendChild(meta);gallery.appendChild(item);
+    }
+    if(!c.visuals.length)gallery.appendChild(el("div","production-empty",
+      "暂无此角色的参考图。可从现有 EP01 图片中关联候选。"));
+    detail.appendChild(gallery);
+    const note=el("textarea","character-review-note");
+    note.maxLength=600;note.placeholder="母版审核理由（至少 8 个字；批准前请核对三视图、服装和没有官方 Logo）";
+    note.setAttribute("aria-label","母版审核理由");
+    detail.appendChild(note);
+    // Attach existing project images, including composite character guides,
+    // without touching underlying bytes or their episode-local selections.
+    const remaining=(data.available_visuals||[]).filter(v=>
+      !c.visuals.some(x=>x.visual_id===v.visual_id));
+    if(remaining.length){
+      const controls=el("div","character-ref-controls");
+      const pickerLabel=el("label","","关联现有图片");
+      const picker=el("select","");
+      for(const v of remaining){
+        const option=el("option","",v.episode_id+" · "+v.filename+
+          " · "+v.subject_id+" / V"+v.version);
+        option.value=v.visual_id;picker.appendChild(option);
+      }
+      pickerLabel.appendChild(picker);
+      const typeLabel=el("label","","参考类型");
+      const type=el("select","");
+      for(const [key,label] of Object.entries(charRefName)){
+        const opt=el("option","",label);opt.value=key;type.appendChild(opt);
+      }
+      type.value="inspiration";typeLabel.appendChild(type);
+      const add=el("button","prod-new prod-secondary","关联参考图");
+      add.type="button";
+      add.addEventListener("click",async()=>{
+        add.disabled=true;
+        try{
+          await characterPost("link",{project_id:data.project_id,
+            character_id:c.character_id,visual_id:picker.value,
+            reference_type:type.value});
+          await loadCharacters();
+        }catch(err){$("characterMessage").textContent="关联失败："+err.message;
+          add.disabled=false;}
+      });
+      controls.append(pickerLabel,typeLabel,add);detail.appendChild(controls);
+    }
+  }
+
+  function openCharacterEditor(profile=null){
+    if(!microsoftOwner||!characterProjectId)return;
+    characterEditingId=profile?.character_id||null;
+    $("characterEditorTitle").textContent=profile?"编辑角色 · "+profile.display_name:
+      "创建原创角色档案";
+    $("characterId").value=profile?.character_id||"";
+    $("characterId").disabled=!!profile;
+    $("characterName").value=profile?.display_name||"";
+    $("characterRole").value=profile?.role||"main";
+    $("characterBrand").value=profile?.brand_basis||"";
+    $("characterLanguage").value=profile?.design_language||"";
+    $("characterNotes").value=profile?.character_notes||"";
+    $("characterEditForm").hidden=false;
+    $("characterEditForm").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+  $("characterProject").addEventListener("change",()=>{
+    characterProjectId=$("characterProject").value;
+    characterCurrentId="";characterData=null;
+    $("characterEditForm").hidden=true;
+    loadCharacters().catch(err=>$("characterMessage").textContent=err.message);
+  });
+  $("characterCreateBtn").addEventListener("click",()=>openCharacterEditor());
+  $("characterEditorCancel").addEventListener("click",()=>{
+    $("characterEditForm").hidden=true;
+  });
+  $("characterEditForm").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const existing=(characterData?.characters||[]).find(c=>
+      c.character_id===characterEditingId);
+    const values={
+      project_id:characterProjectId,
+      character_id:existing?.character_id||$("characterId").value.trim(),
+      display_name:$("characterName").value.trim(),
+      role:$("characterRole").value,
+      brand_basis:$("characterBrand").value.trim(),
+      design_language:$("characterLanguage").value.trim(),
+      character_notes:$("characterNotes").value.trim()
+    };
+    if(!/^[A-Za-z][A-Za-z0-9_-]{1,47}$/.test(values.character_id)){
+      $("characterMessage").textContent="角色编号无效";return;
+    }
+    const submit=$("characterSaveBtn");submit.disabled=true;
+    try{
+      if(existing)await characterPost("update",{
+        ...values,expected_revision:existing.revision});
+      else await characterPost("create",values);
+      characterCurrentId=values.character_id;
+      $("characterEditForm").hidden=true;
+      await loadCharacters();
+    }catch(err){$("characterMessage").textContent="保存失败："+err.message;}
+    finally{submit.disabled=false;}
+  });
+  $("characterSeedBtn").addEventListener("click",async()=>{
+    if(characterProjectId!=="WaitingOffice"||!microsoftOwner)return;
+    const button=$("characterSeedBtn");button.disabled=true;
+    let count=0;
+    try{
+      const existing=new Set((characterData?.characters||[]).map(c=>c.character_id));
+      for(const [character_id,display_name,role,brand_basis,design_language,
+                  character_notes] of characterPresets){
+        if(existing.has(character_id))continue; // never overwrite existing profiles
+        await characterPost("create",{project_id:characterProjectId,character_id,
+          display_name,role,brand_basis,design_language,character_notes});
+        count++;
+      }
+      await loadCharacters();
+      $("characterMessage").textContent="已新建 "+count+
+        " 位角色档案；已有档案未改动，候选图不自动批准。";
+    }catch(err){
+      await loadCharacters();
+      $("characterMessage").textContent="已建立 "+count+" 位；"+err.message;
+    }finally{button.disabled=false;}
+  });
 
   function visualURL(projectId,episodeId,id) {
     return "./api/v1/production/visual?project="+encodeURIComponent(projectId)

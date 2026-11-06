@@ -18,6 +18,7 @@
     <div class="side-caption">工作空间</div>
     <nav class="nav-items" aria-label="工作台导航">
       <a class="active" href="#overview"><span>▦</span> 制作总览</a>
+      <a href="#characters"><span>♙</span> 角色库</a>
       <a href="#shots"><span>▥</span> 镜头生产线</a>
       <a href="#inspector"><span>◎</span> 人工监审</a>
       <a href="#activity"><span>≋</span> 操作审计</a>
@@ -121,6 +122,61 @@
           </section>
           <p class="production-warning">图片由所有者主动上传后才能在此预览。Studio 不会自动读取 ChatGPT 私人素材库，不会触发 GPU 任务。</p>
         </div>
+      </section>
+      <section id="characters" class="panel character-library" aria-label="独立角色库">
+        <div class="panel-header">
+          <div>
+            <div class="kicker">CHARACTER LIBRARY · PROJECT-WIDE</div>
+            <h2>角色库</h2>
+            <p>全系列共用角色档案 · 跨剧集引用角色图片 · 独立母版审核</p>
+          </div>
+          <span id="characterCount" class="small-tag">待加载</span>
+        </div>
+        <div class="character-toolbar">
+          <label>所属项目
+            <select id="characterProject" aria-label="角色库项目" disabled></select>
+          </label>
+          <button type="button" id="characterSeedBtn" class="prod-new prod-secondary" hidden>导入《待回答事务所》6 位角色档案</button>
+          <button type="button" id="characterCreateBtn" class="prod-new" hidden>＋ 新角色</button>
+        </div>
+        <p id="characterMessage" class="character-message" role="status">请使用 Microsoft 所有者账号管理角色库。</p>
+        <div class="character-layout">
+          <div id="characterList" class="character-list">
+            <div class="production-empty">请选择项目查看角色。</div>
+          </div>
+          <div id="characterDetail" class="character-detail">
+            <div class="production-empty">选择一个角色，查看品牌转译、角色资料与跨集候选图。</div>
+          </div>
+        </div>
+        <form id="characterEditForm" class="character-editor" hidden>
+          <div class="character-editor-heading">
+            <strong id="characterEditorTitle">角色档案</strong>
+            <button id="characterEditorCancel" type="button" class="prod-new prod-secondary">收起编辑</button>
+          </div>
+          <div class="character-editor-grid">
+            <label>角色编号
+              <input id="characterId" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9_-]{1,47}" placeholder="CHAR_NEW">
+            </label>
+            <label>显示名称
+              <input id="characterName" required maxlength="100" placeholder="例如：杰米奈">
+            </label>
+            <label>角色分类
+              <select id="characterRole"><option value="main">主角</option><option value="extended">扩展角色</option></select>
+            </label>
+            <label>品牌依据（仅文字描述）
+              <input id="characterBrand" maxlength="600" placeholder="官方品牌视觉的形态、颜色、节奏等">
+            </label>
+          </div>
+          <label>原创设计语言
+            <textarea id="characterLanguage" rows="3" maxlength="1200" placeholder="描述发型、服装、色彩和原创图形转译，不复制官方标志"></textarea>
+          </label>
+          <label>角色性格 / 剧情 / 固定道具
+            <textarea id="characterNotes" rows="3" maxlength="1200"></textarea>
+          </label>
+          <p class="production-warning">硬性规范：官方 Logo 只能用于研究，任何角色立绘、设定卡与成品都不得直接放置、描摹、拼接或隐藏官方 Logo。</p>
+          <button id="characterSaveBtn" type="submit" class="prod-new">保存角色档案</button>
+        </form>
+        <p class="production-warning character-footnote">角色库只关联现有图片，不迁移或覆盖 EP01 素材。正式母版必须由所有者明确审核通过，任何操作都不会启动 GPU。</p>
       </section>
       <div class="content-grid">
         <section id="shots" class="panel shots-panel">
