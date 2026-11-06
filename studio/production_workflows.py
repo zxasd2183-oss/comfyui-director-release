@@ -644,7 +644,14 @@ def get_video_handoff_package(db_path,project_id,episode_id,shot_id):
             row=db.execute("SELECT scene_id,revision,approved_revision,status "
                 "FROM scene_profiles WHERE project_id=? AND scene_id=?",
                 (pid,scene_id)).fetchone()
-            if row:scene=dict(row)
+            if row:
+                scene=dict(row)
+                approved=db.execute("SELECT visual_id,visual_sha256,"
+                    "content_sha256 FROM scene_review_events WHERE "
+                    "project_id=? AND scene_id=? AND revision=? AND "
+                    "decision='approve' ORDER BY seq DESC LIMIT 1",
+                    (pid,scene_id,scene["approved_revision"])).fetchone()
+                scene["approved_source"]=dict(approved) if approved else None
         props=[]
         for prop_id in [x.strip() for x in fields.get("prop_ids","").split(",")
                         if x.strip()]:
