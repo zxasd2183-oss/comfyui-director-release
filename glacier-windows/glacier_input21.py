@@ -164,9 +164,9 @@ class GlacierInput21:
         answer = QMessageBox.question(
             self,
             "在系统浏览器打开？",
-            "系统 Chrome/Edge 不会自动继承 Glacier 的 VLESS 代理。\\n"
+            "系统 Chrome/Edge 不会自动继承 Glacier 的 VLESS 代理。\n"
             "此操作可能使用电脑的直连网络出口，暴露真实 IP，"
-            "而且两个浏览器的登录状态独立。\\n\\n"
+            "而且两个浏览器的登录状态独立。\n\n"
             "你确定要使用系统浏览器访问当前网址吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
