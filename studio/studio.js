@@ -16,6 +16,7 @@
   let characterEditingId = null;
   let sceneProjectId = "", sceneCurrentId = "", sceneData = null, sceneEditId = null;
   let sceneEpisodes = [];
+  let sceneSection = "overview";
   let sceneActiveVisualId = "";
   let shotBindingData=null, shotBindingCharacters=[], shotBindingFocus=null;
   let characterV2Data = null, characterV2Category = "profile";
@@ -534,10 +535,13 @@
     const page=Object.prototype.hasOwnProperty.call(functionalPages,name)?
       name:"home";
     document.body.dataset.page=page;
+    if(page!=="storyboards"&&$("wfStoryboardEditDialog").open)
+      $("wfStoryboardEditDialog").close();
     $("workspacePageTitle").textContent=functionalPages[page];
     for(const nav of document.querySelectorAll(".nav-items a[data-page]")){
       const active=nav.dataset.page===page;
       nav.classList.toggle("active",active);
+      if(active&&nav.closest(".nav-more-tools"))nav.closest(".nav-more-tools").open=true;
       if(active)nav.setAttribute("aria-current","page");
       else nav.removeAttribute("aria-current");
     }
@@ -561,8 +565,15 @@
     button.addEventListener("click",()=>{
       const target=button.dataset.jump;
       navigateWorkspace(target);
-      if(target==="projects"&&microsoftOwner)
-        openProductionEditor("create_project");
+      if(target==="projects"&&microsoftOwner){
+        if(button.dataset.action==="create")openProductionEditor("create_project");
+        if(button.dataset.action==="import"){
+          if(selectedProductionEpisode&&!$("visualLibraryPanel").hidden){
+            $("visualFiles").focus();
+            $("visualLibraryPanel").scrollIntoView({behavior:"smooth",block:"start"});
+          }else $("productionMode").textContent="请先选择剧集，再上传真实素材";
+        }
+      }
     });
   }
   window.addEventListener("popstate",()=>navigateWorkspace(
@@ -716,6 +727,12 @@
       data.items.length+" 项记录";
     if(!visible.length)list.appendChild(el("p","workflow-stage-empty",
       listItems.length?"没有符合筛选的镜头或资料":"当前项目还没有数据。"));
+    if(kind==="tasks"&&visible.length){
+      const header=el("div","icebound-task-table-head");
+      for(const label of ["任务名称","负责人","优先级","状态"])
+        header.appendChild(el("span","",label));
+      list.appendChild(header);
+    }
     for(const item of visible){
       const record=item.record,btn=el("button","workflow-record"+(
         state.selected===item.unit_id?" active":""));
@@ -731,6 +748,17 @@
           btn.appendChild(image);
         }else btn.appendChild(el("span","icebound-shot-thumb icebound-shot-empty","▤"));
       }
+      if(kind==="props"){
+        const asset=data.visuals.find(v=>v.visual_id===record.source_visual_id)||
+          data.visuals.find(v=>v.subject_id===item.unit_id);
+        if(asset){
+          const thumb=el("img","icebound-prop-thumb");
+          thumb.alt=record.fields.name||item.unit_id;
+          thumb.loading="lazy";
+          thumb.src=visualURL(state.project,asset.episode_id,asset.visual_id);
+          btn.appendChild(thumb);
+        }else btn.appendChild(el("span","icebound-prop-thumb icebound-prop-placeholder","◇"));
+      }
       const main=el("span","workflow-record-copy");
       main.appendChild(el("strong","",
         shotScope?"SH"+item.unit_id:record.fields.name||record.fields.title||item.unit_id));
@@ -738,9 +766,17 @@
         shotScope?(Number(item.shot.duration_ms||0)/1000).toFixed(1)+" 秒 · "+
           (record?"V"+record.revision:"尚未建档"):
           item.unit_id+" · V"+record.revision+" · "+(item.episode_id||"全项目")));
-      main.appendChild(el("span","state "+(record?.status||"planned"),
-        record?wfStatus[record.status]:"未建档"));
-      btn.appendChild(main);
+      if(kind==="tasks"){
+        const facts=el("span","icebound-task-facts");
+        facts.appendChild(el("span","",record.fields.owner||"未分配"));
+        facts.appendChild(el("span","",record.fields.priority||"待定"));
+        facts.appendChild(el("span","state "+record.status,wfStatus[record.status]));
+        btn.append(main,facts);
+      }else{
+        main.appendChild(el("span","state "+(record?.status||"planned"),
+          record?wfStatus[record.status]:"未建档"));
+        btn.appendChild(main);
+      }
       btn.addEventListener("click",()=>{
         state.selected=item.unit_id;state.editing=!record;state.image="";
         workflowRender(kind);
@@ -890,6 +926,33 @@
       }
       meta.appendChild(dl);
     }else meta.appendChild(el("p","",wfHints[kind]));
+    if(kind==="storyboards"){
+      const shot=state.shots.find(x=>x.shot_id===state.selected);
+      const summary=el("div","storyboard-shot-summary");
+      summary.appendChild(el("h3","",
+        state.selected?"镜头信息 · SH"+state.selected:"选择镜头"));
+      const stats=el("dl","storyboard-shot-facts");
+      for(const [name,value] of [
+        ["时长",shot?(shot.duration_ms/1000).toFixed(1)+"s":"未选择"],
+        ["景别",chosen?.fields.shot_size||"待设置"],
+        ["画面构图",chosen?.fields.composition||"待设置"],
+        ["出场人物",chosen?.fields.characters||"待绑定"],
+        ["光照 / 氛围",chosen?.fields.lighting||"待设置"],
+        ["资料版本",chosen?"V"+chosen.revision+" · "+wfStatus[chosen.status]:"未建档"]]){
+        stats.appendChild(el("dt","",name));
+        stats.appendChild(el("dd","",value));
+      }
+      summary.appendChild(stats);
+      const open=el("button","prod-new storyboard-edit-trigger",
+        chosen?"✎ 修改分镜 / 版本审核":"＋ 建立镜头分镜资料");
+      open.type="button";open.disabled=!shot;
+      open.addEventListener("click",()=>$("wfStoryboardEditDialog").showModal());
+      summary.appendChild(open);
+      summary.appendChild(el("p","storyboard-approval-hint",
+        chosen?.source_visual_id?"已有图像引用，仍须通过人工审核。":
+          "尚无正式分镜图。可先建档，再上传真实候选图片。"));
+      detail.appendChild(summary);
+    }
     workflowRenderEditor(kind,chosen,pictures);
   }
 
@@ -987,7 +1050,9 @@
   }
 
   function workflowRenderEditor(kind,record,pictures){
-    const state=wfState[kind],data=state.items,detail=$("wfDetail_"+kind);
+    const state=wfState[kind],data=state.items;
+    const detail=kind==="storyboards"?$("wfStoryboardEditorMount"):$("wfDetail_"+kind);
+    if(kind==="storyboards")detail.replaceChildren();
     const current=record&&!state.editing?record:null;
     const form=el("form","workflow-form");
     const head=el("div","workflow-form-heading",
@@ -1130,6 +1195,8 @@
         await workflowPost("save",dataToSave);
         state.selected=unit_id;state.editing=false;state.image="";
         await workflowLoad(kind);
+        if(kind==="storyboards"&&$("wfStoryboardEditDialog").open)
+          $("wfStoryboardEditDialog").close();
         $("wfMessage_"+kind).textContent="草稿已保存，修订历史已锁定；尚未自动批准。";
       }catch(error){
         $("wfMessage_"+kind).textContent="保存失败："+error.message;
@@ -1173,6 +1240,8 @@
             decision,rationale:reason.value.trim()
           });
           await workflowLoad(kind);
+          if(kind==="storyboards"&&$("wfStoryboardEditDialog").open)
+            $("wfStoryboardEditDialog").close();
         }catch(error){
           $("wfMessage_"+kind).textContent="审核失败："+error.message;
           button.disabled=false;
@@ -1271,6 +1340,8 @@
     });
   }
 
+  $("wfStoryboardEditorClose").addEventListener("click",()=>
+    $("wfStoryboardEditDialog").close());
   // UI handlers are bound once. Project/episode changes discard stale scopes.
   for(const kind of wfKinds){
     const state=wfState[kind];
@@ -1363,6 +1434,36 @@
   });
   $("wfReviewEpisode").addEventListener("change",workflowLoadReviews);
   $("wfReviewRefresh").addEventListener("click",workflowLoadReviews);
+
+
+  function applySceneSection(){
+    for(const tab of $("sceneReferenceTabs").querySelectorAll("[data-scene-tab]")){
+      const selected=tab.dataset.sceneTab===sceneSection;
+      tab.classList.toggle("active",selected);
+      tab.setAttribute("aria-selected",String(selected));
+      tab.tabIndex=selected?0:-1;
+    }
+    const selected=sceneData?.scenes.find(x=>x.scene_id===sceneCurrentId);
+    $("sceneReferenceTab").textContent="参考图（"+(selected?.visuals.length||0)+"）";
+    const filmstrip=$("sceneGallery").closest(".scene-filmstrip");
+    filmstrip.hidden=sceneSection!=="references";
+    $("sceneAssetTools").hidden=sceneSection!=="references";
+    for(const section of $("sceneDetail").querySelectorAll("[data-scene-section]"))
+      section.hidden=section.dataset.sceneSection!==sceneSection;
+  }
+  for(const tab of $("sceneReferenceTabs").querySelectorAll("[data-scene-tab]")){
+    tab.addEventListener("click",()=>{
+      sceneSection=tab.dataset.sceneTab;
+      applySceneSection();
+    });
+    tab.addEventListener("keydown",event=>{
+      if(event.key!=="ArrowLeft"&&event.key!=="ArrowRight")return;
+      const tabs=[...$("sceneReferenceTabs").querySelectorAll("[data-scene-tab]")];
+      const delta=event.key==="ArrowRight"?1:-1;
+      const next=tabs[(tabs.indexOf(tab)+delta+tabs.length)%tabs.length];
+      event.preventDefault();next.click();next.focus();
+    });
+  }
 
   const sceneTypeName={interior:"室内",exterior:"室外",
     transition:"过渡场景",abstract:"抽象空间"};
@@ -1480,6 +1581,7 @@
     renderSceneList();
     const scene=data.scenes.find(x=>x.scene_id===sceneCurrentId);
     if(!scene){
+      applySceneSection();
       $("sceneActiveName").textContent="请选择场景";
       $("sceneActiveStatus").textContent="尚无场景";
       $("sceneActiveStatus").className="scene-status-pill";
@@ -1578,6 +1680,8 @@
         ["连续性锁定",scene.continuity_rules],
         ["剧情备注",scene.scene_notes]]){
       const row=el("section","scene-info");
+      row.dataset.sceneSection=name==="光照与时间"?"lighting":
+        name==="机位规则"?"camera":"overview";
       row.appendChild(el("strong","",name));
       row.appendChild(el("p","",value||"尚未填写"));
       detail.appendChild(row);
@@ -1585,6 +1689,7 @@
 
     if(preferred&&!preferred.linked){
       const link=el("button","prod-new prod-secondary","＋ 将当前图片关联为候选");
+      link.dataset.sceneSection="references";
       link.type="button";
       link.addEventListener("click",async()=>{
         link.disabled=true;
@@ -1677,6 +1782,7 @@
     tools.appendChild(upload);
 
     const actions=el("section","scene-review");
+    actions.dataset.sceneSection="review";
     actions.appendChild(el("strong","","版本审核"));
     actions.appendChild(el("p","scene-review-hint",
       "审核将记录当前场景版本、原图哈希与审批理由；旧版永不覆盖。"));
@@ -1727,6 +1833,7 @@
     if(!choices.length)commands.appendChild(el("p","scene-review-complete",
       "此版本已处理。如需调整，请建立新的修订草稿。"));
     actions.appendChild(commands);detail.appendChild(actions);
+    applySceneSection();
   }
 
   function openSceneEditor(scene=null){
@@ -1896,6 +2003,62 @@
     $("characterImageDialog").showModal();
   }
 
+
+  function renderCharacterTurnaround(profile){
+    const panel=$("characterTurnaround");
+    panel.replaceChildren();
+    const title=el("div","character-turnaround-heading");
+    title.appendChild(el("strong","","角色三视图"));
+    title.appendChild(el("span","","前 · 侧 · 背"));
+    panel.appendChild(title);
+    const grid=el("div","character-turnaround-grid");
+    panel.appendChild(grid);
+    if(!profile){
+      grid.appendChild(el("p","character-turnaround-note","选择角色后显示真实三视图。"));
+      return;
+    }
+    const assets=characterV2Data?.project_id===characterProjectId&&
+      characterV2Data?.character_id===profile.character_id?
+      characterV2Data.assets.filter(a=>a.category==="turnaround"&&a.source_visual_id):[];
+    const shots=[["front","正面"],["left","侧面"],["back","背面"]];
+    for(const [direction,label] of shots){
+      const item=assets.find(a=>a.details?.direction===direction&&
+        a.status==="approved")||
+        assets.find(a=>a.details?.direction===direction);
+      const card=el("button","character-turnaround-tile");
+      card.type="button";
+      card.title=label+(item?" · "+(v2StatusName[item.status]||"候选"):" · 尚未建立");
+      if(item){
+        const image=el("img","");
+        image.loading="lazy";
+        image.alt=profile.display_name+" · "+label+" · "+item.status;
+        image.src=visualURL(characterProjectId,item.source_episode_id,item.source_visual_id);
+        card.appendChild(image);
+        card.addEventListener("click",()=>{
+          const match=profile.visuals.find(v=>v.visual_id===item.source_visual_id);
+          if(match){characterActiveVisualId=match.visual_id;renderCharacterLibrary();}
+          else characterOpenImage(profile,{
+            filename:item.source_filename,episode_id:item.source_episode_id,
+            visual_id:item.source_visual_id
+          });
+        });
+      }else{
+        card.appendChild(el("span","character-turnaround-silhouette","♙"));
+        card.appendChild(el("small","character-turnaround-blank","尚无参考"));
+        card.disabled=true;
+      }
+      card.appendChild(el("strong","",label));
+      const status=item?.status==="approved"?"已审核":
+        item?"候选":"待制作";
+      card.appendChild(el("small",item?.status==="approved"?
+        "character-image-approved":"",status));
+      grid.appendChild(card);
+    }
+    const note=el("div","character-turnaround-note",
+      "仅使用角色库内的真实三视图资产；空槽不代表已制作。");
+    panel.appendChild(note);
+  }
+
   function renderCharacterLibrary() {
     const data=characterData;if(!data)return;
     const profiles=data.characters||[];
@@ -1911,6 +2074,7 @@
     stage.replaceChildren();gallery.replaceChildren();
     detail.replaceChildren();tools.replaceChildren();panel.replaceChildren();
     const c=profiles.find(x=>x.character_id===characterCurrentId);
+    renderCharacterTurnaround(c);
     if(!c){
       $("characterActiveName").textContent="角色预览";
       $("characterActiveStatus").textContent="尚无角色";
@@ -2198,6 +2362,7 @@
     const profile=characterData?.characters.find(p=>p.character_id===cid);
     const panel=document.querySelector(".character-v2-section");
     if(panel&&profile)renderCharacterV2(profile,panel);
+    if(profile)renderCharacterTurnaround(profile);
   }
 
   function renderCharacterV2(profile,panel) {

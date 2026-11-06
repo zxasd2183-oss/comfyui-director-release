@@ -19,9 +19,8 @@
     <nav class="nav-items" aria-label="工作台功能页面">
       <div class="nav-section-label">工作空间</div>
       <a href="?page=home" data-page="home"><span>▦</span> 工作台首页</a>
-      <a href="?page=projects" data-page="projects"><span>▤</span> 项目与剧集</a>
       <div class="nav-section-label">美术资产</div>
-      <a href="?page=characters" data-page="characters"><span>♙</span> 角色库 V2</a>
+      <a href="?page=characters" data-page="characters"><span>♙</span> 角色库</a>
       <a href="?page=scenes" data-page="scenes"><span>▧</span> 场景库</a>
       <a href="?page=props" data-page="props"><span>◈</span> 道具库</a>
       <div class="nav-section-label">镜头制作</div>
@@ -32,9 +31,13 @@
       <div class="nav-section-label">协作与管理</div>
       <a href="?page=review" data-page="review"><span>◎</span> 审核中心</a>
       <a href="?page=tasks" data-page="tasks"><span>☷</span> 制作任务</a>
-      <a href="?page=monitor" data-page="monitor"><span>◉</span> 镜头监看</a>
-      <a href="?page=audit" data-page="audit"><span>≋</span> 操作审计</a>
-      <a href="?page=settings" data-page="settings"><span>⚙</span> 项目设置</a>
+      <a href="?page=settings" data-page="settings"><span>⚙</span> 系统设置</a>
+      <details class="nav-more-tools">
+        <summary>更多管理工具</summary>
+        <a href="?page=projects" data-page="projects"><span>▤</span> 项目与剧集</a>
+        <a href="?page=monitor" data-page="monitor"><span>◉</span> 镜头监看</a>
+        <a href="?page=audit" data-page="audit"><span>≋</span> 操作审计</a>
+      </details>
     </nav>
     <div class="sidebar-bottom">
       <div class="safety-indicator"><span class="safety-dot"></span>安全控制模式</div>
@@ -68,9 +71,8 @@
         </div>
       </section>
       <section class="icebound-quick-actions" aria-label="创作快捷入口">
-        <button type="button" data-jump="projects"><span aria-hidden="true">✦</span>新建项目</button>
-        <button type="button" data-jump="characters"><span aria-hidden="true">♙</span>角色库</button>
-        <button type="button" data-jump="scenes"><span aria-hidden="true">▧</span>场景库</button>
+        <button type="button" data-jump="projects" data-action="create"><span aria-hidden="true">✦</span>新建项目</button>
+        <button type="button" data-jump="projects" data-action="import"><span aria-hidden="true">▧</span>导入素材</button>
         <button type="button" data-jump="storyboards"><span aria-hidden="true">▤</span>分镜制作</button>
         <button type="button" data-jump="video_plans"><span aria-hidden="true">▶</span>视频制作</button>
       </section>
@@ -289,8 +291,13 @@
             <div id="sceneAssetTools" class="scene-asset-tools"></div>
           </section>
           <aside class="scene-inspector" aria-label="场景属性与审核">
-            <div class="scene-column-heading"><div><small>SCENE INSPECTOR</small><strong>场景属性</strong></div>
-              <span aria-hidden="true" class="scene-inspector-icon">⚙</span></div>
+            <div class="scene-reference-tabs" id="sceneReferenceTabs" role="tablist" aria-label="场景资料分类">
+              <button type="button" role="tab" data-scene-tab="overview" aria-selected="true">场景设定</button>
+              <button type="button" role="tab" data-scene-tab="references" aria-selected="false" id="sceneReferenceTab">参考图（0）</button>
+              <button type="button" role="tab" data-scene-tab="lighting" aria-selected="false">灯光方案</button>
+              <button type="button" role="tab" data-scene-tab="camera" aria-selected="false">机位规则</button>
+              <button type="button" role="tab" data-scene-tab="review" aria-selected="false">版本审核</button>
+            </div>
             <div id="sceneDetail" class="scene-detail">
               <div class="scene-rail-empty">选择或新建一个场景以查看详细信息</div>
             </div>
@@ -407,6 +414,10 @@
           <aside class="character-inspector" aria-label="角色属性与母版审核">
             <div class="character-column-heading"><div><small>CHARACTER INSPECTOR</small>
               <strong>角色设定与审核</strong></div><span aria-hidden="true">✧</span></div>
+            <div id="characterTurnaround" class="character-turnaround" aria-label="角色多角度参考">
+              <div class="character-turnaround-heading">三视图与方向参考 <span>真实资产</span></div>
+              <div class="character-turnaround-grid">尚未选择角色</div>
+            </div>
             <div id="characterDetail" class="character-detail">
               <p class="character-inspector-empty">选择角色后查看身份特征、审核状态及关联参考。</p>
             </div>
@@ -553,6 +564,13 @@
         </section>
         <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
       </section>
+      <dialog id="wfStoryboardEditDialog" class="workflow-editor-dialog" aria-label="分镜图制作与版本审核">
+        <header class="workflow-editor-header">
+          <div><small>STORYBOARD / EDITOR</small><strong>分镜资料与审核</strong></div>
+          <button id="wfStoryboardEditorClose" class="prod-new prod-secondary" type="button">关闭</button>
+        </header>
+        <div id="wfStoryboardEditorMount"></div>
+      </dialog>
       <section id="workflow_white_models" class="panel workflow-page" data-kind="white_models" aria-label="白模预演">
         <header class="workflow-hero">
           <div><span class="workflow-overline">DIRECTOR STUDIO · CLAY PREVIS</span><h2>白模预演</h2><p>逐镜头保存摄影机、角色与道具空间参数，实时观察粗白模预演。</p></div>
