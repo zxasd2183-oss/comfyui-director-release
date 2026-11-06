@@ -218,6 +218,21 @@ def main():
     page_event("example")
     record("example_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     shot("01-example-loaded")
+    # M04: bookmark and history must work as actual interactive menu flows.
+    tap(desc="更多选项")
+    tap(text="收藏当前页面")
+    assert "M04_BOOKMARK_ADDED=true" in adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+    tap(desc="更多选项")
+    tap(text="书签")
+    await_ui(text="私人空间 · 书签",timeout=35)
+    record("m04_bookmark_menu","saved private bookmark is visible in native list")
+    shot("01-m04-bookmarks")
+    tap(text="关闭")
+    tap(desc="更多选项")
+    tap(text="历史记录")
+    await_ui(text="私人空间 · 历史记录",timeout=35)
+    record("m04_history_menu","private history list opened from live browser")
+    tap(text="关闭")
     # Keep UI controls, background restore and identity switching ahead of
     # heavy external pages, so one emulator stall does not hide their results.
     tap(desc="更多选项")
@@ -292,6 +307,22 @@ def main():
     record("m03_force_stop_restore","three tabs across both profiles restored after process death")
     shot("03-restored-tab-grid")
     tap(desc="返回浏览器")
+    tap(desc="更多选项")
+    tap(text="书签")
+    await_ui(text="私人空间 · 书签",timeout=30)
+    m04_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+    if "M04_LIBRARY_LIST kind=bookmarks profile=private count=1" not in m04_log:
+        raise RuntimeError("M04_BOOKMARK_NOT_PERSISTED")
+    record("m04_bookmark_persisted","private bookmark survived Android force-stop")
+    tap(text="关闭")
+    tap(desc="更多选项")
+    tap(text="历史记录")
+    await_ui(text="私人空间 · 历史记录",timeout=30)
+    m04_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+    if "M04_LIBRARY_LIST kind=history profile=private count=" not in m04_log:
+        raise RuntimeError("M04_HISTORY_NOT_LISTED")
+    record("m04_history_persisted","private history reopened after force-stop")
+    tap(text="关闭")
     # Real Gecko HTML file controls -> Android Storage Access Framework.
     # No real accounts or sensitive documents; only cancel paths in the smoke
     # test until reliable file-byte round trips have been independently proven.
@@ -323,6 +354,15 @@ def main():
         raise RuntimeError("DOWNLOADED_FILE_BYTES_MISMATCH")
     record("file_download_bytes","saved Android Downloads file matched full Gecko response body, byte-for-byte")
     shot("03-download-saved")
+    tap(desc="更多选项")
+    tap(text="下载记录")
+    await_ui(text="私人空间 · 下载记录",timeout=35)
+    log_m04=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+    if "M04_DOWNLOAD_RECORDED=true" not in log_m04 or "M04_LIBRARY_LIST kind=downloads profile=private count=1" not in log_m04:
+        raise RuntimeError("M04_DOWNLOAD_RECORD_NOT_SAVED")
+    record("m04_download_record","download SAF destination recorded in current private space")
+    shot("03-m04-download-history")
+    tap(text="关闭")
     adb("shell","input","keyevent","KEYCODE_HOME",timeout=12)
     adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=65)
     await_ui(desc="更多选项")

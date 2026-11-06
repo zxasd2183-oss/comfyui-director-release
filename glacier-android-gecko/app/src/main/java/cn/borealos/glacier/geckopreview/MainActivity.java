@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
+import android.content.ActivityNotFoundException;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
@@ -71,6 +73,10 @@ public final class MainActivity extends Activity {
     private final Handler tabSaveHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService tabSaveQueue = Executors.newSingleThreadExecutor();
     private final Runnable saveTabsTask = this::persistTabs;
+    private final Handler libraryHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService librarySaveQueue = Executors.newSingleThreadExecutor();
+    private final Runnable saveLibraryTask = this::persistLibrary;
+    private BrowserLibraryStore.Snapshot libraryState = new BrowserLibraryStore.Snapshot();
     private boolean restoringTabs;
     private GeckoView web;
     private BrowserTransfers transfers;
@@ -111,7 +117,19 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        transfers = new BrowserTransfers(this);
+        restoreLibrary();
+        transfers = new BrowserTransfers(this, (profile, filename, mime, bytes, document) -> {
+            if (!BrowserLibraryStore.validProfile(profile)
+                    || !BrowserLibraryStore.validDocumentUri(document.toString())) return;
+            libraryState.downloads.add(0, new BrowserLibraryStore.Entry(
+                    profile, "", "", filename, document.toString(),
+                    mime, bytes, System.currentTimeMillis()));
+            BrowserLibraryStore.cap(libraryState.downloads, 160);
+            scheduleLibrarySave();
+            if (debugBuild() && filename.equals("glacier-download-test.txt")) {
+                android.util.Log.i("GlacierSmoke", "M04_DOWNLOAD_RECORDED=true");
+            }
+        });
         getWindow().setStatusBarColor(Color.rgb(238, 244, 248));
         getWindow().setNavigationBarColor(Color.rgb(248, 251, 253));
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -529,12 +547,207 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void restoreLibrary() {
+        try {
+            libraryState = BrowserLibraryStore.load(this);
+        } catch (Exception ignored) {
+            libraryState = new BrowserLibraryStore.Snapshot();
+            android.widget.Toast.makeText(this,
+                    "本机收藏和历史记录无法读取，请检查设备密钥存储",
+                    android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void scheduleLibrarySave() {
+        libraryHandler.removeCallbacks(saveLibraryTask);
+        libraryHandler.postDelayed(saveLibraryTask, 550);
+    }
+
+    private void persistLibrary() {
+        BrowserLibraryStore.Snapshot copy = libraryState.copy();
+        librarySaveQueue.execute(() -> {
+            try {
+                BrowserLibraryStore.save(getApplicationContext(),copy);
+            } catch(Exception ignored) {
+                // URLs, titles, document paths and profile records are private.
+            }
+        });
+    }
+
+    private static String safeTitle(String title, String fallback) {
+        String result=title==null||title.trim().isEmpty()?fallback:title.trim();
+        return result.length()>180?result.substring(0,180):result;
+    }
+
+    private boolean isCurrentBookmarked() {
+        if(active==null||!BrowserLibraryStore.validWebUrl(active.url))return false;
+        for(BrowserLibraryStore.Entry e:libraryState.bookmarks) {
+            if(active.profile.equals(e.profile)&&active.url.equals(e.url))return true;
+        }
+        return false;
+    }
+
+    private void toggleBookmark() {
+        if(active==null||!BrowserLibraryStore.validWebUrl(active.url)) {
+            android.widget.Toast.makeText(this,"当前页面暂不能收藏",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        for(int i=0;i<libraryState.bookmarks.size();i++) {
+            BrowserLibraryStore.Entry e=libraryState.bookmarks.get(i);
+            if(active.profile.equals(e.profile)&&active.url.equals(e.url)) {
+                libraryState.bookmarks.remove(i);
+                scheduleLibrarySave();
+                android.widget.Toast.makeText(this,"已取消收藏",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                if(debugBuild())android.util.Log.i("GlacierSmoke","M04_BOOKMARK_REMOVED=true");
+                return;
+            }
+        }
+        libraryState.bookmarks.add(0,new BrowserLibraryStore.Entry(
+                active.profile,safeTitle(active.title,active.url),active.url,
+                "","","",0,System.currentTimeMillis()));
+        BrowserLibraryStore.cap(libraryState.bookmarks,160);
+        scheduleLibrarySave();
+        android.widget.Toast.makeText(this,"已收藏到当前账号空间",
+                android.widget.Toast.LENGTH_SHORT).show();
+        if(debugBuild())android.util.Log.i("GlacierSmoke","M04_BOOKMARK_ADDED=true");
+    }
+
+    private void rememberVisit(Tab tab) {
+        if(tab==null || !BrowserLibraryStore.validWebUrl(tab.url))return;
+        long time=System.currentTimeMillis();
+        String name=safeTitle(tab.title,tab.url);
+        List<BrowserLibraryStore.Entry> rows=libraryState.history;
+        if(!rows.isEmpty()) {
+            BrowserLibraryStore.Entry newest=rows.get(0);
+            if(tab.profile.equals(newest.profile)&&tab.url.equals(newest.url)
+                    && time-newest.timestamp<2500) {
+                newest.title=name;
+                newest.timestamp=time;
+                scheduleLibrarySave();
+                return;
+            }
+        }
+        rows.add(0,new BrowserLibraryStore.Entry(tab.profile,name,tab.url,
+                "","","",0,time));
+        BrowserLibraryStore.cap(rows,450);
+        scheduleLibrarySave();
+        if(debugBuild() && "https://example.com/".equals(tab.url)) {
+            android.util.Log.i("GlacierSmoke","M04_HISTORY_EXAMPLE=true");
+        }
+    }
+
+    private void reviseRecentHistoryTitle(Tab tab) {
+        if(tab==null || !BrowserLibraryStore.validWebUrl(tab.url))return;
+        for(BrowserLibraryStore.Entry item:libraryState.history) {
+            if(item.profile.equals(tab.profile)&&item.url.equals(tab.url)) {
+                item.title=safeTitle(tab.title,tab.url);
+                scheduleLibrarySave();
+                return;
+            }
+        }
+    }
+
+    private List<BrowserLibraryStore.Entry> currentLibraryEntries(String kind) {
+        List<BrowserLibraryStore.Entry> all;
+        if("bookmarks".equals(kind))all=libraryState.bookmarks;
+        else if("history".equals(kind))all=libraryState.history;
+        else all=libraryState.downloads;
+        List<BrowserLibraryStore.Entry> filtered=new ArrayList<>();
+        for(BrowserLibraryStore.Entry e:all) {
+            if(selectedProfile.equals(e.profile))filtered.add(e);
+        }
+        return filtered;
+    }
+
+    private void showLibraryList(String kind, boolean removingBookmarks) {
+        List<BrowserLibraryStore.Entry> rows=currentLibraryEntries(kind);
+        if (debugBuild()) android.util.Log.i("GlacierSmoke",
+                "M04_LIBRARY_LIST kind="+kind+" profile="+selectedProfile+" count="+rows.size());
+        String heading="bookmarks".equals(kind)?"书签":
+                "history".equals(kind)?"历史记录":"下载记录";
+        String space=WORK.equals(selectedProfile)?"工作空间":"私人空间";
+        if(rows.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle(space+" · "+heading)
+                    .setMessage("当前空间暂无记录。")
+                    .setPositiveButton("关闭",null).show();
+            return;
+        }
+        String[] titles=new String[rows.size()];
+        for(int i=0;i<rows.size();i++) {
+            BrowserLibraryStore.Entry item=rows.get(i);
+            if("downloads".equals(kind)) {
+                titles[i]=safeTitle(item.name,"下载文件")+
+                        " · "+Math.max(0,item.bytes)+" 字节";
+            } else {
+                titles[i]=safeTitle(item.title,item.url);
+            }
+        }
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this)
+                .setTitle(space+" · "+heading+(removingBookmarks?" · 点击删除":""))
+                .setItems(titles,(d,i)-> {
+                    BrowserLibraryStore.Entry item=rows.get(i);
+                    if(removingBookmarks) {
+                        libraryState.bookmarks.remove(item);
+                        scheduleLibrarySave();
+                        android.widget.Toast.makeText(this,"已删除书签",
+                                android.widget.Toast.LENGTH_SHORT).show();
+                        showLibraryList("bookmarks",true);
+                    } else if("downloads".equals(kind)) {
+                        openSavedDownload(item);
+                    } else if(BrowserLibraryStore.validWebUrl(item.url)) {
+                        navigate(item.url);
+                    }
+                })
+                .setNegativeButton("关闭",null);
+        if("history".equals(kind)||"downloads".equals(kind)) {
+            dialog.setNeutralButton("清空本空间记录",(d,w)-> {
+                new AlertDialog.Builder(this).setTitle("确认清空"+heading+"？")
+                        .setMessage("仅清除"+space+"的"+heading+"。"
+                                +("downloads".equals(kind)
+                                ?"已经保存到手机的文件不会被删除。":""))
+                        .setNegativeButton("取消",null)
+                        .setPositiveButton("清空",(confirm,which)-> {
+                            if("history".equals(kind)) {
+                                libraryState.history.removeIf(e->selectedProfile.equals(e.profile));
+                            } else {
+                                libraryState.downloads.removeIf(e->selectedProfile.equals(e.profile));
+                            }
+                            scheduleLibrarySave();
+                        }).show();
+            });
+        }
+        dialog.show();
+    }
+
+    private void openSavedDownload(BrowserLibraryStore.Entry item) {
+        if(!BrowserLibraryStore.validDocumentUri(item.uri))return;
+        try {
+            Uri target=Uri.parse(item.uri);
+            Intent view=new Intent(Intent.ACTION_VIEW);
+            view.setDataAndType(target,item.mime==null||item.mime.isEmpty()
+                    ?"application/octet-stream":item.mime);
+            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(view,"打开已保存文件"));
+        } catch(ActivityNotFoundException | SecurityException e) {
+            new AlertDialog.Builder(this).setTitle("无法打开文件")
+                    .setMessage("文件可能已移动、被删除，或文件管理器不再授予访问权限。")
+                    .setPositiveButton("知道了",null).show();
+        }
+    }
+
     private void showBrowserMenu() {
         final List<String> actions = new ArrayList<>();
         actions.add("新建标签页");
         actions.add("刷新");
         actions.add("后退");
         actions.add("前进");
+        actions.add(isCurrentBookmarked() ? "取消收藏此页" : "收藏当前页面");
+        actions.add("书签");
+        actions.add("管理书签");
+        actions.add("历史记录");
+        actions.add("下载记录");
         actions.add("切换账号空间");
         actions.add("网络连接信息");
         actions.add("打开 ChatGPT");
@@ -559,6 +772,17 @@ public final class MainActivity extends Activity {
                         if (active != null && active.canBack) active.session.goBack();
                     } else if ("前进".equals(item)) {
                         if (active != null && active.canForward) active.session.goForward();
+                    } else if ("收藏当前页面".equals(item)
+                            || "取消收藏此页".equals(item)) {
+                        toggleBookmark();
+                    } else if ("书签".equals(item)) {
+                        showLibraryList("bookmarks",false);
+                    } else if ("管理书签".equals(item)) {
+                        showLibraryList("bookmarks",true);
+                    } else if ("历史记录".equals(item)) {
+                        showLibraryList("history",false);
+                    } else if ("下载记录".equals(item)) {
+                        showLibraryList("downloads",false);
                     } else if ("切换账号空间".equals(item)) {
                         chooseProfile();
                     } else if ("网络连接信息".equals(item)) {
@@ -603,6 +827,7 @@ public final class MainActivity extends Activity {
                         && !title.startsWith("GLACIER_TEST_")) {
                     titledTab.title = title.length() > 65
                             ? title.substring(0, 65) + "…" : title;
+                    reviseRecentHistoryTitle(titledTab);
                 }
                 if (!debugBuild() || title == null || !title.startsWith("GLACIER_TEST_")) return;
                 if ("mock-socks".equals(getIntent().getStringExtra("glacier.ci.network"))
@@ -618,7 +843,9 @@ public final class MainActivity extends Activity {
             }
             @Override
             public void onExternalResponse(GeckoSession source, WebResponse response) {
-                transfers.onExternalResponse(response);
+                Tab owner = findBySession(source);
+                transfers.onExternalResponse(response,
+                        owner == null ? null : owner.profile);
             }
         });
         session.setPromptDelegate(new GeckoSession.PromptDelegate() {
@@ -661,6 +888,7 @@ public final class MainActivity extends Activity {
                     if (success) {
                         Tab target = findBySession(source);
                         if (target != null) {
+                            rememberVisit(target);
                             tabSaveHandler.postDelayed(
                                     () -> captureTabThumbnail(target), 950);
                         }
@@ -1339,12 +1567,24 @@ public final class MainActivity extends Activity {
     protected void onStop() {
         tabSaveHandler.removeCallbacks(saveTabsTask);
         persistTabs();
+        libraryHandler.removeCallbacks(saveLibraryTask);
+        persistLibrary();
         super.onStop();
     }
 
     @Override
     protected void onDestroy() {
         tabSaveHandler.removeCallbacks(saveTabsTask);
+        libraryHandler.removeCallbacks(saveLibraryTask);
+        if (isFinishing()) {
+            librarySaveQueue.shutdown();
+            try {
+                librarySaveQueue.awaitTermination(1600, java.util.concurrent.TimeUnit.MILLISECONDS);
+                BrowserLibraryStore.save(this,libraryState.copy());
+            } catch(Exception ignored) {
+                // No browsing metadata in logs.
+            }
+        }
         if (isFinishing() && !tabs.isEmpty()) {
             try {
                 // This path deliberately terminates the process, so flush

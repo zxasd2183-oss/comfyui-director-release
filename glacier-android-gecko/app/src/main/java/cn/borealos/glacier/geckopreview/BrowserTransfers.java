@@ -39,7 +39,15 @@ final class BrowserTransfers {
     private static final int MAX_UPLOAD_COUNT = 16;
     private static final long UPLOAD_CACHE_LIFETIME_MS = 24L * 60 * 60 * 1000;
     private final List<File> preparedUploadFolders = new ArrayList<>();
+    interface DownloadObserver {
+        void onSaved(String profile, String filename, String mime, long bytes, Uri document);
+    }
     private final Activity activity;
+    private final DownloadObserver observer;
+    private String pendingProfile;
+    private String pendingFilename;
+    private String pendingMime;
+    private long pendingBytes;
     private GeckoSession.PromptDelegate.FilePrompt pendingPrompt;
     private GeckoResult<GeckoSession.PromptDelegate.PromptResponse> pendingResult;
     private File pendingDownload;
@@ -53,8 +61,9 @@ final class BrowserTransfers {
         }
     }
 
-    BrowserTransfers(Activity activity) {
+    BrowserTransfers(Activity activity, DownloadObserver observer) {
         this.activity = activity;
+        this.observer = observer;
         // Old staged files are only removed after a day, so a page has time
         // to read its selected file before the Gecko prompt/session ends.
         File folder = new File(activity.getCacheDir(), "glacier-gecko-uploads");
@@ -206,7 +215,7 @@ final class BrowserTransfers {
         }
     }
 
-    void onExternalResponse(WebResponse response) {
+    void onExternalResponse(WebResponse response, String ownerProfile) {
         if (response.body == null) {
             Toast.makeText(activity, "此下载没有可保存的数据", Toast.LENGTH_LONG).show();
             return;
@@ -228,10 +237,16 @@ final class BrowserTransfers {
         pendingFixtureDownload = "http://127.0.0.1:18765/test-attachment".equals(response.uri);
         if (pendingFixtureDownload) debugEvent("DOWNLOAD_RESPONSE_RECEIVED");
         String name = safeFilename(response, uri);
+        // The profile is captured from the originating GeckoSession, not
+        // whichever profile becomes selected while the picker is open.
+        pendingProfile = ownerProfile;
+        pendingFilename = name;
+        pendingBytes = 0L;
         String mime = header(response.headers, "content-type");
         if (mime == null || mime.trim().isEmpty()) mime = "application/octet-stream";
         else mime = mime.split(";", 2)[0].trim();
         final String safeMime = mime;
+        pendingMime = safeMime;
 
         downloadBusy = true;
         new AlertDialog.Builder(activity)
@@ -268,6 +283,7 @@ final class BrowserTransfers {
                 File done = staged;
                 activity.runOnUiThread(() -> {
                     pendingDownload = done;
+                    pendingBytes = done.length();
                     if (pendingFixtureDownload) debugEvent("DOWNLOAD_STREAM_STAGED");
                     Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     save.addCategory(Intent.CATEGORY_OPENABLE);
@@ -318,6 +334,20 @@ final class BrowserTransfers {
             if (resultCode == Activity.RESULT_OK && data != null
                     && data.getData() != null && source != null) {
                 Uri target = data.getData();
+                final String savedProfile = pendingProfile;
+                final String savedFilename = pendingFilename;
+                final String savedMime = pendingMime;
+                final long savedBytes = pendingBytes;
+                // ACTION_CREATE_DOCUMENT grants may be persistable. Retain
+                // read permission only when the provider explicitly grants it.
+                try {
+                    int flags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                    if (flags != 0) activity.getContentResolver()
+                            .takePersistableUriPermission(target, flags);
+                } catch (Exception ignored) {
+                    // Files may still be saved, but reopening can depend on
+                    // the document provider and Android's access policy.
+                }
                 new Thread(() -> {
                     boolean ok = false;
                     try (InputStream in = new FileInputStream(source);
@@ -334,8 +364,17 @@ final class BrowserTransfers {
                         final boolean saved = ok;
                         activity.runOnUiThread(() -> {
                             downloadBusy = false;
+                            if (saved && observer != null && "content".equals(target.getScheme())
+                                    && BrowserLibraryStore.validProfile(savedProfile)) {
+                                observer.onSaved(savedProfile, savedFilename, savedMime,
+                                        savedBytes, target);
+                            }
                             if (pendingFixtureDownload) debugEvent(saved
                                     ? "DOWNLOAD_SAVED" : "DOWNLOAD_SAVE_FAILED");
+                            pendingProfile = null;
+                            pendingFilename = null;
+                            pendingMime = null;
+                            pendingBytes = 0;
                             toast(saved ? "文件已保存" : "保存失败，请重试");
                         });
                     }
@@ -360,6 +399,10 @@ final class BrowserTransfers {
         pendingDownload = null;
         downloadBusy = false;
         pendingFixtureDownload = false;
+        pendingProfile = null;
+        pendingFilename = null;
+        pendingMime = null;
+        pendingBytes = 0;
     }
 
     private void toast(String message) {
