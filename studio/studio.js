@@ -1034,13 +1034,30 @@
       for(const item of body.pending){
         const row=el("div","workflow-review-record");
         const desc=el("div","");
-        desc.appendChild(el("strong","",wfLabels[item.kind]+" · "+item.unit_id));
-        desc.appendChild(el("p","",item.episode_id||"项目级"+" · V"+item.revision+
+        const typeName={scene:"场景库",character_asset:"角色分类资产"}[item.kind]||
+          wfLabels[item.kind]||item.kind;
+        desc.appendChild(el("strong","",typeName+" · "+item.unit_id));
+        desc.appendChild(el("p","",(item.episode_id||"项目级")+" · V"+item.revision+
           " · "+(item.fields.title||item.fields.name||"待审核")));
         row.appendChild(desc);
         const open=el("button","prod-new prod-secondary","打开并审核");
         open.type="button";
         open.addEventListener("click",()=>{
+          if(item.kind==="scene"){
+            sceneProjectId=item.project_id;
+            sceneCurrentId=item.unit_id;sceneData=null;
+            navigateWorkspace("scenes");
+            loadScenes().catch(e=>$("sceneMessage").textContent=e.message);
+            return;
+          }
+          if(item.kind==="character_asset"){
+            characterProjectId=item.project_id;
+            characterCurrentId=item.character_id;
+            characterData=null;characterV2Data=null;
+            navigateWorkspace("characters");
+            loadCharacters().catch(e=>$("characterMessage").textContent=e.message);
+            return;
+          }
           const page=map[item.kind],state=wfState[item.kind];
           state.project=item.project_id;
           state.episode=item.episode_id||state.episode;
