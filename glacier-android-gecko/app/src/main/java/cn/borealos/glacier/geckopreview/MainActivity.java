@@ -11,6 +11,8 @@ import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.ByteArrayOutputStream;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -80,6 +82,7 @@ public final class MainActivity extends Activity {
     private boolean restoringTabs;
     private GeckoView web;
     private BrowserTransfers transfers;
+    private BrowserUpdater updater;
     private EditText address;
     private TextView identity;
     private TextView tabCounter;
@@ -118,6 +121,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         restoreLibrary();
+        updater = new BrowserUpdater(this);
         transfers = new BrowserTransfers(this, (profile, filename, mime, bytes, document) -> {
             if (!BrowserLibraryStore.validProfile(profile)
                     || !BrowserLibraryStore.validDocumentUri(document.toString())) return;
@@ -767,6 +771,168 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
+    private android.content.SharedPreferences updatePreferences() {
+        return getSharedPreferences("glacier_update_settings",Context.MODE_PRIVATE);
+    }
+
+    private boolean autoUpdateCheckEnabled() {
+        return updatePreferences().getBoolean("auto_check",true);
+    }
+
+    private void maybeCheckUpdatesAtStartup() {
+        // Automatically CHECK only; download/install always need user action.
+        // Network routing is already configured when initializeEngine returns.
+        if(debugBuild()||updater==null||!autoUpdateCheckEnabled())return;
+        long now=System.currentTimeMillis();
+        long last=updatePreferences().getLong("last_checked",0);
+        if(last>0 && now-last<6L*60*60*1000 && now>=last)return;
+        updatePreferences().edit().putLong("last_checked",now).apply();
+        updater.check(proxyMode,(found,error)->{
+            if(isFinishing()||error!=null||found==null)return;
+            new AlertDialog.Builder(this)
+                    .setTitle("Glacier 发现新版 "+found.version)
+                    .setMessage("已检查官方发布记录。你可以选择下载并验证新版 APK，"
+                            +"安装仍需要 Android 系统确认。")
+                    .setNegativeButton("以后再说",null)
+                    .setPositiveButton("查看更新",(d,w)->showAvailableUpdate(found))
+                    .show();
+        });
+    }
+
+    private void showUpdatePanel() {
+        final String version=BuildConfig.VERSION_NAME;
+        final String auto=autoUpdateCheckEnabled()?"已开启":"已关闭";
+        final String[] choices=updater!=null&&updater.hasReady()?
+                new String[]{"检查更新","启动时检查新版："+auto,"安装已验证 APK"}:
+                new String[]{"检查更新","启动时检查新版："+auto};
+        new AlertDialog.Builder(this)
+                .setTitle("Glacier · 更新与版本 "+version)
+                .setMessage(debugBuild()
+                        ?"当前是 Debug 预览包。因签名每次可能变化，"
+                         +"不能保证覆盖安装保留数据；正式在线更新仅支持固定签名 Release。"
+                        :"官方 GitHub 发布源；SHA-256、包名、版本及 APK 签名全部校验。"
+                         +"使用 VLESS 时更新同样走 SOCKS5，不会静默直连。")
+                .setItems(choices,(d,which)->{
+                    if(which==0)checkForUpdates(true);
+                    else if(which==1) {
+                        boolean next=!autoUpdateCheckEnabled();
+                        updatePreferences().edit().putBoolean("auto_check",next).apply();
+                        android.widget.Toast.makeText(this,next?
+                                "启动更新提醒已开启":"启动更新提醒已关闭",
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    } else if(which==2)installVerifiedUpdate();
+                })
+                .setNegativeButton("关闭",null)
+                .show();
+    }
+
+    private void checkForUpdates(boolean explicit) {
+        if(updater==null)return;
+        final AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("正在检查 Glacier 更新")
+                .setMessage("正在通过当前网络模式访问官方更新源…")
+                .setCancelable(true).create();
+        if(explicit)dialog.show();
+        updater.check(proxyMode,(release,error)->{
+            if(dialog.isShowing())dialog.dismiss();
+            if(isFinishing())return;
+            if(error!=null) {
+                new AlertDialog.Builder(this)
+                        .setTitle("未能检查更新")
+                        .setMessage(error.getMessage()==null?"更新检查失败":error.getMessage())
+                        .setPositiveButton("知道了",null).show();
+            } else if(release==null) {
+                new AlertDialog.Builder(this)
+                        .setTitle("已是最新版本")
+                        .setMessage("当前版本："+BuildConfig.VERSION_NAME)
+                        .setPositiveButton("知道了",null).show();
+            } else {
+                showAvailableUpdate(release);
+            }
+        });
+    }
+
+    private void showAvailableUpdate(BrowserUpdater.Release release) {
+        String size=String.format(java.util.Locale.ROOT,"%.1f MB",
+                release.size/1024.0/1024.0);
+        new AlertDialog.Builder(this)
+                .setTitle("可更新到 Glacier "+release.version)
+                .setMessage("安装包大小："+size
+                        +"\n来源：官方 GitHub Releases"
+                        +"\n将使用当前网络模式下载后验证 SHA-256、APK 版本和签名证书。"
+                        +"\n\n只有验证成功才会打开 Android 系统安装器。")
+                .setNegativeButton("取消",null)
+                .setPositiveButton("下载并验证",(d,w)->startVerifiedDownload(release))
+                .show();
+    }
+
+    private void startVerifiedDownload(BrowserUpdater.Release release) {
+        if(updater==null)return;
+        AtomicBoolean cancelled=new AtomicBoolean(false);
+        LinearLayout layout=new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(20),dp(16),dp(20),dp(12));
+        TextView notice=new TextView(this);
+        notice.setText("正在下载：0%");
+        notice.setTextColor(INK);
+        layout.addView(notice);
+        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(100);
+        layout.addView(bar,new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,dp(20)));
+        AlertDialog progress=new AlertDialog.Builder(this)
+                .setTitle("Glacier 安全更新")
+                .setView(layout)
+                .setNegativeButton("取消",(d,w)->cancelled.set(true))
+                .setOnCancelListener(d->cancelled.set(true))
+                .create();
+        progress.show();
+        updater.download(release,proxyMode,cancelled,
+                percent->{
+                    if(progress.isShowing()) {
+                        bar.setProgress(percent);
+                        notice.setText("正在下载："+percent+"%");
+                    }
+                },
+                (file,error)->{
+                    if(progress.isShowing())progress.dismiss();
+                    if(isFinishing())return;
+                    if(error!=null) {
+                        new AlertDialog.Builder(this)
+                                .setTitle("更新未安装")
+                                .setMessage(error.getMessage()==null?"下载或验证失败":error.getMessage())
+                                .setPositiveButton("知道了",null).show();
+                    } else {
+                        new AlertDialog.Builder(this)
+                                .setTitle("更新文件已经通过校验")
+                                .setMessage("APK 的 SHA-256、包名、版本与安装签名均已验证。"
+                                        +"\n点击安装将由 Android 系统再次询问。")
+                                .setNegativeButton("稍后安装",null)
+                                .setPositiveButton("系统安装",(d,w)->installVerifiedUpdate())
+                                .show();
+                    }
+                });
+    }
+
+    private void installVerifiedUpdate() {
+        if(updater==null||!updater.hasReady()) {
+            android.widget.Toast.makeText(this,"当前没有已验证的 APK",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            if(!updater.requestInstall()) {
+                android.widget.Toast.makeText(this,
+                        "请在系统设置中允许此应用安装更新，然后返回菜单再次点安装",
+                        android.widget.Toast.LENGTH_LONG).show();
+            }
+        } catch(Exception error) {
+            new AlertDialog.Builder(this).setTitle("拒绝安装")
+                    .setMessage(error.getMessage()==null?"更新 APK 再次校验失败":error.getMessage())
+                    .setPositiveButton("知道了",null).show();
+        }
+    }
+
     private void showBrowserMenu() {
         final List<String> actions = new ArrayList<>();
         actions.add("新建标签页");
@@ -778,6 +944,7 @@ public final class MainActivity extends Activity {
         actions.add("管理书签");
         actions.add("历史记录");
         actions.add("下载记录");
+        actions.add("更新与版本");
         actions.add("切换账号空间");
         actions.add("网络连接信息");
         actions.add("打开 ChatGPT");
@@ -810,6 +977,8 @@ public final class MainActivity extends Activity {
                         showLibraryList("history",false);
                     } else if ("下载记录".equals(item)) {
                         showLibraryList("downloads",false);
+                    } else if ("更新与版本".equals(item)) {
+                        showUpdatePanel();
                     } else if ("切换账号空间".equals(item)) {
                         chooseProfile();
                     } else if ("网络连接信息".equals(item)) {
@@ -1497,6 +1666,9 @@ public final class MainActivity extends Activity {
             } else {
                 openTab(PRIVATE, bootUrl);
             }
+            if (!debugBuild()) {
+                tabSaveHandler.postDelayed(this::maybeCheckUpdatesAtStartup, 5000);
+            }
         } catch (Exception ex) {
             NativeProxy.stop();
             showNetworkError("GeckoView 无法使用当前网络配置初始化");
@@ -1614,6 +1786,7 @@ public final class MainActivity extends Activity {
             }
         }
         if (transfers != null && isFinishing()) transfers.dispose();
+        if (updater != null && isFinishing()) updater.dispose();
         if (isFinishing()) {
             if (web != null && web.getSession() != null) web.releaseSession();
             for (Tab t : tabs) t.session.close();
