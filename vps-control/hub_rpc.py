@@ -119,7 +119,7 @@ def check_args(tool, params):
                 limit={"display_name":100,"brand_basis":600,"design_language":1200,
                        "character_notes":1200}[name]
                 if len(value)>limit or (name=="display_name" and not value.strip()) or any(
-                        ord(ch)<32 and ch not in ("\\n","\\t") for ch in value):
+                        ord(ch)<32 and ch not in (chr(10),chr(9)) for ch in value):
                     raise HubError("invalid_argument_value")
             elif name=="role":
                 if value not in ("main","extended"):
