@@ -18,16 +18,23 @@
     <div class="side-caption">STUDIO MODULES</div>
     <nav class="nav-items" aria-label="工作台功能页面">
       <div class="nav-section-label">工作空间</div>
-      <a class="active" href="?page=home" data-page="home"><span>▦</span> 工作台首页</a>
+      <a href="?page=home" data-page="home"><span>▦</span> 工作台首页</a>
       <a href="?page=projects" data-page="projects"><span>▤</span> 项目与剧集</a>
       <div class="nav-section-label">美术资产</div>
       <a href="?page=characters" data-page="characters"><span>♙</span> 角色库 V2</a>
       <a href="?page=scenes" data-page="scenes"><span>▧</span> 场景库</a>
-      <div class="nav-section-label">镜头与导演</div>
-      <a href="?page=shots" data-page="shots"><span>▥</span> 镜头规划</a>
-      <a href="?page=review" data-page="review"><span>◎</span> 监审工作台</a>
+      <a href="?page=props" data-page="props"><span>◈</span> 道具库</a>
+      <div class="nav-section-label">镜头制作</div>
+      <a href="?page=shots" data-page="shots"><span>▥</span> 分镜规划</a>
+      <a href="?page=storyboards" data-page="storyboards"><span>▨</span> 分镜图制作</a>
+      <a href="?page=white_models" data-page="white_models"><span>⬡</span> 白模预演</a>
+      <a href="?page=video_plans" data-page="video_plans"><span>▶</span> 视频制作</a>
+      <div class="nav-section-label">协作与管理</div>
+      <a href="?page=review" data-page="review"><span>◎</span> 审核中心</a>
+      <a href="?page=tasks" data-page="tasks"><span>☷</span> 制作任务</a>
+      <a href="?page=monitor" data-page="monitor"><span>◉</span> 镜头监看</a>
       <a href="?page=audit" data-page="audit"><span>≋</span> 操作审计</a>
-      <div class="nav-placeholder" aria-label="开发排期中的功能">即将开发 · 道具、分镜图、白模、视频、任务</div>
+      <a href="?page=settings" data-page="settings"><span>⚙</span> 项目设置</a>
     </nav>
     <div class="sidebar-bottom">
       <div class="safety-indicator"><span class="safety-dot"></span>安全控制模式</div>
@@ -418,6 +425,224 @@
           <button id="characterImageClose" type="button" class="prod-new prod-secondary">关闭</button></div>
         <img id="characterImageFull" alt="角色参考图大图预览">
       </dialog>
+      <section id="workflow_props" class="panel workflow-page" data-kind="props" aria-label="道具库">
+        <header class="workflow-hero">
+          <div><span class="workflow-overline">DIRECTOR STUDIO · PROP LIBRARY</span><h2>道具库</h2><p>建立道具尺寸、材质、持握、三视图及候选图片；批准前不成为正式道具母版。</p></div>
+          <span id="wfCount_props" class="workflow-counter">等待加载</span>
+        </header>
+        <div class="workflow-toolbar">
+          <label>当前项目<select id="wfProject_props" aria-label="道具库项目"></select></label>
+          <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_props" aria-label="道具库剧集"></select></label>
+          <label class="workflow-search-label">搜索<input id="wfSearch_props" type="search" placeholder="搜索编号或名称"></label>
+          <button class="prod-new workflow-new" id="wfNew_props" type="button">＋ 新建道具库</button>
+        </div>
+        <p id="wfMessage_props" class="workflow-message" role="status">登录后读取真实数据…</p>
+        <div class="workflow-grid">
+          <aside class="workflow-rail" aria-label="道具库条目列表">
+            <div class="workflow-column-heading"><small>LIBRARY</small><strong>目录与版本</strong></div>
+            <div id="wfList_props" class="workflow-list"></div>
+          </aside>
+          <section class="workflow-stage-wrap" aria-label="道具库预览与资料">
+            <div class="workflow-column-heading"><small>PREVIEW</small><strong id="wfStageTitle_props">资料预览</strong></div>
+            <div id="wfStage_props" class="workflow-stage"></div>
+            <div id="wfVisuals_props" class="workflow-visuals"></div>
+            <div id="wfStageMeta_props" class="workflow-stage-meta"></div>
+          </section>
+          <aside class="workflow-inspector" aria-label="道具库编辑与审核">
+            <div class="workflow-column-heading"><small>INSPECTOR</small><strong>版本资料与审核</strong></div>
+            <div id="wfDetail_props" class="workflow-detail"></div>
+          </aside>
+        </div>
+        <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
+      </section>
+      <section id="workflow_shot_plans" class="panel workflow-page" data-kind="shot_plans" aria-label="分镜规划">
+        <header class="workflow-hero">
+          <div><span class="workflow-overline">DIRECTOR STUDIO · SHOT PLANNING</span><h2>分镜规划</h2><p>按剧集选择镜头，记录场景、出场道具、景别、机位、画面和剪辑连续性。</p></div>
+          <span id="wfCount_shot_plans" class="workflow-counter">等待加载</span>
+        </header>
+        <div class="workflow-toolbar">
+          <label>当前项目<select id="wfProject_shot_plans" aria-label="分镜规划项目"></select></label>
+          <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_shot_plans" aria-label="分镜规划剧集"></select></label>
+          <label class="workflow-search-label">搜索<input id="wfSearch_shot_plans" type="search" placeholder="搜索编号或名称"></label>
+          <button class="prod-new workflow-new" id="wfNew_shot_plans" type="button">＋ 新建分镜规划</button>
+        </div>
+        <p id="wfMessage_shot_plans" class="workflow-message" role="status">登录后读取真实数据…</p>
+        <div class="workflow-grid">
+          <aside class="workflow-rail" aria-label="分镜规划条目列表">
+            <div class="workflow-column-heading"><small>LIBRARY</small><strong>目录与版本</strong></div>
+            <div id="wfList_shot_plans" class="workflow-list"></div>
+          </aside>
+          <section class="workflow-stage-wrap" aria-label="分镜规划预览与资料">
+            <div class="workflow-column-heading"><small>PREVIEW</small><strong id="wfStageTitle_shot_plans">资料预览</strong></div>
+            <div id="wfStage_shot_plans" class="workflow-stage"></div>
+            <div id="wfVisuals_shot_plans" class="workflow-visuals"></div>
+            <div id="wfStageMeta_shot_plans" class="workflow-stage-meta"></div>
+          </section>
+          <aside class="workflow-inspector" aria-label="分镜规划编辑与审核">
+            <div class="workflow-column-heading"><small>INSPECTOR</small><strong>版本资料与审核</strong></div>
+            <div id="wfDetail_shot_plans" class="workflow-detail"></div>
+          </aside>
+        </div>
+        <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
+      </section>
+      <section id="workflow_storyboards" class="panel workflow-page" data-kind="storyboards" aria-label="分镜图制作">
+        <header class="workflow-hero">
+          <div><span class="workflow-overline">DIRECTOR STUDIO · STORYBOARD FRAMES</span><h2>分镜图制作</h2><p>逐镜头上传、选择、修订、审核真实分镜图；不会自动伪造生成结果。</p></div>
+          <span id="wfCount_storyboards" class="workflow-counter">等待加载</span>
+        </header>
+        <div class="workflow-toolbar">
+          <label>当前项目<select id="wfProject_storyboards" aria-label="分镜图制作项目"></select></label>
+          <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_storyboards" aria-label="分镜图制作剧集"></select></label>
+          <label class="workflow-search-label">搜索<input id="wfSearch_storyboards" type="search" placeholder="搜索编号或名称"></label>
+          <button class="prod-new workflow-new" id="wfNew_storyboards" type="button">＋ 新建分镜图</button>
+        </div>
+        <p id="wfMessage_storyboards" class="workflow-message" role="status">登录后读取真实数据…</p>
+        <div class="workflow-grid">
+          <aside class="workflow-rail" aria-label="分镜图制作条目列表">
+            <div class="workflow-column-heading"><small>LIBRARY</small><strong>目录与版本</strong></div>
+            <div id="wfList_storyboards" class="workflow-list"></div>
+          </aside>
+          <section class="workflow-stage-wrap" aria-label="分镜图制作预览与资料">
+            <div class="workflow-column-heading"><small>PREVIEW</small><strong id="wfStageTitle_storyboards">资料预览</strong></div>
+            <div id="wfStage_storyboards" class="workflow-stage"></div>
+            <div id="wfVisuals_storyboards" class="workflow-visuals"></div>
+            <div id="wfStageMeta_storyboards" class="workflow-stage-meta"></div>
+          </section>
+          <aside class="workflow-inspector" aria-label="分镜图制作编辑与审核">
+            <div class="workflow-column-heading"><small>INSPECTOR</small><strong>版本资料与审核</strong></div>
+            <div id="wfDetail_storyboards" class="workflow-detail"></div>
+          </aside>
+        </div>
+        <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
+      </section>
+      <section id="workflow_white_models" class="panel workflow-page" data-kind="white_models" aria-label="白模预演">
+        <header class="workflow-hero">
+          <div><span class="workflow-overline">DIRECTOR STUDIO · CLAY PREVIS</span><h2>白模预演</h2><p>逐镜头保存摄影机、角色与道具空间参数，实时观察粗白模预演。</p></div>
+          <span id="wfCount_white_models" class="workflow-counter">等待加载</span>
+        </header>
+        <div class="workflow-toolbar">
+          <label>当前项目<select id="wfProject_white_models" aria-label="白模预演项目"></select></label>
+          <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_white_models" aria-label="白模预演剧集"></select></label>
+          <label class="workflow-search-label">搜索<input id="wfSearch_white_models" type="search" placeholder="搜索编号或名称"></label>
+          <button class="prod-new workflow-new" id="wfNew_white_models" type="button">＋ 新建白模</button>
+        </div>
+        <p id="wfMessage_white_models" class="workflow-message" role="status">登录后读取真实数据…</p>
+        <div class="workflow-grid">
+          <aside class="workflow-rail" aria-label="白模预演条目列表">
+            <div class="workflow-column-heading"><small>LIBRARY</small><strong>目录与版本</strong></div>
+            <div id="wfList_white_models" class="workflow-list"></div>
+          </aside>
+          <section class="workflow-stage-wrap" aria-label="白模预演预览与资料">
+            <div class="workflow-column-heading"><small>PREVIEW</small><strong id="wfStageTitle_white_models">资料预览</strong></div>
+            <div id="wfStage_white_models" class="workflow-stage"></div>
+            <div id="wfVisuals_white_models" class="workflow-visuals"></div>
+            <div id="wfStageMeta_white_models" class="workflow-stage-meta"></div>
+          </section>
+          <aside class="workflow-inspector" aria-label="白模预演编辑与审核">
+            <div class="workflow-column-heading"><small>INSPECTOR</small><strong>版本资料与审核</strong></div>
+            <div id="wfDetail_white_models" class="workflow-detail"></div>
+          </aside>
+        </div>
+        <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
+      </section>
+      <section id="workflow_video_plans" class="panel workflow-page" data-kind="video_plans" aria-label="视频制作">
+        <header class="workflow-hero">
+          <div><span class="workflow-overline">DIRECTOR STUDIO · VIDEO PRODUCTION</span><h2>视频制作</h2><p>生成制作指令与批准输入清单，设置尺寸、帧率、时长和复现参数；未连接 GPU 渲染。</p></div>
+          <span id="wfCount_video_plans" class="workflow-counter">等待加载</span>
+        </header>
+        <div class="workflow-toolbar">
+          <label>当前项目<select id="wfProject_video_plans" aria-label="视频制作项目"></select></label>
+          <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_video_plans" aria-label="视频制作剧集"></select></label>
+          <label class="workflow-search-label">搜索<input id="wfSearch_video_plans" type="search" placeholder="搜索编号或名称"></label>
+          <button class="prod-new workflow-new" id="wfNew_video_plans" type="button">＋ 新建视频</button>
+        </div>
+        <p id="wfMessage_video_plans" class="workflow-message" role="status">登录后读取真实数据…</p>
+        <div class="workflow-grid">
+          <aside class="workflow-rail" aria-label="视频制作条目列表">
+            <div class="workflow-column-heading"><small>LIBRARY</small><strong>目录与版本</strong></div>
+            <div id="wfList_video_plans" class="workflow-list"></div>
+          </aside>
+          <section class="workflow-stage-wrap" aria-label="视频制作预览与资料">
+            <div class="workflow-column-heading"><small>PREVIEW</small><strong id="wfStageTitle_video_plans">资料预览</strong></div>
+            <div id="wfStage_video_plans" class="workflow-stage"></div>
+            <div id="wfVisuals_video_plans" class="workflow-visuals"></div>
+            <div id="wfStageMeta_video_plans" class="workflow-stage-meta"></div>
+          </section>
+          <aside class="workflow-inspector" aria-label="视频制作编辑与审核">
+            <div class="workflow-column-heading"><small>INSPECTOR</small><strong>版本资料与审核</strong></div>
+            <div id="wfDetail_video_plans" class="workflow-detail"></div>
+          </aside>
+        </div>
+        <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
+      </section>
+      <section id="workflow_tasks" class="panel workflow-page" data-kind="tasks" aria-label="制作任务">
+        <header class="workflow-hero">
+          <div><span class="workflow-overline">DIRECTOR STUDIO · PRODUCTION TASKS</span><h2>制作任务</h2><p>为资产、镜头和审批建立真实任务、前置依赖、结果与人工验收。</p></div>
+          <span id="wfCount_tasks" class="workflow-counter">等待加载</span>
+        </header>
+        <div class="workflow-toolbar">
+          <label>当前项目<select id="wfProject_tasks" aria-label="制作任务项目"></select></label>
+          <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_tasks" aria-label="制作任务剧集"></select></label>
+          <label class="workflow-search-label">搜索<input id="wfSearch_tasks" type="search" placeholder="搜索编号或名称"></label>
+          <button class="prod-new workflow-new" id="wfNew_tasks" type="button">＋ 新建任务</button>
+        </div>
+        <p id="wfMessage_tasks" class="workflow-message" role="status">登录后读取真实数据…</p>
+        <div class="workflow-grid">
+          <aside class="workflow-rail" aria-label="制作任务条目列表">
+            <div class="workflow-column-heading"><small>LIBRARY</small><strong>目录与版本</strong></div>
+            <div id="wfList_tasks" class="workflow-list"></div>
+          </aside>
+          <section class="workflow-stage-wrap" aria-label="制作任务预览与资料">
+            <div class="workflow-column-heading"><small>PREVIEW</small><strong id="wfStageTitle_tasks">资料预览</strong></div>
+            <div id="wfStage_tasks" class="workflow-stage"></div>
+            <div id="wfVisuals_tasks" class="workflow-visuals"></div>
+            <div id="wfStageMeta_tasks" class="workflow-stage-meta"></div>
+          </section>
+          <aside class="workflow-inspector" aria-label="制作任务编辑与审核">
+            <div class="workflow-column-heading"><small>INSPECTOR</small><strong>版本资料与审核</strong></div>
+            <div id="wfDetail_tasks" class="workflow-detail"></div>
+          </aside>
+        </div>
+        <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
+      </section>
+      <section id="workflow_settings" class="panel workflow-page" data-kind="settings" aria-label="项目设置">
+        <header class="workflow-hero">
+          <div><span class="workflow-overline">DIRECTOR STUDIO · PROJECT SPECIFICATION</span><h2>项目设置</h2><p>按剧集保存画幅、分辨率、帧率、颜色和交付规范，可审计修订。</p></div>
+          <span id="wfCount_settings" class="workflow-counter">等待加载</span>
+        </header>
+        <div class="workflow-toolbar">
+          <label>当前项目<select id="wfProject_settings" aria-label="项目设置项目"></select></label>
+          <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_settings" aria-label="项目设置剧集"></select></label>
+          <label class="workflow-search-label">搜索<input id="wfSearch_settings" type="search" placeholder="搜索编号或名称"></label>
+          <button class="prod-new workflow-new" id="wfNew_settings" type="button">＋ 新建项目设置</button>
+        </div>
+        <p id="wfMessage_settings" class="workflow-message" role="status">登录后读取真实数据…</p>
+        <div class="workflow-grid">
+          <aside class="workflow-rail" aria-label="项目设置条目列表">
+            <div class="workflow-column-heading"><small>LIBRARY</small><strong>目录与版本</strong></div>
+            <div id="wfList_settings" class="workflow-list"></div>
+          </aside>
+          <section class="workflow-stage-wrap" aria-label="项目设置预览与资料">
+            <div class="workflow-column-heading"><small>PREVIEW</small><strong id="wfStageTitle_settings">资料预览</strong></div>
+            <div id="wfStage_settings" class="workflow-stage"></div>
+            <div id="wfVisuals_settings" class="workflow-visuals"></div>
+            <div id="wfStageMeta_settings" class="workflow-stage-meta"></div>
+          </section>
+          <aside class="workflow-inspector" aria-label="项目设置编辑与审核">
+            <div class="workflow-column-heading"><small>INSPECTOR</small><strong>版本资料与审核</strong></div>
+            <div id="wfDetail_settings" class="workflow-detail"></div>
+          </aside>
+        </div>
+        <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
+      </section>
+      <section id="workflow_review" class="panel workflow-page" aria-label="统一审核中心">
+        <header class="workflow-hero"><div><span class="workflow-overline">DIRECTOR STUDIO · QUALITY GATE</span><h2>审核中心</h2><p>集中查看待审制作资产，明确人工批准或驳回；各类资产仍需符合原始审核门槛。</p></div>
+          <span id="wfReviewCount" class="workflow-counter">等待加载</span></header>
+        <div class="workflow-review-toolbar"><label>项目<select id="wfReviewProject"></select></label><label>剧集<select id="wfReviewEpisode"></select></label>
+          <button class="prod-new" type="button" id="wfReviewRefresh">刷新待审</button></div>
+        <p id="wfReviewMessage" class="workflow-message">只展示实际待审核项目，不自动批准候选图。</p>
+        <div id="wfReviewList" class="workflow-review-list"></div>
+      </section>
       <div class="content-grid">
         <section id="shots" class="panel shots-panel">
           <div class="panel-header"><div><div class="kicker">PRODUCTION PIPELINE</div><h2>镜头生产线</h2><p>按顺序安排生产，随时选中镜头介入</p></div>
