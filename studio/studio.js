@@ -662,8 +662,10 @@
       if(pid!==state.project||eid!==state.episode)return;
       state.shots=info.shots||[];
     }
-    if(!state.editing&&!body.items.some(x=>x.unit_id===state.selected))
-      state.selected=body.items[0]?.unit_id||"";
+    if(!state.editing&&!body.items.some(x=>x.unit_id===state.selected)&&
+       !state.shots.some(x=>x.shot_id===state.selected))
+      state.selected=body.items[0]?.unit_id||
+        (wfScope(kind)==="shot"?state.shots[0]?.shot_id:"")||"";
     workflowRender(kind);
   }
   async function workflowLoad(kind){
@@ -690,45 +692,109 @@
     return body;
   }
 
+
   function workflowRenderList(kind){
     const state=wfState[kind],data=state.items;
     if(!data)return;
     const list=$("wfList_"+kind);list.replaceChildren();
     const query=$("wfSearch_"+kind).value.trim().toLocaleLowerCase();
-    const matches=data.items.filter(item=>
-      (item.unit_id+" "+Object.values(item.fields).join(" ")).
-        toLocaleLowerCase().includes(query));
-    $("wfCount_"+kind).textContent=data.items.length+" 项记录";
-    if(!matches.length){
-      list.appendChild(el("p","workflow-stage-empty",data.items.length?
-        "没有匹配的记录。":"当前还没有此类制作记录。"));
-    }
-    for(const item of matches){
-      const btn=el("button","workflow-record"+(
-        state.selected===item.unit_id&&!state.editing?" active":""));
-      btn.type="button";
-      btn.appendChild(el("strong","",item.fields.name||item.fields.title||
-        item.unit_id));
-      btn.appendChild(el("small","",item.unit_id+" · V"+item.revision+
-        " · "+(item.episode_id||"全项目")));
-      btn.appendChild(el("span","state "+item.status,wfStatus[item.status]||item.status));
+    const shotScope=wfScope(kind)==="shot";
+    const listItems=shotScope?state.shots.map(shot=>({
+      unit_id:shot.shot_id,episode_id:state.episode,
+      shot,record:data.items.find(x=>x.unit_id===shot.shot_id)
+    })):data.items.map(record=>({
+      unit_id:record.unit_id,episode_id:record.episode_id,record
+    }));
+    const visible=listItems.filter(item=>{
+      const text=item.unit_id+" "+Object.values(item.record?.fields||{}).join(" ");
+      return text.toLocaleLowerCase().includes(query);
+    });
+    $("wfCount_"+kind).textContent=shotScope?
+      state.shots.length+" 镜头 · "+data.items.length+" 项已建档":
+      data.items.length+" 项记录";
+    if(!visible.length)list.appendChild(el("p","workflow-stage-empty",
+      listItems.length?"没有符合筛选的镜头或资料":"当前项目还没有数据。"));
+    for(const item of visible){
+      const record=item.record,btn=el("button","workflow-record"+(
+        state.selected===item.unit_id?" active":""));
+      btn.type="button";btn.setAttribute("aria-pressed",
+        String(state.selected===item.unit_id));
+      if(shotScope){
+        const thumb=data.visuals.find(v=>v.subject_id===item.unit_id&&
+          v.episode_id===state.episode);
+        if(thumb){
+          const image=el("img","icebound-shot-thumb");
+          image.loading="lazy";image.alt="SH"+item.unit_id+" 分镜候选";
+          image.src=visualURL(state.project,thumb.episode_id,thumb.visual_id);
+          btn.appendChild(image);
+        }else btn.appendChild(el("span","icebound-shot-thumb icebound-shot-empty","▤"));
+      }
+      const main=el("span","workflow-record-copy");
+      main.appendChild(el("strong","",
+        shotScope?"SH"+item.unit_id:record.fields.name||record.fields.title||item.unit_id));
+      main.appendChild(el("small","",
+        shotScope?(Number(item.shot.duration_ms||0)/1000).toFixed(1)+" 秒 · "+
+          (record?"V"+record.revision:"尚未建档"):
+          item.unit_id+" · V"+record.revision+" · "+(item.episode_id||"全项目")));
+      main.appendChild(el("span","state "+(record?.status||"planned"),
+        record?wfStatus[record.status]:"未建档"));
+      btn.appendChild(main);
       btn.addEventListener("click",()=>{
-        state.selected=item.unit_id;state.editing=false;state.image="";
+        state.selected=item.unit_id;state.editing=!record;state.image="";
         workflowRender(kind);
       });
       list.appendChild(btn);
     }
   }
+
+  function workflowRenderStoryboardTimeline(){
+    const state=wfState.storyboards,root=$("storyboardTimeline");
+    if(!root)return;
+    root.replaceChildren();
+    const data=state.items;
+    $("storyboardTimelineCount").textContent=state.shots.length+
+      " 镜头 · "+state.shots.reduce((a,x)=>a+Number(x.duration_ms||0),0)/1000+" 秒";
+    for(const shot of state.shots){
+      const record=data?.items.find(x=>x.unit_id===shot.shot_id);
+      const source=data?.visuals.find(x=>x.episode_id===state.episode&&
+        x.subject_id===shot.shot_id);
+      const card=el("button","icebound-timeline-card"+(
+        state.selected===shot.shot_id?" active":""));
+      card.type="button";
+      card.setAttribute("aria-pressed",String(state.selected===shot.shot_id));
+      const frame=el("div","icebound-timeline-frame");
+      if(source){
+        const img=el("img","");
+        img.loading="lazy";img.alt="SH"+shot.shot_id+" 分镜图";
+        img.src=visualURL(state.project,source.episode_id,source.visual_id);
+        frame.appendChild(img);
+      }else frame.appendChild(el("span","icebound-timeline-placeholder","▤"));
+      const description=el("span","icebound-timeline-caption");
+      description.appendChild(el("strong","","SH"+shot.shot_id));
+      description.appendChild(el("small","",
+        (Number(shot.duration_ms||0)/1000).toFixed(1)+"s"));
+      card.append(frame,description);
+      card.addEventListener("click",()=>{
+        state.selected=shot.shot_id;state.editing=!record;
+        state.image="";workflowRender("storyboards");
+      });
+      root.appendChild(card);
+    }
+  }
+
   function workflowRender(kind){
     const state=wfState[kind];if(!state.items)return;
     const data=state.items,chosen=data.items.find(x=>x.unit_id===state.selected);
     workflowRenderList(kind);
+    if(kind==="storyboards")workflowRenderStoryboardTimeline();
     const stage=$("wfStage_"+kind),visuals=$("wfVisuals_"+kind),
       meta=$("wfStageMeta_"+kind),detail=$("wfDetail_"+kind);
     stage.replaceChildren();visuals.replaceChildren();
     meta.replaceChildren();detail.replaceChildren();
     $("wfStageTitle_"+kind).textContent=chosen?
-      (chosen.fields.name||chosen.fields.title||chosen.unit_id):"新建"+wfLabels[kind];
+      (chosen.fields.name||chosen.fields.title||chosen.unit_id):
+      state.selected&&wfScope(kind)==="shot"?"SH"+state.selected+" · 尚无正式分镜":
+      "新建"+wfLabels[kind];
     $("wfMessage_"+kind).textContent=wfHints[kind];
     const source=chosen?.source_visual_id;
     const pictures=data.visuals.filter(x=>
@@ -942,7 +1008,7 @@
       idControl.placeholder=data.scope==="episode"?"SPEC":"PROP_01 / TASK_01";
     }
     idControl.value=current?.unit_id||(data.scope==="episode"?"SPEC":
-      data.scope==="shot"?state.shots[0]?.shot_id||"":"");
+      data.scope==="shot"?state.selected||state.shots[0]?.shot_id||"":"");
     idControl.disabled=!!current;
     idLabel.appendChild(idControl);form.appendChild(idLabel);
     if(data.scope==="shot"&&!state.shots.length)
@@ -1177,6 +1243,30 @@
       });
       detail.appendChild(upload);
     }
+  }
+
+
+  for(const tab of document.querySelectorAll(".icebound-storyboard-toolbar [data-storyboard-action]")){
+    tab.addEventListener("click",()=>{
+      const action=tab.dataset.storyboardAction;
+      for(const other of document.querySelectorAll(
+        ".icebound-storyboard-toolbar [data-storyboard-action]"))
+        other.classList.toggle("active",other===tab);
+      if(action==="bindings"||action==="continuity"){
+        navigateWorkspace("projects");
+        const data=wfState.storyboards;
+        if(data.project&&data.episode){
+          loadEpisode(data.project,data.episode).catch(()=>{});
+        }
+      }else if(action==="list"){
+        $("wfList_storyboards").focus();
+        $("wfList_storyboards").scrollIntoView({block:"nearest",behavior:"smooth"});
+      }else if(action==="versions"){
+        $("wfVisuals_storyboards").scrollIntoView({block:"nearest",behavior:"smooth"});
+      }else{
+        $("wfStage_storyboards").scrollIntoView({block:"nearest",behavior:"smooth"});
+      }
+    });
   }
 
   // UI handlers are bound once. Project/episode changes discard stale scopes.
