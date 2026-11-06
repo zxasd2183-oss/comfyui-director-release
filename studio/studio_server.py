@@ -493,7 +493,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/characters/link",
                         "/api/v1/characters/approve"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
-        if path.startswith("/api/v1/production/") and not secured:
+        if (path.startswith("/api/v1/production/") or
+                path.startswith("/api/v1/characters/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
