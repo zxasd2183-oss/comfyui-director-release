@@ -774,19 +774,23 @@ class StudioHandler(BaseHTTPRequestHandler):
             try:
                 actor=operator_from_verified_session(session)
                 fields={k:v for k,v in data.items() if k!="csrf"}
-                actions={
-                    "/api/v1/video-results/start": lambda:begin_video_upload(
-                        self.server.production_db_path,fields,actor),
-                    "/api/v1/video-results/chunk": lambda:append_video_chunk(
-                        self.server.production_db_path,fields,actor,
-                        self.server.video_upload_lock),
-                    "/api/v1/video-results/finish": lambda:finish_video_upload(
-                        self.server.production_db_path,fields,actor,
-                        self.server.video_upload_lock),
-                    "/api/v1/video-results/review": lambda:review_video_take(
-                        self.server.production_db_path,fields,actor)
-                }
-                return self.reply(200,actions[path]())
+                if path=="/api/v1/video-results/start":
+                    with self.server.video_upload_lock:
+                        result=begin_video_upload(
+                            self.server.production_db_path,fields,actor)
+                else:
+                    actions={
+                        "/api/v1/video-results/chunk": lambda:append_video_chunk(
+                            self.server.production_db_path,fields,actor,
+                            self.server.video_upload_lock),
+                        "/api/v1/video-results/finish": lambda:finish_video_upload(
+                            self.server.production_db_path,fields,actor,
+                            self.server.video_upload_lock),
+                        "/api/v1/video-results/review": lambda:review_video_take(
+                            self.server.production_db_path,fields,actor)
+                    }
+                    result=actions[path]()
+                return self.reply(200,result)
             except VideoResultError as exc:
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (ProductionWebError,ProductionError,TypeError,ValueError):
