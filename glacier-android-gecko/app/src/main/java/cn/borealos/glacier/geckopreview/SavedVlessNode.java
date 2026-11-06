@@ -28,6 +28,7 @@ final class SavedVlessNode {
     private static final String KEY_ALIAS = "glacier_vless_node_aes_v1";
     private static final String PREF_IV = "iv";
     private static final String PREF_DATA = "encrypted_node";
+    private static final String PREF_AUTO = "auto_connect";
     private static final byte[] AAD =
             "cn.borealos.glacier.geckopreview.saved-vless.v1"
                     .getBytes(StandardCharsets.UTF_8);
@@ -73,6 +74,15 @@ final class SavedVlessNode {
         return p.contains(PREF_DATA) || p.contains(PREF_IV);
     }
 
+    static synchronized boolean autoConnectEnabled(Context ctx) {
+        return exists(ctx) && preferences(ctx).getBoolean(PREF_AUTO, true);
+    }
+
+    static synchronized void disableAutoConnect(Context ctx) {
+        // Keep the ciphertext, but honour an explicit DIRECT session choice.
+        preferences(ctx).edit().putBoolean(PREF_AUTO, false).apply();
+    }
+
     static synchronized void save(Context ctx, String rawLink) throws Exception {
         // Even if called from future UI code, never store unchecked input.
         VlessLink.parse(rawLink);
@@ -86,6 +96,7 @@ final class SavedVlessNode {
         boolean committed = preferences(ctx).edit()
                 .putString(PREF_IV, Base64.encodeToString(nonce, Base64.NO_WRAP))
                 .putString(PREF_DATA, Base64.encodeToString(encrypted, Base64.NO_WRAP))
+                .putBoolean(PREF_AUTO, true)
                 .commit();
         if (!committed) throw new GeneralSecurityException("Could not save node");
     }
