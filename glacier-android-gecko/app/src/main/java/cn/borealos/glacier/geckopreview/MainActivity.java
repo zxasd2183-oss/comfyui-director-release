@@ -92,15 +92,20 @@ public final class MainActivity extends Activity {
             // An intentionally non-working SOCKS5 port is CI's fail-closed
             // sentinel. Only a debug APK and an explicit adb launch can enter
             // this path. Never open a direct runtime when it is requested.
-            if (debugBuild() && "offline-socks".equals(
-                    getIntent().getStringExtra("glacier.ci.network"))) {
+            String ciNetwork = getIntent().getStringExtra("glacier.ci.network");
+            if (debugBuild() && ("offline-socks".equals(ciNetwork)
+                    || "mock-socks".equals(ciNetwork))) {
+                // Synthetic CI-only SOCKS service. There is never a DIRECT
+                // fallback or a real account/node in these test modes.
                 proxyMode = true;
                 try {
                     String config = NativeProxy.prepareGecko(this, true);
-                    android.util.Log.i("GlacierSmoke", "PROXY_TEST=OFFLINE_SOCKS_CONFIGURED");
+                    android.util.Log.i("GlacierSmoke", "PROXY_TEST="
+                            + ("mock-socks".equals(ciNetwork)
+                            ? "MOCK_SOCKS_CONFIGURED" : "OFFLINE_SOCKS_CONFIGURED"));
                     initializeEngine(config);
                 } catch (Exception e) {
-                    showNetworkError("代理断线测试初始化失败");
+                    showNetworkError("代理测试初始化失败");
                 }
             } else {
                 showNetworkGate();
@@ -335,6 +340,10 @@ public final class MainActivity extends Activity {
             @Override
             public void onTitleChange(GeckoSession source, String title) {
                 if (!debugBuild() || title == null || !title.startsWith("GLACIER_TEST_")) return;
+                if ("mock-socks".equals(getIntent().getStringExtra("glacier.ci.network"))
+                        && "GLACIER_TEST_PROXY_ROUTE_OK".equals(title)) {
+                    android.util.Log.i("GlacierSmoke", "PROXY_TEST=MOCK_SOCKS_PAGE_RENDERED");
+                }
                 Tab tab = findBySession(source);
                 if (tab != null && (tab.url.startsWith("http://127.0.0.1:18765/profile")
                         || tab.url.startsWith("http://127.0.0.1:18765/transfer"))) {
@@ -365,6 +374,9 @@ public final class MainActivity extends Activity {
                 public void onPageStart(GeckoSession source, String url) {
                     if (url != null && url.startsWith("https://example.com/")) {
                         testSite = "example";
+                    } else if (url != null && "http://glacier-ci.invalid/".equals(url)
+                            && "mock-socks".equals(getIntent().getStringExtra("glacier.ci.network"))) {
+                        testSite = "proxy_fixture";
                     } else if (url != null && url.startsWith("https://github.com/")) {
                         testSite = "github";
                     } else if (url != null && url.startsWith("https://chatgpt.com/")) {
@@ -677,7 +689,10 @@ public final class MainActivity extends Activity {
                 runtime = GeckoRuntime.create(getApplicationContext(), settings);
             }
             buildChrome();
-            openTab(PRIVATE, START_URL);
+            String bootUrl = debugBuild()
+                    && "mock-socks".equals(getIntent().getStringExtra("glacier.ci.network"))
+                    ? "http://glacier-ci.invalid/" : START_URL;
+            openTab(PRIVATE, bootUrl);
         } catch (Exception ex) {
             NativeProxy.stop();
             showNetworkError("GeckoView 无法使用当前网络配置初始化");

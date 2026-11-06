@@ -175,9 +175,48 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  emulator_proxy_mock_route:
+    name: Android 15 SOCKS5 remote-DNS route via synthetic host (no secrets)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact APK from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Configure emulator KVM
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Assert SOCKS5 CONNECT uses remote DNS and renders synthetic response
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
+      - name: Preserve synthetic proxy evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.2-proxy-mock-route-evidence
+          path: emulator-proxy-mock-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
   publish_verified:
-    name: Publish preview APK only after Android emulator and SOCKS fail-closed verification
-    needs: [build, emulator_smoke, emulator_proxy_fail_closed]
+    name: Publish preview APK only after UI and two SOCKS regression checks
+    needs: [build, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
