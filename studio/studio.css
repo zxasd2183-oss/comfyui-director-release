@@ -234,3 +234,31 @@ dialog{width:min(440px,calc(100% - 32px));border:1px solid #d9e7f3;border-radius
 .character-v2-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media(max-width:610px){.character-v2-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
   .character-v2-fields{grid-template-columns:1fr}}
+
+/* V2 P2 — shot-character planning without creative approval or GPU actions */
+.shot-character-panel{border:1px solid #d9e7f1;border-radius:14px;padding:17px;
+  display:grid;gap:12px;background:#fbfdff;margin:16px 0}
+.shot-character-panel .production-warning{margin:0}
+.shot-character-status{margin:0;color:#7891a7;font-size:11px;line-height:1.6}
+.shot-character-entries,.shot-character-findings{display:grid;gap:8px}
+.shot-character-entry{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  border:1px solid #e2edf5;padding:9px 11px;background:#fff;border-radius:9px}
+.shot-character-entry span{font-size:11px;color:#57738d;line-height:1.5;overflow-wrap:anywhere}
+.shot-character-entry button{flex:none}
+.shot-character-warning{border-left:3px solid #daa253;border-radius:7px;
+  padding:9px 12px;background:#fff7e9;font-size:11px;color:#8b6840;margin:0}
+.shot-character-clear{color:#548d73;font-size:11px;margin:0}
+.shot-character-trigger{border:1px solid #cde4e7;background:#e8f8f7;
+  color:#387e7d;border-radius:7px;font-size:10px;padding:6px 7px;cursor:pointer}
+.shot-character-form{display:grid;gap:10px;padding:15px;border:1px solid #a9d2d8;
+  border-radius:12px;background:#f3fbfc}
+.shot-character-form label{display:grid;gap:6px;font-size:11px;font-weight:700;color:#597c90}
+.shot-character-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.shot-character-form input,.shot-character-form select,.shot-character-form textarea{
+  min-width:0;width:100%;padding:9px;border:1px solid #d6e4ed;border-radius:8px;
+  background:#fff;color:#36566e;font:inherit}
+.shot-character-form select[multiple]{min-height:88px}
+.shot-character-form .prod-new{justify-self:start}
+@media(max-width:800px){.shot-character-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.shot-character-fields{grid-template-columns:1fr}
+  .shot-character-entry{flex-wrap:wrap}}
