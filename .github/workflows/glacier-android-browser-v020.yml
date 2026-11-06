@@ -1,4 +1,4 @@
-name: Glacier Android Mobile v0.2.0 M01 encrypted VLESS auto-connect
+name: Glacier Android Mobile v0.2.0 M02 Glacier UI
 
 on:
   push:
@@ -88,20 +88,20 @@ jobs:
               assert 'classes.dex' in names, 'Missing app bytecode'
               assert not any(n.startswith('lib/armeabi-v7a') for n in names), 'Unexpected 32-bit library'
           PY
-          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug.apk"
-          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug.apk'
+          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk"
+          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk'
       - name: Upload real installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug
-          path: glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug.apk
+          name: GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug
+          path: glacier-android-gecko/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload Android instrumentation test APK
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-M01-instrumentation
+          name: GlacierAndroid-v0.2.0-M02-instrumentation
           path: glacier-android-gecko/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 30
@@ -115,11 +115,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug
           path: .glacier-test-apk
       - uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-M01-instrumentation
+          name: GlacierAndroid-v0.2.0-M02-instrumentation
           path: .glacier-test-app
       - name: Configure KVM
         run: |
@@ -143,7 +143,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-M01-storage-evidence
+          name: GlacierAndroid-v0.2.0-M02-storage-evidence
           path: emulator-storage-evidence/
           if-no-files-found: warn
           retention-days: 30
@@ -158,7 +158,7 @@ jobs:
       - name: Download the exact APK built by this run
         uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Configure KVM access for emulator
         run: |
@@ -177,7 +177,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug.apk" bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_emulator_smoke.sh"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk" bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_emulator_smoke.sh"
       - name: Preserve screenshots and ADB/logcat evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -196,7 +196,7 @@ jobs:
       - name: Download built APK from this exact run
         uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Configure emulator KVM
         run: |
@@ -215,7 +215,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
       - name: Preserve proxy-failure evidence on success or failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -235,7 +235,7 @@ jobs:
       - name: Download exact APK from this run
         uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Configure emulator KVM
         run: |
@@ -254,7 +254,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
       - name: Preserve synthetic proxy evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -265,30 +265,30 @@ jobs:
           retention-days: 30
 
   publish_verified:
-    name: Publish M01 preview after Keystore and browser regressions
+    name: Publish M02 preview after Keystore and browser regressions
     needs: [build, emulator_saved_node, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Publish GeckoView engine-test preview release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='glacier-android-browser-v0.2.0-m01'
-          apk='.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M01-ARM64-x86_64-debug.apk'
+          tag='glacier-android-browser-v0.2.0-m02'
+          apk='.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02-ARM64-x86_64-debug.apk'
           test -s "$apk"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "$apk" --clobber
           else
             gh release create "$tag" "$apk" \
               --target feature/glacier-android-browser-v020 \
-              --title 'Glacier Android v0.2.0 M01 · 记住 VLESS 节点并自动连接' \
-              --notes 'M01 移动版功能：首次导入 VLESS 可勾选本地加密记住节点；使用 Android Keystore AES-GCM；下次打开自动恢复代理；失败不回退直连，可重试/重新导入/删除保存。保留 GeckoView 159、sing-box 1.14.4、页面隔离及文件传输。实验性 Debug APK，非正式安全审计；CI 签名可能变化，安装前备份非敏感数据。' \
+              --title 'Glacier Android v0.2.0 M02 · 冰川浅色 Chrome 风格移动端' \
+              --notes 'M02 移动版 UI：冰川浅色 Chrome 风格导航栏、圆角地址栏、搜索跳转、主页/刷新/标签/菜单操作和网络状态提示；保留 M01 本地加密记住 VLESS 节点、GeckoView 159、sing-box 1.14.4、账号空间隔离及文件传输。实验性 Debug APK，非正式安全审计；CI 签名可能变化，安装前备份非敏感数据。' \
               --prerelease
           fi
           gh release view "$tag" --json tagName,assets
