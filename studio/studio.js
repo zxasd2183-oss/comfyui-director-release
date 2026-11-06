@@ -319,9 +319,8 @@
     const gallery=el("div","character-ref-grid");
     for(const v of c.visuals){
       const item=el("div","character-ref");
-      const thumbnail=el("button","");
+      const thumbnail=el("button","character-thumbnail");
       thumbnail.type="button";
-      thumbnail.style="width:100%;padding:0;border:0;background:none";
       const img=el("img","");
       img.loading="lazy";img.alt=v.filename;
       img.src=visualURL(data.project_id,v.episode_id,v.visual_id);
