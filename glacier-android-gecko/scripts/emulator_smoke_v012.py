@@ -322,7 +322,7 @@ def main():
     tap(text="历史记录")
     await_ui(text="私人空间 · 历史记录",timeout=30)
     m04_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
-    if not re.search(r"M04_LIBRARY_LIST kind=history profile=private count=[1-9]\\d*",m04_log):
+    if not re.search(r"M04_LIBRARY_LIST kind=history profile=private count=[1-9][0-9]*",m04_log):
         raise RuntimeError("M04_HISTORY_NOT_PERSISTED")
     record("m04_history_persisted","private history reopened after force-stop")
     tap(text="关闭")
