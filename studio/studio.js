@@ -22,6 +22,7 @@
   let characterActiveVisualId = "";
   let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
   let visualRefreshInFlight = false;
+  let homeEpisodeScope="",homeTaskScope="",homeTaskInFlight=false;
   const clock = () => {
     $("clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false});
   };
@@ -61,6 +62,10 @@
     $("shotsTotal").textContent=shots.length+" SHOTS";
     renderShots(shots); renderInspector(shots); renderEvents(data.events||[]);
     renderProduction(data.production);
+    $("headerStudioStatus").textContent=(data.sample_age_seconds!==null&&
+      data.sample_age_seconds>30)?"● Studio · 数据延迟":"● Studio 正常";
+    $("headerStudioStatus").dataset.live=String(
+      data.sample_age_seconds!==null&&data.sample_age_seconds<=30);
     $("streamLabel").textContent=(data.sample_age_seconds!==null&&data.sample_age_seconds>30)?
       "GPU 状态延迟 "+data.sample_age_seconds+"s":"实时已连接";
     $("streamDot").className="dot "+((data.sample_age_seconds===null||data.sample_age_seconds>30)?"bad":"good");
@@ -104,6 +109,21 @@
     $("workspaceProjectName").textContent=displayProject?.title||"尚无项目";
     const currentEpisode=episodes.find(e=>e.project_id===displayProject?.project_id);
     $("workspaceEpisodeName").textContent=currentEpisode?.episode_id||"NO EPISODE";
+    const english=displayProject?.project_id==="WaitingOffice"?
+      "The Waiting Office":(displayProject?.project_id||"");
+    $("workspaceProjectEnglish").textContent=english;
+    $("homeProjectTitle").textContent=displayProject?.title||"暂无项目";
+    $("homeProjectEnglish").textContent=english;
+    $("homeProgressEpisode").textContent=currentEpisode?.episode_id||"尚未建集";
+    if(displayProject&&currentEpisode&&microsoftOwner){
+      loadHomeEpisodeStats(displayProject.project_id,currentEpisode.episode_id);
+      loadHomeRecentTasks(displayProject.project_id);
+    }else{
+      $("workspaceEpisodeSummary").textContent="镜头数据待登录";
+      $("homeEpisodeLine").textContent="请登录后查看制作计划";
+      $("homeProgressValue").textContent="—";
+      $("homeRecentTasks").textContent="登录后查看真实项目任务。";
+    }
     syncCharacterProjects(projects);
     syncSceneProjects(projects,episodes);
     syncWorkflowProjects(projects,episodes);
@@ -137,6 +157,90 @@
       list.appendChild(wrap);
     }
   }
+
+  async function loadHomeEpisodeStats(pid,eid) {
+    const scope=pid+"/"+eid;
+    if(homeEpisodeScope===scope)return;
+    homeEpisodeScope=scope;
+    try{
+      const response=await fetch("./api/v1/production/episode?project="+
+        encodeURIComponent(pid)+"&episode="+encodeURIComponent(eid),
+        {cache:"no-store"});
+      if(!response.ok)throw Error("episode_unavailable");
+      const value=await response.json();
+      if(homeEpisodeScope!==scope)return;
+      const shots=value.shots||[];
+      const complete=Number.isSafeInteger(value.shot_count)&&
+        !value.shots_truncated&&shots.length===value.shot_count;
+      const duration=complete?shots.reduce((a,s)=>a+(s.duration_ms||0),0)/1000:null;
+      const total=value.shot_count||0;
+      const approved=complete?shots.filter(x=>
+        x.stage==="approved"||x.stage==="done").length:null;
+      const progress=complete&&total>0?Math.round(approved/total*100):null;
+      $("workspaceEpisodeSummary").textContent=total+" 镜头"+(
+        duration!==null?" · "+duration+" 秒":"");
+      $("homeEpisodeLine").textContent=eid+" · "+total+" 镜头 · "+
+        (duration===null?"时长待确认":duration+" 秒");
+      $("homeProgressValue").textContent=progress===null?"—":progress+"%";
+      $("homeProgressRing").style.setProperty("--complete",progress===null?0:progress);
+      const stats=$("homeProgressStats");
+      stats.replaceChildren();
+      for(const [label,val] of [["已登记镜头",total+" / "+total],
+         ["已批准镜头",approved===null?"待读取":approved+" / "+total],
+         ["生产阶段",value.episode?.stage||"规划中"],
+         ["总时长",duration===null?"未完全载入":duration+" 秒"]]){
+        const line=el("div","icebound-progress-row");
+        line.appendChild(el("span","",label));
+        line.appendChild(el("strong","",val));
+        stats.appendChild(line);
+      }
+    }catch{
+      if(homeEpisodeScope===scope){
+        $("workspaceEpisodeSummary").textContent="镜头数据不可用";
+        $("homeEpisodeLine").textContent=eid+" · 等待制作数据";
+        $("homeProgressValue").textContent="—";
+      }
+    }
+  }
+
+  async function loadHomeRecentTasks(pid) {
+    if(homeTaskScope===pid||homeTaskInFlight)return;
+    homeTaskScope=pid;homeTaskInFlight=true;
+    const root=$("homeRecentTasks");
+    root.replaceChildren(el("p","icebound-tasks-empty","正在读取真实任务…"));
+    try{
+      const query=new URLSearchParams({project:pid,kind:"tasks"});
+      const response=await fetch("./api/v1/workflow?"+query.toString(),
+        {cache:"no-store"});
+      const json=await response.json();
+      if(!response.ok)throw Error(json.reason||"tasks_unavailable");
+      if(homeTaskScope!==pid)return;
+      root.replaceChildren();
+      for(const task of json.items.slice(0,4)){
+        const button=el("button","icebound-task-row");
+        button.type="button";
+        button.appendChild(el("span","icebound-task-dot","▤"));
+        button.appendChild(el("strong","",task.fields.title||task.unit_id));
+        button.appendChild(el("small","",({
+          draft:"草稿",in_review:"待审核",approved:"已验收",
+          rejected:"已驳回"}[task.status]||task.status)));
+        button.addEventListener("click",()=>{
+          wfState.tasks.project=pid;
+          wfState.tasks.selected=task.unit_id;
+          navigateWorkspace("tasks");
+        });
+        root.appendChild(button);
+      }
+      if(!json.items.length)root.appendChild(el("p","icebound-tasks-empty",
+        "当前项目暂无制作任务。进入「制作任务」可以新增并分配。"));
+    }catch{
+      if(homeTaskScope===pid){
+        root.replaceChildren(el("p","icebound-tasks-empty",
+          "近期任务暂时无法读取，请从制作任务页面查看。"));
+      }
+    }finally{homeTaskInFlight=false;}
+  }
+
   async function loadEpisode(projectId,episodeId) {
     const panel=$("episodeExplorer");
     panel.hidden=false;
@@ -449,6 +553,14 @@
     nav.addEventListener("click",event=>{
       event.preventDefault();
       navigateWorkspace(nav.dataset.page);
+    });
+  }
+  for(const button of document.querySelectorAll(".icebound-quick-actions [data-jump]")){
+    button.addEventListener("click",()=>{
+      const target=button.dataset.jump;
+      navigateWorkspace(target);
+      if(target==="projects"&&microsoftOwner)
+        openProductionEditor("create_project");
     });
   }
   window.addEventListener("popstate",()=>navigateWorkspace(
