@@ -108,6 +108,9 @@ class VideoReturnTests(unittest.TestCase):
         before=fixture.work.get_episode_readiness(self.db,"WaitingOffice","EP01")
         self.assertEqual(before["approved_take_count"],0)
         self.assertEqual(before["shots"][0]["video_take_status"],"in_review")
+        pending=fixture.work.list_reviews(self.db,"WaitingOffice","EP01")["pending"]
+        self.assertEqual([x["unit_id"] for x in pending
+            if x["kind"]=="video_take"],[take["take_id"]])
         with self.assertRaises(vr.VideoResultError):
             vr.get_take_file(self.db,"WaitingOffice","EP01","02",take["take_id"])
         good=self.review_take_result(take["take_id"])
@@ -115,6 +118,8 @@ class VideoReturnTests(unittest.TestCase):
         complete=fixture.work.get_episode_readiness(self.db,"WaitingOffice","EP01")
         self.assertEqual(complete["approved_take_count"],1)
         self.assertEqual(complete["shots"][0]["video_take_status"],"approved")
+        after=fixture.work.list_reviews(self.db,"WaitingOffice","EP01")["pending"]
+        self.assertFalse(any(item["kind"]=="video_take" for item in after))
         with self.assertRaises(vr.VideoResultError) as caught:
             self.review_take_result(take["take_id"])
         self.assertEqual(caught.exception.reason,"video_take_already_reviewed")
