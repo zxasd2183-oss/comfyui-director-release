@@ -34,6 +34,89 @@ class VideoPipelineTests(unittest.TestCase):
     def plan(self):
         return dv.build_plan(self.workflow, self.binding, self.shots, fps=24)
 
+    def studio_handoff(self):
+        approved={"status":"approved","fields":{
+            "fps":"24","width":"1080","height":"1920"},
+            "revision":1,"approved_revision":1}
+        package={"schema":"director_studio_video_handoff_v1",
+            "gpu_dispatch_authorized":False,"renderer_connected":False,
+            "project_id":"WaitingOffice","episode_id":"EP01","shot_id":"01",
+            "duration_ms":5000,"ordinal":1,"blockers":[
+                "video_render_executor_not_connected"],
+            "video_plan":{"unit_id":"01","revision":2,"status":"in_review",
+                "fields":{"prompt":"人物缓慢抬头","duration":"5","fps":"24",
+                          "width":"1080","height":"1920","seed":"123"}},
+            "upstream":{"settings":approved,
+                "shot_plans":{"status":"approved","fields":{"scene_id":"HALL"}},
+                "storyboards":{"status":"approved","fields":{"composition":"正面"}},
+                "white_models":{"status":"approved","fields":{"quality":"粗白模"}}},
+            "scene":{"scene_id":"HALL","status":"approved"},"props":[]}
+        checksum=hashlib.sha256(json.dumps(package,sort_keys=True,
+            ensure_ascii=False,separators=(",",":")).encode()).hexdigest()
+        return {"ok":True,"package":package,"package_sha256":checksum,
+            "checksum_type":"sha256_canonical_json_not_signature","gpu_action":False}
+
+    def test_studio_handoff_only_prepares_offline_when_all_inputs_approved(self):
+        handoff=self.studio_handoff()
+        with patch.object(dv,"comfy_json") as network:
+            plan=dv.build_studio_handoff_plan(handoff,self.workflow,self.binding)
+            self.assertEqual(plan["shot_count"],1)
+            self.assertEqual(plan["jobs"][0]["frames"],120)
+            self.assertEqual(plan["jobs"][0]["graph"]["6"]["inputs"]["text"],
+                             "人物缓慢抬头")
+            self.assertEqual(plan["studio_handoff"]["package_sha256"],
+                             handoff["package_sha256"])
+            self.assertFalse(plan["studio_handoff"]["checksum_is_signature"])
+            self.assertFalse(plan["gpu_actions_performed"])
+            network.assert_not_called()
+        # The public-facing CLI is still offline and only creates an inert plan.
+        package_file=self.root/"handoff.json"
+        workflow_file=self.root/"api.json"
+        bindings_file=self.root/"bindings.json"
+        output=self.root/"studio_plan.json"
+        for path,value in ((package_file,handoff),(workflow_file,self.workflow),
+                           (bindings_file,self.binding)):
+            dv.atomic_json(path,value)
+        with patch.object(dv,"comfy_json") as network:
+            self.assertEqual(dv.run_cli(["prepare-studio","--package",str(package_file),
+                "--workflow",str(workflow_file),"--bindings",str(bindings_file),
+                "--out",str(output)]),0)
+            network.assert_not_called()
+        self.assertEqual(dv.load_plan(output)["shot_count"],1)
+
+    def test_studio_handoff_blocks_tampering_and_missing_approvals(self):
+        package=self.studio_handoff()
+        altered=copy.deepcopy(package)
+        altered["package"]["video_plan"]["fields"]["prompt"]="被替换的提示词"
+        with self.assertRaisesRegex(dv.PlanError,"checksum mismatch"):
+            dv.build_studio_handoff_plan(altered,self.workflow,self.binding)
+        for change,reason in [
+            (lambda d:d["package"].update(blockers=[
+                "storyboards_not_approved","video_render_executor_not_connected"]),
+             "upstream approvals incomplete"),
+            (lambda d:d["package"]["upstream"]["settings"].update(status="draft"),
+             "upstream approval missing"),
+            (lambda d:d["package"]["video_plan"]["fields"].update(fps="30"),
+             "output specification"),
+            (lambda d:d["package"].update(gpu_dispatch_authorized=True),
+             "cannot grant GPU authorization")
+        ]:
+            data=copy.deepcopy(package)
+            change(data)
+            data["package_sha256"]=hashlib.sha256(json.dumps(
+                data["package"],sort_keys=True,ensure_ascii=False,
+                separators=(",",":")).encode()).hexdigest()
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(dv.PlanError,reason):
+                    dv.build_studio_handoff_plan(data,self.workflow,self.binding)
+        with self.assertRaisesRegex(dv.PlanError,"exactly when"):
+            dv.build_studio_handoff_plan(package,self.workflow,
+                {**self.binding,"image":{"node":"6","input":"text"}})
+        with self.assertRaisesRegex(dv.PlanError,"safe ComfyUI input basename"):
+            dv.build_studio_handoff_plan(package,self.workflow,
+                {**self.binding,"image":{"node":"6","input":"text"}},
+                "../private.png")
+
     def test_valid_api_workflow_and_no_mutation(self):
         original = copy.deepcopy(self.workflow)
         plan = self.plan()
