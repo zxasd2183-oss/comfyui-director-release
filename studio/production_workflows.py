@@ -263,7 +263,7 @@ def _visual(db,pid,eid,kind,uid,visual_id):
     return visual
 
 
-def _dependencies(db,pid,eid,kind,fields):
+def _dependencies(db,pid,eid,kind,fields,unit_id=""):
     if kind=="shot_plans":
         sid=fields.get("scene_id","")
         if sid:
@@ -285,6 +285,27 @@ def _dependencies(db,pid,eid,kind,fields):
         if len(refs)>30 or len(refs)!=len(set(refs)):
             raise WorkflowError("invalid_task_dependencies")
         for ref in refs:_ident_safe(ref)
+        # A task cannot depend on itself or on a dependency cycle. Resolve
+        # every link in this same project's committed task graph, not just
+        # syntactically valid IDs that can never be completed.
+        queue=list(refs)
+        seen=set()
+        while queue:
+            ref=queue.pop()
+            if ref==unit_id:
+                raise WorkflowError("circular_task_dependency",409)
+            if ref in seen:continue
+            seen.add(ref)
+            if len(seen)>MAX_ENTRIES_PER_SCOPE:
+                raise WorkflowError("invalid_task_dependencies",409)
+            task=db.execute("SELECT fields_json FROM studio_work_units "
+                "WHERE project_id=? AND episode_id='' AND kind='tasks' "
+                "AND unit_id=?",(pid,ref)).fetchone()
+            if task is None:
+                raise WorkflowError("task_dependency_not_found",409)
+            child=json.loads(task["fields_json"])
+            queue.extend(x.strip() for x in
+                child.get("prerequisites","").split(",") if x.strip())
     if kind=="settings":
         asp=fields.get("aspect","")
         if asp and asp not in ("9:16","16:9","1:1","4:3","3:4","2.39:1"):
@@ -339,7 +360,7 @@ def save_unit(db_path,data,actor):
                 "project_id=? AND episode_id=? AND kind=?",
                 (pid,eid,kind)).fetchone()[0]>=MAX_ENTRIES_PER_SCOPE:
                 raise WorkflowError("workflow_catalog_full",409)
-            _dependencies(db,pid,eid,kind,values)
+            _dependencies(db,pid,eid,kind,values,uid)
             visual=_visual(db,pid,eid,kind,uid,data["source_visual_id"])
             now=int(time.time())
             src=visual["visual_id"] if visual else None
@@ -572,15 +593,77 @@ def list_units(db_path,project_id,kind,episode_id=""):
                 "gpu_action":False}
 
 
+def get_episode_readiness(db_path,project_id,episode_id):
+    """Current per-shot production gates; never claims GPU runner is ready.
+
+    Browser can navigate 31 real shots without pre-creating fake work units.
+    All counts come from the same scoped, owner-only SQLite production ledger.
+    """
+    pid=_ident_safe(project_id)
+    eid=_ident_safe(episode_id)
+    with closing(open_db(db_path,initialize=False)) as db:
+        if db.execute("SELECT 1 FROM projects WHERE project_id=?",
+                      (pid,)).fetchone() is None:
+            raise WorkflowError("project_not_found",404)
+        if db.execute("SELECT 1 FROM episodes WHERE project_id=? "
+                      "AND episode_id=?",(pid,eid)).fetchone() is None:
+            raise WorkflowError("episode_not_found",404)
+        rows=db.execute("SELECT shot_id,ordinal,duration_ms "
+            "FROM production_shots WHERE project_id=? AND episode_id=? "
+            "ORDER BY ordinal,shot_id LIMIT 701",(pid,eid)).fetchall()
+        kinds=("shot_plans","storyboards","white_models","video_plans")
+        approved={kind:0 for kind in kinds}
+        shots=[]
+        prereqs=0
+        for row in rows[:700]:
+            sid=row["shot_id"]
+            stage={}
+            for kind in kinds:
+                unit=_record(db,pid,eid,kind,sid)
+                if unit:
+                    stage[kind]={"status":unit["status"],
+                        "revision":unit["revision"],
+                        "approved_revision":unit["approved_revision"]}
+                    if unit["status"]=="approved":
+                        approved[kind]+=1
+                else:stage[kind]=None
+            blockers=_video_blockers(db,pid,eid,sid)
+            upstream=[b for b in blockers
+                      if b!="video_render_executor_not_connected"]
+            if not upstream:prereqs+=1
+            shots.append({"shot_id":sid,"ordinal":row["ordinal"],
+                "duration_ms":row["duration_ms"],"stages":stage,
+                "upstream_blockers":upstream,
+                "execution_blocker":"video_render_executor_not_connected",
+                "upstream_ready":not upstream,"runner_connected":False})
+        return {"ok":True,"project_id":pid,"episode_id":eid,
+            "shot_count":len(shots),"total_duration_ms":sum(
+                x["duration_ms"] for x in shots),
+            "approved_counts":approved,"upstream_ready_count":prereqs,
+            "runner_connected":False,"shots":shots,
+            "truncated":len(rows)>700,"gpu_action":False}
+
+
 def list_reviews(db_path,project_id,episode_id=""):
     with closing(open_db(db_path,initialize=False)) as db:
         pid=_ident_safe(project_id)
         # Approval queue includes project-wide assets and selected episode plans.
+        # Empty episode means ALL episodes, not only project-level records.
+        # An explicit episode also includes shared project-wide assets.
+        if episode_id:
+            eid=_ident_safe(episode_id)
+            if db.execute("SELECT 1 FROM episodes WHERE project_id=? AND "
+                          "episode_id=?",(pid,eid)).fetchone() is None:
+                raise WorkflowError("episode_not_found",404)
+            where="AND (episode_id='' OR episode_id=?) "
+            params=(pid,eid)
+        else:
+            where=""
+            params=(pid,)
         rows=db.execute("SELECT project_id,episode_id,kind,unit_id,revision,"
             "fields_json,status,source_visual_id FROM studio_work_units "
-            "WHERE project_id=? AND status='in_review' AND "
-            "(episode_id='' OR episode_id=?) "
-            "ORDER BY updated_at DESC LIMIT 300",(pid,episode_id)).fetchall()
+            "WHERE project_id=? AND status='in_review' "+where+
+            "ORDER BY updated_at DESC LIMIT 300",params).fetchall()
         items=[]
         for row in rows:
             x=dict(row);x["fields"]=json.loads(x.pop("fields_json"))
