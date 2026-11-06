@@ -63,6 +63,7 @@ Windows PowerShell 可本地生成 Base64 以粘贴进 GitHub Secret：
 ## 网络与安装约束
 
 - 更新检查默认在启动后进行，至少间隔 6 小时，可在应用菜单关闭。
+- 更新源检索最近 100 条 GitHub Release，并忽略 draft / prerelease；该共享仓库如果超过 100 条其他项目发布，仍可能需要后续升级为 Glacier 专用更新索引。
 - VLESS 模式走本地 SOCKS5 (ATYP=domain) 和 HTTPS；代理故障时拒绝更新，绝不自动直连。
 - 只信任官方 GitHub Glacier Release 约定的标签、资产和受限 HTTPS 主机；SHA-256、包名、版本递增、签名证书均必须匹配。
 - 用户必须确认下载与 Android 系统安装；没有静默安装权限。
