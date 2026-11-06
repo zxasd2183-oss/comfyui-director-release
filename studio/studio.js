@@ -16,6 +16,7 @@
   let characterEditingId = null;
   let sceneProjectId = "", sceneCurrentId = "", sceneData = null, sceneEditId = null;
   let sceneEpisodes = [];
+  let sceneSection = "overview";
   let sceneActiveVisualId = "";
   let shotBindingData=null, shotBindingCharacters=[], shotBindingFocus=null;
   let characterV2Data = null, characterV2Category = "profile";
@@ -538,6 +539,7 @@
     for(const nav of document.querySelectorAll(".nav-items a[data-page]")){
       const active=nav.dataset.page===page;
       nav.classList.toggle("active",active);
+      if(active&&nav.closest(".nav-more-tools"))nav.closest(".nav-more-tools").open=true;
       if(active)nav.setAttribute("aria-current","page");
       else nav.removeAttribute("aria-current");
     }
@@ -561,8 +563,15 @@
     button.addEventListener("click",()=>{
       const target=button.dataset.jump;
       navigateWorkspace(target);
-      if(target==="projects"&&microsoftOwner)
-        openProductionEditor("create_project");
+      if(target==="projects"&&microsoftOwner){
+        if(button.dataset.action==="create")openProductionEditor("create_project");
+        if(button.dataset.action==="import"){
+          if(selectedProductionEpisode&&!$("visualLibraryPanel").hidden){
+            $("visualFiles").focus();
+            $("visualLibraryPanel").scrollIntoView({behavior:"smooth",block:"start"});
+          }else $("productionMode").textContent="请先选择剧集，再上传真实素材";
+        }
+      }
     });
   }
   window.addEventListener("popstate",()=>navigateWorkspace(
@@ -1364,6 +1373,36 @@
   $("wfReviewEpisode").addEventListener("change",workflowLoadReviews);
   $("wfReviewRefresh").addEventListener("click",workflowLoadReviews);
 
+
+  function applySceneSection(){
+    for(const tab of $("sceneReferenceTabs").querySelectorAll("[data-scene-tab]")){
+      const selected=tab.dataset.sceneTab===sceneSection;
+      tab.classList.toggle("active",selected);
+      tab.setAttribute("aria-selected",String(selected));
+      tab.tabIndex=selected?0:-1;
+    }
+    const selected=sceneData?.scenes.find(x=>x.scene_id===sceneCurrentId);
+    $("sceneReferenceTab").textContent="参考图（"+(selected?.visuals.length||0)+"）";
+    const filmstrip=$("sceneGallery").closest(".scene-filmstrip");
+    filmstrip.hidden=sceneSection!=="references";
+    $("sceneAssetTools").hidden=sceneSection!=="references";
+    for(const section of $("sceneDetail").querySelectorAll("[data-scene-section]"))
+      section.hidden=section.dataset.sceneSection!==sceneSection;
+  }
+  for(const tab of $("sceneReferenceTabs").querySelectorAll("[data-scene-tab]")){
+    tab.addEventListener("click",()=>{
+      sceneSection=tab.dataset.sceneTab;
+      applySceneSection();
+    });
+    tab.addEventListener("keydown",event=>{
+      if(event.key!=="ArrowLeft"&&event.key!=="ArrowRight")return;
+      const tabs=[...$("sceneReferenceTabs").querySelectorAll("[data-scene-tab]")];
+      const delta=event.key==="ArrowRight"?1:-1;
+      const next=tabs[(tabs.indexOf(tab)+delta+tabs.length)%tabs.length];
+      event.preventDefault();next.click();next.focus();
+    });
+  }
+
   const sceneTypeName={interior:"室内",exterior:"室外",
     transition:"过渡场景",abstract:"抽象空间"};
   const sceneStatusName={draft:"草稿",in_review:"待审核",
@@ -1480,6 +1519,7 @@
     renderSceneList();
     const scene=data.scenes.find(x=>x.scene_id===sceneCurrentId);
     if(!scene){
+      applySceneSection();
       $("sceneActiveName").textContent="请选择场景";
       $("sceneActiveStatus").textContent="尚无场景";
       $("sceneActiveStatus").className="scene-status-pill";
@@ -1578,6 +1618,8 @@
         ["连续性锁定",scene.continuity_rules],
         ["剧情备注",scene.scene_notes]]){
       const row=el("section","scene-info");
+      row.dataset.sceneSection=name==="光照与时间"?"lighting":
+        name==="机位规则"?"camera":"overview";
       row.appendChild(el("strong","",name));
       row.appendChild(el("p","",value||"尚未填写"));
       detail.appendChild(row);
@@ -1585,6 +1627,7 @@
 
     if(preferred&&!preferred.linked){
       const link=el("button","prod-new prod-secondary","＋ 将当前图片关联为候选");
+      link.dataset.sceneSection="references";
       link.type="button";
       link.addEventListener("click",async()=>{
         link.disabled=true;
@@ -1677,6 +1720,7 @@
     tools.appendChild(upload);
 
     const actions=el("section","scene-review");
+    actions.dataset.sceneSection="review";
     actions.appendChild(el("strong","","版本审核"));
     actions.appendChild(el("p","scene-review-hint",
       "审核将记录当前场景版本、原图哈希与审批理由；旧版永不覆盖。"));
@@ -1727,6 +1771,7 @@
     if(!choices.length)commands.appendChild(el("p","scene-review-complete",
       "此版本已处理。如需调整，请建立新的修订草稿。"));
     actions.appendChild(commands);detail.appendChild(actions);
+    applySceneSection();
   }
 
   function openSceneEditor(scene=null){
@@ -1896,6 +1941,62 @@
     $("characterImageDialog").showModal();
   }
 
+
+  function renderCharacterTurnaround(profile){
+    const panel=$("characterTurnaround");
+    panel.replaceChildren();
+    const title=el("div","character-turnaround-heading");
+    title.appendChild(el("strong","","角色三视图"));
+    title.appendChild(el("span","","前 · 侧 · 背"));
+    panel.appendChild(title);
+    const grid=el("div","character-turnaround-grid");
+    panel.appendChild(grid);
+    if(!profile){
+      grid.appendChild(el("p","character-turnaround-note","选择角色后显示真实三视图。"));
+      return;
+    }
+    const assets=characterV2Data?.project_id===characterProjectId&&
+      characterV2Data?.character_id===profile.character_id?
+      characterV2Data.assets.filter(a=>a.category==="turnaround"&&a.source_visual_id):[];
+    const shots=[["front","正面"],["left","侧面"],["back","背面"]];
+    for(const [direction,label] of shots){
+      const item=assets.find(a=>a.details?.direction===direction&&
+        a.status==="approved")||
+        assets.find(a=>a.details?.direction===direction);
+      const card=el("button","character-turnaround-tile");
+      card.type="button";
+      card.title=label+(item?" · "+(v2StatusName[item.status]||"候选"):" · 尚未建立");
+      if(item){
+        const image=el("img","");
+        image.loading="lazy";
+        image.alt=profile.display_name+" · "+label+" · "+item.status;
+        image.src=visualURL(characterProjectId,item.source_episode_id,item.source_visual_id);
+        card.appendChild(image);
+        card.addEventListener("click",()=>{
+          const match=profile.visuals.find(v=>v.visual_id===item.source_visual_id);
+          if(match){characterActiveVisualId=match.visual_id;renderCharacterLibrary();}
+          else characterOpenImage(profile,{
+            filename:item.source_filename,episode_id:item.source_episode_id,
+            visual_id:item.source_visual_id
+          });
+        });
+      }else{
+        card.appendChild(el("span","character-turnaround-silhouette","♙"));
+        card.appendChild(el("small","character-turnaround-blank","尚无参考"));
+        card.disabled=true;
+      }
+      card.appendChild(el("strong","",label));
+      const status=item?.status==="approved"?"已审核":
+        item?"候选":"待制作";
+      card.appendChild(el("small",item?.status==="approved"?
+        "character-image-approved":"",status));
+      grid.appendChild(card);
+    }
+    const note=el("div","character-turnaround-note",
+      "仅使用角色库内的真实三视图资产；空槽不代表已制作。");
+    panel.appendChild(note);
+  }
+
   function renderCharacterLibrary() {
     const data=characterData;if(!data)return;
     const profiles=data.characters||[];
@@ -1911,6 +2012,7 @@
     stage.replaceChildren();gallery.replaceChildren();
     detail.replaceChildren();tools.replaceChildren();panel.replaceChildren();
     const c=profiles.find(x=>x.character_id===characterCurrentId);
+    renderCharacterTurnaround(c);
     if(!c){
       $("characterActiveName").textContent="角色预览";
       $("characterActiveStatus").textContent="尚无角色";
@@ -2198,6 +2300,7 @@
     const profile=characterData?.characters.find(p=>p.character_id===cid);
     const panel=document.querySelector(".character-v2-section");
     if(panel&&profile)renderCharacterV2(profile,panel);
+    if(profile)renderCharacterTurnaround(profile);
   }
 
   function renderCharacterV2(profile,panel) {
