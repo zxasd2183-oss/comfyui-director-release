@@ -333,6 +333,14 @@ class GlacierShell20:
         if callable(downloads):
             menu.addSeparator()
             menu.addAction("下载中心", downloads)
+        drag_diagnostic = getattr(self, "open_drag_diagnostic21", None)
+        open_external = getattr(self, "open_in_system_browser21", None)
+        if callable(drag_diagnostic) or callable(open_external):
+            menu.addSeparator()
+            if callable(drag_diagnostic):
+                menu.addAction("网页拖动诊断（本地）", drag_diagnostic)
+            if callable(open_external):
+                menu.addAction("在系统浏览器打开当前页", open_external)
         menu.addSeparator()
         updater = getattr(getattr(self, "update_manager", None), "show_dialog", None)
         if callable(updater):
