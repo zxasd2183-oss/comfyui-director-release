@@ -126,6 +126,41 @@ class StudioToGpuHandoffTests(unittest.TestCase):
         with closing(core.open_db(self.db,initialize=False)) as db:
             self.assertTrue(core.verify_chain(db))
 
+    def test_full_episode_bundle_requires_every_real_shot(self):
+        self.build_approved_chain()
+        result=work.get_episode_video_handoffs(self.db,"WaitingOffice","EP01")
+        bundle=result["bundle"]
+        self.assertEqual(bundle["shot_ids"],["01"])
+        self.assertEqual(bundle["shot_count"],1)
+        self.assertEqual(bundle["total_duration_ms"],3000)
+        self.assertTrue(bundle["all_ready"])
+        workflow={"6":{"class_type":"TextNode","inputs":{"text":""}},
+                  "9":{"class_type":"FrameNode","inputs":{"frames":72}}}
+        bindings={"prompt":{"node":"6","input":"text"},
+                  "frames":{"node":"9","input":"frames"}}
+        plan=runner.build_studio_episode_plan(result,workflow,bindings)
+        self.assertEqual(plan["shot_count"],1)
+        self.assertEqual(plan["total_seconds"],3)
+        self.assertEqual(plan["studio_episode_handoff"]["bundle_sha256"],
+                         result["bundle_sha256"])
+        self.assertFalse(plan["gpu_actions_performed"])
+        with closing(core.open_db(self.db)) as db:
+            core.create_shot(db,"WaitingOffice","EP01","02",2,5000)
+        blocked=work.get_episode_video_handoffs(self.db,"WaitingOffice","EP01")
+        self.assertEqual(blocked["bundle"]["shot_count"],2)
+        self.assertEqual(blocked["bundle"]["total_duration_ms"],8000)
+        self.assertFalse(blocked["bundle"]["all_ready"])
+        self.assertEqual(blocked["bundle"]["blocked"][0]["shot_id"],"02")
+        self.assertIn("video_plan_not_found",
+                      blocked["bundle"]["blocked"][0]["reasons"])
+        with self.assertRaisesRegex(runner.PlanError,"blocked shots"):
+            runner.build_studio_episode_plan(blocked,workflow,bindings)
+        tampered=dict(result)
+        tampered["bundle"]=dict(result["bundle"])
+        tampered["bundle"]["total_duration_ms"]=100
+        with self.assertRaisesRegex(runner.PlanError,"checksum mismatch"):
+            runner.build_studio_episode_plan(tampered,workflow,bindings)
+
     def test_revised_upstream_blocks_video_import_without_approval(self):
         self.build_approved_chain()
         self.save("shot_plans",{"title":"需要重新审阅的镜头",
