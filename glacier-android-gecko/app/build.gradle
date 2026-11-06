@@ -10,8 +10,9 @@ android {
         applicationId 'cn.borealos.glacier.geckopreview'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '0.1.2-gecko-vless'
+        versionCode 4
+        versionName '0.2.0-mobile-m01'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {
             abiFilters 'arm64-v8a', 'x86_64'
         }
@@ -42,4 +43,6 @@ dependencies {
     // Pin the verified October 2026 stable GeckoView build, not a moving nightly.
     implementation 'org.mozilla.geckoview:geckoview:159.0.20261022150525'
     testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
