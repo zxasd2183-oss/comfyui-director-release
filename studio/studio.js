@@ -689,7 +689,8 @@
     storyboards_not_approved:"分镜图未批准",
     white_models_not_approved:"粗白模未批准",
     scene_revision_not_approved:"场景版本未批准",
-    video_render_executor_not_connected:"GPU 视频执行器未连接"
+    video_render_executor_not_connected:"GPU 视频执行器未连接",
+    video_motion_prompt_missing:"视频运动提示词尚未填写"
   };
   async function workflowLoadReadiness(state){
     const root=$("wfReadiness_video_plans");
@@ -738,7 +739,9 @@
             readinessNames[k]||(
               k.startsWith("prop_not_approved:")?"道具未批准："+k.split(":")[1]:
               k.startsWith("character_master_not_approved:")?
-              "角色母版未批准："+k.split(":")[1]:k)).join(" · "):
+              "角色母版未批准："+k.split(":")[1]:
+              k.startsWith("video_job_spec_mismatch:")?
+              "视频参数与批准规格不符："+k.split(":")[1]:k)).join(" · "):
           (shot.video_take_status==="in_review" ||
            shot.video_take_status==="stale" ||
            shot.video_take_status==="rejected")?statusName:
