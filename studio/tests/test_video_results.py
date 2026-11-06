@@ -3,6 +3,7 @@ import base64
 import hashlib
 import http.client
 import json
+import subprocess
 from pathlib import Path
 import sys
 import threading
@@ -72,6 +73,19 @@ class VideoReturnTests(unittest.TestCase):
         return vr.review_take(self.db,{
             "project_id":"WaitingOffice","episode_id":"EP01","shot_id":"01",
             "take_id":take,"decision":decision,"rationale":reason},OWNER)
+
+    def test_real_ffprobe_reads_actual_local_mp4(self):
+        movie=Path(self.db).parent/"probe-fixture.mp4"
+        subprocess.run([
+            "/usr/bin/ffmpeg","-hide_banner","-loglevel","error",
+            "-f","lavfi","-i","color=c=blue:s=64x64:r=24:d=1",
+            "-c:v","mpeg4","-pix_fmt","yuv420p",str(movie)],
+            timeout=20,check=True,capture_output=True)
+        result=vr.probe_video(movie)
+        self.assertEqual((result["width"],result["height"]),(64,64))
+        self.assertAlmostEqual(result["fps"],24.0,places=2)
+        self.assertAlmostEqual(result["duration_seconds"],1.0,delta=.1)
+        self.assertEqual(result["codec"],"mpeg4")
 
     def test_resume_checks_chunks_and_preserves_real_media(self):
         original=self.begin()
