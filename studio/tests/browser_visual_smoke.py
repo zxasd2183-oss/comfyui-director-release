@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 import threading
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from playwright.sync_api import sync_playwright, expect
 
@@ -70,7 +70,29 @@ def response(route):
     elif path.endswith("/api/v1/characters/assets"):
         result=ASSETS
     elif path.endswith("/api/v1/production/episode"):
-        result={"ok":True,"shots":[],"assets":[],"episode":EPISODE}
+        result={"ok":True,"shots":[
+            {"shot_id":"01","ordinal":1,"duration_ms":3000},
+            {"shot_id":"02","ordinal":2,"duration_ms":5000}],
+            "assets":[],"episode":EPISODE}
+    elif path.endswith("/api/v1/workflow/readiness"):
+        blockers=["project_spec_not_approved","shot_plans_not_approved",
+                  "storyboards_not_approved","white_models_not_approved"]
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+            "shot_count":2,"total_duration_ms":8000,"upstream_ready_count":0,
+            "approved_counts":{k:0 for k in (
+                "shot_plans","storyboards","white_models","video_plans")},
+            "runner_connected":False,"shots":[{
+                "shot_id":sid,"ordinal":index+1,"duration_ms":duration,
+                "upstream_blockers":blockers,"upstream_ready":False,
+                "runner_connected":False,
+                "execution_blocker":"video_render_executor_not_connected"}
+                for index,(sid,duration) in enumerate([("01",3000),("02",5000)])]}
+    elif path.endswith("/api/v1/workflow"):
+        kind=parse_qs(urlparse(route.request.url).query).get("kind",[""])[0]
+        scope={"tasks":"project","props":"project","settings":"episode"}.get(kind,"shot")
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+            "kind":kind,"scope":scope,"fields":{},"items":[],"visuals":[],
+            "image_kind":None,"execution_status":"planning_only"}
     else:
         result={"ok":True,"items":[],"shots":[],"tasks":[],"total":0,
                 "pending":[],"assets":[],"project_id":"VisualSmoke",
@@ -146,6 +168,24 @@ def main():
             assert page.locator("#characterMediaDrawer").evaluate("(e)=>e.open")
 
             page.locator("#characterMediaDrawer summary").click()
+            # Exercise ALL seven production workflows with the same owner-only
+            # network contract, without creating or approving any real asset.
+            for section in ("props","shots","storyboards","white_models",
+                            "video_plans","tasks","settings"):
+                page.locator('a[data-page="'+section+'"]').click()
+                expect(page.locator("body")).to_have_attribute("data-page",section)
+                kind={"shots":"shot_plans"}.get(section,section)
+                expect(page.locator("#wfStage_"+kind)).to_be_visible()
+            expect(page.locator("#wfReadiness_video_plans")).not_to_be_visible()
+            page.locator('a[data-page="video_plans"]').click()
+            expect(page.locator("#wfReadiness_video_plans")).to_contain_text(
+                "2 镜头")
+            expect(page.locator(".workflow-readiness-shot")).to_have_count(2)
+            page.locator(".workflow-readiness-shot").nth(1).click()
+            expect(page.locator("#wfStageTitle_video_plans")).to_contain_text("02")
+            page.screenshot(path=str(OUT/"video-readiness-1440x900.png"),
+                            full_page=True)
+
             page.set_viewport_size({"width":390,"height":844})
             page.locator('a[data-page="scenes"]').click()
             page.locator("#sceneMediaDrawer summary").click()
@@ -154,7 +194,7 @@ def main():
                             full_page=True)
             assert not errors, "Browser runtime exceptions: "+repr(errors)
             browser.close()
-        print("PASS: 1440x900 home/scene/character, review dialogs, category tabs, media drawers, mobile.")
+        print("PASS: 1440x900 home/scene/character, review dialogs, seven workflows, video readiness, mobile.")
         print("Screenshots use synthetic UI-only fixtures; they do not show approved production assets.")
     finally:
         server.shutdown()
