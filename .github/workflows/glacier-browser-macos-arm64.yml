@@ -1,4 +1,4 @@
-name: Glacier Browser macOS Apple Silicon DMG v0.20
+name: Glacier Browser macOS Apple Silicon v0.20 D03 account cards preview
 on:
   push:
     branches:
@@ -162,15 +162,16 @@ jobs:
         working-directory: glacier-macos
         run: |
           set -euo pipefail
-          tag='glacier-macos-v0.20.0'
+          tag='glacier-macos-v0.20.0-account-cards-d03-preview'
           dmg='GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
           for attempt in 1 2 3 4 5; do
             if gh release view "$tag" >/dev/null 2>&1; then
-              gh release upload "$tag" "$dmg" --clobber && break
+              echo 'Immutable D03 preview already exists; preserving old build'
+              break
             else
               gh release create "$tag" "$dmg" --target build/glacier-browser-v0-20-ui-refresh \
-                --title 'Glacier Browser 0.20.0 · macOS Apple Silicon preview' \
-                --notes 'Native v0.20: redesigned light browser shell, cleaner tabs and omnibox, unified workspaces and downloads hub, offline new-tab page and Ed25519-signed updates through VLESS SOCKS5. Preview DMG is not Apple Developer ID signed/notarized.' \
+                --title 'Glacier Browser 0.20.0 D03 · macOS account cards preview' \
+                --notes 'D03 preview: local encrypted website account cards, explicit manual copy and no automatic login; existing VLESS network and signed updater implementation unchanged, preview not added to signed feed. Preview DMG is not Apple Developer ID signed/notarized.' \
                 --prerelease && break
             fi
             if [ "$attempt" = 5 ]; then exit 1; fi
@@ -178,10 +179,3 @@ jobs:
           done
           gh release view "$tag" --json tagName,assets
           echo 'Mac release available. Ed25519 update feed published independently after offline signature.'
-      - name: Request v2 signed update feed (only after BOTH releases exist)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run glacier-browser-signed-updates.yml --ref main || \
-            echo "Automatic hourly fallback will retry signed feed publication."
-
