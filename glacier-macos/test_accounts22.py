@@ -72,6 +72,30 @@ class AccountCardTests(unittest.TestCase):
             self.assertEqual(restored._accounts_doc22["accounts"], host._accounts_doc22["accounts"])
             self.assertFalse(restored._accounts_readonly22)
 
+    def test_delete_persists_and_failed_write_restores_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host()
+            def protect(data):
+                return b"ENCRYPTED:" + data[::-1]
+            def reveal(data):
+                return data.split(b":", 1)[1][::-1]
+            host.setup_accounts22(tmp, protect, reveal)
+            record = {"site": "chatgpt.com", "name": "Primary",
+                      "username": "example@test.invalid", "password": "secret"}
+            host._accounts_doc22["accounts"].append(record)
+            host._save_accounts22()
+            self.assertTrue(host.delete_account22("chatgpt.com", "Primary"))
+            self.assertFalse(host._accounts_doc22["accounts"])
+            restored = Host()
+            restored.setup_accounts22(tmp, protect, reveal)
+            self.assertFalse(restored._accounts_doc22["accounts"])
+            restored._accounts_doc22["accounts"].append(record)
+            restored._save_accounts22()
+            original = restored._accounts_doc22
+            restored._accounts_encrypt22 = lambda data: data
+            self.assertFalse(restored.delete_account22("chatgpt.com", "Primary"))
+            self.assertIs(restored._accounts_doc22, original)
+
     def test_fail_closed_without_encryption(self):
         with tempfile.TemporaryDirectory() as tmp:
             host = Host()
