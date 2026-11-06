@@ -17,14 +17,17 @@
     </div>
     <div class="side-caption">工作空间</div>
     <nav class="nav-items" aria-label="工作台功能页面">
+      <div class="nav-section-label">工作空间</div>
       <a class="active" href="?page=home" data-page="home"><span>▦</span> 工作台首页</a>
       <a href="?page=projects" data-page="projects"><span>▤</span> 项目与剧集</a>
+      <div class="nav-section-label">美术资产</div>
       <a href="?page=characters" data-page="characters"><span>♙</span> 角色库 V2</a>
       <a href="?page=scenes" data-page="scenes"><span>▧</span> 场景库</a>
+      <div class="nav-section-label">镜头与导演</div>
       <a href="?page=shots" data-page="shots"><span>▥</span> 镜头规划</a>
       <a href="?page=review" data-page="review"><span>◎</span> 监审工作台</a>
       <a href="?page=audit" data-page="audit"><span>≋</span> 操作审计</a>
-      <div class="nav-placeholder" aria-label="开发排期中的功能">后续阶段：道具库、分镜图、白模、视频制作、任务管理</div>
+      <div class="nav-placeholder" aria-label="开发排期中的功能">即将开发 · 道具、分镜图、白模、视频、任务</div>
     </nav>
     <div class="sidebar-bottom">
       <div class="safety-indicator"><span class="safety-dot"></span>安全控制模式</div>
@@ -39,7 +42,7 @@
         <span class="workspace-context-project" id="workspaceProjectName">读取制作工程…</span>
         <span class="workspace-context-episode" id="workspaceEpisodeName">PROJECT</span>
       </div>
-      <div class="topbar-right"><span id="streamDot" class="dot neutral"></span><span id="streamLabel">连接中</span><span class="top-divider"></span><span id="clock"></span><button id="logoutMicrosoft" hidden type="button" class="logout-mini">退出登录</button></div>
+      <div class="topbar-right"><span id="headerAuditStatus" class="header-audit-status">审计读取中</span><span id="headerGpuStatus" class="header-gpu-status">GPU 读取中</span><span id="streamDot" class="dot neutral"></span><span id="streamLabel">连接中</span><span class="top-divider"></span><span id="clock"></span><button id="logoutMicrosoft" hidden type="button" class="logout-mini">退出登录</button></div>
     </header>
     <div class="workspace">
       <section class="hero">
