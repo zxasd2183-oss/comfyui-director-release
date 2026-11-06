@@ -1415,13 +1415,17 @@
   }
 
   function v2AssetEditor(profile,category,item,mount){
-    mount.querySelector(".character-v2-editor")?.remove();
+    // Asset edits live in a focused dialog, not underneath the asset grid.
+    const dialog=$("characterAssetEditorDialog");
+    const area=$("characterAssetEditorMount");
+    if(dialog.open)dialog.close();
+    area.replaceChildren();
     const form=el("form","character-v2-editor");
     const heading=el("div","character-v2-group-head");
     heading.appendChild(el("strong","",item?"编辑 V"+item.revision+" 草稿":"新增分类资产"));
     const cancel=el("button","prod-new prod-secondary","取消");
     cancel.type="button";
-    cancel.addEventListener("click",()=>form.remove());
+    cancel.addEventListener("click",()=>dialog.close());
     heading.appendChild(cancel);form.appendChild(heading);
     function field(title,control){
       const label=el("label","",title);
@@ -1494,14 +1498,15 @@
       }
       try{
         await characterPost(item?"assets/revise":"assets/create",payload);
+        dialog.close();
         await loadCharacterV2();
       }catch(err){
         $("characterMessage").textContent="保存 V2 分类资产失败："+err.message;
         save.disabled=false;
       }
     });
-    mount.prepend(form);
-    form.scrollIntoView({behavior:"smooth",block:"nearest"});
+    area.appendChild(form);
+    dialog.showModal();
   }
 
   function openCharacterEditor(profile=null){
