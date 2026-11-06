@@ -256,6 +256,7 @@ def main():
     tap(desc="返回浏览器")
     record("new_tab","tab counter and new-tab page observed; tab persistence not verified")
     tap(desc="更多选项")
+    tap(text="内部测试工具")
     tap(text="隔离自测：私人写入")
     isolation_state("PRIVATE_SEEDED")
     record("private_storage_seed","cookie and localStorage written by JS on loopback fixture")
@@ -263,6 +264,7 @@ def main():
     tap(text="切换账号空间")
     tap(text="工作空间 · 独立 Cookie")
     tap(desc="更多选项")
+    tap(text="内部测试工具")
     tap(text="隔离自测：工作检查")
     isolation_state("WORK_ISOLATED")
     record("work_profile_isolation","work page observed neither private Cookie nor localStorage")
@@ -271,6 +273,7 @@ def main():
     tap(text="切换账号空间")
     tap(text="私人空间 · 独立 Cookie")
     tap(desc="更多选项")
+    tap(text="内部测试工具")
     tap(text="隔离自测：私人复查")
     isolation_state("PRIVATE_RETAINED")
     record("private_storage_retained","private cookie and localStorage retained after switching")
@@ -339,6 +342,7 @@ def main():
     # No real accounts or sensitive documents; only cancel paths in the smoke
     # test until reliable file-byte round trips have been independently proven.
     tap(desc="更多选项")
+    tap(text="内部测试工具")
     tap(text="传输自测：打开测试页面")
     isolation_state("TRANSFER_READY")
     record("transfer_fixture","loopback Gecko transfer page loaded")

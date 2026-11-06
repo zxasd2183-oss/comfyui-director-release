@@ -739,6 +739,34 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void showInternalTestMenu() {
+        // Only the Debug build exposes artificial loopback fixtures. Keeping
+        // these options in a short submenu avoids pushing common browser
+        // actions beyond Android's visible overflow menu height.
+        if (!debugBuild() || proxyMode) return;
+        final String[] fixtures = {
+                "隔离自测：私人写入",
+                "隔离自测：工作检查",
+                "隔离自测：私人复查",
+                "传输自测：打开测试页面"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Glacier · 内部测试工具")
+                .setItems(fixtures, (d, index) -> {
+                    if (active == null) return;
+                    if (index == 3) {
+                        active.session.loadUri("http://127.0.0.1:18765/transfer");
+                    } else {
+                        String phase=index == 0 ? "seed"
+                                : index == 1 ? "work" : "return";
+                        active.session.loadUri(
+                                "http://127.0.0.1:18765/profile?phase=" + phase);
+                    }
+                })
+                .setNegativeButton("取消",null)
+                .show();
+    }
+
     private void showBrowserMenu() {
         final List<String> actions = new ArrayList<>();
         actions.add("新建标签页");
@@ -757,10 +785,7 @@ public final class MainActivity extends Activity {
         actions.add("打开 Gecko 内核信息");
         actions.add("测试说明");
         if (debugBuild() && !proxyMode) {
-            actions.add("隔离自测：私人写入");
-            actions.add("隔离自测：工作检查");
-            actions.add("隔离自测：私人复查");
-            actions.add("传输自测：打开测试页面");
+            actions.add("内部测试工具");
         }
         new AlertDialog.Builder(this)
                 .setTitle("Glacier · 更多选项")
@@ -797,17 +822,9 @@ public final class MainActivity extends Activity {
                         navigate("about:buildconfig");
                     } else if ("测试说明".equals(item)) {
                         showLabWarning();
-                    } else if ("隔离自测：私人写入".equals(item)
-                            || "隔离自测：工作检查".equals(item)
-                            || "隔离自测：私人复查".equals(item)) {
-                        // CI fixture never appears in the production menu.
-                        String phase = item.contains("私人写入") ? "seed"
-                                : item.contains("工作检查") ? "work" : "return";
-                        if (debugBuild() && !proxyMode && active != null)
-                            active.session.loadUri("http://127.0.0.1:18765/profile?phase=" + phase);
-                    } else if ("传输自测：打开测试页面".equals(item)
-                            && debugBuild() && !proxyMode && active != null) {
-                        active.session.loadUri("http://127.0.0.1:18765/transfer");
+                    } else if ("内部测试工具".equals(item)
+                            && debugBuild() && !proxyMode) {
+                        showInternalTestMenu();
                     }
                 }).show();
     }
