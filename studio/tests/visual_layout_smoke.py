@@ -145,7 +145,7 @@ def main():
                     try:
                         fixture.wait_for_function("""([selector,expected]) =>
                           document.querySelectorAll(selector).length>=expected""",
-                          [selector,expected],timeout=8000)
+                          arg=[selector,expected],timeout=8000)
                     finally:
                         fixture.screenshot(path=str(out/f"fixture_{name}.png"))
                     count=fixture.locator(selector).count()
