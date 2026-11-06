@@ -59,6 +59,8 @@ class V2AssetTests(unittest.TestCase):
                 "front" if category=="turnaround" else
                 "hard" if category=="rules" else
                 "HAIR_ID"}
+            if category=="continuity":
+                data["details"]={"episode_id":"EP01","shot_id":"01"}
         data.update(other)
         return data
 
