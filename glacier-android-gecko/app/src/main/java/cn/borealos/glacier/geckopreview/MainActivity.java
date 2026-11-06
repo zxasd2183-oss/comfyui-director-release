@@ -33,7 +33,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Glacier GeckoView network experiment v0.1.2.
+ * Glacier Android mobile browser v0.2.0: M02 Chrome-inspired light UI.
  * A REAL, app-bundled VLESS core may feed Gecko through a loopback SOCKS5 proxy.
  * No credential vault, automatic login or cloud sync exists yet.
  *

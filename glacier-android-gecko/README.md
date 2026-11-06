@@ -1,31 +1,33 @@
-# Glacier Android — GeckoView 内核真机实验版 v0.1
+# Glacier Android · v0.2.0 M02
 
-这个项目是原生 Android 应用，实际嵌入 **Mozilla GeckoView 159 Stable**，不是 Android WebView，也不是完整 Chromium。
+移动版浏览器主线，使用 Mozilla GeckoView 159 和嵌入式 sing-box 1.14.4。
 
-## 本次测试范围
-- URL 输入 / 搜索、后退、前进、刷新、多个标签页
-- 私人 / 工作两个持久隔离的 GeckoView Session Context（Cookie / localStorage）
-- 切换账号空间并保留当前进程中的标签页会话
-- 内核内部版本页面 `about:buildconfig`、ChatGPT、GitHub 等网站显示和兼容性
+## M01 已通过（小米真机反馈）
+- VLESS 节点仅在用户勾选时保存至 Android Keystore（AES-GCM）
+- 冷启动自动恢复 VLESS；连接失败不自动回退直连
+- Google 登录由用户在小米真机确认可用
+- 可重新导入或删除保存在本地的 VLESS 节点
 
-## 未实现，不能误认为已支持
-- VLESS / 全局网络 fail-closed。**当前是设备默认网络连接**。如果你必须代理才能访问某些网站，应先在系统级 VPN 中处理。不能把这个版本当成安全代理浏览器。
-- 密码保险箱、接码 API、账号云同步、下载管理
-- 书签、永久标签恢复、权限提示和可靠的文件上传/下载
-- 真机自动化验证、Google OAuth 和 ChatGPT 登录兼容性保证
-- Play Store 正式签名与长期更新密钥
+## M02 UI
+- 冰川浅色配色与 Chrome 风格移动端布局
+- 顶部品牌标识与独立私人／工作空间切换
+- 圆角搜索／网址栏，后退、前进和打开网址
+- 底部主页、刷新、添加标签、标签计数和菜单
+- 紧凑网络状态提示，点击可打开原有网络诊断
+- 保留之前的文件上传下载、Cookie/localStorage 隔离与调试回归测试
 
-**暂时不要使用真实重要账号测试。** 建议仅用测试网站和非关键测试账号验证引擎能力。
+## 已知尚未完成
+- M03 标签持久恢复、完整标签管理
+- M04 书签、浏览历史、下载管理列表
+- M05 固定签名及应用内更新
+- 账户资料弹窗、验证码 API、跨设备同步属于后续桌面版及同步阶段
 
-## 安装 / 构建
-GitHub Actions 构建 Android ARM64 Debug APK。调试签名会随 runner 变化，下一次安装不同构建可能需要卸载旧测试版；这也会清除该测试版账号空间的数据。
+## 使用范围
+仍是实验 Debug APK；不同构建可能采用不同临时签名。不要在签名冲突时直接卸载以免丢失浏览数据。
+浏览器内置的 VLESS 代理只保护 GeckoView 浏览器流量，并不是 Android 全局 VPN。
+内核/代理回归测试通过不等于完整安全审计。
 
-从源码本地构建：
-
-```bash
-gradle -p glacier-android-gecko :app:assembleDebug --no-daemon
-```
-
-官网文档：
-- https://mozilla.github.io/geckoview/consumer/docs/geckoview-quick-start
-- https://mozilla.github.io/geckoview/javadoc/mozilla-central/org/mozilla/geckoview/GeckoSessionSettings.Builder.html
+## CI
+移动版分支：`feature/glacier-android-browser-v020`
+独立工作流：`.github/workflows/glacier-android-browser-v020.yml`
+M02 发布标签：`glacier-android-browser-v0.2.0-m02`
