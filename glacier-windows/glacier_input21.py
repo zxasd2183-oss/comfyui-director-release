@@ -158,6 +158,21 @@ class GlacierInput21:
                 self, "Glacier", "当前页面不是可在系统浏览器打开的 HTTP(S) 网址。"
             )
             return False
+        # External browsers do NOT inherit Glacier's SOCKS/VLESS routing.
+        # Require explicit consent before opening a possible direct-network
+        # connection; never transfer cookies or credentials automatically.
+        answer = QMessageBox.question(
+            self,
+            "在系统浏览器打开？",
+            "系统 Chrome/Edge 不会自动继承 Glacier 的 VLESS 代理。\\n"
+            "此操作可能使用电脑的直连网络出口，暴露真实 IP，"
+            "而且两个浏览器的登录状态独立。\\n\\n"
+            "你确定要使用系统浏览器访问当前网址吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
         try:
             ok = bool(webbrowser.open(url.toString(QUrl.ComponentFormattingOption.FullyEncoded)))
         except Exception:
