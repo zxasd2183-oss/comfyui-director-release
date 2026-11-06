@@ -58,7 +58,7 @@ class VisualFirstWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.doc.tags["sceneMediaDrawer"], "details")
         self.assertEqual(self.doc.tags["characterMediaDrawer"], "details")
         for token in ("sceneCategoryFilter", "filteredVisuals",
-                      "visual.reference_type", "aria-pressed"):
+                      "v.reference_type", "aria-pressed"):
             self.assertIn(token,self.js)
         self.assertIn(".scene-category-tab.active",self.css)
         self.assertIn(".studio-media-drawer",self.css)
