@@ -14,6 +14,7 @@
   let currentVisual = null;
   let characterProjectId = "", characterCurrentId = "", characterData = null;
   let characterEditingId = null;
+  let shotBindingData=null, shotBindingCharacters=[], shotBindingFocus=null;
   let characterV2Data = null, characterV2Category = "profile";
   let visualFingerprint = "", visualScope = "", visualRefreshAt = 0;
   let visualRefreshInFlight = false;
@@ -124,6 +125,10 @@
     $("episodeOutlinePanel").hidden=true;
     $("episodeOutlineBody").textContent="";
     $("episodeShotGrid").replaceChildren();
+    $("shotCharacterForm").hidden=true;
+    $("shotCharacterEntries").replaceChildren();
+    $("shotCharacterFindings").replaceChildren();
+    shotBindingData=null;shotBindingFocus=null;
     $("episodeAssetSummary").replaceChildren();
     $("visualLibraryPanel").hidden=true;
     $("visualGallery").replaceChildren();
@@ -166,6 +171,10 @@
         tile.appendChild(el("strong","","#"+shot.shot_id));
         tile.appendChild(el("span","", (shot.duration_ms/1000).toFixed(1)+"秒"));
         tile.appendChild(el("small","", stages[shot.stage]||shot.stage));
+        const bind=el("button","shot-character-trigger","绑定角色");
+        bind.type="button";
+        bind.addEventListener("click",()=>openShotCharacterEditor(projectId,episodeId,shot.shot_id));
+        tile.appendChild(bind);
         shotGrid.appendChild(tile);
       }
       const assets=$("episodeAssetSummary");
@@ -176,12 +185,190 @@
         assets.appendChild(el("span","asset-chip",
           asset.kind+" · "+asset.subject_id+" · V"+asset.version));
       }
-      if(microsoftOwner) await loadVisuals(projectId,episodeId);
+      if(microsoftOwner) {
+        await loadVisuals(projectId,episodeId);
+        try{await loadShotBindings(projectId,episodeId);}
+        catch(error){$("shotCharacterStatus").textContent="读取镜头角色绑定失败："+error.message;}
+      }
     } catch(err) {
       $("episodeExplorerTitle").textContent="无法读取剧集";
       $("episodeExplorerInfo").textContent=err.message;
     }
   }
+
+
+  // Each shot's editable planning state freezes a character profile revision
+  // and any referenced approved assets. Nothing here approves a character pack.
+  async function loadShotBindings(projectId,episodeId){
+    const scope={projectId,episodeId};
+    const [bindings,profiles]=await Promise.all([
+      fetch("./api/v1/characters/shot-bindings?project="+encodeURIComponent(projectId)+
+        "&episode="+encodeURIComponent(episodeId),{cache:"no-store"}),
+      fetch("./api/v1/characters?project="+encodeURIComponent(projectId),
+        {cache:"no-store"})
+    ]);
+    if(!bindings.ok||!profiles.ok)throw Error("镜头绑定或角色档案不可读");
+    const [b,c]=await Promise.all([bindings.json(),profiles.json()]);
+    if(!selectedProductionEpisode||
+       selectedProductionEpisode.projectId!==scope.projectId||
+       selectedProductionEpisode.episodeId!==scope.episodeId)return;
+    shotBindingData=b;
+    shotBindingCharacters=c.characters||[];
+    renderShotBindings();
+  }
+
+  function renderShotBindings(){
+    const data=shotBindingData;
+    const entries=$("shotCharacterEntries"),warnings=$("shotCharacterFindings");
+    entries.replaceChildren();warnings.replaceChildren();
+    if(!data)return;
+    $("shotCharacterCount").textContent=data.binding_count+" 条角色规划绑定";
+    $("shotCharacterStatus").textContent=data.binding_count?
+      "当前均为规划绑定；角色资产包尚未批准，不能用于正式分镜或视频。":
+      "本集尚未绑定镜头角色。点击任一镜头的「绑定角色」开始规划。";
+    const names=Object.fromEntries(shotBindingCharacters.map(c=>[
+      c.character_id,c.display_name]));
+    for(const item of data.bindings){
+      const row=el("div","shot-character-entry");
+      const info=el("span","", "#"+item.shot_id+" · "+
+        (names[item.character_id]||item.character_id)+" · "+
+        item.view_direction+" · "+item.screen_side+" · V"+item.binding_revision+
+        " · 锁定人物资料 V"+item.profile_revision+
+        " / 已批准参考 "+item.asset_refs.length+" 项");
+      row.appendChild(info);
+      const edit=el("button","prod-new prod-secondary","编辑规划");
+      edit.type="button";
+      edit.addEventListener("click",()=>openShotCharacterEditor(data.project_id,
+         data.episode_id,item.shot_id,item.character_id));
+      row.appendChild(edit);
+      entries.appendChild(row);
+    }
+    if(!data.findings.length&&data.binding_count)
+      warnings.appendChild(el("p","shot-character-clear",
+        "目前未发现相邻已绑定镜头的服装、发型或道具状态冲突；未绑定的镜头不参与检查。"));
+    for(const finding of data.findings){
+      const message={
+        costume_changed:"服装变化",hair_variant_changed:"发型版本变化",
+        prop_state_mismatch:"道具状态不连续"
+      }[finding.rule]||finding.rule;
+      warnings.appendChild(el("p","shot-character-warning",
+        "⚠ "+(names[finding.character_id]||finding.character_id)+
+        " · #"+finding.from_shot+" → #"+finding.to_shot+" · "+message+
+        "："+finding.before+" → "+finding.after));
+    }
+  }
+
+  async function openShotCharacterEditor(projectId,episodeId,shotId,characterId=null){
+    if(!microsoftOwner||!selectedProductionEpisode||
+       selectedProductionEpisode.projectId!==projectId||
+       selectedProductionEpisode.episodeId!==episodeId)return;
+    if(!shotBindingData||shotBindingData.project_id!==projectId||
+       shotBindingData.episode_id!==episodeId){
+      await loadShotBindings(projectId,episodeId);
+    }
+    const profiles=shotBindingCharacters;
+    if(!profiles.length){$("shotCharacterStatus").textContent="角色库中尚无档案";return;}
+    const existing=shotBindingData.bindings.find(b=>b.shot_id===shotId&&
+      b.character_id===(characterId||profiles[0].character_id));
+    const charSelect=$("shotCharacterId");
+    charSelect.replaceChildren();
+    for(const character of profiles){
+      const option=el("option","",character.display_name+" · "+character.character_id);
+      option.value=character.character_id;charSelect.appendChild(option);
+    }
+    const selected=characterId||existing?.character_id||profiles[0].character_id;
+    charSelect.value=selected;
+    shotBindingFocus={projectId,episodeId,shotId,selected};
+    $("shotCharacterFormTitle").textContent="#"+shotId+" · 角色规划";
+    function apply(item){
+      $("shotCharacterDirection").value=item?.view_direction||"front";
+      $("shotCharacterSide").value=item?.screen_side||"center";
+      $("shotCharacterOutfit").value=item?.outfit_id||"";
+      $("shotCharacterHair").value=item?.hair_variant_id||"";
+      $("shotCharacterExpression").value=item?.expression||"";
+      $("shotCharacterPose").value=item?.pose||"";
+      $("shotCharacterPropBefore").value=item?.prop_state_before||"";
+      $("shotCharacterPropAfter").value=item?.prop_state_after||"";
+      $("shotCharacterNote").value=item?.note||"";
+    }
+    apply(existing);
+    async function loadApprovedAssets(cid){
+      const token=shotBindingFocus;
+      const res=await fetch("./api/v1/characters/assets?project="+
+        encodeURIComponent(projectId)+"&character="+encodeURIComponent(cid),
+        {cache:"no-store"});
+      if(!res.ok)throw Error("角色资产不可读");
+      const data=await res.json();
+      if(shotBindingFocus!==token||charSelect.value!==cid)return;
+      const field=$("shotCharacterAssets");field.replaceChildren();
+      const approved=(data.assets||[]).filter(x=>x.status==="approved");
+      const current=shotBindingData.bindings.find(b=>b.shot_id===shotId&&
+        b.character_id===cid);
+      const chosen=new Set((current?.asset_refs||[]).map(x=>x.item_id));
+      for(const asset of approved){
+        const option=el("option","",asset.category+" · "+asset.label+
+          " / V"+asset.revision);
+        option.value=asset.item_id;option.selected=chosen.has(asset.item_id);
+        field.appendChild(option);
+      }
+      if(!approved.length)field.appendChild(el("option","",
+        "暂无已批准素材：可以先保存规划，不能正式制作"));
+      if(!approved.length)field.firstChild.disabled=true;
+    }
+    // Use a new closure for each editor opening; no permanent event leak.
+    charSelect.onchange=()=>{
+      shotBindingFocus={projectId,episodeId,shotId,selected:charSelect.value};
+      const current=shotBindingData.bindings.find(b=>b.shot_id===shotId&&
+        b.character_id===charSelect.value);
+      apply(current);
+      loadApprovedAssets(charSelect.value).catch(err=>
+        $("shotCharacterStatus").textContent=err.message);
+    };
+    $("shotCharacterForm").hidden=false;
+    await loadApprovedAssets(selected);
+    $("shotCharacterForm").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+
+  $("shotCharacterCancel").addEventListener("click",()=>{
+    $("shotCharacterForm").hidden=true;shotBindingFocus=null;
+  });
+  $("shotCharacterForm").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const scope=shotBindingFocus;if(!scope||!csrf)return;
+    const cid=$("shotCharacterId").value;
+    const current=shotBindingData?.bindings.find(b=>
+      b.shot_id===scope.shotId&&b.character_id===cid);
+    const payload={
+      project_id:scope.projectId,episode_id:scope.episodeId,
+      shot_id:scope.shotId,character_id:cid,
+      expected_revision:current?.binding_revision||0,
+      view_direction:$("shotCharacterDirection").value,
+      screen_side:$("shotCharacterSide").value,
+      outfit_id:$("shotCharacterOutfit").value.trim(),
+      hair_variant_id:$("shotCharacterHair").value.trim(),
+      expression:$("shotCharacterExpression").value.trim(),
+      pose:$("shotCharacterPose").value.trim(),
+      prop_state_before:$("shotCharacterPropBefore").value.trim(),
+      prop_state_after:$("shotCharacterPropAfter").value.trim(),
+      note:$("shotCharacterNote").value.trim(),
+      asset_ids:Array.from($("shotCharacterAssets").selectedOptions)
+        .filter(x=>!x.disabled).map(x=>x.value)
+    };
+    const submit=$("shotCharacterSave");submit.disabled=true;
+    try{
+      const response=await fetch("./api/v1/characters/shot-bindings/save",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({csrf,...payload}),cache:"no-store"
+      });
+      const result=await response.json();
+      if(!response.ok)throw Error(result.reason||"绑定失败");
+      $("shotCharacterForm").hidden=true;shotBindingFocus=null;
+      await loadShotBindings(scope.projectId,scope.episodeId);
+      $("shotCharacterStatus").textContent="已保存 #"+scope.shotId+
+        " · "+cid+" 的规划绑定（不代表审核通过）。";
+    }catch(err){$("shotCharacterStatus").textContent="保存失败："+err.message;}
+    finally{submit.disabled=false;}
+  });
 
   // A project-level catalog deliberately references existing immutable
   // episode images instead of moving, copying or auto-approving them.
