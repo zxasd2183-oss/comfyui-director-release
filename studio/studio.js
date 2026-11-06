@@ -1370,6 +1370,18 @@
     approved:"已批准",rejected:"已驳回"};
   const sceneRefName={overview:"总览",camera_angle:"机位参考",
     lighting:"光照",layout:"结构布局",inspiration:"创意参考"};
+  let sceneCategoryFilter="all";
+
+  // Keep the original owner-only review/edit controls in accessible dialogs,
+  // without sacrificing the preview width. Escape is handled natively by dialog.
+  for(const [openId,dialogId,closeId] of [
+      ["sceneInspectorOpen","sceneInspectorDialog","sceneInspectorClose"],
+      ["characterInspectorOpen","characterInspectorDialog","characterInspectorClose"]]){
+    const trigger=$(openId),dialog=$(dialogId);
+    trigger.addEventListener("click",()=>{if(!dialog.open)dialog.showModal();});
+    $(closeId).addEventListener("click",()=>dialog.close());
+    dialog.addEventListener("close",()=>trigger.focus());
+  }
 
   function syncSceneProjects(projects,episodes){
     const select=$("sceneProject");
@@ -1459,7 +1471,7 @@
       desc.appendChild(status);
       button.appendChild(desc);
       button.addEventListener("click",()=>{
-        sceneCurrentId=scene.scene_id;sceneActiveVisualId="";
+        sceneCurrentId=scene.scene_id;sceneActiveVisualId="";sceneCategoryFilter="all";
         if($("sceneEditorDialog").open)$("sceneEditorDialog").close();
         renderScenes();
       });
@@ -1470,9 +1482,10 @@
   function renderScenes(){
     const data=sceneData;if(!data)return;
     const detail=$("sceneDetail"),stage=$("sceneStage"),
-      gallery=$("sceneGallery"),tools=$("sceneAssetTools");
+      gallery=$("sceneGallery"),tools=$("sceneAssetTools"),
+      categoryTabs=$("sceneCategoryTabs");
     detail.replaceChildren();stage.replaceChildren();
-    gallery.replaceChildren();tools.replaceChildren();
+    gallery.replaceChildren();tools.replaceChildren();categoryTabs.replaceChildren();
     $("sceneCount").textContent=data.scenes.length+" 处场景";
     $("sceneMessage").textContent=data.scenes.length?
       "当前显示真实场景资料。图片和版本由项目数据库提供，候选不会自动获批。":
@@ -1498,9 +1511,25 @@
     $("sceneActiveName").textContent=scene.display_name;
     $("sceneActiveStatus").textContent=sceneStatusName[scene.status]||scene.status;
     $("sceneActiveStatus").className="scene-status-pill "+scene.status;
-    const preferred=scene.visuals.find(v=>v.visual_id===sceneActiveVisualId)||
-      scene.visuals.find(v=>v.visual_id===scene.canonical?.visual_id)||
-      scene.visuals[0];
+    for(const [key,label] of [["all","全部"],...Object.entries(sceneRefName)]){
+      const count=key==="all"?scene.visuals.length:
+        scene.visuals.filter(v=>v.reference_type===key).length;
+      const tab=el("button","scene-category-tab"+(
+        sceneCategoryFilter===key?" active":""),label+" · "+count);
+      tab.type="button";
+      tab.setAttribute("aria-pressed",String(sceneCategoryFilter===key));
+      tab.addEventListener("click",()=>{
+        sceneCategoryFilter=key;
+        sceneActiveVisualId="";
+        renderScenes();
+      });
+      categoryTabs.appendChild(tab);
+    }
+    const filteredVisuals=sceneCategoryFilter==="all"?scene.visuals:
+      scene.visuals.filter(v=>v.reference_type===sceneCategoryFilter);
+    const preferred=filteredVisuals.find(v=>v.visual_id===sceneActiveVisualId)||
+      filteredVisuals.find(v=>v.visual_id===scene.canonical?.visual_id)||
+      filteredVisuals[0];
     sceneActiveVisualId=preferred?.visual_id||"";
     $("sceneImageCount").textContent=scene.visuals.length+" 张图片";
     if(preferred){
@@ -1526,15 +1555,18 @@
     }else{
       const empty=el("div","scene-stage-empty");
       empty.appendChild(el("div","scene-stage-emblem","▧"));
-      empty.appendChild(el("strong","","尚无场景预览"));
-      empty.appendChild(el("p","","空间设定已保存。上传场景图后，将在这里显示实际的参考图片。"));
+      empty.appendChild(el("strong","",scene.visuals.length?"当前分类暂无图片":"尚无场景预览"));
+      empty.appendChild(el("p","",scene.visuals.length?"切换下方分类，或上传本分类的真实参考图片。":"空间设定已保存。上传场景图后，将在这里显示实际的参考图片。"));
       const add=el("button","prod-new scene-primary-button","＋ 上传第一张参考图");
       add.type="button";
-      add.addEventListener("click",()=>tools.querySelector('input[type="file"]')?.click());
+      add.addEventListener("click",()=>{
+        $("sceneMediaDrawer").open=true;
+        tools.querySelector('input[type="file"]')?.click();
+      });
       empty.appendChild(add);stage.appendChild(empty);
     }
 
-    for(const visual of scene.visuals){
+    for(const visual of filteredVisuals){
       const card=el("button","scene-visual"+(
         sceneActiveVisualId===visual.visual_id?" active":""));
       card.type="button";
@@ -1556,8 +1588,10 @@
       });
       gallery.appendChild(card);
     }
-    if(!scene.visuals.length)gallery.appendChild(
-      el("p","scene-gallery-empty","暂无图片版本。点击下方上传真实参考图。"));
+    if(!filteredVisuals.length)gallery.appendChild(
+      el("p","scene-gallery-empty",scene.visuals.length?
+        "当前分类暂无候选图片，请切换分类或展开上传工具。":
+        "暂无图片版本。展开下方上传工具添加真实参考图。"));
 
     const box=el("div","scene-inspector-header");
     box.appendChild(el("h3","",scene.display_name));
