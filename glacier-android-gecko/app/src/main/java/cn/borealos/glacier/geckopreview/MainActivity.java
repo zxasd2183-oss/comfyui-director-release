@@ -588,7 +588,9 @@ public final class MainActivity extends Activity {
     }
 
     private void toggleBookmark() {
+        if(debugBuild())android.util.Log.i("GlacierSmoke","M04_BOOKMARK_ACTION=INVOKED");
         if(active==null||!BrowserLibraryStore.validWebUrl(active.url)) {
+            if(debugBuild())android.util.Log.i("GlacierSmoke","M04_BOOKMARK_REJECTED=INVALID_PAGE");
             android.widget.Toast.makeText(this,"当前页面暂不能收藏",
                     android.widget.Toast.LENGTH_SHORT).show();
             return;

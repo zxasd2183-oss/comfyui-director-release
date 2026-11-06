@@ -221,7 +221,16 @@ def main():
     # M04: bookmark and history must work as actual interactive menu flows.
     tap(desc="更多选项")
     tap(text="收藏当前页面")
-    assert "M04_BOOKMARK_ADDED=true" in adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+    end=time.monotonic()+35
+    while time.monotonic()<end:
+        bookmark_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+        if "M04_BOOKMARK_ADDED=true" in bookmark_log:
+            break
+        if "M04_BOOKMARK_REJECTED=INVALID_PAGE" in bookmark_log:
+            raise RuntimeError("M04_BOOKMARK_REJECTED_INVALID_PAGE")
+        time.sleep(2)
+    else:
+        raise RuntimeError("M04_BOOKMARK_ACTION_NOT_CONFIRMED")
     tap(desc="更多选项")
     tap(text="书签")
     await_ui(text="私人空间 · 书签",timeout=35)
