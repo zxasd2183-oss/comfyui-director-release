@@ -30,9 +30,14 @@ class MockOwner:
         return {"sub":OWNER,"csrf":CSRF} if sid==SID else None
 
 
-class VideoReturnTests(fixture.StudioToGpuHandoffTests):
+class VideoReturnTests(unittest.TestCase):
+    upload=fixture.StudioToGpuHandoffTests.upload
+    save=fixture.StudioToGpuHandoffTests.save
+    review=fixture.StudioToGpuHandoffTests.review
+    build_approved_chain=fixture.StudioToGpuHandoffTests.build_approved_chain
+
     def setUp(self):
-        super().setUp()
+        fixture.StudioToGpuHandoffTests.setUp(self)
         self.build_approved_chain()
         self.package=fixture.work.get_video_handoff_package(
             self.db,"WaitingOffice","EP01","01")
