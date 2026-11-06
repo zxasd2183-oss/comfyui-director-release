@@ -1,7 +1,9 @@
 # Director Studio → GPU video-pipeline handoff (V1)
 
-This contract closes the **planning-to-offline-GPU-plan** gap. It does **not**
-constitute a live GPU dispatch, an approved render, or an MP4 feedback channel.
+This contract closes the **planning-to-offline-GPU-plan** gap. Studio now
+accepts browser-delivered verified MP4 clips for separate human review.
+It does **not** constitute a live GPU dispatch or an automatic GPU-to-VPS
+media push.
 
 ## 1. Studio owner-only workflow
 
@@ -66,14 +68,58 @@ This command **can incur GPU charges**. Do not run it during read-only checks or
 Studio deployment. Run collect/status afterward for generated output only if the
 GPU executed it. There is currently **no live Studio→GPU dispatch button**.
 
-## 3. Current uncrossed boundary
+## 3. Whole-episode preparation (31 shots; no silent omission)
 
-GPU render result bytes, checked MP4 SHA-256 receipts, playback and formal
-artistic approval are **not yet automatically returned to Studio**. The local
-GPU runner already offers `collect --download`, verified output manifests and
-`assemble`; a future authenticated result-import channel must link those
-immutable files and their rendering provenance to the exact shot/plan revision
-before any Studio UI may mark a video produced or approved.
+The Studio Video Production page can export a private
+`studio_episode_EP01_handoff.json` containing every registered shot, the
+blocked-shot report, and a canonical SHA-256 over the bundle. To prepare the
+entire episode locally, use:
+
+```sh
+python3 director_video.py prepare-studio-batch \
+  --package /safe/inbox/studio_episode_EP01_handoff.json \
+  --workflow /safe/local/h3-workflow-api.json \
+  --bindings /safe/local/h3-bindings.json \
+  --out /safe/work/episode-plan.json
+```
+
+If the H3 API graph uses image bindings, include an operator-reviewed
+`--images /safe/local/approved-images.json` file whose keys are shot IDs
+(e.g. `"01"`) and values are **local Comfy input basenames**. This importer
+requires `all_ready=true`, a correctly hashed bundle, identical shot count
+and IDs, consistent fps, no missing project approvals and exact total duration.
+It fails closed instead of silently skipping blocked shots. The output is an
+**offline pending queue plan**, not submitted jobs.
+
+## 4. Verified MP4 return and formal human review
+
+After a separately authorized GPU execution, use the existing local
+`collect --download` to retrieve source clip bytes. In Studio select the
+corresponding shot under Video Production and choose its real local MP4.
+The owner-authorized browser workflow:
+
+1. Obtains the current handoff SHA-256 for that same shot and revision.
+2. Computes the source MP4 SHA-256 locally and starts a 24-hour resumable
+   upload. Blocks are 786432 bytes (max file 250MB). Re-select the same file
+   after a network interruption to resume rather than duplicate.
+3. The VPS verifies the complete source hash, MP4 container, actual
+   ffprobe width/height/fps/duration versus approved specs, and unchanged
+   upstream creative assets. No server-side transcoding or GPU generation.
+4. The verified immutable clip appears as an individual `video_take`
+   in the Video Production player and unified Review Center. A human must
+   explicitly approve or reject it with a reason. Revisions to upstream
+   records prevent stale video approvals.
+
+The MP4 API uses Microsoft owner authentication, CSRF/Origin checks for
+writes, read authorization on every Range request, private file storage,
+and no client-supplied output path. FFprobe is an installation prerequisite.
+
+**Current uncrossed boundary:** automatic GPU-side push back to Studio is
+not yet enabled. Source prompt IDs are operator metadata, not independent
+cryptographic ComfyUI attestations. The local runner's archived output
+manifests remain available to the operator for additional verification.
+Live GPU queue compatibility, real H3 samples, audio work and final
+assembled film still need independent acceptance tests.
 
 The standard `studio/upgrade-v09.sh` deploys Studio backend/UI only; GPU
 runner code changes are not thereby deployed to an offline GPU host. Do not
