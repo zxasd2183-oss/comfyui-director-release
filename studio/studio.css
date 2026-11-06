@@ -1482,3 +1482,8 @@ body[data-page="review"] .workflow-review-record{background:#fffffff2;
   body[data-page="props"] .workflow-grid{display:flex;flex-direction:column}
   body[data-page="review"] .workflow-review-list{grid-template-columns:1fr}
 }
+
+/* New home-only widgets must never leak onto sibling functional pages. */
+.workspace>.icebound-quick-actions,.workspace>.icebound-home-overview{display:none}
+body[data-page="home"] .workspace>.icebound-quick-actions{display:grid}
+body[data-page="home"] .workspace>.icebound-home-overview{display:grid}
