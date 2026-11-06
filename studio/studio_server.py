@@ -50,6 +50,12 @@ from scene_library import (
     SceneError, prepare_schema as prepare_scenes, list_scenes,
     create_scene, update_scene, link_scene_visual, review_scene,
 )
+from production_workflows import (
+    WorkflowError, prepare_schema as prepare_workflows,
+    list_units as list_workflow_units,
+    save_unit as save_workflow_unit, review_unit as review_workflow_unit,
+    list_reviews as list_workflow_reviews,
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -152,6 +158,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_character_v2(db)
             prepare_shot_character(db)
             prepare_scenes(db)
+            prepare_workflows(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -355,6 +362,39 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(400,{"ok":False,"reason":"invalid_episode_query"})
             except Exception:
                 return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
+        if path == "/api/v1/workflow":
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if len(pairs) not in (2,3) or len({k for k,v in pairs})!=len(pairs):
+                    raise WorkflowError("invalid_workflow_query")
+                args=dict(pairs)
+                if set(args) not in ({"project","kind"},{"project","kind","episode"}):
+                    raise WorkflowError("invalid_workflow_query")
+                return self.reply(200,list_workflow_units(
+                    self.server.production_db_path,args["project"],
+                    args["kind"],args.get("episode","")))
+            except WorkflowError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError,ValueError):
+                return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path == "/api/v1/workflow/reviews":
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=3)
+                args=dict(pairs)
+                if len(pairs) not in (1,2) or len({k for k,v in pairs})!=len(pairs) or (
+                    set(args) not in ({"project"},{"project","episode"})):
+                    raise WorkflowError("invalid_workflow_query")
+                return self.reply(200,list_workflow_reviews(
+                    self.server.production_db_path,args["project"],
+                    args.get("episode","")))
+            except WorkflowError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
         if path == "/api/v1/scenes":
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
@@ -559,11 +599,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/scenes/create",
                         "/api/v1/scenes/update",
                         "/api/v1/scenes/link",
-                        "/api/v1/scenes/review"):
+                        "/api/v1/scenes/review",
+                        "/api/v1/workflow/save",
+                        "/api/v1/workflow/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
-                path.startswith("/api/v1/scenes/")) and not secured:
+                path.startswith("/api/v1/scenes/") or
+                path.startswith("/api/v1/workflow/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -611,6 +654,20 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path.startswith("/api/v1/workflow/"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                action={"/api/v1/workflow/save":save_workflow_unit,
+                        "/api/v1/workflow/review":review_workflow_unit}[path]
+                result=action(self.server.production_db_path,fields,actor)
+                return self.reply(201 if path.endswith("/save") else 200,result)
+            except WorkflowError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError):
+                return self.reply(400,{"ok":False,"reason":"invalid_workflow_fields"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
         if path.startswith("/api/v1/scenes/"):
             try:
                 actor=operator_from_verified_session(session)
