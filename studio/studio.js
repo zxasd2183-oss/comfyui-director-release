@@ -1635,7 +1635,8 @@
       for(const item of body.pending){
         const row=el("div","workflow-review-record");
         const desc=el("div","");
-        const typeName={scene:"场景库",character_asset:"角色分类资产"}[item.kind]||
+        const typeName={scene:"场景库",character_asset:"角色分类资产",
+          video_take:"真实视频成片"}[item.kind]||
           wfLabels[item.kind]||item.kind;
         desc.appendChild(el("strong","",typeName+" · "+item.unit_id));
         desc.appendChild(el("p","",(item.episode_id||"项目级")+" · V"+item.revision+
@@ -1670,6 +1671,16 @@
                 $("characterAssetsPanel").scrollIntoView({block:"nearest"});
               }
             }).catch(e=>$("characterMessage").textContent=e.message);
+            return;
+          }
+          if(item.kind==="video_take"){
+            const state=wfState.video_plans;
+            state.project=item.project_id;
+            state.episode=item.episode_id;
+            state.selected=item.shot_id;
+            state.editing=false;
+            navigateWorkspace("video_plans");
+            workflowLoad("video_plans");
             return;
           }
           const page=map[item.kind],state=wfState[item.kind];
