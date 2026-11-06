@@ -859,8 +859,181 @@
     }
   }
 
+
+  // Owner-protected MP4 transfer. The browser cannot authorize a GPU job.
+  // Interrupted uploads resume at the server's durable byte offset.
+  async function videoResultPost(action,data){
+    const response=await fetch("./api/v1/video-results/"+action,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({csrf,...data}),cache:"no-store"});
+    const out=await response.json();
+    if(!response.ok)throw Error(out.reason||"视频回传操作失败");
+    return out;
+  }
+  function videoResultsURL(scope,take_id){
+    return "./api/v1/video-results/file?"+new URLSearchParams({
+      project:scope.project,episode:scope.episode,shot:scope.shot,take:take_id});
+  }
+  async function loadVideoTakes(state){
+    const root=$("wfVideoTakes_video_plans");
+    if(!root)return;
+    const pid=state.project,eid=state.episode,sid=state.selected;
+    root.replaceChildren();
+    if(!pid||!eid||!sid){
+      root.appendChild(el("p","","选择镜头后检查真实生成视频与人工审核记录。"));
+      return;
+    }
+    const query=new URLSearchParams({project:pid,episode:eid,shot:sid});
+    const record=state.items?.items.find(x=>x.unit_id===sid);
+    const current=()=>pid===state.project&&eid===state.episode&&sid===state.selected;
+    const heading=el("div","workflow-readiness-head");
+    heading.appendChild(el("strong","","SH"+sid+" · 实际视频 / 结果审核"));
+    heading.appendChild(el("small","","只认可校验过的 MP4；上传不等于批准"));
+    root.appendChild(heading);
+    try{
+      const res=await fetch("./api/v1/video-results?"+query.toString(),{
+        cache:"no-store"});
+      const out=await res.json();
+      if(!res.ok)throw Error(out.reason||"视频结果不可读");
+      if(!current())return;
+      if(!out.takes?.length)root.appendChild(el("p","",
+        "该镜头尚无已回传的真实视频。Studio 不会假设 GPU 已生成。"));
+      for(const take of out.takes||[]){
+        const card=el("div","video-take-card");
+        const name=el("div","workflow-readiness-head");
+        name.appendChild(el("strong","",
+          "真实候选 · "+take.take_id.slice(-8)+" · "+
+          (take.status==="approved"?"已批准":
+           take.status==="rejected"?"已驳回":"待人工审片")));
+        name.appendChild(el("small","",take.width+"×"+take.height+
+          " · "+take.fps.toFixed(2)+"fps · "+take.duration_seconds.toFixed(2)+"s"));
+        card.appendChild(name);
+        const video=el("video","video-take-player");
+        video.controls=true;video.preload="metadata";
+        video.setAttribute("playsinline","");
+        video.src=videoResultsURL({project:pid,episode:eid,shot:sid},take.take_id);
+        card.appendChild(video);
+        card.appendChild(el("small","",
+          "SHA-256: "+take.sha256+" · 关联制作单 V"+take.plan_revision));
+        if(take.status==="in_review"){
+          const reason=el("textarea","video-review-reason");
+          reason.placeholder="填写人工审片意见（至少 8 个字）";
+          reason.maxLength=600;reason.rows=2;
+          reason.setAttribute("aria-label","镜头 "+sid+" 人工审片理由");
+          card.appendChild(reason);
+          const actions=el("div","workflow-review-actions");
+          for(const [decision,title] of [
+            ["approve","批准此实际视频"],["reject","驳回并返工"]]){
+            const btn=el("button","prod-new"+(
+              decision==="approve"?" workflow-approve-button":""),title);
+            btn.type="button";
+            btn.addEventListener("click",async()=>{
+              if(reason.value.trim().length<8){
+                $("wfMessage_video_plans").textContent="人工审片意见至少 8 字";return;
+              }
+              if(decision==="approve"&&!window.confirm(
+                "确认已亲自观看视频并核对来源、规格与人物连续性？批准后不可撤回。"))return;
+              btn.disabled=true;
+              try{
+                await videoResultPost("review",{
+                  project_id:pid,episode_id:eid,shot_id:sid,
+                  take_id:take.take_id,decision,rationale:reason.value.trim()});
+                if(current())await loadVideoTakes(state);
+              }catch(error){
+                $("wfMessage_video_plans").textContent=
+                  "视频审片失败："+error.message;
+                btn.disabled=false;
+              }
+            });
+            actions.appendChild(btn);
+          }
+          card.appendChild(actions);
+        }else{
+          card.appendChild(el("p","",
+            (take.review_reason||"")+(take.reviewer?" · 审核已记录":"")));
+        }
+        root.appendChild(card);
+      }
+    }catch(error){
+      if(current())root.appendChild(el("p","",
+        "读取真实视频失败："+error.message));
+    }
+    if(!record){
+      root.appendChild(el("p","",
+        "请先保存该镜头的视频制作单并提交审核，然后才能回传实际成片。"));
+      return;
+    }
+    const form=el("form","video-upload-form");
+    const label=el("strong","","上传本镜头的本地 MP4（分块可续传）");
+    const file=el("input","");
+    file.type="file";file.accept="video/mp4,.mp4";file.required=true;
+    file.setAttribute("aria-label","选择已经生成的视频 MP4");
+    const prompt=el("input","");
+    prompt.type="text";prompt.maxLength=100;
+    prompt.placeholder="ComfyUI prompt_id（可选）";
+    const submit=el("button","prod-new","验证来源并上传");
+    submit.type="submit";
+    const progress=el("p","video-upload-progress","");
+    form.append(label,file,prompt,submit,progress);
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      const selected=file.files?.[0];
+      if(!selected)return;
+      if(selected.size<128||selected.size>250000000||
+         !/\.mp4$/i.test(selected.name)){
+        progress.textContent="仅可上传不超过 250MB 的 MP4 文件";return;
+      }
+      const ownerScope={project_id:pid,episode_id:eid,shot_id:sid};
+      submit.disabled=true;
+      try{
+        progress.textContent="读取版本与计算原文件 SHA-256…";
+        const qs=new URLSearchParams({project:pid,episode:eid,shot:sid});
+        const res=await fetch("./api/v1/workflow/video-package?"+qs.toString(),
+          {cache:"no-store"});
+        const pkg=await res.json();
+        if(!res.ok)throw Error(pkg.reason||"无法核对制作单");
+        if(pkg.package.video_plan.revision!==record.revision)
+          throw Error("制作单已发生修改，必须重新读取");
+        if(pkg.package.video_plan.status!=="in_review"||
+           JSON.stringify(pkg.package.blockers)!==
+             JSON.stringify(["video_render_executor_not_connected"]))
+          throw Error("素材与制作单尚未满足回传准入条件");
+        const buffer=await selected.arrayBuffer();
+        const digest=await crypto.subtle.digest("SHA-256",buffer);
+        const sha=Array.from(new Uint8Array(digest)).map(
+          b=>b.toString(16).padStart(2,"0")).join("");
+        if(!current())throw Error("镜头已切换，上传已停止");
+        const started=await videoResultPost("start",{
+          ...ownerScope,plan_revision:record.revision,
+          package_sha256:pkg.package_sha256,file_sha256:sha,
+          size_bytes:selected.size,prompt_id:prompt.value.trim()});
+        let offset=started.received_bytes;
+        while(offset<selected.size){
+          if(!current())throw Error("镜头已切换，上传已暂停");
+          const slice=selected.slice(offset,offset+786432);
+          const encoded=await fileAsBase64(slice);
+          const result=await videoResultPost("chunk",{
+            upload_id:started.upload_id,offset,chunk_base64:encoded});
+          offset=result.received_bytes;
+          progress.textContent="已校验上传 "+(
+            100*offset/selected.size).toFixed(1)+"% · "+selected.name;
+        }
+        const finish=await videoResultPost("finish",{
+          upload_id:started.upload_id});
+        progress.textContent="视频已校验并提交人工审片："+finish.take_id;
+        if(current())await loadVideoTakes(state);
+      }catch(error){
+        progress.textContent="回传中断或校验失败："+error.message+
+          "；保留原文件，重新选择后可继续未完成的分块上传。";
+        submit.disabled=false;
+      }
+    });
+    root.appendChild(form);
+  }
+
   function workflowRender(kind){
     const state=wfState[kind];if(!state.items)return;
+    if(kind==="video_plans")loadVideoTakes(state);
     const data=state.items,chosen=data.items.find(x=>x.unit_id===state.selected);
     workflowRenderList(kind);
     if(kind==="storyboards")workflowRenderStoryboardTimeline();
