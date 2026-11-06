@@ -102,7 +102,8 @@ final class BrowserUpdater {
         Release best=null;
         for(int i=0;i<releases.length() && i<80;i++) {
             JSONObject release=releases.optJSONObject(i);
-            if(release==null||release.optBoolean("draft",false))continue;
+            if(release==null||release.optBoolean("draft",false)
+                    ||release.optBoolean("prerelease",false))continue;
             String tag=release.optString("tag_name","");
             if(!tag.startsWith(TAG_PREFIX))continue;
             String version=tag.substring(TAG_PREFIX.length());
