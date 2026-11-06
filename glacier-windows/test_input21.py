@@ -6,6 +6,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt, QUrl
+from PySide6.QtWidgets import QMessageBox
 from glacier_input21 import (
     GlacierInput21,
     allowed_external_url21,
@@ -95,17 +96,29 @@ class Input21Tests(unittest.TestCase):
 
     def test_system_browser_launch_requires_direct_user_action(self):
         host = FakeHost("https://example.org/help?q=test%20drag")
-        with patch("glacier_input21.webbrowser.open", return_value=True) as opened:
-            self.assertTrue(host.open_in_system_browser21())
+        with patch("glacier_input21.QMessageBox.question",
+                   return_value=QMessageBox.StandardButton.Yes):
+            with patch("glacier_input21.webbrowser.open", return_value=True) as opened:
+                self.assertTrue(host.open_in_system_browser21())
             opened.assert_called_once()
             self.assertIn("https://example.org/help?q=test%20drag", opened.call_args.args[0])
         self.assertIn("登录状态是独立的", host.status.message)
 
     def test_system_browser_launch_failure_is_nonfatal(self):
         host = FakeHost("https://example.com/")
-        with patch("glacier_input21.webbrowser.open", side_effect=OSError("missing")):
-            self.assertFalse(host.open_in_system_browser21())
+        with patch("glacier_input21.QMessageBox.question",
+                   return_value=QMessageBox.StandardButton.Yes):
+            with patch("glacier_input21.webbrowser.open", side_effect=OSError("missing")):
+                self.assertFalse(host.open_in_system_browser21())
         self.assertIn("手动访问", host.status.message)
+
+    def test_explicit_decline_does_not_open_external_browser(self):
+        host = FakeHost("https://example.com/")
+        with patch("glacier_input21.QMessageBox.question",
+                   return_value=QMessageBox.StandardButton.No):
+            with patch("glacier_input21.webbrowser.open") as opened:
+                self.assertFalse(host.open_in_system_browser21())
+                opened.assert_not_called()
 
     def test_non_web_url_never_reaches_browser(self):
         host = FakeHost("file:///C:/private.txt")
