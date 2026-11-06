@@ -25,6 +25,12 @@ jobs:
           python-version: '3.12'
       - name: Install Microsoft identity test dependencies
         run: python -m pip install --disable-pip-version-check 'msal==1.39.0' 'PyJWT[crypto]>=2.10,<3'
+      - name: Install actual MP4 format probe
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          test -x /usr/bin/ffprobe
+          test -x /usr/bin/ffmpeg
       - name: Compile isolated workbench backend
         run: python -m compileall -q studio
       - name: JavaScript syntax check
