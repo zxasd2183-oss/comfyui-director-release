@@ -48,6 +48,16 @@ class AccountCardTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 clean_accounts22(payload)
 
+    def test_duplicate_account_name_normalization(self):
+        base = {"site": "chatgpt.com", "name": "Primary",
+                "username": "one@example.com", "password": ""}
+        for variant in (" Primary ", "primary", "PRIMARY"):
+            with self.subTest(name=variant):
+                with self.assertRaises(ValueError):
+                    clean_accounts22({"schema": 1, "accounts": [
+                        base, {**base, "name": variant, "username": "other@example.com"}
+                    ]})
+
     def test_vault_is_encrypted_and_atomically_persisted(self):
         with tempfile.TemporaryDirectory() as tmp:
             host = Host()
