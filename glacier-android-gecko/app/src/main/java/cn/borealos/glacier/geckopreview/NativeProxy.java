@@ -61,6 +61,12 @@ public final class NativeProxy {
                  "  network.proxy.socks_remote_dns: true\n"+
                  "  network.proxy.failover_direct: false\n"+
                  "  network.proxy.no_proxies_on: \"\"\n"+
+                 // Force DNS through SOCKS; avoid private DoH/prefetch paths.
+                 "  network.proxy.allow_hijacking_localhost: true\n"+
+                 "  network.trr.mode: 5\n"+
+                 "  network.dns.disablePrefetch: true\n"+
+                 "  network.predictor.enabled: false\n"+
+                 "  network.prefetch-next: false\n"+
                  "  network.http.http3.enable: false\n"+
                  // WebRTC can disclose local/public addresses outside SOCKS.
                  "  media.peerconnection.enabled: false\n";

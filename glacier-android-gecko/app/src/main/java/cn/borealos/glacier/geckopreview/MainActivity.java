@@ -89,7 +89,22 @@ public final class MainActivity extends Activity {
         // an explicit mode and its runtime preferences are in place.
         if (runtime == null) {
             NativeProxy.deleteStaleFiles(this);
-            showNetworkGate();
+            // An intentionally non-working SOCKS5 port is CI's fail-closed
+            // sentinel. Only a debug APK and an explicit adb launch can enter
+            // this path. Never open a direct runtime when it is requested.
+            if (debugBuild() && "offline-socks".equals(
+                    getIntent().getStringExtra("glacier.ci.network"))) {
+                proxyMode = true;
+                try {
+                    String config = NativeProxy.prepareGecko(this, true);
+                    android.util.Log.i("GlacierSmoke", "PROXY_TEST=OFFLINE_SOCKS_CONFIGURED");
+                    initializeEngine(config);
+                } catch (Exception e) {
+                    showNetworkError("代理断线测试初始化失败");
+                }
+            } else {
+                showNetworkGate();
+            }
         } else {
             buildChrome();
             openTab(PRIVATE, START_URL);
@@ -371,6 +386,23 @@ public final class MainActivity extends Activity {
             });
         }
         session.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
+            @Override
+            public GeckoResult<String> onLoadError(
+                    GeckoSession source, String uri,
+                    org.mozilla.geckoview.WebRequestError error) {
+                if (debugBuild() && proxyMode
+                        && START_URL.equals(uri)) {
+                    boolean refused = error.category ==
+                            org.mozilla.geckoview.WebRequestError.ERROR_CATEGORY_PROXY
+                            && error.code ==
+                            org.mozilla.geckoview.WebRequestError.ERROR_PROXY_CONNECTION_REFUSED;
+                    android.util.Log.i("GlacierSmoke",
+                            "PROXY_OFFLINE_ERROR=" + (refused ? "proxy_refused" : "other")
+                                    + " category=" + error.category + " code=" + error.code);
+                }
+                return null;
+            }
+
             @Override
             public void onLocationChange(GeckoSession source, String url,
                                          List<GeckoSession.PermissionDelegate.ContentPermission> perms,

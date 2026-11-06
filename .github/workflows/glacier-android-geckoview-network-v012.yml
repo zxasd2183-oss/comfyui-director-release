@@ -136,9 +136,48 @@ jobs:
           path: emulator-evidence/
           if-no-files-found: warn
           retention-days: 30
+  emulator_proxy_fail_closed:
+    name: Android 15 SOCKS offline fail-closed regression (no VLESS secrets)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download built APK from this exact run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Configure emulator KVM
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Assert no DIRECT fallback with missing SOCKS service
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
+      - name: Preserve proxy-failure evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.2-proxy-failclosed-evidence
+          path: emulator-proxy-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
   publish_verified:
-    name: Publish preview APK only after Android emulator verification
-    needs: [build, emulator_smoke]
+    name: Publish preview APK only after Android emulator and SOCKS fail-closed verification
+    needs: [build, emulator_smoke, emulator_proxy_fail_closed]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
