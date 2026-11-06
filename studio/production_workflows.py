@@ -459,6 +459,48 @@ def review_unit(db_path,data,actor):
             "revision":rev,"gpu_action":False}
 
 
+
+def _video_blockers(db,pid,eid,sid):
+    """Conservative readiness list. Approved planning != rendered media."""
+    problems=[]
+    spec=db.execute("SELECT COUNT(*) FROM studio_work_units WHERE "
+        "project_id=? AND episode_id=? AND kind='settings' "
+        "AND status='approved'",(pid,eid)).fetchone()[0]
+    if not spec:problems.append("project_spec_not_approved")
+    for kind in ("shot_plans","storyboards","white_models"):
+        upstream=_record(db,pid,eid,kind,sid)
+        if upstream is None or upstream["status"]!="approved":
+            problems.append(kind+"_not_approved")
+    shot=_record(db,pid,eid,"shot_plans",sid)
+    if shot and shot["status"]=="approved":
+        fields=json.loads(shot["fields_json"])
+        scene_id=fields.get("scene_id")
+        if scene_id:
+            scene=db.execute("SELECT status FROM scene_profiles WHERE "
+                "project_id=? AND scene_id=?",(pid,scene_id)).fetchone()
+            if not scene or scene["status"]!="approved":
+                problems.append("scene_revision_not_approved")
+        for prop_id in [x.strip() for x in
+            fields.get("prop_ids","").split(",") if x.strip()]:
+            prop=_record(db,pid,"","props",prop_id)
+            if not prop or prop["status"]!="approved":
+                problems.append("prop_not_approved:"+prop_id)
+    bindings=db.execute("SELECT character_id FROM shot_character_bindings_v2 "
+        "WHERE project_id=? AND episode_id=? AND shot_id=?",
+        (pid,eid,sid)).fetchall()
+    for record in bindings:
+        character_id=record["character_id"]
+        master=db.execute("SELECT visual_id FROM character_master_events "
+            "WHERE project_id=? AND character_id=? AND decision='approved' "
+            "ORDER BY seq DESC LIMIT 1",(pid,character_id)).fetchone()
+        if master is None:
+            problems.append("character_master_not_approved:"+character_id)
+    # Integration contract explicitly says the Comfy renderer/result verifier
+    # is not present. Never return an unqualified ready=True flag.
+    problems.append("video_render_executor_not_connected")
+    return problems
+
+
 def list_units(db_path,project_id,kind,episode_id=""):
     kind=_kind(kind)
     with closing(open_db(db_path,initialize=False)) as db:
@@ -484,6 +526,9 @@ def list_units(db_path,project_id,kind,episode_id=""):
                 "AND kind=? AND unit_id=? ORDER BY id DESC LIMIT 8",
                 (pid,eid,kind,row["unit_id"])).fetchall()
             info["reviews"]=[dict(x) for x in reviews]
+            if kind=="video_plans":
+                info["blockers"]=_video_blockers(db,pid,eid,row["shot_id"])
+                info["rendered"]=False
             items.append(info)
         visuals=[]
         if SCHEMAS[kind]["image_kind"]:
