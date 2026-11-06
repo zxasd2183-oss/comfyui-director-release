@@ -803,15 +803,14 @@ public final class MainActivity extends Activity {
         final String version=BuildConfig.VERSION_NAME;
         final String auto=autoUpdateCheckEnabled()?"已开启":"已关闭";
         final String[] choices=updater!=null&&updater.hasReady()?
-                new String[]{"检查更新","启动时检查新版："+auto,"安装已验证 APK"}:
-                new String[]{"检查更新","启动时检查新版："+auto};
+                new String[]{"检查更新","启动时检查新版："+auto,
+                        "更新安全说明","安装已验证 APK"}:
+                new String[]{"检查更新","启动时检查新版："+auto,"更新安全说明"};
+        // Android AlertDialog's message view can hide its items list on
+        // some versions. A compact list and a separate explanation dialog
+        // keep the actual update actions reachable on real devices.
         new AlertDialog.Builder(this)
                 .setTitle("Glacier · 更新与版本 "+version)
-                .setMessage(debugBuild()
-                        ?"当前是 Debug 预览包。因签名每次可能变化，"
-                         +"不能保证覆盖安装保留数据；正式在线更新仅支持固定签名 Release。"
-                        :"官方 GitHub 发布源；SHA-256、包名、版本及 APK 签名全部校验。"
-                         +"使用 VLESS 时更新同样走 SOCKS5，不会静默直连。")
                 .setItems(choices,(d,which)->{
                     if(which==0)checkForUpdates(true);
                     else if(which==1) {
@@ -820,7 +819,16 @@ public final class MainActivity extends Activity {
                         android.widget.Toast.makeText(this,next?
                                 "启动更新提醒已开启":"启动更新提醒已关闭",
                                 android.widget.Toast.LENGTH_SHORT).show();
-                    } else if(which==2)installVerifiedUpdate();
+                    } else if(which==2) {
+                        new AlertDialog.Builder(this)
+                                .setTitle("Glacier · 更新安全说明")
+                                .setMessage(debugBuild()
+                                        ?"当前是 Debug 预览包。签名每次可能变化，"
+                                         +"不能保证覆盖安装保留数据；在线更新仅支持固定签名 Release。"
+                                        :"官方 GitHub 发布源；验证 SHA-256、包名、版本及 APK 签名。"
+                                         +"VLESS 更新通过本地 SOCKS5，不会静默直连；安装由 Android 确认。")
+                                .setPositiveButton("知道了",null).show();
+                    } else if(which==3)installVerifiedUpdate();
                 })
                 .setNegativeButton("关闭",null)
                 .show();
