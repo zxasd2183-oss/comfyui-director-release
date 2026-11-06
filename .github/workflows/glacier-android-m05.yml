@@ -23,6 +23,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  upgrade_compatibility_gate:
+    name: Reject incompatible Android APK upgrade identities
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run seven deterministic update compatibility cases
+        shell: pwsh
+        run: ./glacier-android-gecko/scripts/tests/test_upgrade_checker.ps1
+
   build:
     name: Build GeckoView + embedded sing-box dual-ABI APK
     runs-on: ubuntu-24.04
@@ -281,7 +291,7 @@ jobs:
 
   publish_debug_preview:
     name: Publish M05 debug preview only after Android regressions
-    needs: [build, emulator_saved_node, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
+    needs: [build, upgrade_compatibility_gate, emulator_saved_node, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -311,7 +321,7 @@ jobs:
 
   publish_signed:
     name: Explicit fixed-signature M05 Android release
-    needs: [build, emulator_saved_node, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
+    needs: [build, upgrade_compatibility_gate, emulator_saved_node, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
     if: github.event_name == 'workflow_dispatch' && inputs.publish_signed == true
     runs-on: ubuntu-24.04
     timeout-minutes: 50
