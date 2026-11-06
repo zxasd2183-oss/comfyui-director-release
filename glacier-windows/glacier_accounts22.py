@@ -124,8 +124,9 @@ class GlacierAccounts22:
         if self._accounts_readonly22:
             raise ValueError("Account vault locked read-only; refusing to overwrite")
         doc = clean_accounts22(self._accounts_doc22)
-        blob = self._accounts_encrypt(json.dumps(doc, ensure_ascii=False).encode("utf-8"))
-        if not isinstance(blob, bytes) or not blob or len(blob) > MAX_STORE_BYTES:
+        plaintext = json.dumps(doc, ensure_ascii=False).encode("utf-8")
+        blob = self._accounts_encrypt(plaintext)
+        if not isinstance(blob, bytes) or not blob or blob == plaintext or len(blob) > MAX_STORE_BYTES:
             raise ValueError("Invalid encrypted account file")
         self._accounts_path22.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=".accounts-d03-", dir=self._accounts_path22.parent)
