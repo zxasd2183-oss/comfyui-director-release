@@ -710,6 +710,9 @@ def get_episode_readiness(db_path,project_id,episode_id):
         approved={kind:0 for kind in kinds}
         shots=[]
         prereqs=0
+        approved_takes=0
+        has_take_table=db.execute("SELECT 1 FROM sqlite_master "
+            "WHERE type='table' AND name='studio_video_takes'").fetchone() is not None
         for row in rows[:700]:
             sid=row["shot_id"]
             stage={}
@@ -726,15 +729,51 @@ def get_episode_readiness(db_path,project_id,episode_id):
             upstream=[b for b in blockers
                       if b!="video_render_executor_not_connected"]
             if not upstream:prereqs+=1
+            take_status="not_imported"
+            active_take_id=None
+            if has_take_table:
+                takes=db.execute("SELECT take_id,status,plan_revision,"
+                    "package_sha256 FROM studio_video_takes WHERE "
+                    "project_id=? AND episode_id=? AND shot_id=? "
+                    "ORDER BY created_at DESC,take_id DESC LIMIT 50",
+                    (pid,eid,sid)).fetchall()
+                if takes:
+                    try:
+                        current=get_video_handoff_package(
+                            db_path,pid,eid,sid)
+                        current_sha=current["package_sha256"]
+                    except WorkflowError:
+                        current_sha=None
+                    current_takes=[t for t in takes
+                        if t["package_sha256"]==current_sha and
+                        t["plan_revision"]==(
+                            stage["video_plans"] or {}).get("revision")]
+                    selected=next((t for t in current_takes
+                        if t["status"]=="approved"),None)
+                    if selected is None:
+                        selected=next((t for t in current_takes
+                            if t["status"]=="in_review"),None)
+                    if selected:
+                        take_status=selected["status"]
+                        active_take_id=selected["take_id"]
+                    elif any(t["status"]=="approved" for t in takes):
+                        take_status="stale"
+                    elif current_takes:
+                        take_status=current_takes[0]["status"]
+                    else:
+                        take_status="stale"
+            if take_status=="approved":approved_takes+=1
             shots.append({"shot_id":sid,"ordinal":row["ordinal"],
                 "duration_ms":row["duration_ms"],"stages":stage,
                 "upstream_blockers":upstream,
                 "execution_blocker":"video_render_executor_not_connected",
+                "video_take_status":take_status,"video_take_id":active_take_id,
                 "upstream_ready":not upstream,"runner_connected":False})
         return {"ok":True,"project_id":pid,"episode_id":eid,
             "shot_count":len(shots),"total_duration_ms":sum(
                 x["duration_ms"] for x in shots),
             "approved_counts":approved,"upstream_ready_count":prereqs,
+            "approved_take_count":approved_takes,
             "runner_connected":False,"shots":shots,
             "truncated":len(rows)>700,"gpu_action":False}
 
