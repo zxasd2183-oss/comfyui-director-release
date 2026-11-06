@@ -71,7 +71,7 @@ class GlacierCharactersTests(unittest.TestCase):
         for snippet in ('characterPost("create"','characterPost("update"',
                         'characterPost("link"','characterPost("approve"',
                         'characterPost("assets/create"',
-                        'characterPost("assets/revise"',
+                        'item?"assets/revise":"assets/create"',
                         'characterPost("assets/review"',
                         './api/v1/production/visual/upload',
                         'kind:"character"', 'window.confirm(', 'microsoftOwner'):
