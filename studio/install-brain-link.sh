@@ -60,8 +60,8 @@ python3 -m unittest discover -s "$SRC/tests" -p 'test_*.py' -q
 "$PYTHON" -m py_compile "$VPS/hub_app.py" "$VPS/hub_bridge.py" "$VPS/hub_rpc.py" \
     "$VPS/hub_brain.py" "$VPS/hub_file_sync.py" "$VPS/hub_sync_jobs.py" "$SRC/studio_server.py" "$SRC/studio_brain.py"
 
-# Studio uses its existing backup+rollback installer. This may invalidate
-# existing browser sessions when systemd restarts the service.
+# Studio uses its existing backup+rollback installer. Owner sessions persist across the service restart when persistent sessions
+# have been installed and the current trusted browser cookie is still valid.
 echo "STEP: verifying/upgrading existing Microsoft Studio route (no changes to GPU)"
 if ! bash "$SRC/install-microsoft-web.sh"; then
     die "Microsoft Studio sub-installer failed; Hub remains untouched. Check Studio gate diagnostics."
@@ -223,10 +223,12 @@ for attempt in range(8):
             "enqueue_chatgpt_visual_to_studio",
             "get_chatgpt_visual_sync_status",
             "list_recent_chatgpt_visual_syncs",
+            "get_project_characters","create_project_character",
+            "update_project_character","link_project_character_visual",
         }
         if names!=expected:
             raise RuntimeError("Hub MCP registry mismatch")
-        print("PASS: Hub 23 tools registered; existing GPU/power tools preserved")
+        print("PASS: Hub 27 tools registered; existing GPU/power tools preserved")
         break
     except Exception:
         if attempt==7: raise
