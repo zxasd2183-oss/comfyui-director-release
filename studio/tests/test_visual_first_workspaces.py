@@ -49,7 +49,7 @@ class VisualFirstWorkspaceTests(unittest.TestCase):
                 self.assertIn('"'+closer+'"', self.js)
         self.assertIn("dialog.showModal()",self.js)
         self.assertIn("dialog.close()",self.js)
-        self.assertIn("sceneInspectorDialog").showModal()',self.js)
+        self.assertIn('$("sceneInspectorDialog").showModal()',self.js)
         self.assertIn("body[data-page=\"scenes\"] .scene-workspace",self.css)
         self.assertIn("body[data-page=\"characters\"] .character-workspace",self.css)
 
