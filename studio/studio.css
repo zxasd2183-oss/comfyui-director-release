@@ -1581,3 +1581,20 @@ body[data-page="characters"] .character-center:has(#characterMediaDrawer[open]) 
   flex-basis:145px;min-height:135px
 }
 body[data-page="characters"] .character-media-drawer[open]{max-height:42%}
+
+/* 1440x900 desktop home: occupy the useful first screen without
+   restoring the removed backend metric clutter. */
+@media(min-width:1101px) and (min-height:780px){
+  body[data-page="home"] .workspace>.hero{
+    min-height:clamp(235px,30vh,295px)
+  }
+  body[data-page="home"] .icebound-quick-actions button{
+    min-height:100px
+  }
+  body[data-page="home"] .icebound-home-progress,
+  body[data-page="home"] .icebound-home-tasks{
+    min-height:clamp(214px,27vh,252px);
+    display:flex;flex-direction:column
+  }
+  body[data-page="home"] .icebound-progress-layout{flex:1}
+}
