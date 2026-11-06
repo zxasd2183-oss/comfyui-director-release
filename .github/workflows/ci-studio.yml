@@ -4,10 +4,12 @@ on:
     branches: [main]
     paths:
       - 'studio/**'
+      - 'scripts/deploy-director-all-once.sh'
       - '.github/workflows/ci-studio.yml'
   pull_request:
     paths:
       - 'studio/**'
+      - 'scripts/deploy-director-all-once.sh'
       - '.github/workflows/ci-studio.yml'
   workflow_dispatch:
 permissions:
@@ -34,6 +36,8 @@ jobs:
           bash -n studio/upgrade-v09.sh
           bash -n studio/install-microsoft-web.sh
           bash -n studio/install-brain-link.sh
+          bash -n scripts/deploy-director-all-once.sh
+          bash scripts/deploy-director-all-once.sh --help >/dev/null
       - name: Offline tests - SQLite, control rights, Hub read-only, HTTP and CSRF
         run: python -m unittest discover -s studio/tests -p 'test_*.py' -v
 
