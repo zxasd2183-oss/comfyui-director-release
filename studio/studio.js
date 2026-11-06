@@ -1335,7 +1335,11 @@
             sceneProjectId=item.project_id;
             sceneCurrentId=item.unit_id;sceneData=null;
             navigateWorkspace("scenes");
-            loadScenes().catch(e=>$("sceneMessage").textContent=e.message);
+            loadScenes().then(()=>{
+              if(sceneData?.scenes.some(s=>s.scene_id===item.unit_id)&&
+                  !$("sceneInspectorDialog").open)
+                $("sceneInspectorDialog").showModal();
+            }).catch(e=>$("sceneMessage").textContent=e.message);
             return;
           }
           if(item.kind==="character_asset"){
@@ -1343,7 +1347,16 @@
             characterCurrentId=item.character_id;
             characterData=null;characterV2Data=null;
             navigateWorkspace("characters");
-            loadCharacters().catch(e=>$("characterMessage").textContent=e.message);
+            loadCharacters().then(()=>{
+              const asset=characterV2Data?.assets.find(a=>a.item_id===item.unit_id);
+              const profile=characterData?.characters.find(
+                p=>p.character_id===item.character_id);
+              if(asset&&profile){
+                characterV2Category=asset.category;
+                renderCharacterV2(profile,$("characterAssetsPanel"));
+                $("characterAssetsPanel").scrollIntoView({block:"nearest"});
+              }
+            }).catch(e=>$("characterMessage").textContent=e.message);
             return;
           }
           const page=map[item.kind],state=wfState[item.kind];
