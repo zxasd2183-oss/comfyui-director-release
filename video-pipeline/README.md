@@ -86,3 +86,30 @@ GPU 当前关机，因此没有真实 H3 运行、真实模型兼容性或成片
 离线检查（不需要模型/GPU/网络）：
 
     python3 -m unittest discover -s video-pipeline/tests -p 'test_*.py' -v
+
+## Studio V2 → 本地执行器：安全单镜头导入（新增）
+
+Studio 的「视频制作」页面提供按真实素材版本导出的制作单 JSON。
+该文件包含完整上游版本引用、当前阻塞项与规范化 SHA-256 校验值。
+`prepare-studio` 仅把**满足前置批准条件**的制作单转为本机 ComfyUI
+计划，不联网、不提交任务，也不代替影片成品审核：
+
+```sh
+python3 video-pipeline/director_video.py prepare-studio \
+  --package studio_handoff_EP01_SH01_V1.json \
+  --workflow h3-api.json --bindings bindings.json \
+  --out work/studio-shot01-plan.json
+```
+
+若绑定的 H3 工作流需要图像输入，还须先将已批准的原图放入 ComfyUI
+本地受控 input 目录，并传 `--image 已确认的文件名.png`。
+非法路径、未经批准的场景/道具/分镜/粗白模、制作规格不符或被篡改的
+JSON 都会被拒绝。SHA-256 是防误修改校验，**不是数字签名**。
+
+真实提交仍必须遵循上述独立的本地 `preflight`、空队列确认及
+`--execute --acknowledge-gpu-cost` 双重明确授权。VPS Studio 部署**不会**
+自动更新关机中的 GPU 本地执行器。生成结果自动回传 Studio、成片 MP4
+可视化审核与一致性质检仍未接通，不能因为准备了计划就宣称成片完成。
+
+技术契约与当前边界见
+[`studio/docs/studio-gpu-handoff.md`](../studio/docs/studio-gpu-handoff.md)。
