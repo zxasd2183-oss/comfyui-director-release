@@ -113,3 +113,32 @@ JSON 都会被拒绝。SHA-256 是防误修改校验，**不是数字签名**。
 
 技术契约与当前边界见
 [`studio/docs/studio-gpu-handoff.md`](../studio/docs/studio-gpu-handoff.md)。
+
+## 整集批量导入（一次准备所有已审核镜头）
+
+Studio 视频制作页新增「导出整集版本锁定制作包」。将文件保存到 GPU
+受控目录后，在 GPU **本地**执行（准备阶段不需要 GPU 在线）：
+
+```sh
+python3 director_video.py prepare-studio-batch \
+  --package /safe/inbox/studio_episode_EP01_handoff.json \
+  --workflow /safe/local/h3-api.json \
+  --bindings /safe/local/bindings.json \
+  --out /safe/work/episode-plan.json
+```
+
+只有整集所有镜头已有经人工提交的视频制作单，且所有场景、分镜、粗白模、
+道具、角色引用的批准条件全部满足时，才允许生成完整离线计划。某一个
+镜头缺版本或素材、镜头总数不符、SHA-256 被篡改、帧率不统一或时长不符
+都会拒绝，**不会只准备一部分而假装整集完成**。
+
+I2V/R2V 等含本地图片输入的工作流，可增加
+`--images /safe/local/images.json`，内容为镜头编号到 ComfyUI 受控
+input 目录内图片**安全文件名**的映射。不可传 URL 或路径穿越。
+
+Studio 已支持独立的 Microsoft owner MP4 分块回传（单片最大 250MB、
+严格 SHA-256 + ffprobe 规格检查、版本锁定、审片、返工和浏览器播放）。
+当前传输需由已登录的 Studio owner 选择真实 MP4；不存在隐藏的自动
+GPU 调度或自动生成回传。播放/批准是对实际产物的独立审查门槛，不是
+对制作单的批准。详情：
+[`studio/docs/studio-gpu-handoff.md`](../studio/docs/studio-gpu-handoff.md)。
