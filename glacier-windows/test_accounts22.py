@@ -34,6 +34,7 @@ class AccountCardTests(unittest.TestCase):
         background = View("https://chatgpt.com/")
         host.current = lambda: active
         host._account_last_site22 = {}
+        host._account_presented22 = {}
         host._accounts_doc22 = {"schema": 1, "accounts": [
             {"site": "chatgpt.com", "name": "Personal",
              "username": "user", "password": "secret"}
@@ -48,9 +49,15 @@ class AccountCardTests(unittest.TestCase):
             popup.assert_not_called()
             host._show_site_accounts22(active, "chatgpt.com")
             popup.assert_called_once_with("chatgpt.com")
+            host._show_site_accounts22(active, "chatgpt.com")
+            popup.assert_called_once()
             active._url = QUrl("https://other.example/")
             host._show_site_accounts22(active, "chatgpt.com")
             popup.assert_called_once()
+        with patch("glacier_accounts22.QTimer.singleShot") as schedule:
+            host.current = lambda: background
+            host._schedule_site_account22(background, "chatgpt.com")
+            schedule.assert_called_once()
 
     def test_domains_require_exact_sanitized_https_hostname(self):
         self.assertEqual(safe_site22("www.ChatGPT.com"), "chatgpt.com")
