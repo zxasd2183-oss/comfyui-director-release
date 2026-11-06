@@ -44,16 +44,17 @@ DEPLOY_SHA="$(git rev-parse HEAD)"
 printf 'DEPLOY SHA: %s\n' "$DEPLOY_SHA"
 [[ -f studio/video_results.py && -f studio/tests/test_video_results.py ]] ||
   die "New video result code/tests missing from deployed ref"
+if [[ ! -x /usr/bin/ffprobe || ! -x /usr/bin/ffmpeg ]]; then
+  echo 'Installing local FFmpeg/FFprobe for mandatory actual MP4 verification...'
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+fi
+[[ -x /usr/bin/ffprobe && -x /usr/bin/ffmpeg ]] ||
+  die "FFmpeg/FFprobe required for media verification tests"
 echo 'Running local Studio unit/integration tests (no GPU)...'
 python3 -m compileall -q studio video-pipeline
 if command -v node >/dev/null 2>&1; then node --check studio/studio.js; fi
 python3 -m unittest discover -s studio/tests -p 'test_*.py' -q
-if [[ ! -x /usr/bin/ffprobe ]]; then
-  echo 'Installing local ffprobe dependency for mandatory MP4 verification...'
-  sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
-fi
-[[ -x /usr/bin/ffprobe ]] || die "ffprobe required for accepting real MP4 results"
 echo 'Running local video planner/clip archive tests (no GPU)...'
 python3 -m unittest discover -s video-pipeline/tests -p 'test_*.py' -q
 echo 'Upgrading isolated Hub, preserving approval state...'
