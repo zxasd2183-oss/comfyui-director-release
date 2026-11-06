@@ -542,8 +542,36 @@ def _video_blockers(db,pid,eid,sid):
             "ORDER BY seq DESC LIMIT 1",(pid,character_id)).fetchone()
         if master is None:
             problems.append("character_master_not_approved:"+character_id)
-    # Integration contract explicitly says the Comfy renderer/result verifier
-    # is not present. Never return an unqualified ready=True flag.
+    # Video prompt and requested output parameters must agree with the
+    # approved per-episode format BEFORE a bundle can be called fully ready.
+    plan=_record(db,pid,eid,"video_plans",sid)
+    if plan:
+        video_fields=json.loads(plan["fields_json"])
+        prompt=video_fields.get("prompt","")
+        if not prompt or not prompt.strip():
+            problems.append("video_motion_prompt_missing")
+        approved_spec=db.execute("SELECT fields_json FROM studio_work_units "
+            "WHERE project_id=? AND episode_id=? AND kind='settings' "
+            "AND status='approved' ORDER BY updated_at DESC,unit_id LIMIT 1",
+            (pid,eid)).fetchone()
+        duration=db.execute("SELECT duration_ms FROM production_shots WHERE "
+            "project_id=? AND episode_id=? AND shot_id=?",
+            (pid,eid,sid)).fetchone()
+        if approved_spec and duration:
+            spec=json.loads(approved_spec["fields_json"])
+            for field,approved_value in (("fps",spec.get("fps")),
+                ("width",spec.get("width")),("height",spec.get("height")),
+                ("duration",str(duration["duration_ms"]/1000))):
+                requested=video_fields.get(field)
+                if requested and approved_value:
+                    try:
+                        mismatch=abs(float(requested)-float(approved_value))>.001
+                    except (TypeError,ValueError,OverflowError):
+                        mismatch=True
+                    if mismatch:
+                        problems.append("video_job_spec_mismatch:"+field)
+    # A GPU live runner remains disconnected from Studio despite safe offline
+    # preparation and owner-attested actual video return.
     problems.append("video_render_executor_not_connected")
     return problems
 
