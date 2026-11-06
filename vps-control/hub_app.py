@@ -161,6 +161,53 @@ def save_production_outline(
     })
 
 
+# Project-wide reusable characters: no GPU actions and NO artistic approval.
+# Existing episode images remain immutable. A human director approves masters.
+@app.tool(annotations=READ)
+def get_project_characters(project_id: str) -> dict:
+    """Read reusable project characters, candidate media links and master-review state."""
+    return call("get_project_characters", {"project_id":project_id})
+
+
+@app.tool(annotations=WRITE)
+def create_project_character(
+    project_id: str, character_id: str, display_name: str, role: str,
+    brand_basis: str, design_language: str, character_notes: str,
+) -> dict:
+    """Add one DRAFT character profile with original brand-inspired design, never a logo."""
+    return call("create_project_character", {
+        "project_id":project_id,"character_id":character_id,
+        "display_name":display_name,"role":role,"brand_basis":brand_basis,
+        "design_language":design_language,"character_notes":character_notes,
+    })
+
+
+@app.tool(annotations=WRITE)
+def update_project_character(
+    project_id: str, character_id: str, expected_revision: int,
+    display_name: str, role: str, brand_basis: str,
+    design_language: str, character_notes: str,
+) -> dict:
+    """Edit one draft character profile only with revision check; does not approve a master."""
+    return call("update_project_character", {
+        "project_id":project_id,"character_id":character_id,
+        "expected_revision":expected_revision,"display_name":display_name,
+        "role":role,"brand_basis":brand_basis,
+        "design_language":design_language,"character_notes":character_notes,
+    })
+
+
+@app.tool(annotations=WRITE)
+def link_project_character_visual(
+    project_id: str, character_id: str, visual_id: str, reference_type: str,
+) -> dict:
+    """Link an existing character visual candidate without copying media or approving it."""
+    return call("link_project_character_visual", {
+        "project_id":project_id,"character_id":character_id,
+        "visual_id":visual_id,"reference_type":reference_type,
+    })
+
+
 class ChatGPTFileRef(BaseModel):
     download_url: str
     file_id: str

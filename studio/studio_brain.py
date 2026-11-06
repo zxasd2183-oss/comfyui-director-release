@@ -23,12 +23,19 @@ from production_core import (
 )
 
 from visual_library import list_visuals
+from character_library import (
+    CharacterError, list_characters, create_character,
+    update_character, link_visual as link_character_visual,
+)
 
 BRAIN_PATH="/api/v1/brain"
-READ_TOOLS=frozenset({"get_production_dashboard","get_production_episode"})
+READ_TOOLS=frozenset({"get_production_dashboard","get_production_episode",
+                      "get_project_characters"})
 WRITE_TOOLS=frozenset({
     "create_production_project","create_production_episode",
     "add_production_shot","save_production_outline",
+    "create_project_character","update_project_character",
+    "link_project_character_visual",
 })
 ALL_TOOLS=READ_TOOLS | WRITE_TOOLS
 KEY_NAME="brain_link"
@@ -162,6 +169,24 @@ def execute(db_path,tool,args):
     if not isinstance(args,dict):
         raise BrainError("invalid_brain_arguments")
     try:
+        # Catalog functions own their audit-checked SQLite transactions and
+        # are intentionally separated from episode and GPU production routes.
+        if tool=="get_project_characters":
+            _exact(args,("project_id",))
+            return list_characters(db_path,args["project_id"])
+        if tool=="create_project_character":
+            _exact(args,("project_id","character_id","display_name","role",
+                         "brand_basis","design_language","character_notes"))
+            return create_character(db_path,args,actor="studio_brain")
+        if tool=="update_project_character":
+            _exact(args,("project_id","character_id","expected_revision",
+                         "display_name","role","brand_basis","design_language",
+                         "character_notes"))
+            return update_character(db_path,args,actor="studio_brain")
+        if tool=="link_project_character_visual":
+            _exact(args,("project_id","character_id","visual_id",
+                         "reference_type"))
+            return link_character_visual(db_path,args,actor="studio_brain")
         with closing(open_db(db_path)) as db:
             if tool=="get_production_dashboard":
                 _exact(args,())
@@ -208,6 +233,8 @@ def execute(db_path,tool,args):
                 pid,eid=_ident(args["project_id"]),_ident(args["episode_id"])
                 return _save_outline(db,pid,eid,args["body"],args["expected_revision"])
         raise BrainError("brain_tool_not_allowed",403)
+    except CharacterError as exc:
+        raise BrainError(exc.reason,exc.status) from None
     except ProductionError as exc:
         raise BrainError(str(exc),400) from None
     except sqlite3.IntegrityError:

@@ -107,6 +107,15 @@ def call_studio(tool,params,*,environ=None,opener=None,clock=time.time,rand=None
                         "brain_link_not_configured","studio_storage_unavailable",
                         "studio_brain_unavailable","brain_link_denied","json_only",
                         "invalid_brain_request",
+                        "project_not_found","character_not_found",
+                        "invalid_character_project","invalid_character_id",
+                        "invalid_character_name","invalid_character_role",
+                        "invalid_character_notes","invalid_character_fields",
+                        "invalid_character_revision","stale_character_revision",
+                        "character_already_exists","character_catalog_full",
+                        "character_visual_not_found","invalid_reference_type",
+                        "invalid_character_visual_id","character_link_limit",
+                        "character_visual_not_linked",
                     }
                     if reason in allowed:
                         return {"ok":False,"reason":reason}

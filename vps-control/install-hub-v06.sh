@@ -187,7 +187,9 @@ hub={"get_studio_status","get_queue_summary","list_h3_nodes","list_h3_workflows"
      "sync_chatgpt_visual_to_studio",
      "enqueue_chatgpt_visual_to_studio",
      "get_chatgpt_visual_sync_status",
-     "list_recent_chatgpt_visual_syncs"}
+     "list_recent_chatgpt_visual_syncs",
+     "get_project_characters","create_project_character",
+     "update_project_character","link_project_character_visual"}
 for attempt in range(8):
     try:
         for port,expected in ((8892,core),(8898,hub)):
@@ -199,7 +201,7 @@ for attempt in range(8):
                 raise RuntimeError("Read-only status backend unavailable")
             if not read(port,"get_control_center_status").get("configured"):
                 raise RuntimeError("Provider configuration unavailable")
-        print("PASS: VPS unified core 6 tools; Hub 23 tools; state via both; no power operation")
+        print("PASS: VPS unified core 6 tools; Hub 27 tools; state via both; no power operation")
         break
     except Exception:
         if attempt==7: raise

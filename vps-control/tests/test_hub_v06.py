@@ -73,7 +73,7 @@ class UnifiedVpsV06Tests(unittest.TestCase):
     def test_all_five_vps_tools_route_to_single_private_core(self):
         for name in hub_rpc.VPS_TOOLS | hub_rpc.POWER_TOOLS:
             self.assertEqual(hub_rpc.endpoint(name), "http://127.0.0.1:8892/mcp")
-        self.assertEqual(len(hub_rpc.ALL_TOOLS), 19)
+        self.assertEqual(len(hub_rpc.ALL_TOOLS), 23)
         with self.assertRaisesRegex(hub_rpc.HubError, "allowlisted"):
             hub_rpc.endpoint("submit_power_request")
 

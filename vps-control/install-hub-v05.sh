@@ -110,7 +110,7 @@ systemctl restart director-hub-mcp director-hub-bridge
 systemctl is-active --quiet director-hub-mcp director-hub-bridge \
     || fail "Hub MCP or bridge service failed; inspect journalctl locally"
 
-# Verify the LOCAL 19-tool registry, not an external route or power request.
+# Verify the LOCAL 27-tool registry, not an external route or power request.
 "$PYTHON" - <<'PY'
 import json
 from urllib.request import Request, urlopen
@@ -136,10 +136,12 @@ expected = {
     "enqueue_chatgpt_visual_to_studio",
     "get_chatgpt_visual_sync_status",
     "list_recent_chatgpt_visual_syncs",
+    "get_project_characters","create_project_character",
+    "update_project_character","link_project_character_visual",
 }
 if names != expected:
-    raise SystemExit("Hub MCP registry mismatch; expected exactly 23 tools")
-print("Hub MCP tools/list: 23/23 declared, NO POWER OPERATION")
+    raise SystemExit("Hub MCP registry mismatch; expected exactly 27 tools")
+print("Hub MCP tools/list: 27/27 declared, NO POWER OPERATION")
 PY
 
 # Nginx routing is applied only if target HTTPS vhost is unambiguous.
