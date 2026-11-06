@@ -67,7 +67,7 @@ final class GlacierUpdateTransport {
         return b;
     }
 
-    private static Socket connectSocks(String host, int port, int socksPort) throws IOException {
+    static Socket connectSocks(String host, int port, int socksPort) throws IOException {
         byte[] domain=host.getBytes(StandardCharsets.US_ASCII);
         if(domain.length==0||domain.length>255)
             throw new IOException("Invalid SOCKS hostname");
@@ -186,6 +186,7 @@ final class GlacierUpdateTransport {
             if(uri.getRawQuery()!=null)path+="?"+uri.getRawQuery();
             Socket base=proxied ? connectSocks(host,443,socksPort) : new Socket();
             SSLSocket ssl=null;
+            boolean transferred=false;
             try {
                 if(!proxied) {
                     base.connect(new InetSocketAddress(host,443),CONNECT_TIMEOUT);
@@ -239,11 +240,16 @@ final class GlacierUpdateTransport {
                 InputStream body="chunked".equalsIgnoreCase(transfer)?
                         new Chunked(input):input;
                 Response result=new Response(body,headers.get("content-length"),address,ssl);
+                transferred=true;
                 ssl=null;
                 return result;
             } finally {
-                if(ssl!=null)try{ssl.close();}catch(IOException ignored){}
-                else if(base!=null && base.isClosed()){} // TLS owns base on success.
+                // Failed handshakes, redirects and HTTP errors close both
+                // the TLS wrapper and its underlying SOCKS/direct socket.
+                if(!transferred) {
+                    if(ssl!=null)try{ssl.close();}catch(IOException ignored){}
+                    if(!base.isClosed())try{base.close();}catch(IOException ignored){}
+                }
             }
         }
         throw new IOException("Too many HTTPS redirects");
