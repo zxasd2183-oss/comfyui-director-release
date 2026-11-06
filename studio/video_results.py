@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import secrets
 import sqlite3
 import subprocess
@@ -202,6 +203,14 @@ def begin_upload(db_path, data, actor):
         root=_safe_root(db_path,create=True)
         now=int(time.time())
         with transaction(db):
+            # An upload is only resumable for 24 hours. Reap abandoned byte
+            # files on the next owner start to avoid unbounded disk growth.
+            expired=db.execute("SELECT upload_id FROM studio_video_uploads "
+                "WHERE expires_at<=?",(now,)).fetchall()
+            for item in expired:
+                stale=root/(item["upload_id"]+".part")
+                stale.unlink(missing_ok=True)
+            db.execute("DELETE FROM studio_video_uploads WHERE expires_at<=?",(now,))
             # Reuse the same signed-in owner's exact upload after an interrupted
             # connection, never create duplicate overlapping upload sessions.
             row=db.execute("SELECT * FROM studio_video_uploads WHERE "
@@ -221,6 +230,8 @@ def begin_upload(db_path, data, actor):
                 "WHERE project_id=? AND expires_at>?",(pid,now)).fetchone()[0]
             if active>=MAX_ACTIVE_PER_PROJECT:
                 raise VideoResultError("too_many_active_video_uploads",409)
+            if shutil.disk_usage(root).free<size+100_000_000:
+                raise VideoResultError("video_storage_space_insufficient",507)
             upload_id="UP_"+secrets.token_hex(16)
             target=root/(upload_id+".part")
             fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
