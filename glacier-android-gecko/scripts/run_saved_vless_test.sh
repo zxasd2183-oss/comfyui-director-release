@@ -6,7 +6,7 @@ OUT="$GITHUB_WORKSPACE/emulator-storage-evidence"
 mkdir -p "$OUT"
 trap 'adb logcat -d -t 2500 > "$OUT/logcat.txt" 2>/dev/null || true' EXIT
 
-APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M02R3-ARM64-x86_64-debug.apk"
+APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M03-ARM64-x86_64-debug.apk"
 TEST_APK="$GITHUB_WORKSPACE/.glacier-test-app/app-debug-androidTest.apk"
 test -s "$APK"
 test -s "$TEST_APK"
@@ -16,5 +16,5 @@ adb install -r "$TEST_APK"
 adb shell am instrument -w -r \
   cn.borealos.glacier.geckopreview.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$OUT/instrumentation.txt"
-grep -q 'OK (1 test)' "$OUT/instrumentation.txt"
-echo 'M01_STORAGE_TEST_PASS: Keystore encrypted-save/read, auto-connect flag and delete'
+grep -q 'OK (2 tests)' "$OUT/instrumentation.txt"
+echo 'M03_STORAGE_TEST_PASS: saved VLESS and encrypted tab snapshots'
