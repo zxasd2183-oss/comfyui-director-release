@@ -46,6 +46,10 @@ from shot_character_bindings import (
     list_bindings as list_shot_character,
     bind_character as save_shot_character,
 )
+from scene_library import (
+    SceneError, prepare_schema as prepare_scenes, list_scenes,
+    create_scene, update_scene, link_scene_visual, review_scene,
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -147,6 +151,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_characters(db)
             prepare_character_v2(db)
             prepare_shot_character(db)
+            prepare_scenes(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -350,6 +355,19 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(400,{"ok":False,"reason":"invalid_episode_query"})
             except Exception:
                 return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
+        if path == "/api/v1/scenes":
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=2)
+                if len(pairs)!=1 or pairs[0][0]!="project":
+                    raise SceneError("invalid_scene_query")
+                return self.reply(200,list_scenes(
+                    self.server.production_db_path,pairs[0][1]))
+            except SceneError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"scene_storage_unavailable"})
         if path == "/api/v1/characters/shot-bindings":
             if not secured:
                 return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
@@ -537,10 +555,15 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/characters/assets/create",
                         "/api/v1/characters/assets/revise",
                         "/api/v1/characters/assets/review",
-                        "/api/v1/characters/shot-bindings/save"):
+                        "/api/v1/characters/shot-bindings/save",
+                        "/api/v1/scenes/create",
+                        "/api/v1/scenes/update",
+                        "/api/v1/scenes/link",
+                        "/api/v1/scenes/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
-                path.startswith("/api/v1/characters/")) and not secured:
+                path.startswith("/api/v1/characters/") or
+                path.startswith("/api/v1/scenes/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -588,6 +611,24 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path.startswith("/api/v1/scenes/"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                action={
+                    "/api/v1/scenes/create":create_scene,
+                    "/api/v1/scenes/update":update_scene,
+                    "/api/v1/scenes/link":link_scene_visual,
+                    "/api/v1/scenes/review":review_scene,
+                }[path]
+                result=action(self.server.production_db_path,fields,actor)
+                return self.reply(201 if path.endswith("/create") else 200,result)
+            except SceneError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError):
+                return self.reply(400,{"ok":False,"reason":"invalid_scene_fields"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"scene_storage_unavailable"})
         if path.startswith("/api/v1/characters/"):
             try:
                 actor=operator_from_verified_session(session)

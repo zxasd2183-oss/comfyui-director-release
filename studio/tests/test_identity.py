@@ -371,7 +371,8 @@ class SSOHttpTests(unittest.TestCase):
                  "X-Director-Studio-Auth-Mode":""}
         page=self.ask("GET","/",headers=headers)
         self.assertEqual(page["status"],200)
-        self.assertIn("Production Control",page["body"])
+        self.assertIn('id="workspacePageTitle"',page["body"])
+        self.assertIn('href="?page=projects"',page["body"])
         self.assertNotIn("WELCOME BACK",page["body"])
         self.assertEqual(self.ask("GET","/login",headers=headers)["status"],404)
 
@@ -514,7 +515,8 @@ class SSOHttpTests(unittest.TestCase):
         self.assertEqual(self.ask("GET","/auth/status",headers=header)["json"]["authenticated"],True)
         home=self.ask("GET","/",headers=header)
         self.assertEqual(home["status"],200)
-        self.assertIn("Production Control",home["body"])
+        self.assertIn('id="workspacePageTitle"',home["body"])
+        self.assertIn('href="?page=characters"',home["body"])
         self.assertNotIn("WELCOME BACK",home["body"])
         self.assertEqual(self.ask("GET","/login",headers=header)["location"],"/studio/")
         boot=self.ask("GET","/api/v1/bootstrap",headers=header)
