@@ -708,8 +708,9 @@
         "EP "+eid+" · "+data.shot_count+" 镜头 · "+(data.total_duration_ms/1000)+
         " 秒"));
       header.appendChild(el("span","",
-        data.upstream_ready_count+" / "+data.shot_count+
-        " 镜头满足素材前置条件 · 渲染执行器尚未接通"));
+        (data.approved_take_count||0)+" / "+data.shot_count+
+        " 镜头真实成片已批准 · "+data.upstream_ready_count+
+        " 镜头满足前置条件"));
       root.appendChild(header);
       const legend=el("div","workflow-readiness-stats");
       for(const [kind,name] of [["shot_plans","镜头规划"],["storyboards","分镜图"],
@@ -723,12 +724,22 @@
         const row=el("button","workflow-readiness-shot"+(
           state.selected===shot.shot_id?" active":""));
         row.type="button";
-        const issue=shot.upstream_blockers.length?
+        const statusName={
+          approved:"真实成片已批准",in_review:"真实视频待人工审核",
+          stale:"旧视频来源已过期，需重新回传",
+          rejected:"视频已驳回，需要返工",
+          not_imported:"尚无真实成片"
+        }[shot.video_take_status||"not_imported"];
+        const issue=shot.video_take_status==="approved"?statusName:
+          shot.upstream_blockers.length?
           shot.upstream_blockers.map(k=>
             readinessNames[k]||(
               k.startsWith("prop_not_approved:")?"道具未批准："+k.split(":")[1]:
               k.startsWith("character_master_not_approved:")?
               "角色母版未批准："+k.split(":")[1]:k)).join(" · "):
+          (shot.video_take_status==="in_review" ||
+           shot.video_take_status==="stale" ||
+           shot.video_take_status==="rejected")?statusName:
           "素材已齐，等待安全视频执行器";
         row.setAttribute("aria-label","镜头 "+shot.shot_id+"："+issue);
         row.appendChild(el("strong","","SH "+shot.shot_id));
