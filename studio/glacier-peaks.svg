@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" role="img" aria-label="冰川山脉装饰">
+<defs>
+<linearGradient id="sky" x2="0" y2="1"><stop stop-color="#d4eeff"/><stop offset="1" stop-color="#effbff"/></linearGradient>
+<linearGradient id="back" x2="0" y2="1"><stop stop-color="#8ac5ee"/><stop offset="1" stop-color="#e3f9ff"/></linearGradient>
+<linearGradient id="front" x2="0" y2="1"><stop stop-color="#329fe1"/><stop offset=".68" stop-color="#90d4f6"/><stop offset="1" stop-color="#ebffff"/></linearGradient>
+</defs><rect width="640" height="300" fill="url(#sky)"/>
+<path d="M0 222 70 150 97 181 163 86 212 151 254 108 338 201 396 83 449 159 522 110 640 224V300H0" fill="url(#back)"/>
+<path d="m108 149 55-63 50 65-25-12-24-37-20 37-13-8zM341 162l55-79 54 79-23-18-27-41-19 30-13-9z" fill="#f6fdff"/>
+<path d="M0 270 100 221 153 233 249 113 316 224 395 143 472 230 552 161 640 237V300H0" fill="url(#front)"/>
+<path d="m181 201 68-88 68 111-36-18-33-67-32 54-16-5zM354 201l41-58 77 87-40-17-39-48-20 32zM519 207l33-46 60 64-28-11-33-38-16 23z" fill="#f4fdff"/>
+<path d="M0 289 Q122 269 233 276T463 274 640 281v19H0" fill="#e7fbff"/>
+<path d="m8 270 65-31 44 15 49-15 28 16 64-17 58 26 95-11 61 23 62-11 106 18" fill="none" stroke="#f8ffff" stroke-width="5" opacity=".65"/>
+<path d="M0 298Q168 282 328 292T640 292" fill="none" stroke="#9bdaf9" stroke-width="5"/>
+</svg>

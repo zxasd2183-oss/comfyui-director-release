@@ -332,6 +332,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.file("studio.css", "text/css; charset=utf-8")
         if path == "/studio.js":
             return self.file("studio.js", "application/javascript; charset=utf-8")
+        if path in ("/glacier-peaks.svg", "/glacier-banner.svg"):
+            return self.file(path.lstrip("/"), "image/svg+xml; charset=utf-8")
         if path == "/api/v1/bootstrap":
             csrf = session["csrf"] if secured else self.server.csrf_token
             return self.reply(200, {"ok": True, "csrf": csrf,
