@@ -227,6 +227,13 @@ def main():
     await_ui(desc="主页",timeout=40)
     await_ui(desc="标签页",timeout=40)
     record("m02_mobile_ui","Chrome-style single omnibox row, home, tabs and overflow visible")
+    tap(desc="更多选项")
+    tap_menu_item("更新与版本")
+    await_ui(text="Glacier · 更新与版本 0.2.1",timeout=35)
+    tap(text="检查更新")
+    await_ui(text="未能检查更新",timeout=25)
+    tap(text="知道了")
+    record("m05_debug_update_gate","debug APK presents update UI but refuses online update requests")
     record("browser_start","UI present; Gecko page content NOT proven")
     insets_log=adb("logcat","-d","-s","GlacierSmoke:I",timeout=25)
     if not re.search(r"SYSTEM_BAR_INSETS top=[1-9]\d* bottom=[1-9]\d*",insets_log):

@@ -47,3 +47,12 @@ M02 发布标签：`glacier-android-browser-v0.2.0-m02`
 - 所有记录（含文档 content URI）仅在应用私有 no-backup 目录，Android Keystore AES-GCM 加密，不上云；私人／工作记录严格按 GeckoSession 所属空间写入。
 - 不保存下载文件的第二份副本；清除下载记录不删除用户保存的文件。
 - Android 15 模拟器测试覆盖收藏、历史、文件下载记录、强制关闭后保留，以及额外一项加密库完整性和空间分离测试。
+
+## M05 固定签名与安全更新（开发分支）
+- 正式更新从官方 GitHub Releases 获取符合 `glacier-android-browser-vX.Y.Z` 且名称匹配 `GlacierAndroid-vX.Y.Z-ARM64-x86_64-release.apk` 的固定签名资产；忽略其他项目及调试标签。
+- 应用在启动时自动查询新版（可关闭，最短间隔 6 小时），由用户明确选择下载；安装交由 Android 系统确认，不静默安装。
+- 下载前核实标签／名称／SHA-256 发布记录，下载完成后验证完整 SHA-256、长度、Android 包名／版本及与本机相同的 APK 签名证书，安装前重复校验。
+- VLESS 模式仅通过本地 SOCKS5 向代理发送目标域名并建立 TLS；失败绝不退回直连，所有跳转保持受限 HTTPS 主机白名单。仅用户明确选择直连时允许直接 HTTPS。
+- 固定签名需要独立的 `GLACIER_ANDROID_*` GitHub Actions 签名密钥秘密，**不能**重用吉皮提的签名私钥；缺少时禁止发布稳定 Release。
+- M04 及更早的临时 Debug 签名与新的稳定签名不同，不保证覆盖安装。卸载会丢失 Android Keystore 加密的节点、标签和书签；必须先保留现有安装和数据，确认安全迁移方案后再切换。
+- M05 Debug 包仅测试本地解析、证书验证逻辑和界面门禁，不访问 GitHub 在线更新源。

@@ -6,7 +6,7 @@ OUT="$GITHUB_WORKSPACE/emulator-storage-evidence"
 mkdir -p "$OUT"
 trap 'adb logcat -d -t 2500 > "$OUT/logcat.txt" 2>/dev/null || true' EXIT
 
-APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M04-ARM64-x86_64-debug.apk"
+APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.0-Mobile-M05-ARM64-x86_64-debug.apk"
 TEST_APK="$GITHUB_WORKSPACE/.glacier-test-app/app-debug-androidTest.apk"
 test -s "$APK"
 test -s "$TEST_APK"
@@ -16,5 +16,5 @@ adb install -r "$TEST_APK"
 adb shell am instrument -w -r \
   cn.borealos.glacier.geckopreview.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$OUT/instrumentation.txt"
-grep -q 'OK (3 tests)' "$OUT/instrumentation.txt"
-echo 'M04_STORAGE_TEST_PASS: VLESS, tab snapshots, encrypted bookmark/history/download library'
+grep -q 'OK (7 tests)' "$OUT/instrumentation.txt"
+echo 'M05_STORAGE_TEST_PASS: VLESS, tab and library encryption; updater release validation and SOCKS5 remote-host handshake'

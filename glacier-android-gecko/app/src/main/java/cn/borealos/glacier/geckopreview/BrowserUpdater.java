@@ -175,7 +175,11 @@ final class BrowserUpdater {
         if(!release.version.equals(candidate.versionName)) {
             throw new SecurityException("APK 版本与发布信息不匹配");
         }
-        if(candidate.getLongVersionCode()<=current.getLongVersionCode()) {
+        long incomingCode=Build.VERSION.SDK_INT>=28
+                ?candidate.getLongVersionCode():candidate.versionCode;
+        long installedCode=Build.VERSION.SDK_INT>=28
+                ?current.getLongVersionCode():current.versionCode;
+        if(incomingCode<=installedCode) {
             throw new SecurityException("拒绝相同版本或降级安装");
         }
         Signature[] next;
