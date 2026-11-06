@@ -275,7 +275,7 @@
           <section class="scene-center" aria-label="场景画面预览及资产">
             <div class="scene-column-heading scene-preview-top">
               <div><small>SCENE PREVIEW</small><strong id="sceneActiveName">场景预览</strong></div>
-              <span id="sceneActiveStatus" class="scene-status-pill">暂无素材</span>
+              <div class="studio-preview-actions"><span id="sceneActiveStatus" class="scene-status-pill">暂无素材</span><button type="button" id="sceneInspectorOpen" class="studio-detail-button" aria-haspopup="dialog" aria-controls="sceneInspectorDialog">设定 / 审核</button></div>
             </div>
             <div id="sceneStage" class="scene-stage" aria-live="polite">
               <div class="scene-stage-empty"><div class="scene-stage-emblem">▧</div>
@@ -284,17 +284,20 @@
             <div class="scene-filmstrip">
               <div class="scene-filmstrip-heading"><strong>场景参考与版本</strong>
                 <span id="sceneImageCount">0 张候选图片</span></div>
+              <div id="sceneCategoryTabs" class="scene-category-tabs" role="group" aria-label="场景图片分类"></div>
               <div id="sceneGallery" class="scene-gallery" aria-label="场景参考图片"></div>
             </div>
-            <div id="sceneAssetTools" class="scene-asset-tools"></div>
+            <details id="sceneMediaDrawer" class="studio-media-drawer"><summary>＋ 上传 / 关联场景参考图</summary>
+              <div id="sceneAssetTools" class="scene-asset-tools"></div>
+            </details>
           </section>
-          <aside class="scene-inspector" aria-label="场景属性与审核">
+          <dialog id="sceneInspectorDialog" class="scene-inspector" aria-label="场景属性与审核">
             <div class="scene-column-heading"><div><small>SCENE INSPECTOR</small><strong>场景属性</strong></div>
-              <span aria-hidden="true" class="scene-inspector-icon">⚙</span></div>
+              <button type="button" id="sceneInspectorClose" class="studio-dialog-close" aria-label="关闭场景设定与审核">✕ 关闭</button></div>
             <div id="sceneDetail" class="scene-detail">
               <div class="scene-rail-empty">选择或新建一个场景以查看详细信息</div>
             </div>
-          </aside>
+          </dialog>
         </div>
         <footer class="scene-security-note"><span aria-hidden="true">◇</span>
           数据来自真实项目数据库，图片原件不覆盖。提交审核和正式批准必须由 Microsoft 所有者操作；不会自动启动 GPU。
@@ -389,28 +392,31 @@
           <section class="character-center" aria-label="人物预览和分门别类的资产">
             <div class="character-column-heading">
               <div><small>CHARACTER PREVIEW</small><strong id="characterActiveName">人物预览</strong></div>
-              <span id="characterActiveStatus" class="character-status-pill">待加载</span>
+              <div class="studio-preview-actions"><span id="characterActiveStatus" class="character-status-pill">待加载</span><button type="button" id="characterInspectorOpen" class="studio-detail-button" aria-haspopup="dialog" aria-controls="characterInspectorDialog">角色设定 / 审核</button></div>
             </div>
             <div id="characterStage" class="character-stage">
               <div class="character-stage-empty">选择角色后在这里查看主图或候选图</div>
             </div>
-            <div class="character-visuals">
+            <details id="characterMediaDrawer" class="studio-media-drawer character-media-drawer">
+              <summary>＋ 图片候选与上传 / 关联</summary>
+              <div class="character-visuals">
               <div class="character-visuals-heading"><strong>视觉候选与历史参考</strong>
                 <span id="characterVisualCount">0 张图片</span></div>
               <div id="characterVisualGallery" class="character-ref-grid"></div>
             </div>
-            <div id="characterReferenceTools" class="character-reference-tools" aria-label="角色图片关联与上传"></div>
+              <div id="characterReferenceTools" class="character-reference-tools" aria-label="角色图片关联与上传"></div>
+            </details>
             <div id="characterAssetsPanel" class="character-v2-section" aria-label="12 类角色资产">
               <p class="character-message">选择角色查看分类资产</p>
             </div>
           </section>
-          <aside class="character-inspector" aria-label="角色属性与母版审核">
+          <dialog id="characterInspectorDialog" class="character-inspector" aria-label="角色属性与母版审核">
             <div class="character-column-heading"><div><small>CHARACTER INSPECTOR</small>
-              <strong>角色设定与审核</strong></div><span aria-hidden="true">✧</span></div>
+              <strong>角色设定与审核</strong></div><button type="button" id="characterInspectorClose" class="studio-dialog-close" aria-label="关闭角色设定与审核">✕ 关闭</button></div>
             <div id="characterDetail" class="character-detail">
               <p class="character-inspector-empty">选择角色后查看身份特征、审核状态及关联参考。</p>
             </div>
-          </aside>
+          </dialog>
         </div>
         <footer class="character-security-note">◇　原创形象仅抽象借鉴品牌视觉，不使用官方 Logo；角色母版需独立人工审核。图片原件不覆盖，GPU 不会自动启动。</footer>
       </section>
