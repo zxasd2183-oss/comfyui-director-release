@@ -181,12 +181,13 @@ class GlacierAccounts22:
         record = {"site": site, "name": name.text().strip(),
                   "username": username.text(), "password": password.text()}
         candidate = {"schema": 1, "accounts": self._accounts_doc22["accounts"] + [record]}
+        previous = self._accounts_doc22
         try:
             clean_accounts22(candidate)
             self._accounts_doc22 = candidate
             self._save_accounts22()
         except (ValueError, OSError) as exc:
-            self._accounts_doc22["accounts"].remove(record) if record in self._accounts_doc22["accounts"] else None
+            self._accounts_doc22 = previous
             QMessageBox.warning(self, "Glacier", "无法保存账号卡片：" + str(exc))
             return
         QMessageBox.information(self, "Glacier", "账号卡片已在本机加密保存。")
