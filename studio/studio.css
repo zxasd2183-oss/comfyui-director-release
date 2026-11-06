@@ -1868,3 +1868,10 @@ body[data-page="tasks"] .workflow-record-copy strong{font-size:12px}
   body[data-page="tasks"] .workflow-record{grid-template-columns:1fr}
   .icebound-task-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* Browser-verified fix: prevent Glacier wordmark clipping at 1440px. */
+.brand{min-width:0;gap:7px}
+.brand strong{font-size:13px!important;letter-spacing:-.65px!important;
+  white-space:nowrap}
+.brand small{font-size:7px!important;letter-spacing:.3px!important}
+.brand>div:last-child{min-width:0}
