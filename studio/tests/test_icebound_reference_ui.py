@@ -47,9 +47,10 @@ class IceboundReferenceTests(unittest.TestCase):
         for ident in ("homeProjectTitle","homeEpisodeLine","homeProgressRing",
                       "homeProgressValue","homeRecentTasks"):
             self.assertIn('id="'+ident+'"',self.html)
-        for route in ("projects","characters","scenes",
-                      "storyboards","video_plans"):
+        for route in ("projects","storyboards","video_plans"):
             self.assertIn('data-jump="'+route+'"',self.html)
+        self.assertIn('data-action="create"',self.html)
+        self.assertIn('data-action="import"',self.html)
         self.assertIn('loadHomeEpisodeStats(',self.js)
         self.assertIn('loadHomeRecentTasks(',self.js)
         self.assertIn('production/episode?project=',self.js)
