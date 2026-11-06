@@ -106,6 +106,7 @@
     $("workspaceEpisodeName").textContent=currentEpisode?.episode_id||"NO EPISODE";
     syncCharacterProjects(projects);
     syncSceneProjects(projects,episodes);
+    syncWorkflowProjects(projects,episodes);
     if(!projects.length) {
       list.appendChild(el("div","production-empty",
         microsoftOwner?"尚未建立项目。点击「新建项目」，开始第一部作品。":
@@ -418,7 +419,10 @@
 
   const functionalPages={
     home:"工作台首页",projects:"项目与剧集",characters:"角色库 V2",
-    scenes:"场景库",shots:"镜头规划",review:"监审工作台",audit:"操作审计"
+    scenes:"场景库",props:"道具库",shots:"分镜规划",
+    storyboards:"分镜图制作",white_models:"白模预演",
+    video_plans:"视频制作",review:"审核中心",tasks:"制作任务",
+    monitor:"镜头监看",audit:"操作审计",settings:"项目设置"
   };
   function navigateWorkspace(name,changeHistory=true){
     const page=Object.prototype.hasOwnProperty.call(functionalPages,name)?
@@ -439,6 +443,7 @@
     window.scrollTo(0,0);
     if(page==="scenes"&&sceneProjectId&&!sceneData&&microsoftOwner)
       loadScenes().catch(error=>$("sceneMessage").textContent=error.message);
+    if(microsoftOwner)workflowEnterPage(page);
   }
   for(const nav of document.querySelectorAll(".nav-items a[data-page]")){
     nav.addEventListener("click",event=>{
@@ -448,6 +453,712 @@
   }
   window.addEventListener("popstate",()=>navigateWorkspace(
     new URLSearchParams(window.location.search).get("page")||"home",false));
+
+
+  // Real production work-unit UI. Each function lives in its own URL/page;
+  // no case renders placeholder "approved" results or triggers GPU tasks.
+  const wfPageKind={
+    props:"props",shots:"shot_plans",storyboards:"storyboards",
+    white_models:"white_models",video_plans:"video_plans",
+    tasks:"tasks",settings:"settings"
+  };
+  const wfKinds=Object.keys(wfPageKind).map(p=>wfPageKind[p]);
+  const wfState=Object.fromEntries(wfKinds.map(kind=>[
+    kind,{project:"",episode:"",items:null,selected:"",editing:false,
+          image:"",shots:[],scope:"",fields:null}
+  ]));
+  const wfLabels={props:"道具",shot_plans:"分镜规划",
+    storyboards:"分镜图",white_models:"白模",video_plans:"视频制作单",
+    tasks:"任务",settings:"项目规格"};
+  const wfStatus={draft:"草稿",in_review:"待审核",
+    approved:"已批准",rejected:"已驳回"};
+  const wfHints={props:"尺寸、握持、材质及特写等须一致；只有人工批准的独立图片才是道具母版。",
+    shot_plans:"场景编号需先在场景库建立，道具编号需先在道具库保存。此项规划不自动批准人物或视频。",
+    storyboards:"使用分镜图候选、版本与审批；本页面没有连接 AI 绘图执行器。",
+    white_models:"当前提供可编辑参数和浏览器粗白模空间预览；精细建模及带曲线动作预演仍需专用三维引擎。",
+    video_plans:"此处仅保存生产指令；没有启动 GPU 或提交 ComfyUI。不能把指令当成已生成的视频。",
+    tasks:"任务及其依赖必须经人工验收，任务完成不代表上游创意资产已经批准。",
+    settings:"项目规格以数据库修订记录为准，修改后不会自动改写历史镜头或生成文件。"};
+
+  function wfScope(kind){return ["props","tasks"].includes(kind)?"project":
+    kind==="settings"?"episode":"shot";}
+  function workflowProjects(){return latest?.production?.projects||[];}
+  function workflowEpisodes(pid){return (latest?.production?.episodes||[])
+    .filter(x=>x.project_id===pid);}
+  function workflowSyncOptions(select,list,readLabel,value){
+    const fingerprint=JSON.stringify(list.map(x=>[x.value,readLabel(x)]));
+    if(select.dataset.signature!==fingerprint){
+      select.dataset.signature=fingerprint;select.replaceChildren();
+      for(const row of list){
+        const option=el("option","",readLabel(row));option.value=row.value;
+        select.appendChild(option);
+      }
+    }
+    if(value&&list.some(x=>x.value===value))select.value=value;
+  }
+  function syncWorkflowProjects(projects,episodes){
+    if(!microsoftOwner)return;
+    for(const kind of wfKinds){
+      const state=wfState[kind],project=$("wfProject_"+kind),
+        ep=$("wfEpisode_"+kind);
+      const projectItems=projects.map(x=>({...x,value:x.project_id}));
+      const keep=projects.some(x=>x.project_id===state.project);
+      if(!keep){
+        state.project=projects[0]?.project_id||"";
+        state.episode="";state.items=null;state.selected="";
+      }
+      workflowSyncOptions(project,projectItems,x=>x.title+" · "+x.project_id,
+        state.project);
+      project.disabled=!projectItems.length;
+      const relevant=episodes.filter(e=>e.project_id===state.project);
+      const epItems=relevant.map(e=>({...e,value:e.episode_id}));
+      if(!epItems.some(x=>x.value===state.episode)) {
+        state.episode=epItems[0]?.value||"";state.items=null;state.selected="";
+      }
+      workflowSyncOptions(ep,epItems,x=>x.episode_id+" · "+x.title,state.episode);
+      ep.disabled=wfScope(kind)==="project"||!epItems.length;
+      ep.closest("label").hidden=wfScope(kind)==="project";
+      $("wfNew_"+kind).disabled=(!state.project ||
+        (wfScope(kind)!=="project"&&!state.episode));
+    }
+    const reviewProject=$("wfReviewProject"),reviewEpisode=$("wfReviewEpisode");
+    const p=reviewProject.value||projects[0]?.project_id||"";
+    workflowSyncOptions(reviewProject,projects.map(x=>({...x,value:x.project_id})),
+      x=>x.title+" · "+x.project_id,p);
+    const eps=episodes.filter(x=>x.project_id===reviewProject.value);
+    workflowSyncOptions(reviewEpisode,
+      [{value:"",episode_id:"全部剧集",title:"包含项目级资产"},
+       ...eps.map(x=>({...x,value:x.episode_id}))],
+      x=>x.title+" · "+x.episode_id,reviewEpisode.value);
+  }
+  async function workflowFetch(kind,state){
+    const pid=state.project,eid=state.episode;
+    if(!pid||wfScope(kind)!=="project"&&!eid)return;
+    const query=new URLSearchParams({project:pid,kind});
+    if(wfScope(kind)!=="project")query.set("episode",eid);
+    const res=await fetch("./api/v1/workflow?"+query.toString(),{cache:"no-store"});
+    const body=await res.json();
+    if(!res.ok)throw Error(body.reason||"工作数据读取失败");
+    if(pid!==state.project||eid!==state.episode)return;
+    state.items=body;
+    state.fields=body.fields;state.scope=body.scope;
+    if(wfScope(kind)==="shot"){
+      const sh=await fetch("./api/v1/production/episode?project="+
+        encodeURIComponent(pid)+"&episode="+encodeURIComponent(eid),{cache:"no-store"});
+      if(!sh.ok)throw Error("镜头列表读取失败");
+      const info=await sh.json();
+      if(pid!==state.project||eid!==state.episode)return;
+      state.shots=info.shots||[];
+    }
+    if(!state.editing&&!body.items.some(x=>x.unit_id===state.selected))
+      state.selected=body.items[0]?.unit_id||"";
+    workflowRender(kind);
+  }
+  async function workflowLoad(kind){
+    const state=wfState[kind];
+    if(!microsoftOwner||!state.project)return;
+    $("wfMessage_"+kind).textContent="正在读取真实项目数据…";
+    try{await workflowFetch(kind,state);}
+    catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
+  }
+  function workflowEnterPage(page){
+    if(page==="review"){workflowLoadReviews();return;}
+    const kind=wfPageKind[page];
+    if(!kind)return;
+    const state=wfState[kind];
+    if(state.project)workflowLoad(kind);
+  }
+  async function workflowPost(action,data){
+    if(!csrf||!microsoftOwner)throw Error("需要 Microsoft 所有者会话");
+    const res=await fetch("./api/v1/workflow/"+action,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({csrf,...data}),cache:"no-store"});
+    const body=await res.json();
+    if(!res.ok)throw Error(body.reason||"保存失败");
+    return body;
+  }
+
+  function workflowRenderList(kind){
+    const state=wfState[kind],data=state.items;
+    if(!data)return;
+    const list=$("wfList_"+kind);list.replaceChildren();
+    const query=$("wfSearch_"+kind).value.trim().toLocaleLowerCase();
+    const matches=data.items.filter(item=>
+      (item.unit_id+" "+Object.values(item.fields).join(" ")).
+        toLocaleLowerCase().includes(query));
+    $("wfCount_"+kind).textContent=data.items.length+" 项记录";
+    if(!matches.length){
+      list.appendChild(el("p","workflow-stage-empty",data.items.length?
+        "没有匹配的记录。":"当前还没有此类制作记录。"));
+    }
+    for(const item of matches){
+      const btn=el("button","workflow-record"+(
+        state.selected===item.unit_id&&!state.editing?" active":""));
+      btn.type="button";
+      btn.appendChild(el("strong","",item.fields.name||item.fields.title||
+        item.unit_id));
+      btn.appendChild(el("small","",item.unit_id+" · V"+item.revision+
+        " · "+(item.episode_id||"全项目")));
+      btn.appendChild(el("span","state "+item.status,wfStatus[item.status]||item.status));
+      btn.addEventListener("click",()=>{
+        state.selected=item.unit_id;state.editing=false;state.image="";
+        workflowRender(kind);
+      });
+      list.appendChild(btn);
+    }
+  }
+  function workflowRender(kind){
+    const state=wfState[kind];if(!state.items)return;
+    const data=state.items,chosen=data.items.find(x=>x.unit_id===state.selected);
+    workflowRenderList(kind);
+    const stage=$("wfStage_"+kind),visuals=$("wfVisuals_"+kind),
+      meta=$("wfStageMeta_"+kind),detail=$("wfDetail_"+kind);
+    stage.replaceChildren();visuals.replaceChildren();
+    meta.replaceChildren();detail.replaceChildren();
+    $("wfStageTitle_"+kind).textContent=chosen?
+      (chosen.fields.name||chosen.fields.title||chosen.unit_id):"新建"+wfLabels[kind];
+    $("wfMessage_"+kind).textContent=wfHints[kind];
+    const source=chosen?.source_visual_id;
+    const pictures=data.visuals.filter(x=>
+      (kind==="props"||x.episode_id===state.episode)&&
+      x.subject_id===(chosen?.unit_id||state.selected));
+    const preview=pictures.find(x=>x.visual_id===state.image)||
+      pictures.find(x=>x.visual_id===source)||pictures[0];
+    if(kind==="white_models"){
+      const canvas=el("canvas","workflow-clay-canvas");
+      canvas.width=950;canvas.height=540;
+      canvas.setAttribute("aria-label","基于镜头尺寸和相机/人物坐标的粗白模实时投影");
+      stage.appendChild(canvas);
+      const timeline=el("div","workflow-clay-timeline");
+      const slider=el("input","");
+      slider.type="range";slider.min="0";slider.max="100";slider.step="1";
+      slider.value="0";slider.setAttribute("aria-label","粗白模关键帧时间轴");
+      const time=el("span","","0.0s");
+      const values=chosen?.fields||{};
+      function draw(){
+        const current=workflowFrameAt(values,Number(slider.value)/100);
+        const frames=workflowFrameList(values);
+        const last=frames[frames.length-1];
+        time.textContent=last?(Number(slider.value)/100*last.t).toFixed(1)+"s":"静态机位";
+        workflowDrawClay(canvas,current);
+      }
+      slider.disabled=workflowFrameList(values).length<2;
+      slider.addEventListener("input",draw);
+      timeline.append(slider,time);stage.appendChild(timeline);draw();
+    }else if(preview){
+      const picture=el("img","");
+      picture.alt=(chosen?.unit_id||"")+"/"+preview.filename;
+      picture.src=visualURL(state.project,preview.episode_id,preview.visual_id);
+      stage.appendChild(picture);
+      stage.appendChild(el("span","workflow-stage-caption",
+        preview.filename+" · "+(preview.visual_id===source?
+          "当前版本引用":"尚未纳入此记录的图片")));
+    }else{
+      const empty=el("div","workflow-stage-empty");
+      empty.appendChild(el("div","workflow-stage-icon",kind==="video_plans"?"▶":
+        kind==="white_models"?"⬡":"▨"));
+      empty.appendChild(el("strong","",
+        kind==="video_plans"?"视频执行器尚未连接":
+        kind==="storyboards"?"暂无分镜图":
+        kind==="props"?"暂无道具参考图片":"规划资料预览"));
+      empty.appendChild(el("p","",kind==="video_plans"?
+        "请创建可追溯的制作指令，待已批准的素材和 GPU 任务管道接通后再生成视频。":
+        "保存真实数据后，会在下方列出当前记录的参数与来源。"));
+      stage.appendChild(empty);
+    }
+    for(const pic of pictures){
+      const btn=el("button","workflow-thumb"+(preview?.visual_id===pic.visual_id?
+        " active":""));
+      btn.type="button";
+      const image=el("img","");
+      image.loading="lazy";image.alt=pic.filename;
+      image.src=visualURL(state.project,pic.episode_id,pic.visual_id);
+      btn.appendChild(image);
+      btn.appendChild(el("small","",pic.filename+" / V"+pic.version));
+      btn.addEventListener("click",()=>{
+        state.image=pic.visual_id;
+        workflowRender(kind);
+      });
+      visuals.appendChild(btn);
+    }
+    if(chosen){
+      if(kind==="video_plans"){
+        const wrap=el("div","workflow-readiness");
+        wrap.appendChild(el("strong","","渲染前置条件核对"));
+        const blockers=chosen.blockers||["video_render_executor_not_connected"];
+        const names={
+          project_spec_not_approved:"缺少已批准的项目输出规格",
+          shot_plans_not_approved:"分镜规划尚未批准",
+          storyboards_not_approved:"分镜图尚未批准",
+          white_models_not_approved:"白模预演尚未批准",
+          scene_revision_not_approved:"当前场景版本尚未批准",
+          video_render_executor_not_connected:"GPU / ComfyUI 正式执行器尚未接入"
+        };
+        for(const reason of blockers){
+          wrap.appendChild(el("p","",
+            "• "+(names[reason]||(
+             reason.startsWith("prop_not_approved:")?"道具尚未批准："+reason.split(":")[1]:
+             reason.startsWith("character_master_not_approved:")?
+                "角色母版尚未批准："+reason.split(":")[1]:reason))));
+        }
+        meta.appendChild(wrap);
+      }
+      const dl=el("dl","");
+      for(const [key,value] of Object.entries(chosen.fields)){
+        dl.appendChild(el("dt","",data.fields[key]?.label||key));
+        dl.appendChild(el("dd","",value));
+      }
+      meta.appendChild(dl);
+    }else meta.appendChild(el("p","",wfHints[kind]));
+    workflowRenderEditor(kind,chosen,pictures);
+  }
+
+
+  function workflowFrameList(values){
+    try{
+      const frames=JSON.parse(values.keyframes||"[]");
+      if(!Array.isArray(frames)||frames.length>60)return [];
+      return frames.filter(x=>x&&typeof x==="object"&&
+        typeof x.t==="number"&&Number.isFinite(x.t)&&x.t>=0)
+        .sort((a,b)=>a.t-b.t);
+    }catch{return [];}
+  }
+  function workflowFrameAt(values,ratio){
+    const frames=workflowFrameList(values);
+    if(!frames.length)return values;
+    const t=ratio*frames[frames.length-1].t;
+    const high=frames.find(x=>x.t>=t)||frames[frames.length-1];
+    const low=frames.slice().reverse().find(x=>x.t<=t)||frames[0];
+    const mix=low===high?0:Math.max(0,Math.min(1,
+      (t-low.t)/(high.t-low.t)));
+    const props={...values};
+    for(const key of ["actor_x","actor_y","prop_x","prop_y",
+      "camera_x","camera_y","camera_z","camera_yaw"]){
+      const a=typeof low[key]==="number"?low[key]:Number(values[key]||0);
+      const b=typeof high[key]==="number"?high[key]:Number(values[key]||0);
+      props[key]=String(a+(b-a)*mix);
+    }
+    return props;
+  }
+
+  function workflowDrawClay(canvas,values){
+    // Perspective projection of independent scene primitives; this is a real
+    // editable coarse spatial blocking preview, not a simulated video render.
+    const ctx=canvas.getContext("2d");if(!ctx)return;
+    const W=canvas.width,H=canvas.height;
+    const num=(name,fallback)=>Number.isFinite(Number(values[name]))&&values[name]!==undefined?
+      Number(values[name]):fallback;
+    const width=Math.max(2,Math.min(40,num("stage_width",9)));
+    const depth=Math.max(2,Math.min(40,num("stage_depth",10)));
+    const yaw=num("camera_yaw",0)*Math.PI/180;
+    const pitch=num("camera_pitch",-12)*Math.PI/180;
+    const eye=[num("camera_x",0),num("camera_y",-9),Math.max(.5,num("camera_z",2.4))];
+    const focal=Math.min(100,Math.max(12,num("focal_mm",35)));
+    const scale=550*focal/35;
+    const sin=Math.sin(yaw),cos=Math.cos(yaw);
+    function project(p){
+      const dx=p[0]-eye[0],dy=p[1]-eye[1],dz=p[2]-eye[2];
+      const rx=dx*cos-dy*sin,forward=dx*sin+dy*cos;
+      const rz=dz*Math.cos(pitch)-forward*Math.sin(pitch);
+      const distance=dz*Math.sin(pitch)+forward*Math.cos(pitch);
+      if(distance<.25)return null;
+      return [W/2+scale*rx/distance,H/2-scale*rz/distance,distance];
+    }
+    function stroke(points,color,line=1){
+      const projected=points.map(project);
+      if(projected.some(v=>v===null))return;
+      ctx.strokeStyle=color;ctx.lineWidth=line;ctx.beginPath();
+      projected.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+      ctx.stroke();
+    }
+    ctx.clearRect(0,0,W,H);
+    const gradient=ctx.createLinearGradient(0,0,0,H);
+    gradient.addColorStop(0,"#e7f6ff");gradient.addColorStop(1,"#f7fdff");
+    ctx.fillStyle=gradient;ctx.fillRect(0,0,W,H);
+    for(let x=-width/2;x<=width/2+.1;x+=1){
+      stroke([[x,0,0],[x,depth,0]],"#b7d4e3",1);
+    }
+    for(let y=0;y<=depth+.1;y+=1){
+      stroke([[-width/2,y,0],[width/2,y,0]],"#b7d4e3",1);
+    }
+    function box(x,y,w,d,h,color){
+      const low=[[x-w/2,y-d/2,0],[x+w/2,y-d/2,0],
+        [x+w/2,y+d/2,0],[x-w/2,y+d/2,0]];
+      const high=low.map(p=>[p[0],p[1],h]);
+      ctx.fillStyle=color;
+      const q=high.map(project);
+      if(q.every(Boolean)){
+        ctx.beginPath();q.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+        ctx.closePath();ctx.fill();
+      }
+      for(let i=0;i<4;i++){
+        stroke([low[i],low[(i+1)%4]],"#84a5be",1.3);
+        stroke([high[i],high[(i+1)%4]],"#789cba",1.3);
+        stroke([low[i],high[i]],"#789cba",1.3);
+      }
+    }
+    box(num("actor_x",0),num("actor_y",4),.65,.5,
+      Math.max(.8,num("actor_height",1.7)),"#e6edf2");
+    box(num("prop_x",1.4),num("prop_y",5),.6,.6,.65,"#9db4c4");
+    ctx.fillStyle="#427398";ctx.font="bold 18px system-ui";
+    ctx.fillText("粗白模 · 实时空间预览（未渲染）",18,31);
+    ctx.font="13px system-ui";
+    ctx.fillText("人物灰白占位 · 道具蓝灰占位 · 地面米制网格",18,54);
+  }
+
+  function workflowRenderEditor(kind,record,pictures){
+    const state=wfState[kind],data=state.items,detail=$("wfDetail_"+kind);
+    const current=record&&!state.editing?record:null;
+    const form=el("form","workflow-form");
+    const head=el("div","workflow-form-heading",
+      current?"正在编辑："+current.unit_id+" · V"+current.revision:"新建"+wfLabels[kind]);
+    form.appendChild(head);
+    const idLabel=el("label","",data.scope==="shot"?"选择镜头编号":"条目编号");
+    let idControl;
+    if(data.scope==="shot"){
+      idControl=el("select","");
+      for(const shot of state.shots){
+        const opt=el("option","","SH"+shot.shot_id+" · "+
+          (shot.duration_ms/1000).toFixed(1)+" 秒");
+        opt.value=shot.shot_id;idControl.appendChild(opt);
+      }
+      if(!state.shots.length)idControl.appendChild(el("option","","尚无镜头"));
+    }else{
+      idControl=el("input","");
+      idControl.pattern="[A-Za-z][A-Za-z0-9_-]{1,47}";
+      idControl.maxLength=48;idControl.required=true;
+      idControl.placeholder=data.scope==="episode"?"SPEC":"PROP_01 / TASK_01";
+    }
+    idControl.value=current?.unit_id||(data.scope==="episode"?"SPEC":
+      data.scope==="shot"?state.shots[0]?.shot_id||"":"");
+    idControl.disabled=!!current;
+    idLabel.appendChild(idControl);form.appendChild(idLabel);
+    if(data.scope==="shot"&&!state.shots.length)
+      form.appendChild(el("p","workflow-draft",
+        "本剧集还没有镜头，请先在项目工程中建立镜头。"));
+    const inputs={};
+    for(const [field,config] of Object.entries(data.fields)){
+      const label=el("label","",config.label);
+      const control=config.type==="number"?
+        el("input",""):el("textarea","");
+      if(config.type==="number"){
+        control.type="number";control.step="any";
+      }else{
+        control.maxLength=2000;
+        control.rows=field==="prompt"||field==="story"||field==="keyframes"?3:2;
+      }
+      if(kind==="white_models"&&field==="keyframes")
+        control.placeholder='[{"t":0,"actor_x":0,"actor_y":4},{"t":4,"actor_x":2,"actor_y":6}]';
+      control.value=current?.fields[field]||
+        (!current&&kind==="settings"?{
+          aspect:"9:16",width:"1080",height:"1920",fps:"24",
+          color:"Rec.709",naming:"EP01_SH01"}[field]||"":
+         !current&&kind==="white_models"?{
+           stage_width:"9",stage_depth:"10",camera_x:"0",camera_y:"-9",
+           camera_z:"2.4",camera_yaw:"0",camera_pitch:"-12",
+           focal_mm:"35",actor_x:"0",actor_y:"4",actor_height:"1.7",
+           prop_x:"1.4",prop_y:"5",quality:"粗白模"}[field]||"":
+         !current&&kind==="video_plans"?{
+           fps:"24",width:"1080",height:"1920"}[field]||"":"");
+      inputs[field]=control;label.appendChild(control);form.appendChild(label);
+      if(kind==="white_models"){
+        control.addEventListener("input",()=>{
+          const canvas=$("wfStage_white_models").querySelector("canvas");
+          if(!canvas)return;
+          const values={};
+          for(const [name,input] of Object.entries(inputs))values[name]=input.value;
+          workflowDrawClay(canvas,values);
+        });
+      }
+    }
+    const noteLabel=el("label","","版本备注");
+    const note=el("textarea","");
+    note.maxLength=2000;note.rows=2;note.value=current?.note||"";
+    noteLabel.appendChild(note);form.appendChild(noteLabel);
+    if(kind==="video_plans"&&current){
+      const exportButton=el("button","prod-new prod-secondary","导出当前镜头制作单 JSON");
+      exportButton.type="button";
+      exportButton.addEventListener("click",()=>{
+        const plan={schema:"director_studio_video_order_v1",
+          project_id:state.project,episode_id:state.episode,
+          shot_id:current.unit_id,revision:current.revision,
+          status:current.status,settings:current.fields,
+          blockers:current.blockers||[],render_execution:"not_connected",
+          generated_at:new Date().toISOString()};
+        const output=new Blob([JSON.stringify(plan,null,2)],{type:"application/json"});
+        const href=URL.createObjectURL(output);
+        const a=document.createElement("a");a.href=href;
+        a.download="video_order_"+current.unit_id+"_V"+current.revision+".json";
+        a.click();URL.revokeObjectURL(href);
+      });
+      form.appendChild(exportButton);
+    }
+    const kindVisual=data.image_kind;
+    const visualLabel=el("label","","本版参考图片");
+    const visualSelect=el("select","");
+    if(kindVisual){
+      const none=el("option","","无图片：仅创建草稿");none.value="";
+      visualSelect.appendChild(none);
+      for(const image of data.visuals.filter(x=>
+          x.subject_id===idControl.value &&(data.scope==="project"||
+            x.episode_id===state.episode))){
+        const opt=el("option","",image.episode_id+" · "+image.filename+
+          " / V"+image.version);
+        opt.value=image.visual_id;visualSelect.appendChild(opt);
+      }
+      visualSelect.value=current?.source_visual_id||"";
+      const syncPictureOptions=()=>{
+        const chosen=visualSelect.value;visualSelect.replaceChildren();
+        const blank=el("option","","无图片：仅保存结构资料");
+        blank.value="";visualSelect.appendChild(blank);
+        for(const x of data.visuals.filter(v=>v.subject_id===idControl.value &&
+            (data.scope==="project"||v.episode_id===state.episode))){
+          const opt=el("option","",x.episode_id+" · "+x.filename+" / V"+x.version);
+          opt.value=x.visual_id;visualSelect.appendChild(opt);
+        }
+        visualSelect.value=[...visualSelect.options].some(o=>o.value===chosen)?
+          chosen:"";
+      };
+      idControl.addEventListener("change",syncPictureOptions);
+      visualLabel.appendChild(visualSelect);form.appendChild(visualLabel);
+    }
+    const submit=el("button","prod-new","保存"+wfLabels[kind]+"草稿");
+    submit.type="submit";
+    submit.disabled=data.scope==="shot"&&!state.shots.length;
+    form.appendChild(submit);
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      if(!state.project||!idControl.value)return;
+      const fields={};
+      for(const [name,input] of Object.entries(inputs)){
+        const value=input.value.trim();
+        if(value)fields[name]=value;
+      }
+      if(!Object.keys(fields).length){
+        $("wfMessage_"+kind).textContent="请至少填写一个有效字段";return;
+      }
+      const unit_id=idControl.value;
+      const dataToSave={
+        project_id:state.project,episode_id:data.scope==="project"?"":state.episode,
+        kind,unit_id,shot_id:data.scope==="shot"?unit_id:"",
+        expected_revision:current?.revision||0,
+        fields,note:note.value.trim(),source_visual_id:kindVisual?
+          visualSelect.value||null:null
+      };
+      submit.disabled=true;
+      try{
+        await workflowPost("save",dataToSave);
+        state.selected=unit_id;state.editing=false;state.image="";
+        await workflowLoad(kind);
+        $("wfMessage_"+kind).textContent="草稿已保存，修订历史已锁定；尚未自动批准。";
+      }catch(error){
+        $("wfMessage_"+kind).textContent="保存失败："+error.message;
+        submit.disabled=false;
+      }
+    });
+    detail.appendChild(form);
+    if(!current)return;
+    const divider=el("div","workflow-form-heading","版本审核");
+    form.appendChild(divider);
+    const info=el("p",current.status==="approved"?"workflow-approved":"workflow-draft",
+      "当前状态："+wfStatus[current.status]+
+      (current.approved_revision?" · 历史批准 V"+current.approved_revision:"")+
+      " · 操作均记录审计链");
+    form.appendChild(info);
+    const reason=el("textarea","workflow-review-note");
+    reason.maxLength=600;reason.placeholder="审核依据，至少 8 个字";
+    reason.setAttribute("aria-label","审核理由");
+    form.appendChild(reason);
+    const controls=el("div","workflow-review-actions");
+    const choices=current.status==="draft"?[["submit","提交审核"]]:
+      current.status==="in_review"?[["approve","批准当前版本"],["reject","驳回"]]:[];
+    for(const [decision,label] of choices){
+      const button=el("button","prod-new"+(decision==="approve"?
+        " workflow-approve-button":""),label);
+      button.type="button";
+      button.disabled=decision==="approve"&&(
+        kind==="video_plans"||
+        (data.image_kind&&!current.source_visual_id));
+      button.addEventListener("click",async()=>{
+        if(reason.value.trim().length<8){
+          $("wfMessage_"+kind).textContent="审核理由至少 8 个字";return;
+        }
+        if(decision==="approve"&&!window.confirm(
+          "确认人工批准 "+current.unit_id+" 当前版本？原图及历史记录不会覆盖。"))return;
+        button.disabled=true;
+        try{
+          await workflowPost("review",{
+            project_id:state.project,episode_id:data.scope==="project"?"":state.episode,
+            kind,unit_id:current.unit_id,expected_revision:current.revision,
+            decision,rationale:reason.value.trim()
+          });
+          await workflowLoad(kind);
+        }catch(error){
+          $("wfMessage_"+kind).textContent="审核失败："+error.message;
+          button.disabled=false;
+        }
+      });
+      controls.appendChild(button);
+    }
+    if(!choices.length)controls.appendChild(el("span","workflow-draft",
+      "此修订已有审核结果。需要继续修改请保存新的草稿版本。"));
+    if(kind==="video_plans"&&current.status==="in_review")
+      controls.appendChild(el("p","workflow-draft",
+        "视频成片审核锁定：尚未接通真实生成结果回传，不能批准渲染。"));
+    form.appendChild(controls);
+    if(kindVisual){
+      const upload=el("form","workflow-form workflow-upload-form");
+      upload.appendChild(el("div","workflow-form-heading","上传真实候选图片"));
+      const episodeLabel=el("label","","原图所属剧集");
+      const episode=el("select","");
+      const episodes=workflowEpisodes(state.project);
+      for(const ep of episodes){
+        const option=el("option","",ep.episode_id+" · "+ep.title);
+        option.value=ep.episode_id;episode.appendChild(option);
+      }
+      if(data.scope==="shot")episode.value=state.episode;
+      episode.disabled=data.scope==="shot";
+      episodeLabel.appendChild(episode);upload.appendChild(episodeLabel);
+      const file=el("input","");file.type="file";
+      file.accept="image/png,image/jpeg,image/webp";file.required=true;
+      file.setAttribute("aria-label","选择真实参考图片");
+      upload.appendChild(file);
+      const uploadButton=el("button","prod-new","上传并建立候选修订");
+      uploadButton.type="submit";uploadButton.disabled=!episodes.length||
+        current.status==="in_review";
+      upload.appendChild(uploadButton);
+      upload.addEventListener("submit",async event=>{
+        event.preventDefault();const f=file.files?.[0];if(!f)return;
+        if(!["image/png","image/jpeg","image/webp"].includes(f.type)||
+           f.size>8*1024*1024||f.size<32){
+          $("wfMessage_"+kind).textContent="只能上传不超过 8MB 的 PNG/JPG/WebP 图片";
+          return;
+        }
+        uploadButton.disabled=true;
+        try{
+          const image_base64=await fileAsBase64(f);
+          const response=await fetch("./api/v1/production/visual/upload",{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({csrf,project_id:state.project,
+              episode_id:episode.value,kind:data.image_kind,
+              subject_id:current.unit_id,filename:f.name,image_base64}),
+            cache:"no-store"
+          });
+          const result=await response.json();
+          if(!response.ok)throw Error(result.reason||"上传失败");
+          await workflowPost("save",{
+            project_id:state.project,
+            episode_id:data.scope==="project"?"":state.episode,
+            kind,unit_id:current.unit_id,
+            shot_id:data.scope==="shot"?current.unit_id:"",
+            expected_revision:current.revision,
+            fields:current.fields,note:current.note,
+            source_visual_id:result.visual_id
+          });
+          state.image=result.visual_id;
+          await workflowLoad(kind);
+          $("wfMessage_"+kind).textContent="已上传候选并产生新草稿修订；必须重新人工审核。";
+        }catch(error){
+          $("wfMessage_"+kind).textContent="图片上传／关联失败："+error.message;
+          uploadButton.disabled=false;
+        }
+      });
+      detail.appendChild(upload);
+    }
+  }
+
+  // UI handlers are bound once. Project/episode changes discard stale scopes.
+  for(const kind of wfKinds){
+    const state=wfState[kind];
+    $("wfProject_"+kind).addEventListener("change",()=>{
+      state.project=$("wfProject_"+kind).value;state.episode="";
+      state.selected="";state.items=null;state.editing=false;
+      syncWorkflowProjects(workflowProjects(),latest?.production?.episodes||[]);
+      workflowLoad(kind);
+    });
+    $("wfEpisode_"+kind).addEventListener("change",()=>{
+      state.episode=$("wfEpisode_"+kind).value;
+      state.selected="";state.items=null;state.editing=false;
+      workflowLoad(kind);
+    });
+    $("wfSearch_"+kind).addEventListener("input",()=>{
+      if(state.items)workflowRenderList(kind);
+    });
+    $("wfNew_"+kind).addEventListener("click",()=>{
+      if(!state.project||!state.items)return;
+      state.selected="";state.editing=true;state.image="";
+      workflowRender(kind);
+    });
+  }
+
+  async function workflowLoadReviews(){
+    if(!microsoftOwner)return;
+    const project=$("wfReviewProject").value;
+    const episode=$("wfReviewEpisode").value;
+    if(!project)return;
+    const query=new URLSearchParams({project});
+    if(episode)query.set("episode",episode);
+    const label=$("wfReviewMessage"),list=$("wfReviewList");
+    label.textContent="正在读取人工审核队列…";
+    try{
+      const response=await fetch("./api/v1/workflow/reviews?"+query.toString(),
+                                 {cache:"no-store"});
+      const body=await response.json();
+      if(!response.ok)throw Error(body.reason||"审核队列不可读");
+      list.replaceChildren();
+      $("wfReviewCount").textContent=body.total+" 条待审核";
+      label.textContent=body.total?
+        "所有条目均为真实待审记录；必须逐项确认，不能批量假批准。":
+        "当前项目和剧集暂无待审制作工单。";
+      if(!body.pending.length)list.appendChild(el("div","workflow-placeholder",
+        "暂无待审核工单。角色和场景有自己的正式母版审批门槛。"));
+      const map={props:"props",shot_plans:"shots",storyboards:"storyboards",
+        white_models:"white_models",video_plans:"video_plans",
+        tasks:"tasks",settings:"settings"};
+      for(const item of body.pending){
+        const row=el("div","workflow-review-record");
+        const desc=el("div","");
+        const typeName={scene:"场景库",character_asset:"角色分类资产"}[item.kind]||
+          wfLabels[item.kind]||item.kind;
+        desc.appendChild(el("strong","",typeName+" · "+item.unit_id));
+        desc.appendChild(el("p","",(item.episode_id||"项目级")+" · V"+item.revision+
+          " · "+(item.fields.title||item.fields.name||"待审核")));
+        row.appendChild(desc);
+        const open=el("button","prod-new prod-secondary","打开并审核");
+        open.type="button";
+        open.addEventListener("click",()=>{
+          if(item.kind==="scene"){
+            sceneProjectId=item.project_id;
+            sceneCurrentId=item.unit_id;sceneData=null;
+            navigateWorkspace("scenes");
+            loadScenes().catch(e=>$("sceneMessage").textContent=e.message);
+            return;
+          }
+          if(item.kind==="character_asset"){
+            characterProjectId=item.project_id;
+            characterCurrentId=item.character_id;
+            characterData=null;characterV2Data=null;
+            navigateWorkspace("characters");
+            loadCharacters().catch(e=>$("characterMessage").textContent=e.message);
+            return;
+          }
+          const page=map[item.kind],state=wfState[item.kind];
+          state.project=item.project_id;
+          state.episode=item.episode_id||state.episode;
+          state.selected=item.unit_id;state.editing=false;
+          navigateWorkspace(page);
+          workflowLoad(item.kind);
+        });
+        row.appendChild(open);list.appendChild(row);
+      }
+    }catch(error){label.textContent="审核队列失败："+error.message;}
+  }
+  $("wfReviewProject").addEventListener("change",()=>{
+    syncWorkflowProjects(workflowProjects(),latest?.production?.episodes||[]);
+    workflowLoadReviews();
+  });
+  $("wfReviewEpisode").addEventListener("change",workflowLoadReviews);
+  $("wfReviewRefresh").addEventListener("click",workflowLoadReviews);
 
   const sceneTypeName={interior:"室内",exterior:"室外",
     transition:"过渡场景",abstract:"抽象空间"};

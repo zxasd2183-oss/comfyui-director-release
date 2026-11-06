@@ -21,7 +21,7 @@ from production_core import (ProductionError, _ident, _audit, open_db,
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_POST_BYTES = 11 * 1024 * 1024
-ALLOWED_KINDS = frozenset({"character", "scene", "storyboard"})
+ALLOWED_KINDS = frozenset({"character", "scene", "storyboard", "prop"})
 MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 
 

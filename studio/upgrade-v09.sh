@@ -8,7 +8,7 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/director-studio
 UNIT=/etc/systemd/system/director-studio.service
 DB=/var/lib/director-studio/studio.sqlite
-FILES="studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py manage.py index.html login.html login.css studio.css studio.js"
+FILES="studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py manage.py index.html login.html login.css studio.css studio.js"
 systemctl is-active --quiet director-studio || fail "Existing Studio not active"
 systemctl is-active --quiet director-hub-mcp || fail "Director Hub not active"
 [[ -d "$DEST" && ! -L "$DEST" && -f "$UNIT" ]] || fail "Existing Studio missing"
