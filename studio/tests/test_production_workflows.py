@@ -242,6 +242,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("video_render_executor_not_connected",pkg["blockers"])
         self.assertIsNone(pkg["upstream"]["settings"])
         self.save("settings")
+        self.decide("settings","SPEC","submit")
+        self.decide("settings","SPEC","approve")
         third=w.get_video_handoff_package(
             self.path,"WaitingOffice","EP01","01")
         self.assertNotEqual(first["package_sha256"],third["package_sha256"])
