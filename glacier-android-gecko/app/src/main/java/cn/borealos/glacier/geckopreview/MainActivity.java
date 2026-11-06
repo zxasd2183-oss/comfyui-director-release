@@ -46,6 +46,9 @@ public final class MainActivity extends Activity {
     private static final int INK = Color.rgb(41, 57, 70);
     private static final int MUTED = Color.rgb(110, 128, 140);
     private static final int ICE = Color.rgb(235, 245, 251);
+    private static final int PALE = Color.rgb(247, 251, 254);
+    private static final int GLACIER_BLUE = Color.rgb(62, 145, 187);
+    private static final int HAIRLINE = Color.rgb(222, 233, 241);
     private static final String START_URL = "https://example.com/";
 
     // GeckoRuntime is process-scoped, and must only be created once.
@@ -132,16 +135,27 @@ public final class MainActivity extends Activity {
         return shape;
     }
 
+    private GradientDrawable surfaceBorder(int color, int radius, int border) {
+        GradientDrawable shape = surface(color, radius);
+        shape.setStroke(dp(1), border);
+        return shape;
+    }
+
     private Button button(String text) {
         Button b = new Button(this);
         b.setText(text);
         b.setAllCaps(false);
-        b.setTextSize(17);
+        b.setTextSize(20);
+        b.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         b.setTextColor(INK);
+        b.setGravity(Gravity.CENTER);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
-        b.setPadding(dp(7), 0, dp(7), 0);
-        b.setBackground(surface(ICE, 12));
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setPadding(0, 0, 0, 0);
+        b.setBackground(surface(PALE, 15));
+        b.setElevation(0);
         return b;
     }
 
@@ -149,7 +163,7 @@ public final class MainActivity extends Activity {
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.HORIZONTAL);
         l.setGravity(Gravity.CENTER_VERTICAL);
-        l.setPadding(dp(10), dp(6), dp(10), dp(6));
+        l.setPadding(dp(12), dp(5), dp(12), dp(5));
         return l;
     }
 
@@ -157,18 +171,12 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
-        // Android 15 enforces edge-to-edge for apps targeting API 35. Without
-        // explicit system-bar insets, the status bar covers the profile chip
-        // and the 3-button navigation area intercepts tab/menu taps.
         if (android.os.Build.VERSION.SDK_INT >= 35) {
             root.setOnApplyWindowInsetsListener((view, insets) -> {
                 android.graphics.Insets bars = insets.getInsets(
                         android.view.WindowInsets.Type.systemBars());
-                // Keep both the top browser toolbar and bottom actions inside
-                // the actual tappable application area.
                 view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-                if ((getApplicationInfo().flags
-                        & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                if (debugBuild()) {
                     android.util.Log.i("GlacierSmoke",
                             "SYSTEM_BAR_INSETS top=" + bars.top
                             + " bottom=" + bars.bottom);
@@ -178,41 +186,73 @@ public final class MainActivity extends Activity {
         }
         setContentView(root);
 
+        // Chrome-like top chrome: understated glacier branding, clear
+        // account-space chip, and one rounded address/search field.
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.VERTICAL);
+        top.setBackgroundColor(PALE);
+
         LinearLayout header = horizontal();
-        header.setBackgroundColor(Color.rgb(247, 250, 252));
+        header.setPadding(dp(16), dp(5), dp(14), dp(1));
+        TextView logo = new TextView(this);
+        logo.setText("❄");
+        logo.setGravity(Gravity.CENTER);
+        logo.setTextColor(Color.WHITE);
+        logo.setTextSize(21);
+        logo.setContentDescription("Glacier");
+        logo.setBackground(surface(GLACIER_BLUE, 13));
+        header.addView(logo, new LinearLayout.LayoutParams(dp(35), dp(35)));
 
         TextView brand = new TextView(this);
-        brand.setText("❄  Glacier");
+        brand.setText("  Glacier");
         brand.setTextSize(19);
-        brand.setTypeface(null, Typeface.BOLD);
-        brand.setTextColor(Color.rgb(55, 116, 149));
+        brand.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        brand.setTextColor(INK);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(brand, new LinearLayout.LayoutParams(0, dp(40), 1));
 
         identity = new TextView(this);
         identity.setTextSize(12);
-        identity.setTextColor(INK);
+        identity.setTextColor(Color.rgb(59, 111, 140));
         identity.setGravity(Gravity.CENTER);
-        identity.setPadding(dp(11), dp(7), dp(11), dp(7));
-        identity.setBackground(surface(ICE, 12));
+        identity.setPadding(dp(12), dp(7), dp(12), dp(7));
+        identity.setBackground(surfaceBorder(ICE, 18, HAIRLINE));
         identity.setOnClickListener(v -> chooseProfile());
         header.addView(identity);
-        root.addView(header);
+        top.addView(header);
 
         LinearLayout nav = horizontal();
+        nav.setPadding(dp(12), dp(5), dp(12), dp(9));
         backButton = button("‹");
         backButton.setContentDescription("后退");
         backButton.setOnClickListener(v -> {
             if (active != null && active.canBack) active.session.goBack();
         });
-        nav.addView(backButton, new LinearLayout.LayoutParams(dp(38), dp(43)));
+        nav.addView(backButton, new LinearLayout.LayoutParams(dp(34), dp(43)));
+
         forwardButton = button("›");
         forwardButton.setContentDescription("前进");
         forwardButton.setOnClickListener(v -> {
             if (active != null && active.canForward) active.session.goForward();
         });
-        LinearLayout.LayoutParams front = new LinearLayout.LayoutParams(dp(38), dp(43));
-        front.setMargins(dp(4), 0, dp(7), 0);
-        nav.addView(forwardButton, front);
+        LinearLayout.LayoutParams forwardParams =
+                new LinearLayout.LayoutParams(dp(34), dp(43));
+        forwardParams.setMargins(dp(4), 0, dp(6), 0);
+        nav.addView(forwardButton, forwardParams);
+
+        LinearLayout addressPill = new LinearLayout(this);
+        addressPill.setOrientation(LinearLayout.HORIZONTAL);
+        addressPill.setGravity(Gravity.CENTER_VERTICAL);
+        addressPill.setBackground(surfaceBorder(Color.WHITE, 23, HAIRLINE));
+        addressPill.setElevation(dp(1));
+
+        TextView lens = new TextView(this);
+        lens.setText("⌕");
+        lens.setTextSize(24);
+        lens.setGravity(Gravity.CENTER);
+        lens.setTextColor(GLACIER_BLUE);
+        lens.setContentDescription("搜索");
+        addressPill.addView(lens, new LinearLayout.LayoutParams(dp(30), dp(43)));
 
         address = new EditText(this);
         address.setSingleLine(true);
@@ -220,77 +260,110 @@ public final class MainActivity extends Activity {
         address.setTextColor(INK);
         address.setHintTextColor(MUTED);
         address.setHint("搜索或输入网址");
+        address.setContentDescription("Glacier 地址栏");
         address.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         address.setSelectAllOnFocus(true);
-        address.setPadding(dp(12), 0, dp(12), 0);
-        address.setBackground(surface(Color.rgb(242, 246, 249), 14));
+        address.setPadding(0, 0, dp(2), 0);
+        address.setBackgroundColor(Color.TRANSPARENT);
         address.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         address.setOnEditorActionListener((v, actionId, event) -> {
             navigate(address.getText().toString());
             return true;
         });
-        nav.addView(address, new LinearLayout.LayoutParams(0, dp(43), 1));
+        addressPill.addView(address, new LinearLayout.LayoutParams(0, dp(43), 1));
 
         Button go = button("→");
+        go.setTextSize(19);
+        go.setTextColor(Color.WHITE);
+        go.setBackground(surface(GLACIER_BLUE, 16));
         go.setContentDescription("打开网址");
         go.setOnClickListener(v -> navigate(address.getText().toString()));
-        LinearLayout.LayoutParams end = new LinearLayout.LayoutParams(dp(40), dp(43));
-        end.setMargins(dp(6), 0, 0, 0);
-        nav.addView(go, end);
-        root.addView(nav);
+        LinearLayout.LayoutParams goParams =
+                new LinearLayout.LayoutParams(dp(33), dp(33));
+        goParams.setMargins(dp(2), 0, dp(5), 0);
+        addressPill.addView(go, goParams);
 
-        // Testing banner makes the network security limitation explicit.
+        nav.addView(addressPill, new LinearLayout.LayoutParams(0, dp(44), 1));
+        top.addView(nav);
+        root.addView(top);
+
+        // Small connection chip, not a full-width intrusive warning banner.
+        LinearLayout connection = horizontal();
+        connection.setPadding(dp(15), dp(0), dp(15), dp(6));
+        connection.setBackgroundColor(PALE);
         engineLabel = new TextView(this);
-        engineLabel.setText(proxyMode
-                ? "VLESS → 本地 SOCKS5 → GeckoView · 实验连接"
-                : "直连网络 · 已明确选择（无代理保护）");
-        engineLabel.setTextColor(Color.rgb(111, 91, 49));
-        engineLabel.setTextSize(11);
-        engineLabel.setGravity(Gravity.CENTER);
-        engineLabel.setBackgroundColor(Color.rgb(255, 247, 222));
-        engineLabel.setPadding(dp(4), dp(4), dp(4), dp(4));
-        root.addView(engineLabel);
+        engineLabel.setTextSize(10);
+        engineLabel.setTextColor(Color.rgb(68, 119, 141));
+        engineLabel.setPadding(dp(11), dp(5), dp(11), dp(5));
+        engineLabel.setBackground(surface(ICE, 14));
+        engineLabel.setOnClickListener(v -> showNetworkStatus());
+        engineLabel.setContentDescription("网络连接信息");
+        connection.addView(engineLabel);
+        root.addView(connection);
 
         web = new GeckoView(this);
+        web.setBackgroundColor(Color.WHITE);
         root.addView(web, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
+        // Mobile tab and navigation controls remain reachable with one thumb.
+        View hairline = new View(this);
+        hairline.setBackgroundColor(HAIRLINE);
+        root.addView(hairline, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+
         LinearLayout bottom = horizontal();
-        bottom.setBackgroundColor(Color.rgb(247, 250, 252));
+        bottom.setPadding(dp(14), dp(6), dp(14), dp(6));
+        bottom.setBackgroundColor(Color.WHITE);
+
+        Button home = button("⌂");
+        home.setTextSize(23);
+        home.setContentDescription("主页");
+        home.setOnClickListener(v -> {
+            if (active != null) active.session.loadUri(START_URL);
+        });
+        bottom.addView(home, new LinearLayout.LayoutParams(dp(45), dp(44)));
 
         Button refresh = button("⟳");
         refresh.setContentDescription("刷新");
         refresh.setOnClickListener(v -> {
             if (active != null) active.session.reload();
         });
-        bottom.addView(refresh, new LinearLayout.LayoutParams(dp(52), dp(44)));
+        LinearLayout.LayoutParams refreshParams =
+                new LinearLayout.LayoutParams(dp(45), dp(44));
+        refreshParams.setMargins(dp(8), 0, 0, 0);
+        bottom.addView(refresh, refreshParams);
 
         TextView space = new TextView(this);
-        space.setText("  内核兼容性实验  ");
+        space.setText("冰川 · 浏览");
         space.setGravity(Gravity.CENTER);
         space.setTextColor(MUTED);
-        space.setTextSize(12);
+        space.setTextSize(11);
         bottom.addView(space, new LinearLayout.LayoutParams(0, dp(44), 1));
 
         Button plus = button("+");
         plus.setContentDescription("新建标签页");
         plus.setOnClickListener(v -> openTab(selectedProfile, START_URL));
-        bottom.addView(plus, new LinearLayout.LayoutParams(dp(43), dp(44)));
+        bottom.addView(plus, new LinearLayout.LayoutParams(dp(42), dp(44)));
 
         tabCounter = new TextView(this);
         tabCounter.setTextSize(15);
+        tabCounter.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         tabCounter.setGravity(Gravity.CENTER);
         tabCounter.setTextColor(INK);
-        tabCounter.setBackground(surface(ICE, 12));
+        tabCounter.setContentDescription("标签页");
+        tabCounter.setBackground(surfaceBorder(Color.WHITE, 12, GLACIER_BLUE));
         tabCounter.setOnClickListener(v -> showTabs());
-        LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(dp(43), dp(44));
+        LinearLayout.LayoutParams countParams =
+                new LinearLayout.LayoutParams(dp(40), dp(40));
         countParams.setMargins(dp(8), 0, 0, 0);
         bottom.addView(tabCounter, countParams);
 
         Button menu = button("⋮");
+        // Retain this stable selector so existing functional CI keeps working.
         menu.setContentDescription("内核测试菜单");
         menu.setOnClickListener(v -> showBrowserMenu());
-        LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(43), dp(44));
+        LinearLayout.LayoutParams dots = new LinearLayout.LayoutParams(dp(41), dp(44));
         dots.setMargins(dp(8), 0, 0, 0);
         bottom.addView(menu, dots);
         root.addView(bottom);
@@ -500,8 +573,10 @@ public final class MainActivity extends Activity {
             if (proxyMode) {
                 boolean connected = NativeProxy.alive();
                 engineLabel.setText(connected
-                        ? "VLESS 本地代理运行中 · 可测试出口 IP"
-                        : "代理已断开 · Gecko SOCKS 不会自动改为直连");
+                        ? "● VLESS 代理运行中"
+                        : "● 代理已断开 · 无直连回退");
+            } else {
+                engineLabel.setText("● 直连模式 · 无代理保护");
             }
         }
         if (active != null) {
