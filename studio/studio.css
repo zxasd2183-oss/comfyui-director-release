@@ -1151,3 +1151,334 @@ body[data-page] .workflow-page~.footer{margin-top:12px}
   display:flex;align-items:center;gap:12px;color:#397399;font-size:11px}
 .workflow-clay-timeline input{flex:1;accent-color:#318ccc}
 .workflow-clay-timeline span{min-width:50px;text-align:right}
+
+/* =============================================================
+   ICEBOUND DESIGN SYSTEM V2 — matched to the approved
+   Director Studio nine-screen + storyboard designs.
+   Content/state comes ONLY from the live owner-authenticated API.
+   ============================================================= */
+:root{
+  --body:#eaf6ff;--ice:#eaf6ff;--paper:#ffffff;
+  --text:#17375c;--muted:#718aa8;--line:#d6e7f6;
+  --blue:#1988ee;--navy:#143b69;
+  --shadow:0 7px 22px rgba(49,127,188,.12)
+}
+body{background:linear-gradient(130deg,#e3f4ff,#f7fcff 52%,#e6f4ff);
+  color:#19375b;letter-spacing:0}
+.app-shell{grid-template-columns:194px minmax(0,1fr);min-height:100vh}
+.sidebar{padding:12px 10px 15px;
+  background:linear-gradient(180deg,#f7fcff 0%,#eaf6ff 80%,#d7efff 100%);
+  border-right:1px solid #cae5f8;overflow:hidden}
+.sidebar:before{position:absolute;content:"";left:0;right:0;bottom:0;
+  height:192px;top:auto;background:url("./glacier-peaks.svg")
+  bottom center/125% auto no-repeat;clip-path:none;opacity:1;z-index:-1;
+  pointer-events:none}
+.brand{min-height:64px;padding:7px 5px 17px;gap:9px;white-space:nowrap}
+.brand-symbol{flex:none;width:38px;height:38px;border-radius:11px;
+  background:linear-gradient(145deg,#44baf4,#087bd9);
+  box-shadow:0 5px 12px rgba(44,154,213,.32)}
+.brand-clapper{display:grid;place-items:center;color:#fff;font-size:26px;
+  line-height:1;font-weight:850;transform:rotate(-10deg)}
+.brand-symbol .brand-spark{position:absolute;top:2px;right:4px;
+  font-size:10px;color:white}
+.brand strong{font-size:15px;font-weight:850;letter-spacing:-.4px}
+.brand small{font-size:8px;letter-spacing:.55px;color:#6794b8}
+.side-caption{display:none}
+.nav-items{gap:3px;overflow-y:auto;overflow-x:hidden;
+  padding-bottom:13px;scrollbar-width:thin;scrollbar-color:#bfdcf1 transparent}
+.nav-section-label{font-size:9px;letter-spacing:1.1px;color:#89a6bc;
+  padding:10px 11px 4px;margin:0}
+.nav-section-label:first-child{padding-top:2px}
+.nav-items a{padding:8px 11px;border-radius:9px;min-height:38px;
+  gap:10px;font-size:12px;font-weight:730;color:#426a8d;
+  box-shadow:none;line-height:1.2}
+.nav-items a span{font-size:17px;line-height:1;width:20px;color:#426d98}
+.nav-items a:hover{transform:none;background:#e5f4ff}
+.nav-items a.active,.nav-items a[aria-current="page"]{
+  background:linear-gradient(110deg,#2aa9fa,#1279e8)!important;
+  box-shadow:0 5px 12px #248de242!important;color:#fff!important;
+  border-radius:9px}
+.nav-items a.active span,.nav-items a[aria-current="page"] span{color:#fff}
+.sidebar-bottom{min-height:135px;margin-top:auto;padding:9px 7px 0;
+  border:0;background:transparent;justify-content:flex-start}
+.sidebar-bottom .safety-indicator{display:inline-flex;
+  padding:5px 9px;background:#f7fcffe9;border:1px solid #cde8f9;
+  border-radius:16px;font-size:10px;color:#5f8ab0}
+.sidebar-bottom p,.sidebar-bottom small{display:none}
+.topbar{min-height:63px;height:auto;padding:8px 21px;gap:10px;
+  background:linear-gradient(110deg,#f9fdffed,#ebf7ffef);
+  backdrop-filter:blur(12px);border-bottom:1px solid #cde5f7}
+.crumb{font-size:12px;gap:7px;flex:none}
+.crumb span{font-size:9px;letter-spacing:.7px;color:#79a9c7}
+.crumb strong{font-size:12px;color:#2a78b7}
+.workspace-context{display:flex;align-items:center;gap:9px;min-width:0;
+  max-width:45%;margin-left:10px;padding:7px 12px;
+  background:#eff8fff0;border:1px solid #c9e5f8;border-radius:28px}
+.workspace-context-project{font-size:14px;color:#244d76;
+  font-weight:850;max-width:230px;overflow:hidden;white-space:nowrap;
+  text-overflow:ellipsis}
+.workspace-context-english{font-size:10px;color:#647f9a;
+  white-space:nowrap}
+.workspace-context-episode{font-size:10px;color:white;
+  background:linear-gradient(90deg,#10b5e7,#1686eb);
+  padding:5px 13px;box-shadow:0 2px 6px #2594e62b}
+.workspace-context-summary{font-size:11px;white-space:nowrap;
+  color:#2e648f;font-variant-numeric:tabular-nums}
+.topbar-right{margin-left:auto;gap:8px}
+.header-studio-status{font-size:11px;color:#23835d;font-weight:750;
+  white-space:nowrap}
+.header-studio-status[data-live="false"]{color:#a06a34}
+.header-audit-status,.header-gpu-status{padding:6px 9px}
+#clock{font-variant-numeric:tabular-nums;color:#7091a9}
+.workspace{max-width:none;margin:0;padding:16px 17px 14px}
+.panel{border-radius:15px;border-color:#d3e6f6;box-shadow:var(--shadow)}
+.panel-header{padding:18px 19px 14px}
+.panel-header h2{color:#1d4d81}
+.prod-new{font-weight:750;border-radius:9px!important}
+.prod-new:hover:not(:disabled){transform:translateY(-1px)}
+body[data-page="home"] .workspace{padding:14px 17px}
+body[data-page="home"] .workspace>.hero{
+  min-height:219px;padding:24px 31px;align-items:flex-start;
+  background:#d4efff url("./glacier-banner.svg") center center/cover no-repeat;
+  border:2px solid #d2e8f8;box-shadow:0 8px 23px #5199c21e;
+  border-radius:16px;gap:12px}
+body[data-page="home"] .hero:after{display:none}
+body[data-page="home"] .hero .eyebrow{font-size:10px;letter-spacing:1.2px;
+  color:#3b96c9}
+body[data-page="home"] .hero h1{font-size:32px;color:#173f6d;
+  text-shadow:0 1px #fff;letter-spacing:0;margin:11px 0 0}
+.icebound-hero-copy{position:relative;z-index:1}
+.icebound-hero-english{font-size:19px;font-weight:730;color:#21547e;margin-top:3px}
+body[data-page="home"] .hero p{margin:9px 0 0;line-height:1.4;color:#486e93}
+.icebound-hero-sub{font-size:11px;color:#6b8da7}
+body[data-page="home"] .hero-controls{justify-self:end;align-items:end;
+  min-width:140px}
+body[data-page="home"] .hero-controls .mode-label{font-size:10px;
+  padding:7px 9px;border:1px solid #c7e6f6;border-radius:12px;
+  background:#f6fcffe8}
+body[data-page="home"] .hero-controls .main-button{font-size:11px}
+.icebound-quick-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:11px;margin:12px 0}
+.icebound-quick-actions button{border:1px solid #d2e6f7;background:
+  linear-gradient(170deg,#fff 30%,#edf8ff);border-radius:13px;min-height:88px;
+  display:grid;justify-items:center;align-content:center;gap:8px;
+  color:#255b94;font-size:12px;font-weight:800;
+  box-shadow:0 6px 15px #4a96ce18;transition:transform .15s,box-shadow .15s}
+.icebound-quick-actions button:hover{transform:translateY(-2px);
+  box-shadow:0 10px 22px #408fd537}
+.icebound-quick-actions button span{font-size:26px;display:grid;place-items:center;
+  width:43px;height:43px;border-radius:13px;color:#1688e5;
+  background:linear-gradient(145deg,#e7f8ff,#cceaff)}
+.icebound-quick-actions button:nth-child(2) span{color:#1cb4bd}
+.icebound-quick-actions button:nth-child(3) span{color:#2387f0}
+.icebound-quick-actions button:nth-child(4) span{color:#776be1}
+.icebound-quick-actions button:nth-child(5) span{color:#dd921a}
+.icebound-home-overview{display:grid;grid-template-columns:1.03fr 1fr;
+  gap:13px;margin-bottom:13px}
+.icebound-home-progress,.icebound-home-tasks{min-height:175px;
+  background:#fffffff2;border:1px solid #d1e5f5;border-radius:14px;
+  box-shadow:var(--shadow);padding:16px 18px}
+.icebound-home-overview header{display:flex;align-items:center;
+  justify-content:space-between;gap:9px;margin-bottom:14px}
+.icebound-home-overview h2{font-size:16px;color:#254d77;margin:0}
+.icebound-home-overview small{font-size:11px;color:#4779a0}
+.icebound-home-overview header>span{font-size:9px;letter-spacing:.9px;
+  color:#9aafc3;font-weight:750}
+.icebound-progress-layout{display:flex;align-items:center;gap:24px}
+.icebound-ring{--complete:0;position:relative;flex:none;
+  width:118px;height:118px;border-radius:50%;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;
+  background:conic-gradient(#27bca0 calc(var(--complete)*1%),#d6e5f3 0);
+  color:#1a477a}
+.icebound-ring:before{content:"";position:absolute;inset:12px;
+  background:#fff;border-radius:50%}
+.icebound-ring>*{z-index:1}
+.icebound-ring strong{font-size:26px;line-height:1;font-variant-numeric:tabular-nums}
+.icebound-ring small{font-size:9px;color:#789bb6;margin-top:6px}
+.icebound-progress-stats{display:grid;gap:11px;flex:1;min-width:0}
+.icebound-progress-row{display:flex;gap:15px;align-items:center;
+  justify-content:space-between;font-size:12px;color:#65819a}
+.icebound-progress-row strong{font-size:12px;color:#255f91;white-space:nowrap}
+.icebound-progress-row:first-child strong{color:#0e9f77}
+.icebound-recent-tasks{display:grid;gap:6px}
+.icebound-task-row{display:flex;align-items:center;gap:10px;
+  background:#f7fbff;border:1px solid #e3f0f8;border-radius:9px;
+  text-align:left;color:#396e92;padding:8px 11px}
+.icebound-task-row:hover{background:#e9f6ff}
+.icebound-task-row strong{flex:1;font-size:12px;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icebound-task-row small{font-size:10px;white-space:nowrap;
+  border-radius:10px;padding:4px 7px;background:#e8f4ff;color:#4383b0}
+.icebound-task-dot{color:#1691e7;font-size:16px}
+.icebound-tasks-empty{font-size:11px;line-height:1.75;
+  color:#779bb5;padding:14px;margin:0}
+body[data-page="home"] .workspace>.notice{margin:8px 0 12px;
+  padding:9px 13px;background:#f7fcffe8}
+body[data-page="home"] .workspace>.metrics{gap:11px}
+body[data-page="home"] .metric{padding:14px 17px}
+body[data-page="home"] .metric strong{font-size:25px}
+body[data-page="home"] .metric-name{margin-bottom:7px}
+body[data-page="home"] .metric-sub{margin-top:7px}
+/* The reference uses a compact icy scene thumbnail gallery. */
+body[data-page="scenes"] .scene-hero,
+body[data-page="characters"] .character-hero,
+.workflow-hero{min-height:100px;height:auto;padding:17px 20px;
+  background:linear-gradient(100deg,#f4fbff,#d2efff 70%,#b7ddfc);
+  border-radius:15px}
+body[data-page="scenes"] .scene-hero:before,
+body[data-page="scenes"] .scene-hero:after,
+body[data-page="characters"] .character-hero:after,
+.workflow-hero:after{background:url("./glacier-peaks.svg") right bottom/
+  480px auto no-repeat;clip-path:none;right:0;top:0;bottom:0;
+  width:50%;height:100%;opacity:.45}
+body[data-page="scenes"] .scene-title-line h2,
+body[data-page="characters"] .character-title-line h2,
+.workflow-hero h2{font-size:24px}
+body[data-page="scenes"] .scene-workspace{grid-template-columns:305px minmax(0,1fr) 265px;
+  height:clamp(540px,calc(100vh - 309px),780px)}
+body[data-page="scenes"] .scene-list{display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;
+  gap:10px;padding:12px;overflow-y:auto}
+body[data-page="scenes"] .scene-entry{display:grid;text-align:left;
+  grid-template-columns:minmax(0,1fr);align-content:start;
+  gap:6px;min-height:135px;padding:7px;max-width:none}
+body[data-page="scenes"] .scene-entry-cover{width:100%;
+  height:91px;object-fit:cover;max-width:100%}
+body[data-page="scenes"] .scene-entry-copy strong,
+body[data-page="scenes"] .scene-entry-copy small{
+  display:block;max-width:none;overflow:hidden;white-space:nowrap;
+  text-overflow:ellipsis}
+body[data-page="scenes"] .scene-entry-copy strong{font-size:11px}
+body[data-page="scenes"] .scene-entry-copy small{font-size:9px}
+body[data-page="scenes"] .scene-entry .scene-list-status{font-size:9px}
+body[data-page="scenes"] .scene-rail,
+body[data-page="scenes"] .scene-center,
+body[data-page="scenes"] .scene-inspector{border-radius:15px}
+body[data-page="scenes"] .scene-stage{min-height:240px}
+body[data-page="characters"] .character-workspace{grid-template-columns:198px
+  minmax(0,1fr) 300px;height:clamp(570px,calc(100vh - 310px),800px)}
+body[data-page="characters"] .character-stage{height:clamp(230px,43%,340px)}
+body[data-page="characters"] .character-avatar-image{width:53px;height:53px}
+/* Storyboard: actual 31-shot roster, main frame, inspector + filmstrip. */
+body[data-page="storyboards"] .workspace{padding:12px 16px}
+body[data-page="storyboards"] .workflow-hero{min-height:91px}
+body[data-page="storyboards"] .workflow-grid{
+  grid-template-columns:265px minmax(0,1fr) 326px;
+  height:clamp(470px,calc(100vh - 412px),750px)}
+body[data-page="storyboards"] .workflow-list,
+body[data-page="shots"] .workflow-list{gap:5px;padding:8px}
+body[data-page="storyboards"] .workflow-record,
+body[data-page="shots"] .workflow-record{
+  min-height:70px;display:flex;align-items:center;gap:8px;
+  padding:7px 9px}
+body[data-page="storyboards"] .workflow-record-copy,
+body[data-page="shots"] .workflow-record-copy{display:grid;gap:4px;min-width:0}
+body[data-page="storyboards"] .workflow-record-copy strong,
+body[data-page="shots"] .workflow-record-copy strong{font-size:12px}
+body[data-page="storyboards"] .workflow-record-copy small,
+body[data-page="shots"] .workflow-record-copy small{font-size:10px}
+.icebound-shot-thumb{display:grid;place-items:center;flex:none;
+  width:84px;height:54px;object-fit:cover;border-radius:8px;
+  border:1px solid #d6eaf9}
+.icebound-shot-empty{background:linear-gradient(145deg,#eaf8ff,#d8edfb);
+  color:#84b3d2;font-size:24px}
+.icebound-storyboard-toolbar{display:flex;align-items:center;gap:6px;
+  overflow-x:auto;margin:9px 0 0;padding:5px 8px;background:#f9fcff;
+  border:1px solid #d8eafb;border-radius:12px}
+.icebound-storyboard-toolbar button{flex:none;border:1px solid transparent;
+  background:transparent;padding:8px 16px;border-radius:9px;
+  font-size:12px;color:#3c70a0;font-weight:720}
+.icebound-storyboard-toolbar button.active{color:white;
+  background:linear-gradient(120deg,#3ca6f6,#167dec);
+  box-shadow:0 4px 12px #398fe33d}
+body[data-page="storyboards"] .workflow-toolbar{margin:8px 0}
+body[data-page="storyboards"] .workflow-stage{background:
+  linear-gradient(#eef9ffec,#e3f3ff);min-height:200px}
+.icebound-storyboard-timeline{background:#fff;border:1px solid #d3e8f8;
+  border-radius:13px;padding:10px 12px;margin-top:11px;box-shadow:var(--shadow)}
+.icebound-timeline-header{display:flex;align-items:center;
+  justify-content:space-between;gap:12px;margin-bottom:9px}
+.icebound-timeline-header strong{color:#224f80;font-size:13px}
+.icebound-timeline-header span{font-size:11px;color:#7c9cb3}
+.icebound-timeline-list{display:flex;overflow-x:auto;gap:8px;
+  padding:3px 0 9px;scrollbar-width:thin}
+.icebound-timeline-card{flex:0 0 125px;display:grid;gap:5px;
+  text-align:left;padding:6px;background:#f5faff;
+  border:1px solid #dceaf6;border-radius:9px;color:#244d77}
+.icebound-timeline-card.active{background:#e2f2ff;
+  border-color:#349cf0;box-shadow:0 0 0 2px #3997ef18}
+.icebound-timeline-frame{height:70px;display:grid;place-items:center;
+  background:#e7f3fb;border-radius:6px;overflow:hidden}
+.icebound-timeline-frame img{width:100%;height:100%;object-fit:cover}
+.icebound-timeline-placeholder{font-size:29px;color:#a4c7e2}
+.icebound-timeline-caption{display:flex;justify-content:space-between;
+  gap:6px;align-items:center;font-size:10px}
+.icebound-timeline-caption small{color:#688cab}
+/* Dense production tables and cards without pretending preview files exist. */
+body[data-page="props"] .workflow-list{grid-template-columns:repeat(2,minmax(0,1fr));
+  align-content:start;gap:7px}
+body[data-page="props"] .workflow-record{min-height:97px;align-content:start;
+  padding:9px;gap:6px}
+body[data-page="props"] .workflow-grid{grid-template-columns:278px minmax(0,1fr) 305px}
+body[data-page="tasks"] .workflow-list{gap:5px}
+body[data-page="tasks"] .workflow-record{grid-template-columns:1fr auto;
+  background:#f8fcff;align-items:center;padding:13px}
+body[data-page="tasks"] .workflow-record .state{grid-column:2;grid-row:1/3}
+body[data-page="review"] .workflow-review-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+body[data-page="review"] .workflow-review-record{background:#fffffff2;
+  box-shadow:var(--shadow);border-radius:13px}
+@media(max-width:1450px){
+  .workspace-context-english{display:none}
+  .workspace-context{max-width:39%}
+  .topbar{padding:8px 13px}
+  body[data-page="storyboards"] .workflow-grid{grid-template-columns:
+    235px minmax(0,1fr) 282px}
+}
+@media(max-width:1200px){
+  .app-shell{grid-template-columns:174px minmax(0,1fr)}
+  .sidebar{padding:11px 6px}.brand strong{font-size:13px}
+  .brand small{font-size:7px}
+  .topbar-right #clock{display:none}
+  .workspace-context-summary{display:none}
+  body[data-page="scenes"] .scene-workspace{grid-template-columns:252px minmax(0,1fr)}
+  body[data-page="scenes"] .scene-inspector{grid-column:1/-1}
+  body[data-page="characters"] .character-workspace{grid-template-columns:200px minmax(0,1fr)}
+  body[data-page="characters"] .character-inspector{grid-column:1/-1}
+  body[data-page="storyboards"] .workflow-grid{grid-template-columns:215px minmax(0,1fr)}
+  body[data-page="storyboards"] .workflow-inspector{grid-column:1/-1}
+}
+@media(max-width:740px){
+  .app-shell{display:block}
+  .sidebar{height:auto;position:static;padding:9px}
+  .sidebar:before,.sidebar-bottom{display:none}
+  .brand{padding:5px 8px}.brand strong{font-size:15px}
+  .nav-items{display:flex;gap:5px;overflow-x:auto;padding:6px}
+  .nav-items a{white-space:nowrap;min-height:34px}
+  .nav-section-label{display:none}
+  .topbar{padding:8px 12px;min-height:56px;flex-wrap:wrap}
+  .crumb{display:none}
+  .workspace-context{margin:0;max-width:100%;flex:1;padding:6px 9px}
+  .workspace-context-project{max-width:150px;font-size:12px}
+  .workspace-context-english{display:none}
+  .topbar-right{margin:0}
+  .header-audit-status,.header-studio-status{display:none}
+  body[data-page="home"] .hero h1{font-size:24px}
+  body[data-page="home"] .workspace>.hero{min-height:225px;padding:17px 19px}
+  body[data-page="home"] .hero-controls{display:none}
+  .icebound-quick-actions{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+  .icebound-quick-actions button{min-height:82px;font-size:11px}
+  .icebound-home-overview{grid-template-columns:1fr}
+  .icebound-progress-layout{gap:12px}
+  .icebound-ring{width:102px;height:102px}
+  body[data-page="scenes"] .scene-workspace,
+  body[data-page="characters"] .character-workspace,
+  body[data-page="storyboards"] .workflow-grid{display:flex;flex-direction:column;height:auto}
+  body[data-page="scenes"] .scene-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  body[data-page="scenes"] .scene-entry{min-width:0;max-width:none}
+  body[data-page="storyboards"] .workflow-rail{min-height:0}
+  body[data-page="storyboards"] .workflow-list{display:flex;overflow-x:auto}
+  body[data-page="storyboards"] .workflow-record{flex:0 0 200px}
+  body[data-page="storyboards"] .workflow-stage-wrap{height:510px}
+  body[data-page="props"] .workflow-grid{display:flex;flex-direction:column}
+  body[data-page="review"] .workflow-review-list{grid-template-columns:1fr}
+}
