@@ -1131,20 +1131,36 @@
     note.maxLength=2000;note.rows=2;note.value=current?.note||"";
     noteLabel.appendChild(note);form.appendChild(noteLabel);
     if(kind==="video_plans"&&current){
-      const exportButton=el("button","prod-new prod-secondary","导出当前镜头制作单 JSON");
+      const exportButton=el("button","prod-new prod-secondary",
+        "导出含来源校验的镜头制作单 JSON");
       exportButton.type="button";
-      exportButton.addEventListener("click",()=>{
-        const plan={schema:"director_studio_video_order_v1",
-          project_id:state.project,episode_id:state.episode,
-          shot_id:current.unit_id,revision:current.revision,
-          status:current.status,settings:current.fields,
-          blockers:current.blockers||[],render_execution:"not_connected",
-          generated_at:new Date().toISOString()};
-        const output=new Blob([JSON.stringify(plan,null,2)],{type:"application/json"});
-        const href=URL.createObjectURL(output);
-        const a=document.createElement("a");a.href=href;
-        a.download="video_order_"+current.unit_id+"_V"+current.revision+".json";
-        a.click();URL.revokeObjectURL(href);
+      exportButton.addEventListener("click",async()=>{
+        const scope={project_id:state.project,episode_id:state.episode,
+          shot_id:current.unit_id,revision:current.revision};
+        exportButton.disabled=true;
+        try{
+          const qs=new URLSearchParams({project:scope.project_id,
+            episode:scope.episode_id,shot:scope.shot_id});
+          const response=await fetch("./api/v1/workflow/video-package?"+qs.toString(),
+            {cache:"no-store"});
+          const data=await response.json();
+          if(!response.ok)throw Error(data.reason||"无法读取制作单");
+          // A reopened/revised record must not export stale art as current.
+          if(data.package.video_plan.revision!==scope.revision)
+            throw Error("镜头制作单已更新，请刷新后重新导出");
+          if(scope.project_id!==state.project||scope.episode_id!==state.episode)
+            throw Error("当前工程已切换，请重新导出");
+          const output=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+          const href=URL.createObjectURL(output);
+          const a=document.createElement("a");
+          a.href=href;
+          a.download="studio_handoff_"+scope.episode_id+"_SH"+scope.shot_id+
+            "_V"+scope.revision+".json";
+          a.click();URL.revokeObjectURL(href);
+          $("wfMessage_"+kind).textContent="已导出含完整来源校验信息的制作清单；未向 GPU 派发任务。";
+        }catch(error){
+          $("wfMessage_"+kind).textContent="导出制作单失败："+error.message;
+        }finally{exportButton.disabled=false;}
       });
       form.appendChild(exportButton);
     }
