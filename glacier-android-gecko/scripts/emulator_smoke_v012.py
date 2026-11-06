@@ -277,6 +277,18 @@ def main():
     await_ui(text="标签页 · 3",timeout=40)
     await_ui(text="工作 · about:blank",timeout=40)
     await_ui(text="私人 · about:blank",timeout=40)
+    end=time.monotonic()+25
+    saved_url=False
+    while time.monotonic()<end:
+        root=dump()
+        if any(n.attrib.get("text","").startswith("私人 · https://example.com")
+               for n in root.iter("node")):
+            saved_url=True
+            break
+        time.sleep(2)
+    if not saved_url:
+        raise RuntimeError("M03_SAVED_HTTPS_URL_LOST")
+    record("m03_url_restored","saved HTTPS URL retained after process death")
     record("m03_force_stop_restore","three tabs across both profiles restored after process death")
     shot("03-restored-tab-grid")
     tap(desc="返回浏览器")
@@ -326,7 +338,7 @@ def main():
     # screenshots stopped responding after this heavier page completed.
     tap(desc="更多选项")
     tap(text="打开 GitHub")
-    urlbar("https://github.com")
+    await_ui(desc="Glacier 地址栏",timeout=35)
     page_event("github")
     record("github_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     shot("05-github")

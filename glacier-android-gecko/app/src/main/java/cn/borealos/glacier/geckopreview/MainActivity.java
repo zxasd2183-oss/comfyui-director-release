@@ -94,6 +94,7 @@ public final class MainActivity extends Activity {
         String geckoState;
         byte[] thumbnail;
         boolean pendingRestore;
+        String expectedRestoreUrl;
         boolean canBack = false;
         boolean canForward = false;
 
@@ -480,6 +481,7 @@ public final class MainActivity extends Activity {
                 tab.geckoState = row.state;
                 tab.thumbnail = row.thumb;
                 tab.pendingRestore = true;
+                tab.expectedRestoreUrl = row.url;
                 tabs.add(tab);
                 if (row.id.equals(snapshot.activeId)) resume = tab;
             }
@@ -701,6 +703,12 @@ public final class MainActivity extends Activity {
                                          Boolean userGesture) {
                 Tab t = findBySession(source);
                 if (t != null && url != null) {
+                    // Opening a GeckoSession can emit a transient about:blank
+                    // location before its saved history has been restored.
+                    // Never let it overwrite a persisted HTTPS tab.
+                    if ("about:blank".equals(url) && t.expectedRestoreUrl != null
+                            && !"about:blank".equals(t.expectedRestoreUrl)) return;
+                    if (!"about:blank".equals(url)) t.expectedRestoreUrl = null;
                     t.url = url;
                     t.title = url.length() > 40 ? url.substring(0, 40) + "…" : url;
                     if (t == active) updateChrome();
@@ -783,7 +791,18 @@ public final class MainActivity extends Activity {
                             GeckoSession.SessionState.fromString(next.geckoState);
                     if (previous != null && previous.size() > 0) {
                         next.session.restoreState(previous);
-                        if (!"about:blank".equals(next.url)) next.session.reload();
+                        if (!"about:blank".equals(next.url)) {
+                            // Gecko history restoration is async. Only reload
+                            // after a short delay if no real location change
+                            // arrived; preserve the old history if it did.
+                            String targetUrl = next.url;
+                            tabSaveHandler.postDelayed(() -> {
+                                if (next == active && targetUrl.equals(next.expectedRestoreUrl)
+                                        && targetUrl.equals(next.url)) {
+                                    next.session.loadUri(targetUrl);
+                                }
+                            }, 1400);
+                        }
                         usedState = true;
                     }
                 } catch (Exception ignored) {
