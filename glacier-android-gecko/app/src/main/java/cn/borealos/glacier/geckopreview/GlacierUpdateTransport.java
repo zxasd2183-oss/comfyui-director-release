@@ -27,7 +27,7 @@ import javax.net.ssl.SSLSocketFactory;
  * This separate transport NEVER supplies arbitrary cookies or browser data.
  */
 final class GlacierUpdateTransport {
-    static final String API = "https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/releases?per_page=40";
+    static final String API = "https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/releases?per_page=100";
     private static final int CONNECT_TIMEOUT = 15000;
     private static final int READ_TIMEOUT = 30000;
     private static final int MAX_REDIRECTS = 5;
