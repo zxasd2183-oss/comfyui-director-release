@@ -28,6 +28,7 @@ MEDIA_URL = "http://127.0.0.1:8900" + MEDIA_PATH
 MAX_IMAGE = 8 * 1024 * 1024
 MAX_REPLY = 4096
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
+_SHOT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 
 # Exact OpenAI hostnames or suffixes plus the constrained, observed regional
 # Azure account family (max storage account name is 24 chars). Do NOT allow
@@ -220,11 +221,13 @@ def _safe_filename(value):
 def sync_chatgpt_visual(project_id, episode_id, kind, subject_id, file, *,
                         opener=None):
     try:
-        if not all(isinstance(x, str) and _ID.fullmatch(x)
-                   for x in (project_id, episode_id, subject_id)):
-            raise SyncError("invalid_studio_scope")
         if kind not in ("character", "scene", "storyboard"):
             raise SyncError("invalid_visual_kind")
+        if (not isinstance(project_id,str) or not _ID.fullmatch(project_id)
+            or not isinstance(episode_id,str) or not _ID.fullmatch(episode_id)
+            or not isinstance(subject_id,str) or not
+                (_SHOT_ID if kind=="storyboard" else _ID).fullmatch(subject_id)):
+            raise SyncError("invalid_studio_scope")
         raw, source_id = fetch_file(file, opener=opener)
         if raw.startswith(b"\x89PNG\r\n\x1a\n"):
             media = "image/png"
