@@ -55,6 +55,7 @@ def check_desktop(page,name):
         assert lower["y"] >= center["y"]+center["height"]-5, (lower,center)
         assert abs(lower["x"]-center["x"])<7, (lower,center)
         assert page.locator("#sceneReferenceTabs button").count()==5
+        assert lower["y"]+lower["height"]<=905,(lower,"scene inspector outside first viewport")
         return
     if name=="characters":
         rail=bounds(page,"#characters .character-rail")
@@ -62,13 +63,15 @@ def check_desktop(page,name):
         side=bounds(page,"#characters .character-inspector")
         assert rail["x"]<center["x"]<side["x"]
         assert page.locator("#characterTurnaround").is_visible()
+        assert side["y"]+side["height"]<=905,(side,"character inspector outside first viewport")
         return
     if name=="storyboards":
         rail=bounds(page,"#workflow_storyboards .workflow-rail")
         canvas=bounds(page,"#workflow_storyboards .workflow-stage-wrap")
         inspector=bounds(page,"#workflow_storyboards .workflow-inspector")
         assert rail["x"]<canvas["x"]<inspector["x"]
-        assert page.locator("#storyboardTimeline").is_visible()
+        timeline=bounds(page,"#storyboardTimeline")
+        assert timeline["y"]+timeline["height"]<=905,(timeline,"storyboard timeline below first viewport")
         assert not page.locator("#wfStoryboardEditDialog").is_visible()
         return
     if name in ("props","video_plans"):
@@ -77,6 +80,7 @@ def check_desktop(page,name):
         editor=bounds(page,"#workflow_"+name+" .workflow-inspector")
         assert rail["x"]+rail["width"]<canvas["x"]+6
         assert editor["y"]>=canvas["y"]+canvas["height"]-5
+        assert editor["y"]+editor["height"]<=905,(name,"work inspector below first viewport")
         return
     if name=="tasks":
         assert not page.locator("#workflow_tasks .workflow-stage-wrap").is_visible()
