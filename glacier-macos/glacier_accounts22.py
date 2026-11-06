@@ -85,6 +85,7 @@ class GlacierAccounts22:
         self._accounts_readonly22 = False
         self._accounts_doc22 = {"schema": 1, "accounts": []}
         self._account_last_site22 = {}
+        self._account_presented22 = {}
         if self._accounts_path22.exists():
             try:
                 if self._accounts_path22.stat().st_size > MAX_STORE_BYTES:
@@ -98,6 +99,7 @@ class GlacierAccounts22:
                                     "加密账号资料无法读取，已进入只读保护；旧文件不会被覆盖。")
         for index in range(self.tabs.count()):
             self.register_account_tab22(self.tabs.widget(index))
+        self.tabs.currentChanged.connect(self._on_account_tab_selected22)
 
     def register_account_tab22(self, view):
         if not hasattr(self, "_accounts_doc22") or view is None:
@@ -107,12 +109,29 @@ class GlacierAccounts22:
     def _on_account_url22(self, view, url):
         site = page_site22(url)
         key = id(view)
-        if self._account_last_site22.get(key) == site:
+        if self._account_last_site22.get(key) != site:
+            self._account_last_site22[key] = site
+            self._account_presented22.pop(key, None)
+        self._schedule_site_account22(view, site)
+
+    def _on_account_tab_selected22(self, index):
+        if index < 0:
             return
-        self._account_last_site22[key] = site
-        # Never interrupt a foreground session for a background tab load.
-        if (site and view is self.current()
-                and any(r["site"] == site for r in self._accounts_doc22["accounts"]):
+        view = self.tabs.widget(index)
+        if view is None:
+            return
+        try:
+            self._schedule_site_account22(view, page_site22(view.url()))
+        except RuntimeError:
+            return
+
+    def _schedule_site_account22(self, view, site):
+        key = id(view)
+        if (not site or view is not self.current()
+                or self._account_presented22.get(key) == site):
+            return
+        if any(r["site"] == site for r in self._accounts_doc22["accounts"]):
+            # Recheck at display time: navigation or focus may change.
             QTimer.singleShot(350, lambda v=view, s=site: self._show_site_accounts22(v, s))
 
     def _show_site_accounts22(self, view, site):
@@ -121,6 +140,10 @@ class GlacierAccounts22:
                 return
         except RuntimeError:
             return
+        key = id(view)
+        if self._account_presented22.get(key) == site:
+            return
+        self._account_presented22[key] = site
         self.show_accounts22(site)
 
     def _save_accounts22(self):
