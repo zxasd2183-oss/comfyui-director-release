@@ -22,6 +22,36 @@ class Host(GlacierAccounts22):
 
 
 class AccountCardTests(unittest.TestCase):
+    def test_background_tabs_never_trigger_account_popup(self):
+        from unittest.mock import patch
+        class View:
+            def __init__(self, url):
+                self._url = QUrl(url)
+            def url(self):
+                return self._url
+        host = Host()
+        active = View("https://chatgpt.com/")
+        background = View("https://chatgpt.com/")
+        host.current = lambda: active
+        host._account_last_site22 = {}
+        host._accounts_doc22 = {"schema": 1, "accounts": [
+            {"site": "chatgpt.com", "name": "Personal",
+             "username": "user", "password": "secret"}
+        ]}
+        with patch("glacier_accounts22.QTimer.singleShot") as schedule:
+            host._on_account_url22(background, background.url())
+            schedule.assert_not_called()
+            host._on_account_url22(active, active.url())
+            schedule.assert_called_once()
+        with patch.object(host, "show_accounts22") as popup:
+            host._show_site_accounts22(background, "chatgpt.com")
+            popup.assert_not_called()
+            host._show_site_accounts22(active, "chatgpt.com")
+            popup.assert_called_once_with("chatgpt.com")
+            active._url = QUrl("https://other.example/")
+            host._show_site_accounts22(active, "chatgpt.com")
+            popup.assert_called_once()
+
     def test_domains_require_exact_sanitized_https_hostname(self):
         self.assertEqual(safe_site22("www.ChatGPT.com"), "chatgpt.com")
         self.assertEqual(page_site22(QUrl("https://chatgpt.com/c/abc")), "chatgpt.com")
