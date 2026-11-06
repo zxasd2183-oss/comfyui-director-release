@@ -76,6 +76,14 @@ class WindowsDesktop15:
         add("下载中心                      Ctrl+J", lambda: self.show_download_center17() if hasattr(self, "show_download_center17") else self.show_downloads())
         add("在网页中查找               Ctrl+F", self.open_find13)
         menu.addSeparator()
+        diagnostic = getattr(self, "open_drag_diagnostic21", None)
+        external = getattr(self, "open_in_system_browser21", None)
+        if callable(diagnostic):
+            add("网页拖动诊断（本地）", diagnostic)
+        if callable(external):
+            add("在系统浏览器打开当前页", external)
+        if callable(diagnostic) or callable(external):
+            menu.addSeparator()
         add("检测 VLESS 连接", self.start_connection_check)
         add("浏览器设置", self.open_settings)
         add("关于 · 检查更新", self.update_manager.show_dialog)
