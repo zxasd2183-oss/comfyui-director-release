@@ -403,6 +403,9 @@ def review_unit(db_path,data,actor):
                 raise WorkflowError("invalid_workflow_review_transition",409)
             if dec=="approve":
                 fields=json.loads(row["fields_json"])
+                if kind=="white_models" and fields.get("quality","").strip() not in (
+                    "","粗白模","rough"):
+                    raise WorkflowError("fine_white_model_engine_not_connected",409)
                 if kind=="shot_plans":
                     scene_id=fields.get("scene_id")
                     if not scene_id:
@@ -421,8 +424,6 @@ def review_unit(db_path,data,actor):
                     if prior is None or prior["status"]!="approved":
                         raise WorkflowError("shot_plan_not_approved",409)
                 if kind=="white_models":
-                    if fields.get("quality","").strip() not in ("","粗白模","rough"):
-                        raise WorkflowError("fine_white_model_engine_not_connected",409)
                     board=_record(db,pid,eid,"storyboards",uid)
                     if board is None or board["status"]!="approved":
                         raise WorkflowError("storyboard_not_approved",409)
