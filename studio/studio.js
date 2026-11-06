@@ -629,7 +629,22 @@
       canvas.width=950;canvas.height=540;
       canvas.setAttribute("aria-label","基于镜头尺寸和相机/人物坐标的粗白模实时投影");
       stage.appendChild(canvas);
-      workflowDrawClay(canvas,chosen?.fields||{});
+      const timeline=el("div","workflow-clay-timeline");
+      const slider=el("input","");
+      slider.type="range";slider.min="0";slider.max="100";slider.step="1";
+      slider.value="0";slider.setAttribute("aria-label","粗白模关键帧时间轴");
+      const time=el("span","","0.0s");
+      const values=chosen?.fields||{};
+      function draw(){
+        const current=workflowFrameAt(values,Number(slider.value)/100);
+        const frames=workflowFrameList(values);
+        const last=frames[frames.length-1];
+        time.textContent=last?(Number(slider.value)/100*last.t).toFixed(1)+"s":"静态机位";
+        workflowDrawClay(canvas,current);
+      }
+      slider.disabled=workflowFrameList(values).length<2;
+      slider.addEventListener("input",draw);
+      timeline.append(slider,time);stage.appendChild(timeline);draw();
     }else if(preview){
       const picture=el("img","");
       picture.alt=(chosen?.unit_id||"")+"/"+preview.filename;
@@ -696,6 +711,34 @@
       meta.appendChild(dl);
     }else meta.appendChild(el("p","",wfHints[kind]));
     workflowRenderEditor(kind,chosen,pictures);
+  }
+
+
+  function workflowFrameList(values){
+    try{
+      const frames=JSON.parse(values.keyframes||"[]");
+      if(!Array.isArray(frames)||frames.length>60)return [];
+      return frames.filter(x=>x&&typeof x==="object"&&
+        typeof x.t==="number"&&Number.isFinite(x.t)&&x.t>=0)
+        .sort((a,b)=>a.t-b.t);
+    }catch{return [];}
+  }
+  function workflowFrameAt(values,ratio){
+    const frames=workflowFrameList(values);
+    if(!frames.length)return values;
+    const t=ratio*frames[frames.length-1].t;
+    const high=frames.find(x=>x.t>=t)||frames[frames.length-1];
+    const low=frames.slice().reverse().find(x=>x.t<=t)||frames[0];
+    const mix=low===high?0:Math.max(0,Math.min(1,
+      (t-low.t)/(high.t-low.t)));
+    const props={...values};
+    for(const key of ["actor_x","actor_y","prop_x","prop_y",
+      "camera_x","camera_y","camera_z","camera_yaw"]){
+      const a=typeof low[key]==="number"?low[key]:Number(values[key]||0);
+      const b=typeof high[key]==="number"?high[key]:Number(values[key]||0);
+      props[key]=String(a+(b-a)*mix);
+    }
+    return props;
   }
 
   function workflowDrawClay(canvas,values){
@@ -804,6 +847,8 @@
         control.maxLength=2000;
         control.rows=field==="prompt"||field==="story"||field==="keyframes"?3:2;
       }
+      if(kind==="white_models"&&field==="keyframes")
+        control.placeholder='[{"t":0,"actor_x":0,"actor_y":4},{"t":4,"actor_x":2,"actor_y":6}]';
       control.value=current?.fields[field]||
         (!current&&kind==="settings"?{
           aspect:"9:16",width:"1080",height:"1920",fps:"24",
