@@ -93,17 +93,25 @@ class CharacterLibraryTests(unittest.TestCase):
         with self.assertRaises(catalog.CharacterError):
             catalog.set_master(self.path,{**{k:v for k,v in link.items() if k!="reference_type"},
                 "rationale":"short"},actor="test_operator")
+        with self.assertRaises(catalog.CharacterError) as refused:
+            catalog.set_master(self.path,{
+                "project_id":"WaitingOffice","character_id":"CHAR_GPT",
+                "visual_id":visual_id,"rationale":"Reviewed character design and consistency"},
+                actor="test_operator")
+        self.assertEqual(refused.exception.reason,"character_individual_visual_required")
+        approved_id=self.add_visual(subject="CHAR_GPT")["visual_id"]
         result=catalog.set_master(self.path,{
             "project_id":"WaitingOffice","character_id":"CHAR_GPT",
-            "visual_id":visual_id,"rationale":"Reviewed character design and consistency"},
+            "visual_id":approved_id,"rationale":"Reviewed individual design and consistency"},
             actor="test_operator")
-        self.assertEqual(result["master_visual_id"],visual_id)
+        self.assertEqual(result["master_visual_id"],approved_id)
         self.assertFalse(result["gpu_action"])
         entry=catalog.list_characters(self.path,"WaitingOffice")["characters"][0]
-        self.assertEqual(entry["master"]["visual_id"],visual_id)
-        self.assertEqual(entry["visuals"][0]["reference_type"],"inspiration")
+        self.assertEqual(entry["master"]["visual_id"],approved_id)
+        self.assertTrue(any(v["visual_id"]==visual_id and
+            v["reference_type"]=="inspiration" for v in entry["visuals"]))
         with closing(prod.open_db(self.path,initialize=False)) as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_media").fetchone()[0],1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM visual_media").fetchone()[0],2)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM character_visual_links").fetchone()[0],1)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM character_master_events").fetchone()[0],1)
             self.assertTrue(prod.verify_chain(db))
