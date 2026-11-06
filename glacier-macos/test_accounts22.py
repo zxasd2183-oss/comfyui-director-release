@@ -11,9 +11,20 @@ from glacier_accounts22 import (
 )
 
 
+class SignalStub:
+    def connect(self, callback):
+        self.callback = callback
+
+
 class EmptyTabs:
+    def __init__(self):
+        self.currentChanged = SignalStub()
+
     def count(self):
         return 0
+
+    def widget(self, index):
+        return None
 
 
 class Host(GlacierAccounts22):
