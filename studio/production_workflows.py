@@ -593,6 +593,94 @@ def list_units(db_path,project_id,kind,episode_id=""):
                 "gpu_action":False}
 
 
+def get_video_handoff_package(db_path,project_id,episode_id,shot_id):
+    """Version-pinned, owner-only export; NEVER a command to execute a GPU job.
+
+    A checksum makes the planning package reproducible across exports. The
+    checksum is not a signature or proof of renderer acceptance. Media bytes
+    remain in the owner's protected production storage.
+    """
+    pid=_ident_safe(project_id)
+    eid=_ident_safe(episode_id)
+    sid=_shot_safe(shot_id)
+    with closing(open_db(db_path,initialize=False)) as db:
+        if db.execute("SELECT 1 FROM projects WHERE project_id=?",
+                      (pid,)).fetchone() is None:
+            raise WorkflowError("project_not_found",404)
+        episode=db.execute("SELECT episode_id FROM episodes WHERE project_id=? "
+            "AND episode_id=?",(pid,eid)).fetchone()
+        shot=db.execute("SELECT shot_id,ordinal,duration_ms FROM production_shots "
+            "WHERE project_id=? AND episode_id=? AND shot_id=?",
+            (pid,eid,sid)).fetchone()
+        if episode is None or shot is None:
+            raise WorkflowError("shot_not_found",404)
+        plan=_record(db,pid,eid,"video_plans",sid)
+        if plan is None:raise WorkflowError("video_plan_not_found",404)
+
+        def versioned(row):
+            if row is None:return None
+            return {"unit_id":row["unit_id"],"revision":row["revision"],
+                "status":row["status"],
+                "approved_revision":row["approved_revision"],
+                "fields":json.loads(row["fields_json"]),
+                "source_visual_id":row["source_visual_id"],
+                "source_sha256":row["source_sha256"],
+                "snapshot_sha256":hashlib.sha256(_snapshot(row).encode()).hexdigest()}
+
+        spec=db.execute("SELECT * FROM studio_work_units WHERE "
+            "project_id=? AND episode_id=? AND kind='settings' "
+            "AND status='approved' ORDER BY updated_at DESC,unit_id LIMIT 1",
+            (pid,eid)).fetchone()
+        shot_plan=_record(db,pid,eid,"shot_plans",sid)
+        upstream={
+            "settings":versioned(spec),
+            "shot_plans":versioned(shot_plan),
+            "storyboards":versioned(_record(db,pid,eid,"storyboards",sid)),
+            "white_models":versioned(_record(db,pid,eid,"white_models",sid))}
+        fields=upstream["shot_plans"]["fields"] if shot_plan else {}
+        scene_id=fields.get("scene_id")
+        scene=None
+        if scene_id:
+            row=db.execute("SELECT scene_id,revision,approved_revision,status "
+                "FROM scene_profiles WHERE project_id=? AND scene_id=?",
+                (pid,scene_id)).fetchone()
+            if row:scene=dict(row)
+        props=[]
+        for prop_id in [x.strip() for x in fields.get("prop_ids","").split(",")
+                        if x.strip()]:
+            props.append({"prop_id":prop_id,
+                "version":versioned(_record(db,pid,"","props",prop_id))})
+        characters=[]
+        rows=db.execute("SELECT character_id,binding_revision,profile_revision,"
+            "profile_snapshot,asset_refs_json FROM shot_character_bindings_v2 "
+            "WHERE project_id=? AND episode_id=? AND shot_id=? "
+            "ORDER BY character_id",(pid,eid,sid)).fetchall()
+        for row in rows:
+            characters.append({
+                "character_id":row["character_id"],
+                "binding_revision":row["binding_revision"],
+                "profile_revision":row["profile_revision"],
+                "profile_snapshot_sha256":hashlib.sha256(
+                    row["profile_snapshot"].encode()).hexdigest(),
+                "asset_references":json.loads(row["asset_refs_json"])})
+        blockers=_video_blockers(db,pid,eid,sid)
+        package={"schema":"director_studio_video_handoff_v1",
+            "project_id":pid,"episode_id":eid,"shot_id":sid,
+            "ordinal":shot["ordinal"],"duration_ms":shot["duration_ms"],
+            "video_plan":versioned(plan),"upstream":upstream,
+            "scene":scene,"props":props,"character_bindings":characters,
+            "blockers":blockers,
+            "requires_manual_approval":True,
+            "gpu_dispatch_authorized":False,
+            "renderer_connected":False}
+        canonical=json.dumps(package,sort_keys=True,ensure_ascii=False,
+            separators=(",",":")).encode()
+        return {"ok":True,"package":package,
+            "package_sha256":hashlib.sha256(canonical).hexdigest(),
+            "checksum_type":"sha256_canonical_json_not_signature",
+            "gpu_action":False}
+
+
 def get_episode_readiness(db_path,project_id,episode_id):
     """Current per-shot production gates; never claims GPU runner is ready.
 
