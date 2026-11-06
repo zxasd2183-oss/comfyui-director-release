@@ -79,6 +79,29 @@ class VisualLibraryTests(unittest.TestCase):
             self.assertEqual(db.execute(
                 "SELECT COUNT(*) FROM visual_media").fetchone()[0],2)
 
+    def test_storyboard_numeric_shot_ids_upload_and_chatgpt_sync(self):
+        first=self.upload(subject="01",kind="storyboard")
+        self.assertEqual(first["subject_id"],"01")
+        self.assertEqual(media.read_visual(self.db,"WaitingOffice","EP01",
+                                           first["visual_id"])[1],PNG)
+        imported=media.ingest_chatgpt_image(self.db,{
+            "project_id":"WaitingOffice","episode_id":"EP01",
+            "kind":"storyboard","subject_id":"02","filename":"02.png",
+            "source_file_id":"file_storyboard_02_testcase",
+            "image_base64":base64.b64encode(PNG).decode("ascii")})
+        self.assertEqual(imported["subject_id"],"02")
+        shots=[x["subject_id"] for x in media.list_visuals(
+            self.db,"WaitingOffice","EP01")["visuals"]]
+        self.assertEqual(set(shots),{"01","02"})
+        for unsafe in ("../01","01/../../","", "镜头01","01.jpg/secret"):
+            with self.subTest(unsafe=unsafe):
+                with self.assertRaises(media.VisualError):
+                    self.upload(subject=unsafe,kind="storyboard")
+        with self.assertRaises(media.VisualError):
+            self.upload(subject="01",kind="scene")
+        with closing(prod.open_db(self.db,initialize=False)) as db:
+            self.assertTrue(prod.verify_chain(db))
+
     def test_no_cross_episode_read_or_select(self):
         v=self.upload()
         with self.assertRaises(media.VisualError):
