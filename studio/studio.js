@@ -727,6 +727,12 @@
       data.items.length+" 项记录";
     if(!visible.length)list.appendChild(el("p","workflow-stage-empty",
       listItems.length?"没有符合筛选的镜头或资料":"当前项目还没有数据。"));
+    if(kind==="tasks"&&visible.length){
+      const header=el("div","icebound-task-table-head");
+      for(const label of ["任务名称","负责人","优先级","状态"])
+        header.appendChild(el("span","",label));
+      list.appendChild(header);
+    }
     for(const item of visible){
       const record=item.record,btn=el("button","workflow-record"+(
         state.selected===item.unit_id?" active":""));
@@ -742,6 +748,17 @@
           btn.appendChild(image);
         }else btn.appendChild(el("span","icebound-shot-thumb icebound-shot-empty","▤"));
       }
+      if(kind==="props"){
+        const asset=data.visuals.find(v=>v.visual_id===record.source_visual_id)||
+          data.visuals.find(v=>v.subject_id===item.unit_id);
+        if(asset){
+          const thumb=el("img","icebound-prop-thumb");
+          thumb.alt=record.fields.name||item.unit_id;
+          thumb.loading="lazy";
+          thumb.src=visualURL(state.project,asset.episode_id,asset.visual_id);
+          btn.appendChild(thumb);
+        }else btn.appendChild(el("span","icebound-prop-thumb icebound-prop-placeholder","◇"));
+      }
       const main=el("span","workflow-record-copy");
       main.appendChild(el("strong","",
         shotScope?"SH"+item.unit_id:record.fields.name||record.fields.title||item.unit_id));
@@ -749,9 +766,17 @@
         shotScope?(Number(item.shot.duration_ms||0)/1000).toFixed(1)+" 秒 · "+
           (record?"V"+record.revision:"尚未建档"):
           item.unit_id+" · V"+record.revision+" · "+(item.episode_id||"全项目")));
-      main.appendChild(el("span","state "+(record?.status||"planned"),
-        record?wfStatus[record.status]:"未建档"));
-      btn.appendChild(main);
+      if(kind==="tasks"){
+        const facts=el("span","icebound-task-facts");
+        facts.appendChild(el("span","",record.fields.owner||"未分配"));
+        facts.appendChild(el("span","",record.fields.priority||"待定"));
+        facts.appendChild(el("span","state "+record.status,wfStatus[record.status]));
+        btn.append(main,facts);
+      }else{
+        main.appendChild(el("span","state "+(record?.status||"planned"),
+          record?wfStatus[record.status]:"未建档"));
+        btn.appendChild(main);
+      }
       btn.addEventListener("click",()=>{
         state.selected=item.unit_id;state.editing=!record;state.image="";
         workflowRender(kind);
