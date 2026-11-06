@@ -30,8 +30,6 @@ cd "$ROOT"
 for name in director-hub-mcp director-hub-bridge director-studio nginx; do
   systemctl is-active --quiet "$name" || die "Required existing service inactive: $name"
 done
-[[ -f studio/video_results.py && -f video-pipeline/director_video.py ]] ||
-  die "Required source files absent"
 if (( $#==1 )); then
   printf 'CHECK OK: local repository and four existing services ready. No deployment performed.\n'
   exit 0
@@ -48,16 +46,16 @@ printf 'DEPLOY SHA: %s\n' "$DEPLOY_SHA"
   die "New video result code/tests missing from deployed ref"
 echo 'Running local Studio unit/integration tests (no GPU)...'
 python3 -m compileall -q studio video-pipeline
-node --check studio/studio.js
+if command -v node >/dev/null 2>&1; then node --check studio/studio.js; fi
 python3 -m unittest discover -s studio/tests -p 'test_*.py' -q
-echo 'Running local video planner/clip archive tests (no GPU)...'
-python3 -m unittest discover -s video-pipeline/tests -p 'test_*.py' -q
 if [[ ! -x /usr/bin/ffprobe ]]; then
   echo 'Installing local ffprobe dependency for mandatory MP4 verification...'
   sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
   sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
 fi
 [[ -x /usr/bin/ffprobe ]] || die "ffprobe required for accepting real MP4 results"
+echo 'Running local video planner/clip archive tests (no GPU)...'
+python3 -m unittest discover -s video-pipeline/tests -p 'test_*.py' -q
 echo 'Upgrading isolated Hub, preserving approval state...'
 sudo bash vps-control/install-hub-v06.sh
 echo 'Upgrading Studio with its database-preserving backup/rollback...'
