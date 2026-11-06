@@ -1139,3 +1139,15 @@ body[data-page] .workflow-page~.footer{margin-top:12px}
   .workflow-hero{padding:17px}.workflow-hero h2{font-size:22px}
   .workflow-hero p{font-size:11px}
   .workflow-review-record{flex-direction:column;align-items:stretch}}
+
+.workflow-readiness{border-radius:11px;border:1px solid #e8dfc8;
+  background:#fff8ed;padding:11px 13px;margin-bottom:10px;
+  color:#937045}
+.workflow-readiness strong{display:block;color:#8d632d;margin-bottom:6px}
+.workflow-readiness p{font-size:11px;margin:5px 0;line-height:1.6}
+.workflow-clay-timeline{position:absolute;z-index:2;bottom:12px;left:12px;
+  right:12px;border:1px solid #d3e7f4;border-radius:10px;background:#f8fcfff0;
+  backdrop-filter:blur(8px);padding:9px 13px;
+  display:flex;align-items:center;gap:12px;color:#397399;font-size:11px}
+.workflow-clay-timeline input{flex:1;accent-color:#318ccc}
+.workflow-clay-timeline span{min-width:50px;text-align:right}
