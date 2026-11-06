@@ -193,6 +193,22 @@ class GlacierAccounts22:
             return
         QMessageBox.information(self, "Glacier", "账号卡片已在本机加密保存。")
 
+    def delete_account22(self, site, name):
+        if self._accounts_readonly22:
+            return False
+        previous = self._accounts_doc22
+        remaining = [r for r in previous["accounts"]
+                     if not (r["site"] == site and r["name"] == name)]
+        if len(remaining) == len(previous["accounts"]):
+            return False
+        self._accounts_doc22 = {"schema": 1, "accounts": remaining}
+        try:
+            self._save_accounts22()
+        except (OSError, ValueError):
+            self._accounts_doc22 = previous
+            return False
+        return True
+
     def show_accounts22(self, site=None):
         if site is None:
             view = self.current()
@@ -219,6 +235,21 @@ class GlacierAccounts22:
                 copy_password = QPushButton("复制密码", dialog)
                 copy_password.clicked.connect(lambda checked=False, v=record["password"]: self._copy_account22(v))
                 row.addWidget(copy_password)
+            delete = QPushButton("删除", dialog)
+            def remove_current(checked=False, s=site, n=record["name"]):
+                response = QMessageBox.question(
+                    dialog, "删除本地账号卡片",
+                    "确定删除此网站的账号资料？删除后无法从本地恢复。",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if response == QMessageBox.StandardButton.Yes:
+                    if self.delete_account22(s, n):
+                        dialog.accept()
+                    else:
+                        QMessageBox.warning(dialog, "Glacier", "删除未完成；原始加密文件已保留。")
+            delete.clicked.connect(remove_current)
+            row.addWidget(delete)
             layout.addLayout(row)
         close = QPushButton("关闭", dialog)
         close.clicked.connect(dialog.accept)
