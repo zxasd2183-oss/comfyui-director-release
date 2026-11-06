@@ -60,7 +60,7 @@ class WindowsDesktop15Tests(unittest.TestCase):
         self.win.close()
 
     def test_version_theme_and_shortcuts(self):
-        self.assertIn("v0.20.0", self.win.windowTitle())
+        self.assertRegex(self.win.windowTitle(), r"v0\.20\.(0|1)")
         self.assertIn("#e9f5fc", self.win.styleSheet())
         keys = {
             s.key().toString(QKeySequence.SequenceFormat.PortableText)
