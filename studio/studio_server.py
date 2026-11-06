@@ -56,6 +56,7 @@ from production_workflows import (
     save_unit as save_workflow_unit, review_unit as review_workflow_unit,
     list_reviews as list_workflow_reviews,
     get_episode_readiness as get_workflow_readiness,
+    get_video_handoff_package as get_workflow_handoff,
 )
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
@@ -378,6 +379,22 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(200,list_workflow_units(
                     self.server.production_db_path,args["project"],
                     args["kind"],args.get("episode","")))
+            except WorkflowError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError,ValueError):
+                return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path == "/api/v1/workflow/video-package":
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if (len(pairs)!=3 or len({k for k,v in pairs})!=3 or
+                    set(dict(pairs))!={"project","episode","shot"}):
+                    raise WorkflowError("invalid_workflow_query")
+                args=dict(pairs)
+                return self.reply(200,get_workflow_handoff(
+                    self.server.production_db_path,args["project"],
+                    args["episode"],args["shot"]))
             except WorkflowError as exc:
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError,ValueError):
