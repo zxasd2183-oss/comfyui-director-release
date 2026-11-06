@@ -741,6 +741,324 @@
     ctx.font="13px system-ui";
     ctx.fillText("人物灰白占位 · 道具蓝灰占位 · 地面米制网格",18,54);
   }
+
+  function workflowRenderEditor(kind,record,pictures){
+    const state=wfState[kind],data=state.items,detail=$("wfDetail_"+kind);
+    const current=record&&!state.editing?record:null;
+    const form=el("form","workflow-form");
+    const head=el("div","workflow-form-heading",
+      current?"正在编辑："+current.unit_id+" · V"+current.revision:"新建"+wfLabels[kind]);
+    form.appendChild(head);
+    const idLabel=el("label","",data.scope==="shot"?"选择镜头编号":"条目编号");
+    let idControl;
+    if(data.scope==="shot"){
+      idControl=el("select","");
+      for(const shot of state.shots){
+        const opt=el("option","","SH"+shot.shot_id+" · "+
+          (shot.duration_ms/1000).toFixed(1)+" 秒");
+        opt.value=shot.shot_id;idControl.appendChild(opt);
+      }
+      if(!state.shots.length)idControl.appendChild(el("option","","尚无镜头"));
+    }else{
+      idControl=el("input","");
+      idControl.pattern="[A-Za-z][A-Za-z0-9_-]{1,47}";
+      idControl.maxLength=48;idControl.required=true;
+      idControl.placeholder=data.scope==="episode"?"SPEC":"PROP_01 / TASK_01";
+    }
+    idControl.value=current?.unit_id||(data.scope==="episode"?"SPEC":
+      data.scope==="shot"?state.shots[0]?.shot_id||"":"");
+    idControl.disabled=!!current;
+    idLabel.appendChild(idControl);form.appendChild(idLabel);
+    if(data.scope==="shot"&&!state.shots.length)
+      form.appendChild(el("p","workflow-draft",
+        "本剧集还没有镜头，请先在项目工程中建立镜头。"));
+    const inputs={};
+    for(const [field,config] of Object.entries(data.fields)){
+      const label=el("label","",config.label);
+      const control=config.type==="number"?
+        el("input",""):el("textarea","");
+      if(config.type==="number"){
+        control.type="number";control.step="any";
+      }else{
+        control.maxLength=2000;
+        control.rows=field==="prompt"||field==="story"||field==="keyframes"?3:2;
+      }
+      control.value=current?.fields[field]||
+        (!current&&kind==="settings"?{
+          aspect:"9:16",width:"1080",height:"1920",fps:"24",
+          color:"Rec.709",naming:"EP01_SH01"}[field]||"":
+         !current&&kind==="white_models"?{
+           stage_width:"9",stage_depth:"10",camera_x:"0",camera_y:"-9",
+           camera_z:"2.4",camera_yaw:"0",camera_pitch:"-12",
+           focal_mm:"35",actor_x:"0",actor_y:"4",actor_height:"1.7",
+           prop_x:"1.4",prop_y:"5",quality:"粗白模"}[field]||"":
+         !current&&kind==="video_plans"?{
+           fps:"24",width:"1080",height:"1920"}[field]||"":"");
+      inputs[field]=control;label.appendChild(control);form.appendChild(label);
+      if(kind==="white_models"){
+        control.addEventListener("input",()=>{
+          const canvas=$("wfStage_white_models").querySelector("canvas");
+          if(!canvas)return;
+          const values={};
+          for(const [name,input] of Object.entries(inputs))values[name]=input.value;
+          workflowDrawClay(canvas,values);
+        });
+      }
+    }
+    const noteLabel=el("label","","版本备注");
+    const note=el("textarea","");
+    note.maxLength=2000;note.rows=2;note.value=current?.note||"";
+    noteLabel.appendChild(note);form.appendChild(noteLabel);
+    const kindVisual=data.image_kind;
+    const visualLabel=el("label","","本版参考图片");
+    const visualSelect=el("select","");
+    if(kindVisual){
+      const none=el("option","","无图片：仅创建草稿");none.value="";
+      visualSelect.appendChild(none);
+      for(const image of data.visuals.filter(x=>
+          x.subject_id===idControl.value &&(data.scope==="project"||
+            x.episode_id===state.episode))){
+        const opt=el("option","",image.episode_id+" · "+image.filename+
+          " / V"+image.version);
+        opt.value=image.visual_id;visualSelect.appendChild(opt);
+      }
+      visualSelect.value=current?.source_visual_id||"";
+      const syncPictureOptions=()=>{
+        const chosen=visualSelect.value;visualSelect.replaceChildren();
+        const blank=el("option","","无图片：仅保存结构资料");
+        blank.value="";visualSelect.appendChild(blank);
+        for(const x of data.visuals.filter(v=>v.subject_id===idControl.value &&
+            (data.scope==="project"||v.episode_id===state.episode))){
+          const opt=el("option","",x.episode_id+" · "+x.filename+" / V"+x.version);
+          opt.value=x.visual_id;visualSelect.appendChild(opt);
+        }
+        visualSelect.value=[...visualSelect.options].some(o=>o.value===chosen)?
+          chosen:"";
+      };
+      idControl.addEventListener("change",syncPictureOptions);
+      visualLabel.appendChild(visualSelect);form.appendChild(visualLabel);
+    }
+    const submit=el("button","prod-new","保存"+wfLabels[kind]+"草稿");
+    submit.type="submit";
+    submit.disabled=data.scope==="shot"&&!state.shots.length;
+    form.appendChild(submit);
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      if(!state.project||!idControl.value)return;
+      const fields={};
+      for(const [name,input] of Object.entries(inputs)){
+        const value=input.value.trim();
+        if(value)fields[name]=value;
+      }
+      if(!Object.keys(fields).length){
+        $("wfMessage_"+kind).textContent="请至少填写一个有效字段";return;
+      }
+      const unit_id=idControl.value;
+      const dataToSave={
+        project_id:state.project,episode_id:data.scope==="project"?"":state.episode,
+        kind,unit_id,shot_id:data.scope==="shot"?unit_id:"",
+        expected_revision:current?.revision||0,
+        fields,note:note.value.trim(),source_visual_id:kindVisual?
+          visualSelect.value||null:null
+      };
+      submit.disabled=true;
+      try{
+        await workflowPost("save",dataToSave);
+        state.selected=unit_id;state.editing=false;state.image="";
+        await workflowLoad(kind);
+        $("wfMessage_"+kind).textContent="草稿已保存，修订历史已锁定；尚未自动批准。";
+      }catch(error){
+        $("wfMessage_"+kind).textContent="保存失败："+error.message;
+        submit.disabled=false;
+      }
+    });
+    detail.appendChild(form);
+    if(!current)return;
+    const divider=el("div","workflow-form-heading","版本审核");
+    form.appendChild(divider);
+    const info=el("p",current.status==="approved"?"workflow-approved":"workflow-draft",
+      "当前状态："+wfStatus[current.status]+
+      (current.approved_revision?" · 历史批准 V"+current.approved_revision:"")+
+      " · 操作均记录审计链");
+    form.appendChild(info);
+    const reason=el("textarea","workflow-review-note");
+    reason.maxLength=600;reason.placeholder="审核依据，至少 8 个字";
+    reason.setAttribute("aria-label","审核理由");
+    form.appendChild(reason);
+    const controls=el("div","workflow-review-actions");
+    const choices=current.status==="draft"?[["submit","提交审核"]]:
+      current.status==="in_review"?[["approve","批准当前版本"],["reject","驳回"]]:[];
+    for(const [decision,label] of choices){
+      const button=el("button","prod-new"+(decision==="approve"?
+        " workflow-approve-button":""),label);
+      button.type="button";
+      button.disabled=decision==="approve"&&(
+        kind==="video_plans"||
+        (data.image_kind&&!current.source_visual_id));
+      button.addEventListener("click",async()=>{
+        if(reason.value.trim().length<8){
+          $("wfMessage_"+kind).textContent="审核理由至少 8 个字";return;
+        }
+        if(decision==="approve"&&!window.confirm(
+          "确认人工批准 "+current.unit_id+" 当前版本？原图及历史记录不会覆盖。"))return;
+        button.disabled=true;
+        try{
+          await workflowPost("review",{
+            project_id:state.project,episode_id:data.scope==="project"?"":state.episode,
+            kind,unit_id:current.unit_id,expected_revision:current.revision,
+            decision,rationale:reason.value.trim()
+          });
+          await workflowLoad(kind);
+        }catch(error){
+          $("wfMessage_"+kind).textContent="审核失败："+error.message;
+          button.disabled=false;
+        }
+      });
+      controls.appendChild(button);
+    }
+    if(!choices.length)controls.appendChild(el("span","workflow-draft",
+      "此修订已有审核结果。需要继续修改请保存新的草稿版本。"));
+    if(kind==="video_plans"&&current.status==="in_review")
+      controls.appendChild(el("p","workflow-draft",
+        "视频成片审核锁定：尚未接通真实生成结果回传，不能批准渲染。"));
+    form.appendChild(controls);
+    if(kindVisual){
+      const upload=el("form","workflow-form workflow-upload-form");
+      upload.appendChild(el("div","workflow-form-heading","上传真实候选图片"));
+      const episodeLabel=el("label","","原图所属剧集");
+      const episode=el("select","");
+      const episodes=workflowEpisodes(state.project);
+      for(const ep of episodes){
+        const option=el("option","",ep.episode_id+" · "+ep.title);
+        option.value=ep.episode_id;episode.appendChild(option);
+      }
+      if(data.scope==="shot")episode.value=state.episode;
+      episode.disabled=data.scope==="shot";
+      episodeLabel.appendChild(episode);upload.appendChild(episodeLabel);
+      const file=el("input","");file.type="file";
+      file.accept="image/png,image/jpeg,image/webp";file.required=true;
+      file.setAttribute("aria-label","选择真实参考图片");
+      upload.appendChild(file);
+      const uploadButton=el("button","prod-new","上传并建立候选修订");
+      uploadButton.type="submit";uploadButton.disabled=!episodes.length||
+        current.status==="in_review";
+      upload.appendChild(uploadButton);
+      upload.addEventListener("submit",async event=>{
+        event.preventDefault();const f=file.files?.[0];if(!f)return;
+        if(!["image/png","image/jpeg","image/webp"].includes(f.type)||
+           f.size>8*1024*1024||f.size<32){
+          $("wfMessage_"+kind).textContent="只能上传不超过 8MB 的 PNG/JPG/WebP 图片";
+          return;
+        }
+        uploadButton.disabled=true;
+        try{
+          const image_base64=await fileAsBase64(f);
+          const response=await fetch("./api/v1/production/visual/upload",{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({csrf,project_id:state.project,
+              episode_id:episode.value,kind:data.image_kind,
+              subject_id:current.unit_id,filename:f.name,image_base64}),
+            cache:"no-store"
+          });
+          const result=await response.json();
+          if(!response.ok)throw Error(result.reason||"上传失败");
+          await workflowPost("save",{
+            project_id:state.project,
+            episode_id:data.scope==="project"?"":state.episode,
+            kind,unit_id:current.unit_id,
+            shot_id:data.scope==="shot"?current.unit_id:"",
+            expected_revision:current.revision,
+            fields:current.fields,note:current.note,
+            source_visual_id:result.visual_id
+          });
+          state.image=result.visual_id;
+          await workflowLoad(kind);
+          $("wfMessage_"+kind).textContent="已上传候选并产生新草稿修订；必须重新人工审核。";
+        }catch(error){
+          $("wfMessage_"+kind).textContent="图片上传／关联失败："+error.message;
+          uploadButton.disabled=false;
+        }
+      });
+      detail.appendChild(upload);
+    }
+  }
+
+  // UI handlers are bound once. Project/episode changes discard stale scopes.
+  for(const kind of wfKinds){
+    const state=wfState[kind];
+    $("wfProject_"+kind).addEventListener("change",()=>{
+      state.project=$("wfProject_"+kind).value;state.episode="";
+      state.selected="";state.items=null;state.editing=false;
+      syncWorkflowProjects(workflowProjects(),latest?.production?.episodes||[]);
+      workflowLoad(kind);
+    });
+    $("wfEpisode_"+kind).addEventListener("change",()=>{
+      state.episode=$("wfEpisode_"+kind).value;
+      state.selected="";state.items=null;state.editing=false;
+      workflowLoad(kind);
+    });
+    $("wfSearch_"+kind).addEventListener("input",()=>{
+      if(state.items)workflowRenderList(kind);
+    });
+    $("wfNew_"+kind).addEventListener("click",()=>{
+      if(!state.project||!state.items)return;
+      state.selected="";state.editing=true;state.image="";
+      workflowRender(kind);
+    });
+  }
+
+  async function workflowLoadReviews(){
+    if(!microsoftOwner)return;
+    const project=$("wfReviewProject").value;
+    const episode=$("wfReviewEpisode").value;
+    if(!project)return;
+    const query=new URLSearchParams({project});
+    if(episode)query.set("episode",episode);
+    const label=$("wfReviewMessage"),list=$("wfReviewList");
+    label.textContent="正在读取人工审核队列…";
+    try{
+      const response=await fetch("./api/v1/workflow/reviews?"+query.toString(),
+                                 {cache:"no-store"});
+      const body=await response.json();
+      if(!response.ok)throw Error(body.reason||"审核队列不可读");
+      list.replaceChildren();
+      $("wfReviewCount").textContent=body.total+" 条待审核";
+      label.textContent=body.total?
+        "所有条目均为真实待审记录；必须逐项确认，不能批量假批准。":
+        "当前项目和剧集暂无待审制作工单。";
+      if(!body.pending.length)list.appendChild(el("div","workflow-placeholder",
+        "暂无待审核工单。角色和场景有自己的正式母版审批门槛。"));
+      const map={props:"props",shot_plans:"shots",storyboards:"storyboards",
+        white_models:"white_models",video_plans:"video_plans",
+        tasks:"tasks",settings:"settings"};
+      for(const item of body.pending){
+        const row=el("div","workflow-review-record");
+        const desc=el("div","");
+        desc.appendChild(el("strong","",wfLabels[item.kind]+" · "+item.unit_id));
+        desc.appendChild(el("p","",item.episode_id||"项目级"+" · V"+item.revision+
+          " · "+(item.fields.title||item.fields.name||"待审核")));
+        row.appendChild(desc);
+        const open=el("button","prod-new prod-secondary","打开并审核");
+        open.type="button";
+        open.addEventListener("click",()=>{
+          const page=map[item.kind],state=wfState[item.kind];
+          state.project=item.project_id;
+          state.episode=item.episode_id||state.episode;
+          state.selected=item.unit_id;state.editing=false;
+          navigateWorkspace(page);
+          workflowLoad(item.kind);
+        });
+        row.appendChild(open);list.appendChild(row);
+      }
+    }catch(error){label.textContent="审核队列失败："+error.message;}
+  }
+  $("wfReviewProject").addEventListener("change",()=>{
+    syncWorkflowProjects(workflowProjects(),latest?.production?.episodes||[]);
+    workflowLoadReviews();
+  });
+  $("wfReviewEpisode").addEventListener("change",workflowLoadReviews);
+  $("wfReviewRefresh").addEventListener("click",workflowLoadReviews);
+
   const sceneTypeName={interior:"室内",exterior:"室外",
     transition:"过渡场景",abstract:"抽象空间"};
   const sceneStatusName={draft:"草稿",in_review:"待审核",
