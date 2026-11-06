@@ -52,7 +52,7 @@ class HubV05Tests(unittest.TestCase):
         self.assertEqual(len(hub.GPU_TOOLS), 8)
         self.assertEqual(len(hub.VPS_TOOLS), 2)
         self.assertEqual(len(hub.POWER_TOOLS), 3)
-        self.assertEqual(len(hub.BRAIN_TOOLS), 6)
+        self.assertEqual(len(hub.BRAIN_TOOLS), 10)
         self.assertFalse(hub.BRAIN_TOOLS & hub.POWER_TOOLS)
         self.assertFalse(set(hub.GPU_TOOLS) & set(hub.POWER_TOOLS))
 
