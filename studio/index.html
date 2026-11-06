@@ -312,35 +312,78 @@
           <button id="sceneImageClose" class="prod-new prod-secondary" type="button">关闭</button></div>
         <img id="sceneImageFull" alt="场景图片放大预览">
       </dialog>
-            <section id="characters" class="panel character-library" aria-label="独立角色库">
-        <div class="panel-header">
-          <div>
-            <div class="kicker">CHARACTER LIBRARY · PROJECT-WIDE</div>
-            <h2>角色库 · V2</h2>
-            <p>12 类可复用角色资产 · 八方向 / 表情 / 发型 / 服装 / 道具 / 镜头连续性 · 独立人工审核</p>
+            <section id="characters" class="panel character-library" aria-label="项目级角色库">
+        <header class="character-hero">
+          <div class="character-hero-copy">
+            <span class="character-overline">DIRECTOR STUDIO / CHARACTER DESIGN</span>
+            <div class="character-title-line">
+              <span class="character-title-icon" aria-hidden="true">♙</span>
+              <div><h2>角色库 · V2</h2><p>统一角色身份 · 八方向视图 · 表情服装 · 分镜引用与审核</p></div>
+            </div>
           </div>
-          <span id="characterCount" class="small-tag">待加载</span>
-        </div>
-        <div class="character-toolbar">
-          <label>所属项目
+          <div class="character-hero-right">
+            <span id="characterCount" class="character-hero-counter">读取中</span>
+            <span>PROJECT CHARACTER ASSETS</span>
+          </div>
+        </header>
+        <div class="character-toolbar" role="group" aria-label="角色库工具栏">
+          <label>当前项目
             <select id="characterProject" aria-label="角色库项目" disabled></select>
           </label>
-          <button type="button" id="characterSeedBtn" class="prod-new prod-secondary" hidden>导入《待回答事务所》6 位角色档案</button>
-          <button type="button" id="characterCreateBtn" class="prod-new" hidden>＋ 新角色</button>
+          <label class="character-search-field"><span aria-hidden="true">⌕</span>
+            <input id="characterSearch" type="search" placeholder="搜索角色姓名或编号" aria-label="搜索角色">
+          </label>
+          <label>角色类型
+            <select id="characterRoleFilter" aria-label="按角色分类筛选">
+              <option value="">全部角色</option><option value="main">主角</option>
+              <option value="extended">扩展角色</option>
+            </select>
+          </label>
+          <button type="button" id="characterSeedBtn" class="prod-new prod-secondary" hidden>导入六位角色档案</button>
+          <button type="button" id="characterCreateBtn" class="prod-new character-primary-button" hidden>＋ 新建角色</button>
         </div>
-        <p id="characterMessage" class="character-message" role="status">请使用 Microsoft 所有者账号管理角色库。</p>
-        <div class="character-layout">
-          <div id="characterList" class="character-list">
-            <div class="production-empty">请选择项目查看角色。</div>
-          </div>
-          <div id="characterDetail" class="character-detail">
-            <div class="production-empty">选择一个角色，查看品牌转译、角色资料与跨集候选图。</div>
-          </div>
+        <p id="characterMessage" class="character-message" role="status" aria-live="polite">请使用 Microsoft 所有者账号管理角色库。</p>
+        <div class="character-workspace">
+          <aside class="character-rail" aria-label="角色目录">
+            <div class="character-column-heading">
+              <div><small>CHARACTER ROSTER</small><strong>角色目录</strong></div>
+              <span class="character-visible-count" id="characterVisibleCount">0</span>
+            </div>
+            <div id="characterList" class="character-list"><div class="character-rail-empty">请选择项目查看角色。</div></div>
+            <div class="character-rail-bottom">一个人物 · 一套跨剧集标准资产</div>
+          </aside>
+          <section class="character-center" aria-label="人物预览和分门别类的资产">
+            <div class="character-column-heading">
+              <div><small>CHARACTER PREVIEW</small><strong id="characterActiveName">人物预览</strong></div>
+              <span id="characterActiveStatus" class="character-status-pill">待加载</span>
+            </div>
+            <div id="characterStage" class="character-stage">
+              <div class="character-stage-empty">选择角色后在这里查看主图或候选图</div>
+            </div>
+            <div class="character-visuals">
+              <div class="character-visuals-heading"><strong>视觉候选与历史参考</strong>
+                <span id="characterVisualCount">0 张图片</span></div>
+              <div id="characterVisualGallery" class="character-ref-grid"></div>
+            </div>
+            <div id="characterAssetsPanel" class="character-v2-section" aria-label="12 类角色资产">
+              <p class="character-message">选择角色查看分类资产</p>
+            </div>
+          </section>
+          <aside class="character-inspector" aria-label="角色属性与母版审核">
+            <div class="character-column-heading"><div><small>CHARACTER INSPECTOR</small>
+              <strong>角色设定与审核</strong></div><span aria-hidden="true">✧</span></div>
+            <div id="characterDetail" class="character-detail">
+              <p class="character-inspector-empty">选择角色后查看身份特征、审核状态及关联参考。</p>
+            </div>
+          </aside>
         </div>
+        <footer class="character-security-note">◇　原创形象仅抽象借鉴品牌视觉，不使用官方 Logo；角色母版需独立人工审核。图片原件不覆盖，GPU 不会自动启动。</footer>
+      </section>
+      <dialog id="characterEditorDialog" class="character-editor-dialog" aria-label="编辑角色主档">
         <form id="characterEditForm" class="character-editor" hidden>
           <div class="character-editor-heading">
             <strong id="characterEditorTitle">角色档案</strong>
-            <button id="characterEditorCancel" type="button" class="prod-new prod-secondary">收起编辑</button>
+            <button id="characterEditorCancel" type="button" class="prod-new prod-secondary">取消</button>
           </div>
           <div class="character-editor-grid">
             <label>角色编号
@@ -365,8 +408,15 @@
           <p class="production-warning">硬性规范：官方 Logo 只能用于研究，任何角色立绘、设定卡与成品都不得直接放置、描摹、拼接或隐藏官方 Logo。</p>
           <button id="characterSaveBtn" type="submit" class="prod-new">保存角色档案</button>
         </form>
-        <p class="production-warning character-footnote">角色库只关联现有图片，不迁移或覆盖 EP01 素材。正式母版必须由所有者明确审核通过，任何操作都不会启动 GPU。</p>
-      </section>
+      </dialog>
+      <dialog id="characterAssetEditorDialog" class="character-editor-dialog character-asset-dialog" aria-label="编辑角色分类资产">
+        <div id="characterAssetEditorMount"></div>
+      </dialog>
+      <dialog id="characterImageDialog" class="scene-image-dialog" aria-labelledby="characterImageTitle">
+        <div class="scene-image-dialog-head"><strong id="characterImageTitle">角色图片</strong>
+          <button id="characterImageClose" type="button" class="prod-new prod-secondary">关闭</button></div>
+        <img id="characterImageFull" alt="角色参考图大图预览">
+      </dialog>
       <div class="content-grid">
         <section id="shots" class="panel shots-panel">
           <div class="panel-header"><div><div class="kicker">PRODUCTION PIPELINE</div><h2>镜头生产线</h2><p>按顺序安排生产，随时选中镜头介入</p></div>
