@@ -36,6 +36,11 @@
     latest=data;
     const live=data.live||{}, gpu=live.gpu_power||{}, queue=live.comfy_queue||{};
     const active = gpu.ok===true && gpu.state==="Running";
+    $("headerGpuStatus").textContent = gpu.ok ?
+      "GPU · "+(gpu.state==="Stopped"?"已关机":
+        gpu.state==="Running"?"运行中":String(gpu.state||"未知")):
+      "GPU · 状态不可用";
+    $("headerGpuStatus").dataset.state = gpu.ok?gpu.state:"unknown";
     $("gpuValue").textContent=gpu.ok?String(gpu.state):"连接异常";
     $("gpuValue").className=active?"on":gpu.ok?"off":"error";
     $("gpuSub").textContent=gpu.ok?"CompShare · "+(gpu.gpu_type||"GPU"):"只读电源状态暂不可读";
@@ -75,6 +80,10 @@
     $("exceptionBrief").textContent = "待审 "+(exceptionCounts.draft||0)+
       " · 已批准 "+(exceptionCounts.approved||0)+
       " · 已过期 "+(exceptionCounts.stale||0);
+    $("headerAuditStatus").textContent = production?.audit_chain_verified === true ?
+      "✓ 审计正常":"审计待验证";
+    $("headerAuditStatus").dataset.verified =
+      String(production?.audit_chain_verified === true);
     $("productionAudit").textContent = production?.audit_chain_verified === true ?
       "✓ 审计事件链校验通过" : "⚠ 审计链未通过验证或尚未加载";
     const kinds = production?.asset_kinds || {};
