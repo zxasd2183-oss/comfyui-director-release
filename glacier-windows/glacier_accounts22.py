@@ -10,7 +10,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMessageBox, QPushButton, QVBoxLayout, QWidget,
@@ -227,7 +227,9 @@ class GlacierAccounts22:
         layout.addWidget(QLabel("仅显示和手动复制；不会自动填充或自动登录。", dialog))
         for record in entries:
             row = QHBoxLayout()
-            row.addWidget(QLabel(record["name"] + " · " + record["username"], dialog), 1)
+            identity = QLabel(record["name"] + " · " + record["username"], dialog)
+            identity.setTextFormat(Qt.TextFormat.PlainText)
+            row.addWidget(identity, 1)
             copy_user = QPushButton("复制账号", dialog)
             copy_user.clicked.connect(lambda checked=False, v=record["username"]: self._copy_account22(v))
             row.addWidget(copy_user)
