@@ -22,6 +22,7 @@ from glacier_workspaces17 import GlacierWorkspaces17
 from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
+from glacier_accounts22 import GlacierAccounts22
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -71,7 +72,7 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -106,6 +107,7 @@ class Browser(GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloa
   self.setup_downloads17(bar,appdir(),dpapi)
   self.setup_tabs19()
   self.setup_shell20(bar)
+  self.setup_accounts22(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -118,6 +120,7 @@ class Browser(GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloa
   v.setHtml(self.home_markup(),QUrl("about:blank"));self.open_startup_home(v)
   self.refresh_tabs14()
   self._workspace_register17(v)
+  self.register_account_tab22(v)
   return v
  def close_tab(self,i):
   v=self.tabs.widget(i)
