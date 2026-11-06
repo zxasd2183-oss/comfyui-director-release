@@ -194,6 +194,53 @@ class GlacierAccounts22:
             return
         QMessageBox.information(self, "Glacier", "账号卡片已在本机加密保存。")
 
+    def update_account22(self, site, original_name, name, username, password):
+        """Update one stored card atomically; never alter ciphertext on invalid input."""
+        if self._accounts_readonly22:
+            return False
+        old = self._accounts_doc22
+        index = next((i for i, r in enumerate(old["accounts"])
+                      if r["site"] == site and r["name"] == original_name), -1)
+        if index < 0:
+            return False
+        records = [dict(r) for r in old["accounts"]]
+        records[index] = {"site": site, "name": name.strip(),
+                          "username": username, "password": password}
+        candidate = {"schema": 1, "accounts": records}
+        try:
+            clean_accounts22(candidate)
+            self._accounts_doc22 = candidate
+            self._save_accounts22()
+        except (ValueError, OSError):
+            self._accounts_doc22 = old
+            return False
+        return True
+
+    def edit_account22(self, site, record):
+        if self._accounts_readonly22:
+            QMessageBox.warning(self, "Glacier", "账号资料只读，无法编辑。")
+            return False
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Glacier · 编辑账号卡片")
+        layout = QFormLayout(dialog)
+        name = QLineEdit(record["name"], dialog)
+        username = QLineEdit(record["username"], dialog)
+        password = QLineEdit(record["password"], dialog)
+        password.setEchoMode(QLineEdit.EchoMode.Password)
+        layout.addRow("备注名称", name)
+        layout.addRow("账号", username)
+        layout.addRow("密码（可留空）", password)
+        button = QPushButton("保存修改", dialog)
+        button.clicked.connect(dialog.accept)
+        layout.addRow(button)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        if not self.update_account22(site, record["name"], name.text(),
+                                     username.text(), password.text()):
+            QMessageBox.warning(self, "Glacier", "修改未保存；原有资料保持不变。")
+            return False
+        return True
+
     def delete_account22(self, site, name):
         if self._accounts_readonly22:
             return False
@@ -238,6 +285,12 @@ class GlacierAccounts22:
                 copy_password = QPushButton("复制密码", dialog)
                 copy_password.clicked.connect(lambda checked=False, v=record["password"]: self._copy_account22(v))
                 row.addWidget(copy_password)
+            edit = QPushButton("编辑", dialog)
+            def edit_current(checked=False, s=site, r=dict(record)):
+                if self.edit_account22(s, r):
+                    dialog.accept()
+            edit.clicked.connect(edit_current)
+            row.addWidget(edit)
             delete = QPushButton("删除", dialog)
             def remove_current(checked=False, s=site, n=record["name"]):
                 response = QMessageBox.question(
