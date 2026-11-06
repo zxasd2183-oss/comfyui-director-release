@@ -517,6 +517,13 @@
           <div><span class="workflow-overline">DIRECTOR STUDIO · STORYBOARD FRAMES</span><h2>分镜图制作</h2><p>逐镜头上传、选择、修订、审核真实分镜图；不会自动伪造生成结果。</p></div>
           <span id="wfCount_storyboards" class="workflow-counter">等待加载</span>
         </header>
+        <div class="icebound-storyboard-toolbar" aria-label="分镜制作子功能">
+          <button class="active" type="button" data-storyboard-action="frames">分镜图</button>
+          <button type="button" data-storyboard-action="list">镜头列表</button>
+          <button type="button" data-storyboard-action="bindings">角色绑定</button>
+          <button type="button" data-storyboard-action="versions">分镜版本</button>
+          <button type="button" data-storyboard-action="continuity">连贯性检查</button>
+        </div>
         <div class="workflow-toolbar">
           <label>当前项目<select id="wfProject_storyboards" aria-label="分镜图制作项目"></select></label>
           <label class="workflow-episode-filter">当前剧集<select id="wfEpisode_storyboards" aria-label="分镜图制作剧集"></select></label>
@@ -540,6 +547,10 @@
             <div id="wfDetail_storyboards" class="workflow-detail"></div>
           </aside>
         </div>
+        <section class="icebound-storyboard-timeline" aria-label="真实逐镜头分镜时间轴">
+          <div class="icebound-timeline-header"><strong>分镜时间轴</strong><span id="storyboardTimelineCount">读取中</span></div>
+          <div class="icebound-timeline-list" id="storyboardTimeline" role="list"></div>
+        </section>
         <footer class="workflow-security">◇　所有内容来自真实项目数据；历史修订留存。人工审批不启动 GPU，也不代表视频渲染成功。</footer>
       </section>
       <section id="workflow_white_models" class="panel workflow-page" data-kind="white_models" aria-label="白模预演">
