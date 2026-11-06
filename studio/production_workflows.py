@@ -514,4 +514,22 @@ def list_reviews(db_path,project_id,episode_id=""):
         for row in rows:
             x=dict(row);x["fields"]=json.loads(x.pop("fields_json"))
             items.append(x)
+        # Include genuine cross-library pending reviews. The actual approval
+        # still runs through each domain's stricter dedicated API.
+        scenes=db.execute("SELECT project_id,scene_id,revision,display_name "
+            "FROM scene_profiles WHERE project_id=? AND status='in_review' "
+            "ORDER BY updated_at DESC LIMIT 150",(pid,)).fetchall()
+        for scene in scenes:
+            items.append({"project_id":pid,"episode_id":"","kind":"scene",
+                "unit_id":scene["scene_id"],"revision":scene["revision"],
+                "fields":{"name":scene["display_name"]},"status":"in_review",
+                "source_visual_id":None})
+        chars=db.execute("SELECT project_id,character_id,item_id,revision,label "
+            "FROM character_assets_v2 WHERE project_id=? AND status='in_review' "
+            "ORDER BY updated_at DESC LIMIT 150",(pid,)).fetchall()
+        for item in chars:
+            items.append({"project_id":pid,"episode_id":"","kind":"character_asset",
+                "unit_id":item["item_id"],"character_id":item["character_id"],
+                "revision":item["revision"],"fields":{"name":item["label"]},
+                "status":"in_review","source_visual_id":None})
         return {"ok":True,"pending":items,"total":len(items),"gpu_action":False}
