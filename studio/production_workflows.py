@@ -874,4 +874,22 @@ def list_reviews(db_path,project_id,episode_id=""):
                 "unit_id":item["item_id"],"character_id":item["character_id"],
                 "revision":item["revision"],"fields":{"name":item["label"]},
                 "status":"in_review","source_visual_id":None})
+        has_takes=db.execute("SELECT 1 FROM sqlite_master WHERE "
+            "type='table' AND name='studio_video_takes'").fetchone()
+        if has_takes:
+            if episode_id:
+                video_sql="AND episode_id=? "
+                video_args=(pid,episode_id)
+            else:
+                video_sql=""
+                video_args=(pid,)
+            takes=db.execute("SELECT take_id,episode_id,shot_id,plan_revision "
+                "FROM studio_video_takes WHERE project_id=? AND status='in_review' "
+                +video_sql+"ORDER BY created_at DESC LIMIT 150",video_args).fetchall()
+            for take in takes:
+                items.append({"project_id":pid,"episode_id":take["episode_id"],
+                    "kind":"video_take","unit_id":take["take_id"],
+                    "shot_id":take["shot_id"],"revision":take["plan_revision"],
+                    "fields":{"name":"SH"+take["shot_id"]+" · 真实视频待审"},
+                    "status":"in_review","source_visual_id":None})
         return {"ok":True,"pending":items,"total":len(items),"gpu_action":False}
