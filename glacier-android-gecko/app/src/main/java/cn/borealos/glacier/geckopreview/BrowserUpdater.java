@@ -100,7 +100,7 @@ final class BrowserUpdater {
     static Release findLatest(String json,String localVersion) throws Exception {
         JSONArray releases=new JSONArray(json);
         Release best=null;
-        for(int i=0;i<releases.length() && i<80;i++) {
+        for(int i=0;i<releases.length() && i<100;i++) {
             JSONObject release=releases.optJSONObject(i);
             if(release==null||release.optBoolean("draft",false)
                     ||release.optBoolean("prerelease",false))continue;
