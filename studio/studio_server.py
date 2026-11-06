@@ -30,6 +30,11 @@ from production_web import create_from_web, ProductionWebError, operator_from_ve
 from visual_library import (VisualError, MAX_POST_BYTES, prepare_schema,
                             list_visuals, upload_visual, select_visual, read_visual,
                             ingest_chatgpt_image)
+from character_library import (
+    CharacterError, prepare_schema as prepare_characters, list_characters,
+    create_character, update_character, link_visual as link_character_visual,
+    set_master as approve_character_master
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -128,6 +133,7 @@ class StudioServer(ThreadingHTTPServer):
         # Independent V0.9 database; legacy shot ledger is never rewritten.
         with closing(open_production(self.production_db_path)) as db:
             prepare_schema(db)
+            prepare_characters(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -331,6 +337,19 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(400,{"ok":False,"reason":"invalid_episode_query"})
             except Exception:
                 return self.reply(503,{"ok":False,"reason":"production_storage_unavailable"})
+        if path == "/api/v1/characters":
+            if not secured:
+                return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=2)
+                if len(pairs)!=1 or pairs[0][0]!="project":
+                    raise CharacterError("invalid_character_query")
+                return self.reply(200,list_characters(
+                    self.server.production_db_path,pairs[0][1]))
+            except CharacterError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"character_storage_unavailable"})
         if path in ("/api/v1/production/visuals", "/api/v1/production/visual"):
             if not secured:
                 return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
@@ -468,7 +487,11 @@ class StudioHandler(BaseHTTPRequestHandler):
         if path not in ("/api/v1/action", "/auth/logout",
                         "/api/v1/production/action",
                         "/api/v1/production/visual/upload",
-                        "/api/v1/production/visual/select"):
+                        "/api/v1/production/visual/select",
+                        "/api/v1/characters/create",
+                        "/api/v1/characters/update",
+                        "/api/v1/characters/link",
+                        "/api/v1/characters/approve"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if path.startswith("/api/v1/production/") and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
@@ -518,6 +541,24 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path.startswith("/api/v1/characters/"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                action={
+                    "/api/v1/characters/create":create_character,
+                    "/api/v1/characters/update":update_character,
+                    "/api/v1/characters/link":link_character_visual,
+                    "/api/v1/characters/approve":approve_character_master
+                }[path]
+                result=action(self.server.production_db_path,fields,actor)
+                return self.reply(201 if path.endswith("/create") else 200,result)
+            except CharacterError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError):
+                return self.reply(400,{"ok":False,"reason":"invalid_character_fields"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"character_storage_unavailable"})
         if path in ("/api/v1/production/visual/upload",
                     "/api/v1/production/visual/select"):
             try:
