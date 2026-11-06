@@ -74,6 +74,21 @@ def response(route):
             {"shot_id":"01","ordinal":1,"duration_ms":3000},
             {"shot_id":"02","ordinal":2,"duration_ms":5000}],
             "assets":[],"episode":EPISODE}
+    elif path.endswith("/api/v1/video-results"):
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+            "shot_id":"01","takes":[{
+                "take_id":"TAKE_"+"a"*32,"sha256":"b"*64,
+                "size_bytes":1024000,"width":1080,"height":1920,
+                "fps":24.0,"duration_seconds":3.0,"codec":"h264",
+                "status":"in_review","plan_revision":1,
+                "review_reason":None,"reviewer":None,
+                "prompt_id":"fixture-prompt"}]}
+    elif path.endswith("/api/v1/workflow/reviews"):
+        result={"ok":True,"total":1,"pending":[{
+            "project_id":"VisualSmoke","episode_id":"EP01",
+            "kind":"video_take","unit_id":"TAKE_"+"a"*32,
+            "shot_id":"01","revision":1,"fields":{"name":"SH01 已回传视频"},
+            "status":"in_review","source_visual_id":None}]}
     elif path.endswith("/api/v1/workflow/readiness"):
         blockers=["project_spec_not_approved","shot_plans_not_approved",
                   "storyboards_not_approved","white_models_not_approved"]
@@ -90,8 +105,13 @@ def response(route):
     elif path.endswith("/api/v1/workflow"):
         kind=parse_qs(urlparse(route.request.url).query).get("kind",[""])[0]
         scope={"tasks":"project","props":"project","settings":"episode"}.get(kind,"shot")
+        sample=[{"unit_id":"01","episode_id":"EP01","revision":1,
+            "status":"in_review","fields":{"model":"H3","prompt":"模拟运动"},
+            "note":"","source_visual_id":None,"approved_revision":None,
+            "blockers":["video_render_executor_not_connected"]}] if (
+                kind=="video_plans") else []
         result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
-            "kind":kind,"scope":scope,"fields":{},"items":[],"visuals":[],
+            "kind":kind,"scope":scope,"fields":{},"items":sample,"visuals":[],
             "image_kind":None,"execution_status":"planning_only"}
     else:
         result={"ok":True,"items":[],"shots":[],"tasks":[],"total":0,
@@ -168,6 +188,14 @@ def main():
             assert page.locator("#characterMediaDrawer").evaluate("(e)=>e.open")
 
             page.locator("#characterMediaDrawer summary").click()
+            page.locator('a[data-page="review"]').click()
+            expect(page.locator("#wfReviewList")).to_contain_text("真实视频成片")
+            page.locator("#wfReviewList button").first.click()
+            expect(page.locator("body")).to_have_attribute("data-page","video_plans")
+            expect(page.locator(".video-take-player")).to_be_visible()
+            expect(page.locator(".video-review-reason")).to_be_visible()
+            page.screenshot(path=str(OUT/"real-video-review-ui-1440x900.png"),
+                            full_page=True)
             # Exercise ALL seven production workflows with the same owner-only
             # network contract, without creating or approving any real asset.
             for section in ("props","shots","storyboards","white_models",
