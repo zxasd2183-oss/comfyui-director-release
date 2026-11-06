@@ -426,6 +426,5 @@ jobs:
           gh release create "$tag" "$file" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title 'Glacier Android v0.2.1 · M05 固定签名安全更新' \
-            --notes '采用独立固定的 Glacier Android 签名，已通过 Android 15 模拟器测试及 apksigner 证书指纹钉扎。应用仅信任对应官方 Glacier 更新资产的 SHA-256、包名、版本升级和已安装签名；下载后通过 Android 系统安装确认。M05 为 Glacier 首个正式固定签名版本，后续更新必须延续同一签名证书；不兼容历史 Debug 测试包。' \
-            --prerelease
+            --notes '采用独立固定的 Glacier Android 签名，已通过 Android 15 模拟器测试及 apksigner 证书指纹钉扎。应用仅信任对应官方 Glacier 更新资产的 SHA-256、包名、版本升级和已安装签名；下载后通过 Android 系统安装确认。M05 为 Glacier 首个正式固定签名版本，后续更新必须延续同一签名证书；不兼容历史 Debug 测试包。'
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,assets
