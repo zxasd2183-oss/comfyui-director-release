@@ -249,6 +249,10 @@ def set_master(db_path,data,actor):
                 (pid,cid,visual["visual_id"])).fetchone()
             if visual["subject_id"]!=cid and not linked:
                 raise CharacterError("character_visual_not_linked",409)
+            # A composite/group image can be linked as inspiration, but cannot
+            # serve as a person's canonical approved identity image.
+            if visual["subject_id"]!=cid:
+                raise CharacterError("character_individual_visual_required",409)
             db.execute(
                 "INSERT INTO character_master_events("
                 "project_id,character_id,visual_id,decision,rationale,reviewer,decided_at)"
