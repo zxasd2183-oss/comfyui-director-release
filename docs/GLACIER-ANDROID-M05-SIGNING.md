@@ -52,11 +52,13 @@ Windows PowerShell 可本地生成 Base64 以粘贴进 GitHub Secret：
 
 发布门禁将强制检查：全部 Android 15 回归、keystore 密码与 alias、实际 APK 签名、公钥 SHA-256 固定指纹、APK 文件大小、唯一版本标签。正式发布标签 `glacier-android-browser-v0.2.1` 一旦存在不可覆盖，后续版本必须递增 versionCode、versionName。
 
-## 重要：M04 → 首个稳定版的数据迁移
+## M05 是第一代正式签名基线
 
-M01–M04 的 CI Debug APK 由临时 Debug 密钥签名。**新固定签名可能无法直接覆盖安装旧 Debug APK**。Android 会阻止不同签名覆盖同一 package，卸载旧 App 将删除本机 Android Keystore 加密密钥及已保存的 VLESS 节点、标签、账号 Cookie、历史记录等。不能保证普通文件复制恢复加密数据。
-
-因此在安全迁移机制和设备侧备份验证完成前，**不要为了安装首个 M05 固定签名版而卸载现有 M04**。M05 的“签名自动更新”仅保证在**首次固定签名版安装完成后**，未来同签名版本可升级并保留数据；旧 Debug → 固定签名的迁移需另行处理。
+- M01–M04 属于历史 Debug 实验包，不再为其签名和迁移专门设置发布门禁。
+- M05 首次采用 Glacier 专属、长期保管的稳定签名；M06 及以后必须沿用同一签名证书。
+- 旧 Debug APK 因签名不同不能覆盖正式版；有旧安装时，Android 可能要求先卸载。**卸载会清除旧应用的私有数据和 Keystore 密钥**，请明确知悉后自行决定，不可静默卸载。
+- 不能把 GitHub Actions 自动生成的临时 Debug 证书作为长期生产签名，也不能复用吉皮提的证书。
+- 正式版是否已发布，只以 GitHub Actions 成功执行、签名指纹校验通过及 Release 资产存在为准。
 
 ## 网络与安装约束
 
