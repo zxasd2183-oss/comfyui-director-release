@@ -155,6 +155,70 @@ class VideoReturnTests(unittest.TestCase):
         self.assertFalse(vr.list_takes(
             self.db,"WaitingOffice","EP01","01")["takes"])
 
+    def test_http_owner_can_upload_resume_and_review_video(self):
+        app=server.StudioServer(str(Path(self.db).with_name("http.sqlite")),
+            poller=server.Poller(probe=lambda _:{"ok":False}),
+            bind=("127.0.0.1",0))
+        app.production_db_path=self.db
+        app.identity=MockOwner()
+        worker=threading.Thread(target=app.serve_forever,daemon=True)
+        worker.start()
+        try:
+            headers={"Host":"127.0.0.1:8900",
+                "X-Forwarded-Proto":"https",
+                "X-Forwarded-Host":"jipite.borealos.cn",
+                "X-Director-Studio-Auth-Mode":"microsoft",
+                "Cookie":COOKIE_SID+"="+SID,
+                "Origin":"https://jipite.borealos.cn",
+                "Content-Type":"application/json"}
+            def request(endpoint,payload,header_overrides=None):
+                conn=http.client.HTTPConnection("127.0.0.1",app.server_port,timeout=6)
+                conn.request("POST","/api/v1/video-results/"+endpoint,
+                    body=json.dumps({"csrf":CSRF,**payload}).encode(),
+                    headers={**headers,**(header_overrides or {})})
+                res=conn.getresponse()
+                status=res.status
+                value=json.loads(res.read())
+                conn.close()
+                return status,value
+            status,created=request("start",self.payload)
+            self.assertEqual(status,200,created)
+            uid=created["upload_id"]
+            status,received=request("chunk",{
+                "upload_id":uid,"offset":0,
+                "chunk_base64":base64.b64encode(MP4[:512]).decode()})
+            self.assertEqual(status,200,received)
+            self.assertEqual(received["received_bytes"],512)
+            status,resumed=request("start",self.payload)
+            self.assertEqual(status,200,resumed)
+            self.assertEqual(resumed["received_bytes"],512)
+            status,_=request("chunk",{
+                "upload_id":uid,"offset":512,
+                "chunk_base64":base64.b64encode(MP4[512:]).decode()},
+                {"Cookie":""})
+            self.assertEqual(status,401)
+            status,received=request("chunk",{
+                "upload_id":uid,"offset":512,
+                "chunk_base64":base64.b64encode(MP4[512:]).decode()})
+            self.assertEqual(status,200,received)
+            with patch.object(vr,"probe_video",return_value=FPS):
+                status,finished=request("finish",{"upload_id":uid})
+            self.assertEqual(status,200,finished)
+            self.assertEqual(finished["status"],"in_review")
+            status,reviewed=request("review",{
+                "project_id":"WaitingOffice","episode_id":"EP01",
+                "shot_id":"01","take_id":finished["take_id"],
+                "decision":"approve",
+                "rationale":"已观看视频并核对真实画面规格、人物连贯性和镜头时长。"})
+            self.assertEqual(status,200,reviewed)
+            self.assertEqual(reviewed["status"],"approved")
+            self.assertEqual(vr.list_takes(self.db,"WaitingOffice","EP01","01")[
+                "takes"][0]["status"],"approved")
+        finally:
+            app.shutdown()
+            app.server_close()
+            worker.join(timeout=4)
+
     def test_mp4_http_owner_scope_and_range(self):
         started=self.begin()
         self.chunks(started["upload_id"])
