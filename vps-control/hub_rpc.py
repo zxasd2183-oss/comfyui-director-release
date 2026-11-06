@@ -23,10 +23,13 @@ VPS_TOOLS = frozenset({"get_control_center_status", "get_gpu_power_status"})
 POWER_TOOLS = frozenset({
     "request_gpu_start", "request_gpu_stop", "get_power_request_status",
 })
-BRAIN_READ_TOOLS = frozenset({"get_production_dashboard","get_production_episode"})
+BRAIN_READ_TOOLS = frozenset({"get_production_dashboard","get_production_episode",
+                             "get_project_characters"})
 BRAIN_WRITE_TOOLS = frozenset({
     "create_production_project","create_production_episode",
     "add_production_shot","save_production_outline",
+    "create_project_character","update_project_character",
+    "link_project_character_visual",
 })
 BRAIN_TOOLS = BRAIN_READ_TOOLS | BRAIN_WRITE_TOOLS
 ALL_TOOLS = GPU_TOOLS | VPS_TOOLS | POWER_TOOLS | BRAIN_TOOLS
@@ -79,6 +82,7 @@ def check_args(tool, params):
     if tool in BRAIN_TOOLS:
         fields={
             "get_production_dashboard":(),
+            "get_project_characters":("project_id",),
             "get_production_episode":("project_id","episode_id"),
             "create_production_project":("project_id","title"),
             "create_production_episode":("project_id","episode_id","title","ordinal"),
@@ -86,6 +90,15 @@ def check_args(tool, params):
                 "project_id","episode_id","shot_id","ordinal","duration_ms"),
             "save_production_outline":(
                 "project_id","episode_id","body","expected_revision"),
+            "create_project_character":(
+                "project_id","character_id","display_name","role",
+                "brand_basis","design_language","character_notes"),
+            "update_project_character":(
+                "project_id","character_id","expected_revision",
+                "display_name","role","brand_basis","design_language",
+                "character_notes"),
+            "link_project_character_visual":(
+                "project_id","character_id","visual_id","reference_type"),
         }
         if set(params)!=set(fields[tool]):
             raise HubError("unexpected_arguments")
@@ -95,12 +108,25 @@ def check_args(tool, params):
                     raise HubError("invalid_argument_value")
                 if (name=="ordinal" and not 1<=value<=10000 or
                         name=="duration_ms" and not 1<=value<=120000 or
-                        name=="expected_revision" and not 0<=value<=100):
+                        name=="expected_revision" and not 0<=value<=1000):
                     raise HubError("invalid_argument_value")
             elif not isinstance(value,str):
                 raise HubError("invalid_argument_value")
             elif name=="body":
                 if not value.strip() or len(value)>12000 or "\x00" in value:
+                    raise HubError("invalid_argument_value")
+            elif name in ("display_name","brand_basis","design_language","character_notes"):
+                limit={"display_name":100,"brand_basis":600,"design_language":1200,
+                       "character_notes":1200}[name]
+                if len(value)>limit or (name=="display_name" and not value.strip()) or any(
+                        ord(ch)<32 and ch not in ("\\n","\\t") for ch in value):
+                    raise HubError("invalid_argument_value")
+            elif name=="role":
+                if value not in ("main","extended"):
+                    raise HubError("invalid_argument_value")
+            elif name=="reference_type":
+                if value not in ("character_card","three_view","expression",
+                                 "costume","prop","inspiration"):
                     raise HubError("invalid_argument_value")
             elif name=="title":
                 if not value.strip() or len(value)>160 or any(
