@@ -161,7 +161,7 @@ jobs:
         working-directory: glacier-macos
         run: |
           set -euo pipefail
-          tag='glacier-macos-v0.20.0-account-cards-d03-preview'
+          tag="glacier-macos-v0.20.0-d03-${GITHUB_SHA:0:7}"
           dmg='GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
           for attempt in 1 2 3 4 5; do
             if gh release view "$tag" >/dev/null 2>&1; then
