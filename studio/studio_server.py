@@ -69,6 +69,13 @@ from video_results import (
     get_take_file as get_video_take_file,
     review_take as review_video_take
 )
+from picture_cuts import (
+    PictureCutError, prepare_schema as prepare_picture_cuts,
+    get_readiness as get_picture_cut_readiness,
+    list_cuts as list_picture_cuts,
+    get_cut_file as get_picture_cut_file,
+    review_cut as review_picture_cut
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -175,6 +182,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_scenes(db)
             prepare_workflows(db)
             prepare_video_results(db)
+            prepare_picture_cuts(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -260,6 +268,47 @@ class StudioHandler(BaseHTTPRequestHandler):
             max(0, int(time.time()) - value["live"]["last_checked"])
             if value["live"]["last_checked"] is not None else None)
         return value
+
+    def stream_private_mp4(self, filename, size):
+        # Stream only from a validated owner-scoped immutable file path.
+        # One exact HTTP Range only; video player seeking must not
+        # trigger a 250MB in-memory response.
+        header=self.headers.get("Range")
+        start,end=0,size-1
+        if header:
+            import re
+            match=re.fullmatch(r"bytes=(\d+)-(\d*)",header)
+            if not match:
+                return self.reply(416,{"ok":False,"reason":"invalid_video_range"})
+            start=int(match.group(1))
+            if match.group(2):end=int(match.group(2))
+            if start>=size or end<start or end>=size:
+                return self.reply(416,{"ok":False,"reason":"invalid_video_range"})
+        fd=os.open(filename,os.O_RDONLY|os.O_NOFOLLOW)
+        try:
+            import stat
+            info=os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size!=size:
+                raise VideoResultError("video_take_storage_mismatch",503)
+            self.send_response(206 if header else 200)
+            self.common_headers("video/mp4")
+            self.send_header("Accept-Ranges","bytes")
+            self.send_header("Content-Length",str(end-start+1))
+            if header:
+                self.send_header("Content-Range",f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            with os.fdopen(fd,"rb") as media:
+                fd=None
+                media.seek(start)
+                left=end-start+1
+                while left:
+                    chunk=media.read(min(left,1<<20))
+                    if not chunk:break
+                    self.wfile.write(chunk)
+                    left-=len(chunk)
+        finally:
+            if fd is not None:os.close(fd)
+        return
 
     def do_GET(self):
         if not self.headers_safe():
@@ -397,6 +446,32 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path in ("/api/v1/picture-cuts/readiness","/api/v1/picture-cuts",
+                    "/api/v1/picture-cuts/file"):
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                required={"project","episode"}
+                if path.endswith("/file"):required.add("cut")
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if len(pairs)!=len(required) or len({k for k,v in pairs})!=len(pairs) or (
+                    set(dict(pairs))!=required):
+                    raise PictureCutError("invalid_picture_cut_query")
+                args=dict(pairs)
+                if path.endswith("/readiness"):
+                    return self.reply(200,get_picture_cut_readiness(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                if not path.endswith("/file"):
+                    return self.reply(200,list_picture_cuts(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                filename,size=get_picture_cut_file(
+                    self.server.production_db_path,args["project"],
+                    args["episode"],args["cut"])
+                return self.stream_private_mp4(filename,size)
+            except (PictureCutError,VideoResultError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (OSError,sqlite3.Error,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"picture_cut_storage_unavailable"})
         if path in ("/api/v1/video-results","/api/v1/video-results/file"):
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
@@ -416,44 +491,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 filename,size=get_video_take_file(
                     self.server.production_db_path,args["project"],
                     args["episode"],args["shot"],args["take"])
-                # One exact HTTP Range only; video player seeking must not
-                # trigger a 250MB in-memory response.
-                header=self.headers.get("Range")
-                start,end=0,size-1
-                if header:
-                    import re
-                    match=re.fullmatch(r"bytes=(\d+)-(\d*)",header)
-                    if not match:
-                        return self.reply(416,{"ok":False,"reason":"invalid_video_range"})
-                    start=int(match.group(1))
-                    if match.group(2):end=int(match.group(2))
-                    if start>=size or end<start or end>=size:
-                        return self.reply(416,{"ok":False,"reason":"invalid_video_range"})
-                fd=os.open(filename,os.O_RDONLY|os.O_NOFOLLOW)
-                try:
-                    import stat
-                    info=os.fstat(fd)
-                    if not stat.S_ISREG(info.st_mode) or info.st_size!=size:
-                        raise VideoResultError("video_take_storage_mismatch",503)
-                    self.send_response(206 if header else 200)
-                    self.common_headers("video/mp4")
-                    self.send_header("Accept-Ranges","bytes")
-                    self.send_header("Content-Length",str(end-start+1))
-                    if header:
-                        self.send_header("Content-Range",f"bytes {start}-{end}/{size}")
-                    self.end_headers()
-                    with os.fdopen(fd,"rb") as media:
-                        fd=None
-                        media.seek(start)
-                        left=end-start+1
-                        while left:
-                            chunk=media.read(min(left,1<<20))
-                            if not chunk:break
-                            self.wfile.write(chunk)
-                            left-=len(chunk)
-                finally:
-                    if fd is not None:os.close(fd)
-                return
+                return self.stream_private_mp4(filename,size)
             except VideoResultError as exc:
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (OSError,sqlite3.Error,ProductionError):
@@ -730,13 +768,15 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/video-results/start",
                         "/api/v1/video-results/chunk",
                         "/api/v1/video-results/finish",
-                        "/api/v1/video-results/review"):
+                        "/api/v1/video-results/review",
+                        "/api/v1/picture-cuts/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
                 path.startswith("/api/v1/scenes/") or
                 path.startswith("/api/v1/workflow/") or
-                path.startswith("/api/v1/video-results/")) and not secured:
+                path.startswith("/api/v1/video-results/") or
+                path.startswith("/api/v1/picture-cuts/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -786,6 +826,18 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path=="/api/v1/picture-cuts/review":
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                return self.reply(200,review_picture_cut(
+                    self.server.production_db_path,fields,actor))
+            except PictureCutError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError):
+                return self.reply(400,{"ok":False,"reason":"invalid_picture_cut_review"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"picture_cut_storage_unavailable"})
         if path.startswith("/api/v1/video-results/"):
             try:
                 actor=operator_from_verified_session(session)
