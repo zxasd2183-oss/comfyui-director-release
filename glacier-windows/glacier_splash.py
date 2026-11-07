@@ -51,7 +51,7 @@ def show_glacier_splash(version):
                      "正在初始化浏览器  ·  " + str(version))
     painter.end()
     splash = QSplashScreen(canvas)
-    splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    # Keep credential/network dialogs in front of the splash at first launch.
     splash.show()
     QApplication.processEvents()
     return splash
