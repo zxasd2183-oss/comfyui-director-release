@@ -681,7 +681,9 @@
       await workflowFetch(kind,state);
       if(kind==="video_plans"){
         await workflowLoadReadiness(state);
-        await Promise.all([loadAudioStems(state),loadPictureCuts(state)]);
+        await Promise.all([
+          loadAudioStems(state),loadPictureCuts(state),loadAVMasters(state)
+        ]);
       }
     }catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
   }
@@ -1690,7 +1692,10 @@
                     audio_id:item.audio_id,decision,
                     rationale:reason.value.trim(),
                     rights_verified:decision==="approve"&&rights.checked});
-                  if(still())await loadAudioStems(state);
+                  if(still()){
+                    await loadAudioStems(state);
+                    await loadAVMasters(state);
+                  }
                 }catch(error){
                   $("wfMessage_video_plans").textContent=
                     "音频审核失败："+error.message;
@@ -1945,6 +1950,199 @@
     }catch(error){
       if(current())root.replaceChildren(el("p","",
         "初剪状态读取失败："+error.message));
+    }
+  }
+
+  // Final A/V mix is still an owner-reviewed candidate, NOT a release.
+  // One server-side CPU worker serializes it with picture cutting.
+  let masterRequestSerial=0;
+  let masterRefreshTimer=null;
+  async function loadAVMasters(state){
+    if(masterRefreshTimer){
+      clearTimeout(masterRefreshTimer);
+      masterRefreshTimer=null;
+    }
+    const serial=++masterRequestSerial;
+    const root=$("wfAVMasters_video_plans");
+    if(!root)return;
+    const pid=state.project,eid=state.episode;
+    const current=()=>serial===masterRequestSerial&&
+      state.project===pid&&state.episode===eid;
+    root.replaceChildren();
+    if(!pid||!eid){
+      root.appendChild(el("p","","请选择剧集后加载音画混音。"));return;
+    }
+    const qs=new URLSearchParams({project:pid,episode:eid});
+    try{
+      const [first,second,third]=await Promise.all([
+        fetch("./api/v1/av-master/readiness?"+qs,{cache:"no-store"}),
+        fetch("./api/v1/av-master?"+qs,{cache:"no-store"}),
+        fetch("./api/v1/av-master/jobs?"+qs,{cache:"no-store"})
+      ]);
+      const ready=await first.json(),record=await second.json(),
+        queued=await third.json();
+      if(!first.ok||!second.ok||!third.ok)
+        throw Error(ready.reason||record.reason||queued.reason||
+          "音画混音服务暂不可读");
+      if(!current())return;
+      const head=el("div","workflow-readiness-head");
+      head.appendChild(el("strong","",
+        "音画混音 · "+ready.approved_audio_count+"/3 已批准声音轨"));
+      head.appendChild(el("small","",ready.ready?
+        "画面初剪与全部声音来源已批准，可提交本地 CPU 混音":
+        "仍有 "+ready.blocked.length+" 项缺失或版本失效"));
+      root.appendChild(head);
+      const names={
+        current_approved_picture_cut_missing:"当前画面初剪尚未批准",
+        "approved_audio_stem_missing:dialogue":"对白/配音尚未审核",
+        "approved_audio_stem_missing:music":"音乐尚未审核",
+        "approved_audio_stem_missing:effects":"音效尚未审核",
+        "current_audio_stem_not_approved:dialogue":"当前对白轨未批准",
+        "current_audio_stem_not_approved:music":"当前音乐轨未批准",
+        "current_audio_stem_not_approved:effects":"当前音效轨未批准"
+      };
+      if(!ready.ready){
+        root.appendChild(el("p","video-take-stale",
+          ready.blocked.map(x=>names[x]||x).join(" · ")));
+      }else{
+        root.appendChild(el("small","",
+          "版本锁定来源 SHA-256："+ready.source_manifest_sha256));
+      }
+      const active=(queued.jobs||[]).find(x=>
+        x.status==="queued"||x.status==="running");
+      const existing=(record.masters||[]).find(x=>x.source_current);
+      if(ready.ready&&!existing&&!active){
+        const action=el("button","prod-new",
+          "一键合成整集音画版本（本地 CPU）");
+        action.type="button";
+        action.addEventListener("click",async()=>{
+          if(!window.confirm(
+            "确认三条音轨与画面初剪已获人工批准，并授权 VPS 使用本地 CPU 混音？混音后仍需完整试听及单独审核。"))
+            return;
+          action.disabled=true;
+          try{
+            const resp=await fetch("./api/v1/av-master/assemble",{
+              method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({csrf,project_id:pid,episode_id:eid,
+                source_manifest_sha256:ready.source_manifest_sha256,
+                acknowledge_local_cpu:true}),cache:"no-store"});
+            const result=await resp.json();
+            if(!resp.ok)throw Error(result.reason||"混音入队失败");
+            if(current())await loadAVMasters(state);
+          }catch(error){
+            $("wfMessage_video_plans").textContent=
+              "混音申请失败："+error.message;
+            action.disabled=false;
+          }
+        });
+        root.appendChild(action);
+      }
+      for(const job of (queued.jobs||[]).slice(0,5)){
+        const stages={queued:"已排队",running:"本地 CPU 音画混合中",
+          done:"混音已生成，待完整试听",failed:"混音失败"};
+        root.appendChild(el("p",job.status==="failed"?
+          "video-take-stale":"",
+          "混音作业 "+job.job_id.slice(-8)+" · "+
+          (stages[job.status]||"状态未知")+
+          (job.error_code?" · "+job.error_code:"")));
+      }
+      if(active){
+        masterRefreshTimer=setTimeout(()=>{
+          if(current())loadAVMasters(state);
+        },4000);
+      }
+      if(!record.masters?.length&&!active){
+        root.appendChild(el("p","",
+          "尚无真实音画混音产物。必须先批准当前画面初剪及全部三条声音轨。"));
+      }
+      for(const item of record.masters||[]){
+        const card=el("div","video-take-card");
+        const head=el("div","workflow-readiness-head");
+        head.appendChild(el("strong","",
+          "音画母版 · "+item.master_id.slice(-8)+" · "+
+          (!item.source_current?"历史来源已变更":
+            item.status==="approved"?"音画审核已批准":
+            item.status==="rejected"?"已驳回":"待完整试听")));
+        head.appendChild(el("small","",
+          item.duration_seconds.toFixed(2)+" 秒 · 当前视频与对白/音乐/音效"));
+        card.appendChild(head);
+        const player=el("video","video-take-player");
+        player.controls=true;player.preload="metadata";
+        player.src="./api/v1/av-master/file?"+new URLSearchParams({
+          project:pid,episode:eid,master:item.master_id});
+        card.appendChild(player);
+        card.appendChild(el("small","",
+          "MP4 SHA-256: "+item.file_sha256+
+          " · 混音来源："+item.source_manifest_sha256));
+        if(item.status==="in_review"&&item.source_current){
+          const reason=el("textarea","video-review-reason");
+          reason.rows=2;reason.maxLength=600;
+          reason.placeholder="写明音量、口型、对白、音乐、音效及版权核验结论";
+          reason.setAttribute("aria-label","整集音画人工审核理由");
+          card.appendChild(reason);
+          const labelA=el("label","audio-rights-verified");
+          const checkedRights=el("input","");
+          checkedRights.type="checkbox";
+          labelA.append(checkedRights,document.createTextNode(
+            "我已重新核实全部声音来源、音乐授权与声线许可"));
+          card.appendChild(labelA);
+          const labelB=el("label","audio-rights-verified");
+          const listened=el("input","");
+          listened.type="checkbox";
+          labelB.append(listened,document.createTextNode(
+            "我已完整观看并试听此整集音画版本"));
+          card.appendChild(labelB);
+          const controls=el("div","workflow-review-actions");
+          for(const [decision,title] of [
+            ["approve","批准当前音画版本"],["reject","驳回并重新混音"]]){
+            const btn=el("button","prod-new",title);
+            btn.type="button";
+            btn.addEventListener("click",async()=>{
+              if(reason.value.trim().length<8){
+                $("wfMessage_video_plans").textContent=
+                  "音画审核意见至少 8 字";return;
+              }
+              if(decision==="approve"&&(!checkedRights.checked||
+                  !listened.checked)){
+                $("wfMessage_video_plans").textContent=
+                  "批准音画版本前必须完整试听和人工核实授权";return;
+              }
+              if(decision==="approve"&&!window.confirm(
+                "确认已经完整观看、试听、核对音画和全部声音授权？此为音画版本批准，仍不等于已完成字幕及正式发布。"))return;
+              btn.disabled=true;
+              try{
+                const response=await fetch("./api/v1/av-master/review",{
+                  method:"POST",headers:{"Content-Type":"application/json"},
+                  body:JSON.stringify({csrf,project_id:pid,episode_id:eid,
+                    master_id:item.master_id,decision,
+                    rationale:reason.value.trim(),
+                    rights_verified:decision==="approve"&&checkedRights.checked,
+                    final_listen_completed:decision==="approve"&&listened.checked
+                  }),cache:"no-store"});
+                const result=await response.json();
+                if(!response.ok)throw Error(result.reason||"音画审查失败");
+                if(current())await loadAVMasters(state);
+              }catch(error){
+                $("wfMessage_video_plans").textContent=
+                  "音画审核失败："+error.message;
+                btn.disabled=false;
+              }
+            });
+            controls.appendChild(btn);
+          }
+          card.appendChild(controls);
+        }else if(!item.source_current){
+          card.appendChild(el("p","video-take-stale",
+            "来源画面或音轨已改版，此音画产物只能作为历史记录。"));
+        }else card.appendChild(el("p","",
+          item.review_reason||"已有完整人工审核记录"));
+        root.appendChild(card);
+      }
+      root.appendChild(el("small","",
+        "本流程只核对现有声音授权与音画质量；字幕、终审、发布许可及实际 H3 视频生成另设审核。"));
+    }catch(error){
+      if(current())root.replaceChildren(el("p","",
+        "音画混音状态读取失败："+error.message));
     }
   }
 
