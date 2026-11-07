@@ -132,7 +132,8 @@ class GlacierWorkspaces17:
     def _workspace_profile17(self, wid):
         profiles = getattr(self, "_workspace_profiles17", None)
         if profiles is None:
-            return self.profile
+            # Non-WebEngine consumers may use workspace tab snapshots alone.
+            return getattr(self, "profile", None)
         if wid in profiles:
             return profiles[wid]
         digest = hashlib.sha256(wid.encode("utf-8")).hexdigest()[:24]
@@ -413,7 +414,9 @@ QToolButton#GlacierWorkspaceButton17:hover,QToolButton#GlacierTabGroupsButton17:
         try:
             # Switch the actual WebEngine profile BEFORE constructing tabs.
             # Cookies/localStorage/service workers never cross workspaces.
-            self.profile = self._workspace_profile17(wid)
+            profile = self._workspace_profile17(wid)
+            if profile is not None:
+                self.profile = profile
             self._workspace_doc17["active"] = wid
             self._workspace_group_by_view17.clear()
             for index in reversed(range(self.tabs.count())):
