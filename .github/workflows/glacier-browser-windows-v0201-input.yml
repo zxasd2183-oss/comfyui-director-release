@@ -143,6 +143,7 @@ jobs:
           if (-not (Test-Path $installer)) { throw 'Windows setup missing.' }
           $actual = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
           Write-Host "Windows setup SHA256: $actual"
+          "$actual  $name" | Set-Content "dist/$name.sha256" -Encoding ascii
           $published = $false
           for ($attempt=1; $attempt -le 5; $attempt++) {
             gh release view $tag *> $null
@@ -151,7 +152,7 @@ jobs:
               $published = $true
               break
             } else {
-              gh release create $tag $installer --target fix/glacier-browser-windows-v0201-input --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser v0.20.1 D03 preview: encrypted local per-site account cards, manual username/password copy only, no autofill, alongside pointer diagnostics. Does not automate or bypass verification challenges; Qt WebEngine compatibility with specific verification sites remains unverified. VLESS, account spaces and signed update verification retained. Windows binary is not Authenticode signed." --prerelease
+              gh release create $tag $installer "dist/$name.sha256" --target $env:GITHUB_SHA --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser v0.20.1 D03 preview: encrypted local per-site account cards, manual username/password copy only, no autofill, alongside pointer diagnostics. Does not automate or bypass verification challenges; Qt WebEngine compatibility with specific verification sites remains unverified. VLESS, account spaces and signed update verification retained. Windows binary is not Authenticode signed." --prerelease
             }
             if ($LASTEXITCODE -eq 0) { $published = $true; break }
             Write-Warning "Release upload failed on attempt $attempt"
