@@ -164,7 +164,9 @@ def process_one(db_path,runner=None):
     except (PictureCutError,PictureJobError) as exc:
         error=exc.reason
         state="failed"
-    except (OSError,sqlite3.Error,ValueError):
+    except Exception:
+        # Unexpected FFmpeg/adapter failures remain a fixed error code.
+        # Never leak private local paths or creative text to the job API.
         error="picture_cut_worker_failed"
         state="failed"
     with closing(open_db(db_path)) as db:
@@ -183,12 +185,14 @@ def process_one(db_path,runner=None):
 def worker_loop(db_path,should_continue):
     # Startup on the same single-instance Studio service; never from HTTP.
     try:recover_running(db_path)
-    except (PictureJobError,OSError,sqlite3.Error):
+    except Exception:
         return
     while should_continue():
         try:
             processed=process_one(db_path)
-        except (PictureJobError,OSError,sqlite3.Error):
+        except Exception:
+            # Keep the independent CPU worker alive after transient storage
+            # faults; the current job remains durable and is recovered later.
             processed=None
         if not should_continue():break
         time.sleep(2 if processed else 4)
