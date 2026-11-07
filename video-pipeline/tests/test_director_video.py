@@ -471,6 +471,62 @@ class VideoPipelineTests(unittest.TestCase):
             })
         return plan, directory
 
+    def test_export_complete_studio_delivery_folder_offline(self):
+        plan, archive=self._archive_shots()
+        receipts=[]
+        for number,sid in enumerate(("01","02"),start=1):
+            receipt={"project_id":"WaitingOffice","episode_id":"EP01",
+                "shot_id":sid,"video_revision":number,
+                "package_sha256":hashlib.sha256(sid.encode()).hexdigest()}
+            receipts.append(receipt)
+            manifest=archive/sid/"manifest.json"
+            data=json.loads(manifest.read_text())
+            data["prompt_id"]="real_prompt_"+sid
+            dv.atomic_json(manifest,data)
+        plan["studio_episode_handoff"]={
+            "project_id":"WaitingOffice","episode_id":"EP01",
+            "bundle_sha256":"a"*64,"shot_receipts":receipts,
+            "manual_gpu_execution_required":True}
+        out=self.root/"studio-delivery"
+        with patch.object(dv,"comfy_json") as network:
+            result=dv.export_studio_delivery(plan,archive,out)
+            network.assert_not_called()
+        self.assertEqual(result["shot_count"],2)
+        self.assertEqual(result["gpu_actions"],0)
+        manifest=dv.read_json(out/"manifest.json")
+        self.assertEqual(manifest["manifest"]["schema"],
+                         "director_studio_video_delivery_v1")
+        self.assertEqual(manifest["manifest"]["shot_count"],2)
+        self.assertEqual(manifest["manifest"]["episode_bundle_sha256"],"a"*64)
+        self.assertEqual([i["shot_id"] for i in manifest["manifest"]["shots"]],
+                         ["01","02"])
+        for item in manifest["manifest"]["shots"]:
+            self.assertEqual(dv.file_checksum(out/item["filename"]),
+                             (item["file_sha256"],item["size_bytes"]))
+            self.assertEqual(item["prompt_id"],"real_prompt_"+item["shot_id"])
+        with self.assertRaisesRegex(dv.PlanError,"new absolute directory"):
+            dv.export_studio_delivery(plan,archive,out)
+        (archive/"02"/"000_02.mp4").write_bytes(b"tampered archive")
+        with self.assertRaisesRegex(dv.PlanError,"checksum"):
+            dv.export_studio_delivery(plan,archive,self.root/"rejected-delivery")
+        self.assertFalse((self.root/"rejected-delivery").exists())
+
+    def test_export_studio_delivery_requires_matching_receipts_and_prompt(self):
+        plan,archive=self._archive_shots()
+        with self.assertRaisesRegex(dv.PlanError,"requires versioned"):
+            dv.export_studio_delivery(plan,archive,self.root/"invalid")
+        receipt={"project_id":"WaitingOffice","episode_id":"EP01",
+            "shot_id":"01","video_revision":1,"package_sha256":"f"*64}
+        plan["studio_episode_handoff"]={
+            "project_id":"WaitingOffice","episode_id":"EP01",
+            "bundle_sha256":"a"*64,"shot_receipts":[receipt,dict(receipt)]}
+        with self.assertRaisesRegex(dv.PlanError,"shot/receipt mismatch"):
+            dv.export_studio_delivery(plan,archive,self.root/"invalid")
+        plan["studio_episode_handoff"]["shot_receipts"][1]={
+            **receipt,"shot_id":"02"}
+        with self.assertRaisesRegex(dv.PlanError,"Invalid collected ComfyUI prompt ID"):
+            dv.export_studio_delivery(plan,archive,self.root/"invalid")
+
     def test_assemble_verifies_hashes_and_uses_no_shell(self):
         plan, result_dir = self._archive_shots()
         movie = self.root / "movie.mp4"
