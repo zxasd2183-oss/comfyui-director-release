@@ -130,6 +130,7 @@ class Browser(GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, G
   v=self.tabs.widget(i)
   if v is None:return
   self._workspace_forget17(v)
+  self.unregister_account_tab22(v)
   self.remember_recent15(v.url().toString())
   self.remember_closed_tab(v.url().toString())
   self.cleanup_closed13(v)
