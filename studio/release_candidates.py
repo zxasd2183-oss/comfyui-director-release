@@ -246,14 +246,22 @@ def list_candidates(db_path,project,episode):
                       "AND episode_id=?",(pid,eid)).fetchone() is None:
             raise ReleaseError("episode_not_found",404)
         rows=db.execute("SELECT release_id,source_manifest_sha256,"
-            "file_sha256,size_bytes,duration_seconds,status,review_reason,"
-            "reviewer,created_at,reviewed_at FROM studio_release_candidates "
-            "WHERE project_id=? AND episode_id=? "
+            "source_manifest_json,file_sha256,size_bytes,duration_seconds,"
+            "status,review_reason,reviewer,created_at,reviewed_at "
+            "FROM studio_release_candidates WHERE project_id=? AND episode_id=? "
             "ORDER BY created_at DESC LIMIT 30",(pid,eid)).fetchall()
         current=readiness(db_path,pid,eid)["source_manifest_sha256"]
+        candidates=[]
+        for row in rows:
+            value=dict(row)
+            manifest=json.loads(value.pop("source_manifest_json"))
+            sub=manifest.get("subtitle_track") or {}
+            value["subtitle_id"]=sub.get("subtitle_id")
+            value["subtitle_language"]=sub.get("language")
+            value["source_current"]=row["source_manifest_sha256"]==current
+            candidates.append(value)
         return {"ok":True,"project_id":pid,"episode_id":eid,
-            "candidates":[dict(row,source_current=(
-                row["source_manifest_sha256"]==current)) for row in rows],
+            "candidates":candidates,
             "publicly_released":False,"gpu_action":False}
 
 
