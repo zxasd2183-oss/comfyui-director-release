@@ -447,7 +447,12 @@ jobs:
           set -euo pipefail
           tag='glacier-android-browser-v0.2.1'
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo '::error::Glacier stable release tag already exists; never overwrite fixed signed APK.'
+            state="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets --jq '[.isDraft,.isPrerelease,([.assets[].name] | index("GlacierAndroid-v0.2.1-ARM64-x86_64-release.apk") != null)] | @json')"
+            if [ "$state" = '[false,false,true]' ]; then
+              echo '::notice::Immutable stable Glacier M05 release already exists with expected APK asset; no overwrite or duplicate publication.'
+              exit 0
+            fi
+            echo '::error::Glacier stable release tag exists but is not a valid stable APK release; refusing overwrite.'
             exit 3
           fi
           file='dist/GlacierAndroid-v0.2.1-ARM64-x86_64-release.apk'
