@@ -1314,7 +1314,9 @@ public final class MainActivity extends Activity {
                         payload.put("device_name",android.os.Build.MANUFACTURER+" "
                                 +android.os.Build.MODEL);
                         if(register)payload.put("invite",invitation);
-                        else if(!cloudState.deviceId.isEmpty())
+                        else if(!cloudState.deviceId.isEmpty()
+                                &&username.equals(cloudState.username)
+                                &&server.equals(cloudState.base))
                             payload.put("device_id",cloudState.deviceId);
                         JSONObject response=GlacierCloudSync.call(pending,"POST",
                                 register?"/v1/register":"/v1/login",payload);
