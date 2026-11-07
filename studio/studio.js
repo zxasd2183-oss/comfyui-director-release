@@ -2428,6 +2428,16 @@
         player.controls=true;player.preload="metadata";
         player.src="./api/v1/release/file?"+new URLSearchParams({
           project:pid,episode:eid,release:item.release_id});
+        if(/^SUB_[0-9a-f]{32}$/.test(item.subtitle_id||"")){
+          const subtitleTrack=el("track","");
+          subtitleTrack.kind="subtitles";
+          subtitleTrack.srclang="zh-CN";
+          subtitleTrack.label="已审核中文字幕";
+          subtitleTrack.default=true;
+          subtitleTrack.src="./api/v1/subtitles/vtt?"+new URLSearchParams({
+            project:pid,episode:eid,subtitle:item.subtitle_id});
+          player.appendChild(subtitleTrack);
+        }
         card.appendChild(player);
         card.appendChild(el("small","",
           "文件 SHA-256："+item.file_sha256+
