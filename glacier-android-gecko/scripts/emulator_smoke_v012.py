@@ -443,7 +443,7 @@ if __name__=="__main__":
                 completed=[str(c["step"]) for c in checks if c.get("result")=="observed"]
                 with open(summary,"a",encoding="utf-8") as out:
                     out.write("\n### Glacier Android M05 UI smoke — FAILED\n\n")
-                    out.write("**Failure:** `"+reason.replace("`","'")+"\`\n\n")
+                    out.write("**Failure:** `"+reason.replace("`","'")+"`\n\n")
                     out.write("**Completed checks:** "+(", ".join(completed) if completed else "none")+"\n")
                     out.write("\nEvidence artifact: `GlacierAndroid-v0.2.1-M05-emulator-evidence`\n")
             except OSError as summary_error:
