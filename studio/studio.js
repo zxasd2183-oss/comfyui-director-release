@@ -1600,7 +1600,12 @@
   // Picture edit requires every real shot approved and version-current.
   // This is a separate review gate, never final sound-master authorization.
   let pictureCutReadSerial=0;
+  let pictureCutRefreshTimer=null;
   async function loadPictureCuts(state){
+    if(pictureCutRefreshTimer){
+      clearTimeout(pictureCutRefreshTimer);
+      pictureCutRefreshTimer=null;
+    }
     const serial=++pictureCutReadSerial;
     const root=$("wfPictureCuts_video_plans");
     if(!root)return;
@@ -1614,14 +1619,16 @@
       state.project===pid&&state.episode===eid;
     const qs=new URLSearchParams({project:pid,episode:eid});
     try{
-      const [readyResponse,listResponse]=await Promise.all([
+      const [readyResponse,listResponse,jobsResponse]=await Promise.all([
         fetch("./api/v1/picture-cuts/readiness?"+qs,{cache:"no-store"}),
-        fetch("./api/v1/picture-cuts?"+qs,{cache:"no-store"})
+        fetch("./api/v1/picture-cuts?"+qs,{cache:"no-store"}),
+        fetch("./api/v1/picture-cuts/jobs?"+qs,{cache:"no-store"})
       ]);
       const ready=await readyResponse.json();
       const data=await listResponse.json();
-      if(!readyResponse.ok||!listResponse.ok)
-        throw Error(ready.reason||data.reason||"初剪记录暂不可读");
+      const jobs=await jobsResponse.json();
+      if(!readyResponse.ok||!listResponse.ok||!jobsResponse.ok)
+        throw Error(ready.reason||data.reason||jobs.reason||"初剪记录暂不可读");
       if(!current())return;
       const summary=el("div","workflow-readiness-head");
       summary.appendChild(el("strong","",
@@ -1641,9 +1648,54 @@
         root.appendChild(el("small","",
           "当前批准镜头清单 SHA-256："+ready.source_manifest_sha256));
       }
-      if(!data.picture_cuts?.length){
+      const jobList=jobs.jobs||[];
+      const active=jobList.find(job=>["queued","running"].includes(job.status));
+      const existing=(data.picture_cuts||[]).find(c=>c.source_current);
+      if(ready.ready&&!existing&&!active){
+        const start=el("button","prod-new","一键生成整集画面初剪（本地 CPU）");
+        start.type="button";
+        start.addEventListener("click",async()=>{
+          if(!window.confirm(
+            "确认已批准全部镜头，允许 VPS 使用本地 CPU 执行 FFmpeg 拼接？此操作不启动 GPU，生成后仍需人工审片。"))
+            return;
+          start.disabled=true;
+          try{
+            const resp=await fetch("./api/v1/picture-cuts/assemble",{
+              method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({csrf,project_id:pid,episode_id:eid,
+                source_manifest_sha256:ready.source_manifest_sha256,
+                acknowledge_local_cpu:true}),cache:"no-store"});
+            const queued=await resp.json();
+            if(!resp.ok)throw Error(queued.reason||"CPU 初剪入队失败");
+            if(current())await loadPictureCuts(state);
+          }catch(error){
+            $("wfMessage_video_plans").textContent=
+              "初剪执行申请失败："+error.message;
+            start.disabled=false;
+          }
+        });
+        root.appendChild(start);
+      }
+      if(!data.picture_cuts?.length&&!active){
         root.appendChild(el("p","",
-          "尚无实际初剪。批准全部镜头后，使用 VPS 本地受控 CPU 合成命令生成待审初剪；不会自动调用 GPU。"));
+          "尚无实际画面初剪。所有镜头批准后可点击上方按钮本地拼接；不会启动 GPU。"));
+      }
+      for(const job of jobList.slice(0,5)){
+        const descriptions={
+          queued:"已排队，等待受控 CPU 工作线程",
+          running:"VPS 本地 FFmpeg 合成中",
+          done:"已完成合成，待独立人工审片",
+          failed:"合成失败，可检查原因并在修复后重新提交"
+        };
+        root.appendChild(el("p",job.status==="failed"?"video-take-stale":"",
+          "初剪作业 "+job.job_id.slice(-8)+" · "+
+          (descriptions[job.status]||"状态未知")+
+          (job.error_code?" · "+job.error_code:"")));
+      }
+      if(active){
+        pictureCutRefreshTimer=setTimeout(()=>{
+          if(current())loadPictureCuts(state);
+        },4000);
       }
       for(const cut of data.picture_cuts||[]){
         const card=el("div","video-take-card");
