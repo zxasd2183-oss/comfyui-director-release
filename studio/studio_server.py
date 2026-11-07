@@ -76,6 +76,12 @@ from picture_cuts import (
     get_cut_file as get_picture_cut_file,
     review_cut as review_picture_cut
 )
+from picture_cut_jobs import (
+    PictureJobError, prepare_schema as prepare_picture_cut_jobs,
+    enqueue as enqueue_picture_cut,
+    list_jobs as list_picture_cut_jobs,
+    worker_loop as picture_cut_worker_loop
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -183,6 +189,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_workflows(db)
             prepare_video_results(db)
             prepare_picture_cuts(db)
+            prepare_picture_cut_jobs(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -447,7 +454,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
         if path in ("/api/v1/picture-cuts/readiness","/api/v1/picture-cuts",
-                    "/api/v1/picture-cuts/file"):
+                    "/api/v1/picture-cuts/file","/api/v1/picture-cuts/jobs"):
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
             try:
@@ -458,6 +465,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                     set(dict(pairs))!=required):
                     raise PictureCutError("invalid_picture_cut_query")
                 args=dict(pairs)
+                if path.endswith("/jobs"):
+                    return self.reply(200,list_picture_cut_jobs(
+                        self.server.production_db_path,args["project"],args["episode"]))
                 if path.endswith("/readiness"):
                     return self.reply(200,get_picture_cut_readiness(
                         self.server.production_db_path,args["project"],args["episode"]))
@@ -468,7 +478,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                     self.server.production_db_path,args["project"],
                     args["episode"],args["cut"])
                 return self.stream_private_mp4(filename,size)
-            except (PictureCutError,VideoResultError) as exc:
+            except (PictureCutError,PictureJobError,VideoResultError) as exc:
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (OSError,sqlite3.Error,ProductionError):
                 return self.reply(503,{"ok":False,"reason":"picture_cut_storage_unavailable"})
@@ -769,7 +779,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/video-results/chunk",
                         "/api/v1/video-results/finish",
                         "/api/v1/video-results/review",
-                        "/api/v1/picture-cuts/review"):
+                        "/api/v1/picture-cuts/review",
+                        "/api/v1/picture-cuts/assemble"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
@@ -826,6 +837,18 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path=="/api/v1/picture-cuts/assemble":
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                return self.reply(202,enqueue_picture_cut(
+                    self.server.production_db_path,fields,actor))
+            except PictureJobError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError):
+                return self.reply(400,{"ok":False,"reason":"invalid_picture_cut_job"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"picture_cut_job_storage_unavailable"})
         if path=="/api/v1/picture-cuts/review":
             try:
                 actor=operator_from_verified_session(session)
@@ -964,6 +987,10 @@ def main():
     server = StudioServer(args.db)
     worker = threading.Thread(target=server.poller.loop, daemon=True)
     worker.start()
+    cut_worker = threading.Thread(target=picture_cut_worker_loop,
+        args=(server.production_db_path,lambda:server.is_running),
+        daemon=True)
+    cut_worker.start()
     print("Director Studio V0.8 listening ONLY on 127.0.0.1:8900", flush=True)
     print("Connect using SSH local port forwarding; never publish this HTTP port", flush=True)
     try:
