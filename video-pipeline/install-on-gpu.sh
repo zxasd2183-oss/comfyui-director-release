@@ -11,8 +11,9 @@ TARGET="$1"
 [[ "$TARGET" != *"/../"* && "$TARGET" != *"/./"* ]] || fail "Unsafe destination"
 SRC="$(cd "$(dirname "$0")" && pwd)"
 [[ -f "$SRC/director_video.py" && ! -L "$SRC/director_video.py" ]] || fail "Trusted local source missing"
+[[ -f "$SRC/studio_return_client.py" && ! -L "$SRC/studio_return_client.py" ]] || fail "Return client source missing"
 command -v python3 >/dev/null || fail "Python 3 is required"
-python3 -m py_compile "$SRC/director_video.py"
+python3 -m py_compile "$SRC/director_video.py" "$SRC/studio_return_client.py"
 python3 -m unittest discover -s "$SRC/tests" -p "test_*.py" -q
 [[ ! -L "$TARGET" ]] || fail "Installation destination cannot be a symlink"
 mkdir -p "$TARGET"
@@ -28,6 +29,7 @@ if [[ -e "$TARGET/director_video.py" || -L "$TARGET/director_video.py" ]]; then
 fi
 install -m 0700 "$SRC/director_video.py" "$TARGET/.director_video.py.new"
 mv -f "$TARGET/.director_video.py.new" "$TARGET/director_video.py"
+install -m 0700 "$SRC/studio_return_client.py" "$TARGET/studio_return_client.py"
 install -m 0600 "$SRC/README.md" "$TARGET/README.md"
 echo "PASS: video runner installed into the chosen persistent directory"
 echo "This installer made ZERO network, GPU generation or cloud power requests"

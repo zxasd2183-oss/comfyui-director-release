@@ -270,3 +270,15 @@ have not changed. It records original master and subtitle content digests,
 reviewer and review timestamp; it is not a digital signature and does not
 authorize external distribution. Neither download makes the video public.
 
+
+
+## 新版 H3 逐镜头自动上传
+
+Microsoft 所有者通过“视频制作”签发 48 小时短期剧集级回传凭据，
+在 GPU 通过受保护的文件交给本地执行器。实际渲染后每个 MP4 自动
+经独立的 HTTPS Nginx 上传通道传入 Studio，复用原有素材版本/尺寸/
+SHA-256/FFprobe 验证，登记 \`in_review\`，不自动批准、不公开发布。
+
+旧的浏览器整集导入保留为备用方案。
+要使用自动回传，必须同时升级 Studio/Hub/VPS 与 GPU 本地执行器，
+准备已审批的 H3 工作流/模型/镜头源图；单靠提交代码不会生成视频。

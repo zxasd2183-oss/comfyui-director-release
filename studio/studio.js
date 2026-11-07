@@ -4330,6 +4330,30 @@
     if(!res.ok)throw Error("snapshot_unavailable");
     render(await res.json());
   }
+  async function issueGpuReturnToken(){
+    const message=$("wfMessage_video_plans");
+    if(!microsoftOwner||!csrf){message.textContent="请先登录 Microsoft 所有者账号";return;}
+    const p=$("wfProject_video_plans").value;
+    const e=$("wfEpisode_video_plans").value;
+    if(!p||!e){message.textContent="请先选择项目和剧集";return;}
+    if(!window.confirm("为 "+p+" / "+e+" 签发有效期 48 小时的 GPU 视频回传凭据？现有回传凭据将失效。"))return;
+    const button=$("wfGpuReturnToken_video_plans");button.disabled=true;
+    try{
+      const res=await fetch("./api/v1/gpu-return-token/issue",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({csrf,project_id:p,episode_id:e}),cache:"no-store"});
+      const result=await res.json();
+      if(!res.ok||result.ok!==true||!result.token)throw Error(result.reason||"签发失败");
+      const url=URL.createObjectURL(new Blob([result.token+"\n"],{type:"text/plain"}));
+      const link=document.createElement("a");
+      link.href=url;link.download="gpu-return-"+p+"-"+e+".token";
+      document.body.append(link);link.click();link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      message.textContent="48 小时回传凭据已下载。将文件安全放入 GPU，chmod 600；只允许上传当前剧集的镜头到待审核区，不允许自动批准或操作 GPU 电源。";
+    }catch(err){message.textContent=err.message||"签发 GPU 回传凭据失败";}
+    finally{button.disabled=false;}
+  }
+  $("wfGpuReturnToken_video_plans").addEventListener("click",issueGpuReturnToken);
   async function operateGpuPower(action){
     if(!microsoftOwner||!csrf||gpuPowerBusy)return;
     const btn=$("gpuStartNow"),stop=$("gpuStopNow"),message=$("gpuPowerMessage");

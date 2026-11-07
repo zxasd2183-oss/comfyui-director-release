@@ -932,7 +932,7 @@ def verify_completed_shot(results_dir, shot_id):
 
 
 def run_episode(plan, db_path, results_dir, delivery_dir=None, *,
-                poll_seconds=10, shot_timeout=7200):
+                poll_seconds=10, shot_timeout=7200, studio_token_file=None):
     """One local GPU operator command, sequential generation + checked download.
 
     Resumes queued/done records after restart without re-submitting; rejects
@@ -940,6 +940,11 @@ def run_episode(plan, db_path, results_dir, delivery_dir=None, *,
     Uses OS file lock so concurrent operator invocations cannot double-spend.
     Does not start/stop GPU or change Studio owner authorization.
     """
+    if studio_token_file:
+        from studio_return_client import read_token_file, return_shot
+        credential = read_token_file(studio_token_file)
+    else:
+        credential = None
     if not 1 <= poll_seconds <= 60 or not 60 <= shot_timeout <= 28800:
         raise PlanError("Invalid polling interval or per-shot deadline")
     target = Path(db_path)
@@ -972,6 +977,8 @@ def run_episode(plan, db_path, results_dir, delivery_dir=None, *,
                 state, prompt_id = record
                 if state == "done":
                     verify_completed_shot(out, sid)
+                    if credential:
+                        return_shot(plan, out, sid, credential)
                     finished += 1
                     continue
                 if state == "pending":
@@ -991,6 +998,8 @@ def run_episode(plan, db_path, results_dir, delivery_dir=None, *,
                     current = record[0]
                     if current == "done":
                         verify_completed_shot(out, sid)
+                        if credential:
+                            return_shot(plan, out, sid, credential)
                         finished += 1
                         break
                     if current != "queued":
@@ -1006,7 +1015,7 @@ def run_episode(plan, db_path, results_dir, delivery_dir=None, *,
             return {"ok": True, "completed_shots": finished,
                     "shot_count": len(plan["jobs"]),
                     "delivery": delivery, "automatic_gpu_submission": True,
-                    "automatic_studio_upload": False}
+                    "automatic_studio_upload": credential is not None}
         finally:
             con.close()
     finally:
@@ -1063,6 +1072,8 @@ def run_cli(argv=None):
         help="NEW absolute Studio owner-importable directory (optional)")
     episode_run.add_argument("--poll-seconds", type=int, default=10)
     episode_run.add_argument("--shot-timeout", type=int, default=7200)
+    episode_run.add_argument("--studio-return-token",
+        help="Protected 0600 owner-issued Studio return token file")
     episode_run.add_argument("--execute", action="store_true")
     episode_run.add_argument("--acknowledge-gpu-cost", action="store_true")
     delivery = sub.add_parser("export-studio-delivery",
@@ -1107,7 +1118,8 @@ def run_cli(argv=None):
                             "--acknowledge-gpu-cost; no job was submitted")
         print(json.dumps(run_episode(
             plan, args.db, args.results, args.delivery,
-            poll_seconds=args.poll_seconds, shot_timeout=args.shot_timeout),
+            poll_seconds=args.poll_seconds, shot_timeout=args.shot_timeout,
+            studio_token_file=args.studio_return_token),
             ensure_ascii=False, sort_keys=True))
         return 0
     if args.command == "export-studio-delivery":

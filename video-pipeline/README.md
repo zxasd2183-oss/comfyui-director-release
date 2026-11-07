@@ -171,3 +171,30 @@ Studio 已支持独立的 Microsoft owner MP4 分块回传（单片最大 250MB�
 GPU 调度或自动生成回传。播放/批准是对实际产物的独立审查门槛，不是
 对制作单的批准。详情：
 [`studio/docs/studio-gpu-handoff.md`](../studio/docs/studio-gpu-handoff.md)。
+
+## GPU 自动回传 Studio（免逐镜头人工上传）
+
+在 Studio 视频制作页先选择项目/剧集，点击「下载 GPU 自动回传密钥」。
+仅 Microsoft 所有者可签发；有效期 48 小时、单剧集作用域、只允许导入
+\`in_review\` 视频；新密钥使原凭据失效。GPU 持久化目录上的私有
+\`.token\` 文件必须为 \`chmod 600\`，不要将内容发送到聊天/GitHub。
+
+在 GPU 本地使用安装后的最新版 \`director_video.py\`：
+\`\`\`bash
+python3 director_video.py run-episode \
+  --plan /safe/work/episode-plan.json \
+  --db /safe/work/episode-runs.sqlite \
+  --results /safe/work/collected-videos \
+  --studio-return-token /safe/secrets/gpu-return-WaitingOffice-EP01.token \
+  --execute --acknowledge-gpu-cost
+\`\`\`
+
+每个 H3 镜头由 ComfyUI 确认成功、真正下载 MP4 后，执行 HTTPS
+\`/studio/api/v1/gpu-return/start|chunk|finish\` 的定长 SHA-256
+分块断点续传。Studio 使用现有受控的 FFprobe/版本锁机制保存结果，
+状态为「待审片」，不能自动变为“审核通过”。断网时执行器拒绝继续
+提交新任务；重启后会接着回传已有真实镜头，避免重复 GPU 计费。
+
+需统一部署新的 Studio 服务和单独 Nginx 返回代理（1.2MB 请求大小，
+只将 Authorization 转发给 GPU 返回通道；普通 Microsoft 登录仍清空它）。
+代码提交成功并不代表已部署、已开机或已产生真实视频。
