@@ -898,6 +898,121 @@ def assemble_movie(plan, results_dir, movie_path, runner=None):
             "bytes": movie.stat().st_size, "gpu_calls": 0}
 
 
+
+def verify_completed_shot(results_dir, shot_id):
+    """Reject image-only or damaged results; ONE real downloaded MP4 is required."""
+    root = Path(results_dir)
+    folder = root / shot_id
+    manifest_path = folder / "manifest.json"
+    if (root.is_symlink() or folder.is_symlink() or
+            manifest_path.is_symlink() or not manifest_path.is_file()):
+        raise PlanError("Completed shot output missing or unsafe: " + shot_id)
+    manifest = read_json(manifest_path)
+    if (not isinstance(manifest, dict) or manifest.get("shot_id") != shot_id or
+            not isinstance(manifest.get("prompt_id"), str) or
+            not isinstance(manifest.get("downloaded"), list)):
+        raise PlanError("Completed shot manifest invalid: " + shot_id)
+    mp4 = [f for f in manifest["downloaded"] if isinstance(f, dict)
+           and isinstance(f.get("file"), str) and
+           Path(f["file"]).suffix.lower() == ".mp4"]
+    if len(mp4) != 1:
+        raise PlanError("Completed shot must have exactly one downloaded MP4: " + shot_id)
+    item = mp4[0]
+    if (not safe_asset_name(item["file"]) or
+            not HASH.fullmatch(str(item.get("sha256", ""))) or
+            type(item.get("bytes")) is not int or item["bytes"] < 128):
+        raise PlanError("Completed shot archive metadata invalid: " + shot_id)
+    movie = folder / item["file"]
+    if movie.is_symlink() or not movie.is_file():
+        raise PlanError("Completed shot MP4 missing or unsafe: " + shot_id)
+    actual_hash, actual_bytes = file_checksum(movie)
+    if (actual_hash != item["sha256"] or actual_bytes != item["bytes"]):
+        raise PlanError("Completed shot MP4 checksum mismatch: " + shot_id)
+    return {"shot_id": shot_id, "bytes": actual_bytes, "sha256": actual_hash}
+
+
+def run_episode(plan, db_path, results_dir, delivery_dir=None, *,
+                poll_seconds=10, shot_timeout=7200):
+    """One local GPU operator command, sequential generation + checked download.
+
+    Resumes queued/done records after restart without re-submitting; rejects
+    uncertain, rejected and failed records rather than silently retrying them.
+    Uses OS file lock so concurrent operator invocations cannot double-spend.
+    Does not start/stop GPU or change Studio owner authorization.
+    """
+    if not 1 <= poll_seconds <= 60 or not 60 <= shot_timeout <= 28800:
+        raise PlanError("Invalid polling interval or per-shot deadline")
+    target = Path(db_path)
+    out = Path(results_dir)
+    if target.is_symlink() or out.is_symlink():
+        raise PlanError("Refuse symlinked queue database or result directory")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists() and not out.is_dir():
+        raise PlanError("Results path must be a directory")
+    import fcntl
+    lock_path = target.with_name(target.name + ".runner.lock")
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(lock_path, flags, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise PlanError("Another GPU episode runner is already active") from None
+        con = db_open(target, plan)
+        try:
+            finished = 0
+            for job in plan["jobs"]:
+                sid = job["shot_id"]
+                record = con.execute(
+                    "SELECT state,prompt_id FROM runs WHERE shot_id=?", (sid,)).fetchone()
+                if not record:
+                    raise PlanError("Run database missing shot " + sid)
+                state, prompt_id = record
+                if state == "done":
+                    verify_completed_shot(out, sid)
+                    finished += 1
+                    continue
+                if state == "pending":
+                    # Only the current shot is submitted; ComfyUI must be idle.
+                    preflight_plan({"jobs": [job]})
+                    if not submit_one(con, job):
+                        raise PlanError("Submission failed/uncertain for shot " + sid +
+                                        "; inspect local status before retrying")
+                elif state != "queued" or not prompt_id:
+                    raise PlanError("Shot " + sid + " is " + state +
+                                    "; cannot safely auto-retry or advance")
+                deadline = time.monotonic() + shot_timeout
+                while True:
+                    collect(con, {"jobs": [job]}, out, download=True)
+                    record = con.execute(
+                        "SELECT state FROM runs WHERE shot_id=?", (sid,)).fetchone()
+                    current = record[0]
+                    if current == "done":
+                        verify_completed_shot(out, sid)
+                        finished += 1
+                        break
+                    if current != "queued":
+                        raise PlanError("Shot " + sid + " ended in " + current +
+                                        "; no duplicate job will be submitted")
+                    if time.monotonic() >= deadline:
+                        raise PlanError("Shot " + sid + " timed out; queued job can "
+                                        "be resumed, never resubmit it")
+                    time.sleep(poll_seconds)
+            delivery = None
+            if delivery_dir is not None:
+                delivery = export_studio_delivery(plan, out, delivery_dir)
+            return {"ok": True, "completed_shots": finished,
+                    "shot_count": len(plan["jobs"]),
+                    "delivery": delivery, "automatic_gpu_submission": True,
+                    "automatic_studio_upload": False}
+        finally:
+            con.close()
+    finally:
+        os.close(descriptor)
+
+
 def run_cli(argv=None):
     parser = argparse.ArgumentParser(description="Director offline-first ComfyUI shot pipeline")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -939,6 +1054,17 @@ def run_cli(argv=None):
         elif cmd == "collect":
             item.add_argument("--out", required=True)
             item.add_argument("--download", action="store_true")
+    episode_run = sub.add_parser("run-episode",
+        help="On-GPU sequential render, resume, download & optional Studio delivery")
+    episode_run.add_argument("--plan", required=True)
+    episode_run.add_argument("--db", required=True)
+    episode_run.add_argument("--results", required=True)
+    episode_run.add_argument("--delivery",
+        help="NEW absolute Studio owner-importable directory (optional)")
+    episode_run.add_argument("--poll-seconds", type=int, default=10)
+    episode_run.add_argument("--shot-timeout", type=int, default=7200)
+    episode_run.add_argument("--execute", action="store_true")
+    episode_run.add_argument("--acknowledge-gpu-cost", action="store_true")
     delivery = sub.add_parser("export-studio-delivery",
         help="Make one offline browser-uploadable folder of all verified MP4 clips")
     delivery.add_argument("--plan",required=True)
@@ -975,6 +1101,15 @@ def run_cli(argv=None):
               "Future submit requires --execute AND --acknowledge-gpu-cost.")
         return 0
     plan = load_plan(args.plan)
+    if args.command == "run-episode":
+        if not args.execute or not args.acknowledge_gpu_cost:
+            raise PlanError("run-episode requires BOTH --execute and "
+                            "--acknowledge-gpu-cost; no job was submitted")
+        print(json.dumps(run_episode(
+            plan, args.db, args.results, args.delivery,
+            poll_seconds=args.poll_seconds, shot_timeout=args.shot_timeout),
+            ensure_ascii=False, sort_keys=True))
+        return 0
     if args.command == "export-studio-delivery":
         print(json.dumps(export_studio_delivery(plan,args.results,args.out),
                          ensure_ascii=False,sort_keys=True))

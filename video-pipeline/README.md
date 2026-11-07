@@ -79,6 +79,35 @@ inspect 只显示节点 ID、节点类型、输入字段名称和 link/literal �
 assemble 依赖本地 ffprobe/ffmpeg。每个镜头必须有且只有一个已下载 MP4；格式不兼容时**拒绝拼接**，不会默默裁剪、丢音轨或转码。最终电影文件不得预先存在，防止覆盖已有作品。所有输入必须在本机结果归档目录内，检验失败不会发布最终文件。
 
 
+## 整集自动渲染（GPU 上一次启动，逐镜头断点续跑）
+
+已审核完成的 Studio 整集制作包，使用 \`prepare-studio-batch\` 生成计划。
+在 **GPU 主机本地** ComfyUI/H3 实际运行、节点预检查通过后，执行：
+
+\`\`\`bash
+python3 director_video.py run-episode \
+  --plan /safe/work/episode-plan.json \
+  --db /safe/work/episode-runs.sqlite \
+  --results /safe/work/collected-videos \
+  --delivery /safe/work/StudioDelivery_EP01 \
+  --execute --acknowledge-gpu-cost
+\`\`\`
+
+该命令会实际调用本机 ComfyUI \`/prompt\`，逐条等待 \`/history\` 任务成功，
+将 \`/view\` 中的真实 MP4 下载并做 SHA-256、字节数与唯一视频检查，
+再提交下一条。全部完成后生成一个可在 Studio 网页中选择文件夹
+批量导入的素材包。默认每 10 秒查询一次，单镜头超时 7200 秒，
+可使用 \`--poll-seconds\` 和 \`--shot-timeout\` 调整。
+
+SQLite 中 \`queued\`/ \`done\` 状态重启后继续；不重提已提交的任务。
+\`uncertain\`、\`failed\`、\`rejected\` 和 \`submitting\` 必须人工核查，**绝不
+在可能已产生 GPU 费用的情况下自动重试**。OS 独占锁阻止两个执行器
+同时提交。同一 GPU 的其他 ComfyUI 客户端应暂停，避免抢占队列。
+已存在的交付目录不会覆盖；导出到该目录并不代表自动网络回传。
+此命令不会执行 GPU 云端开关机；真实输入仍需要已批准 H3 工作流、
+正确模型节点映射、获批镜头和角色/场景素材。
+
+
 ## 当前边界
 
 GPU 当前关机，因此没有真实 H3 运行、真实模型兼容性或成片验收。Director V3 MCP 仍然只读；此脚本不是已经开放生成 MCP 接口。不执行 GPU 开关机、审批或其他辅助 App 更新。现阶段没有自动审片、角色一致性优化或配音合成。
