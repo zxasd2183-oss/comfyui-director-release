@@ -35,6 +35,7 @@ class PictureCutTests(unittest.TestCase):
     def setUp(self):
         sample.VideoReturnTests.setUp(self)
         with closing(core.open_db(self.db)) as db:
+            media.prepare_schema(db)
             cuts.prepare_schema(db)
 
     @staticmethod
