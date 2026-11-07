@@ -481,6 +481,12 @@ class VideoPipelineTests(unittest.TestCase):
             receipts.append(receipt)
             manifest=archive/sid/"manifest.json"
             data=json.loads(manifest.read_text())
+            # The general archive tests use tiny fake byte strings. Delivery
+            # intentionally requires real-file minimum length >= 128 bytes.
+            movie=archive/sid/("000_"+sid+".mp4")
+            movie.write_bytes(b"fixture-media-"+sid.encode()+b"X"*256)
+            media_sha,media_size=dv.file_checksum(movie)
+            data["downloaded"][0].update(sha256=media_sha,bytes=media_size)
             data["prompt_id"]="real_prompt_"+sid
             dv.atomic_json(manifest,data)
         plan["studio_episode_handoff"]={
