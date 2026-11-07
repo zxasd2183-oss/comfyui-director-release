@@ -41,3 +41,10 @@ macOS 分支 `build/glacier-browser-v0-20-ui-refresh`：
 - Android M05：正式签名 Release 不再带 `--prerelease`；客户端 `BrowserUpdater.findLatest` 排除 draft/prerelease。
 - Android M05：增加 `StableReleaseFilteringTest` 两项 instrumentation 测试，更新 CI 为至少 9 项通过，并修复 grep 正则。
 - GitHub commit 已写入；工作流是否实际成功、正式签名 Secret 是否存在仍待真实 CI 检查。**未宣称发布或真机验证完成。**
+
+## 17:30 后补充：移动版门禁通过，继续桌面主线
+
+- 用户已确认 Android M05 本轮构建与测试全部通过；这是来自 GitHub Actions 的用户验收反馈，尚未等同于正式稳定签名 Release 发布。
+- Android M05 独立固定签名 Release 仍需手动触发 `workflow_dispatch: publish_signed=true`，并通过仓库签名 Secrets 和证书 SHA-256 校验。当前工具无法读取 Secrets 或证明 Release 已存在。
+- Windows/macOS D03：新增“管理全部网站账号”可搜索目录，按域名和备注过滤、逐网站查看/编辑/删除；不索引密码、用户名或其他密文。
+- 新增纯函数 `account_site_summary22` 和跨平台单元测试；相关 CI 未在本轮报告为已运行通过。
