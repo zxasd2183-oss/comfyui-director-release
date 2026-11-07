@@ -9,8 +9,10 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkProxy, QNetworkRequest
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMessageBox, QPushButton, QListWidget, QVBoxLayout, QWidget,
@@ -49,6 +51,49 @@ def page_site22(url):
     return safe_site22(url.host())
 
 
+def safe_code_api22(raw):
+    """HTTPS-only explicit OTP endpoint, never localhost or URL credentials."""
+    if not isinstance(raw, str) or len(raw) > 2048:
+        return ""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    try:
+        parts = urlsplit(raw)
+        if (parts.scheme.lower() != "https" or parts.username is not None
+                or parts.password is not None or parts.fragment
+                or parts.port not in (None, 443)
+                or not parts.hostname or not safe_site22(parts.hostname)
+                or any(ord(c) < 32 for c in raw)):
+            return ""
+    except ValueError:
+        return ""
+    return raw
+
+
+def extract_code22(raw):
+    """Only accept an unambiguous 4–10 digit code; never echo API responses."""
+    import re
+    if not isinstance(raw, bytes) or len(raw) > 4096:
+        return ""
+    try:
+        decoded = raw.decode("utf-8")
+        payload = json.loads(decoded)
+    except (UnicodeError, ValueError):
+        payload = None
+        decoded = raw.decode("utf-8", "replace")
+    if isinstance(payload, dict):
+        for container in (payload, payload.get("data")):
+            if isinstance(container, dict):
+                for key in ("code", "otp", "verification_code", "sms_code"):
+                    value = str(container.get(key, ""))
+                    if re.fullmatch(r"[0-9]{4,10}", value):
+                        return value
+    if re.fullmatch(r"\\s*[0-9]{4,10}\\s*", decoded):
+        return decoded.strip()
+    return ""
+
+
 def clean_accounts22(payload):
     if not isinstance(payload, dict) or payload.get("schema") != 1:
         raise ValueError("Unsupported account-vault schema")
@@ -67,13 +112,19 @@ def clean_accounts22(payload):
                 or not (1 <= len(name.strip()) <= 60)
                 or not (1 <= len(username) <= 250) or len(password) > 2048):
             raise ValueError("Invalid account entry")
+        code_api = r.get("code_api", "")
+        if code_api and safe_code_api22(code_api) != code_api:
+            raise ValueError("Invalid HTTPS OTP API endpoint")
+        if not isinstance(code_api, str):
+            raise ValueError("Invalid OTP API field")
         normalized_name = name.strip()
         key = (domain, normalized_name.casefold())
         if key in seen:
             raise ValueError("Duplicate account")
         seen.add(key)
         result.append({"site": domain, "name": normalized_name,
-                       "username": username, "password": password})
+                       "username": username, "password": password,
+                       "code_api": code_api})
     return {"schema": 1, "accounts": result}
 
 
@@ -213,13 +264,17 @@ class GlacierAccounts22:
         layout.addRow("备注名称", name)
         layout.addRow("账号", username)
         layout.addRow("密码（可留空）", password)
+        code_api = QLineEdit(dialog)
+        code_api.setPlaceholderText("可选：HTTPS 接码 API 地址（仅点击时访问）")
+        layout.addRow("验证码 API", code_api)
         save = QPushButton("加密保存", dialog)
         save.clicked.connect(dialog.accept)
         layout.addRow(save)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         record = {"site": site, "name": name.text().strip(),
-                  "username": username.text(), "password": password.text()}
+                  "username": username.text(), "password": password.text(),
+                  "code_api": code_api.text().strip()}
         candidate = {"schema": 1, "accounts": self._accounts_doc22["accounts"] + [record]}
         previous = self._accounts_doc22
         try:
@@ -232,7 +287,7 @@ class GlacierAccounts22:
             return
         QMessageBox.information(self, "Glacier", "账号卡片已在本机加密保存。")
 
-    def update_account22(self, site, original_name, name, username, password):
+    def update_account22(self, site, original_name, name, username, password, code_api=None):
         """Update one stored card atomically; never alter ciphertext on invalid input."""
         if self._accounts_readonly22:
             return False
@@ -247,7 +302,8 @@ class GlacierAccounts22:
             if not isinstance(name, str):
                 return False
             records[index] = {"site": site, "name": name.strip(),
-                              "username": username, "password": password}
+                              "username": username, "password": password,
+                              "code_api": records[index].get("code_api", "") if code_api is None else code_api}
             clean_accounts22(candidate)
             self._accounts_doc22 = candidate
             self._save_accounts22()
@@ -270,13 +326,16 @@ class GlacierAccounts22:
         layout.addRow("备注名称", name)
         layout.addRow("账号", username)
         layout.addRow("密码（可留空）", password)
+        code_api = QLineEdit(record.get("code_api", ""), dialog)
+        code_api.setPlaceholderText("可选：HTTPS 接码 API 地址")
+        layout.addRow("验证码 API", code_api)
         button = QPushButton("保存修改", dialog)
         button.clicked.connect(dialog.accept)
         layout.addRow(button)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
         if not self.update_account22(site, record["name"], name.text(),
-                                     username.text(), password.text()):
+                                     username.text(), password.text(), code_api.text().strip()):
             QMessageBox.warning(self, "Glacier", "修改未保存；原有资料保持不变。")
             return False
         return True
@@ -346,6 +405,46 @@ class GlacierAccounts22:
         refresh()
         dialog.exec()
 
+    def request_account_code22(self, endpoint, dialog):
+        """One explicit HTTPS GET via the configured local SOCKS5 port.
+
+        No implicit direct fallback, automatic refresh, redirects or response
+        logging. A code is shown only after a valid user-initiated response.
+        """
+        if safe_code_api22(endpoint) != endpoint or not getattr(self, "proxy_port", 0):
+            QMessageBox.warning(dialog, "Glacier", "验证码 API 地址无效或代理未配置。")
+            return
+        if not getattr(self, "proc", None) or self.proc.poll() is not None:
+            QMessageBox.warning(dialog, "Glacier", "代理内核未运行，已拒绝直连。")
+            return
+        manager = QNetworkAccessManager(dialog)
+        manager.setProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,
+                                       "127.0.0.1", int(self.proxy_port)))
+        request = QNetworkRequest(QUrl(endpoint))
+        request.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
+                             QNetworkRequest.RedirectPolicy.ManualRedirectPolicy)
+        request.setTransferTimeout(12000)
+        reply = manager.get(request)
+        def finished():
+            try:
+                if reply.error() != reply.NetworkError.NoError:
+                    QMessageBox.warning(dialog, "Glacier", "接码请求未成功；请检查代理与 API 配置。")
+                    return
+                status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+                if status != 200:
+                    QMessageBox.warning(dialog, "Glacier", "接码接口未返回成功状态。")
+                    return
+                data = bytes(reply.readAll())
+                code = extract_code22(data)
+                if not code:
+                    QMessageBox.information(dialog, "Glacier", "接口未返回可识别的 4–10 位数字验证码。")
+                    return
+                self._copy_account22(code)
+                QMessageBox.information(dialog, "Glacier", "验证码已复制到剪贴板，30 秒后自动清除。")
+            finally:
+                reply.deleteLater()
+        reply.finished.connect(finished)
+
     def show_accounts22(self, site=None):
         if site is None:
             view = self.current()
@@ -374,6 +473,11 @@ class GlacierAccounts22:
                 copy_password = QPushButton("复制密码", dialog)
                 copy_password.clicked.connect(lambda checked=False, v=record["password"]: self._copy_account22(v))
                 row.addWidget(copy_password)
+            if record.get("code_api"):
+                code_button = QPushButton("获取验证码", dialog)
+                code_button.clicked.connect(
+                    lambda checked=False, ep=record["code_api"]: self.request_account_code22(ep, dialog))
+                row.addWidget(code_button)
             edit = QPushButton("编辑", dialog)
             def edit_current(checked=False, s=site, r=dict(record)):
                 if self.edit_account22(s, r):
