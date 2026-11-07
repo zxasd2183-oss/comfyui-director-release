@@ -161,6 +161,14 @@ class AudioStemsTests(unittest.TestCase):
         tracks=audio.list_stems(self.db,"WaitingOffice","EP01")["tracks"]
         self.assertFalse(next(x for x in tracks if x["audio_id"]==
             old["audio_id"])["source_current"])
+        self.data["rights_ref"]="OWN-VOICE-TEST-01 — recording owned and consent documented"
+        restored=self.start()
+        self.assertFalse(restored.get("already_imported",False))
+        self.upload(restored["upload_id"])
+        reverted=self.finish(restored["upload_id"])
+        self.assertEqual(reverted["revision"],3)
+        self.assertNotEqual(reverted["audio_id"],old["audio_id"])
+        self.assertEqual(self.approve(reverted["audio_id"])["status"],"approved")
 
     def test_audio_private_http_range_and_owner_csrf(self):
         start=self.start()
