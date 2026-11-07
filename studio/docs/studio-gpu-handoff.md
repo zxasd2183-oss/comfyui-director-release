@@ -173,9 +173,18 @@ Video Production shows a full-episode picture-cut readiness count and the
 exact source_manifest_sha256. A missing shot, stale revised upstream
 asset, orphaned clip or unsupported stream combination blocks assembly.
 
-The operator uses the local Studio service identity on the VPS only AFTER
-the normal one-time deployment. Assembly is a separately acknowledged
-production action, not part of deployment or GPU power operations:
+After one-time deployment, the signed-in Microsoft owner can press
+**一键生成整集画面初剪（本地 CPU）** in Video Production, review the
+exact approved source digest and explicitly confirm local FFmpeg CPU use.
+Studio creates an audited, persistent single-worker queue entry and
+shows queued/running/done/failed state; service restarts can retry a
+bounded number of times. No GPU, SSH approval or ComfyUI action occurs.
+The resulting picture cut has a separate owner-review player and cannot
+be labeled a final mastered movie.
+
+For an independently reviewed terminal fallback, the operator can use
+the local Studio service identity on the VPS. Assembly is separately
+acknowledged, not part of deployment or GPU power operations:
 
     sudo -u directorstudio python3 /opt/director-studio/assemble_approved_cut.py \
       --db /var/lib/director-studio/production.sqlite \
