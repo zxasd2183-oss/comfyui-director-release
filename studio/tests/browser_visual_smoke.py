@@ -122,6 +122,17 @@ def response(route):
             {"shot_id":"01","ordinal":1,"duration_ms":3000},
             {"shot_id":"02","ordinal":2,"duration_ms":5000}],
             "assets":[],"episode":EPISODE}
+    elif path.endswith("/api/v1/picture-cuts/readiness"):
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+            "shot_count":2,"approved_count":2,"total_duration_ms":8000,
+            "ready":True,"blocked":[],"source_manifest_sha256":"d"*64}
+    elif path.endswith("/api/v1/picture-cuts"):
+        result={"ok":True,"picture_cuts":[{
+            "cut_id":"CUT_"+"a"*32,"source_current":True,
+            "source_manifest_sha256":"d"*64,"file_sha256":"e"*64,
+            "size_bytes":88888,"duration_seconds":8.0,"status":"in_review",
+            "review_reason":None,"reviewer":None}],
+            "final_audio_mixed":False,"gpu_action":False}
     elif path.endswith("/api/v1/video-results"):
         result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
             "shot_id":"01","takes":[{
@@ -256,10 +267,11 @@ def main():
             expect(page.locator("#wfReviewList")).to_contain_text("真实视频成片")
             page.locator("#wfReviewList button").first.click()
             expect(page.locator("body")).to_have_attribute("data-page","video_plans")
-            expect(page.locator(".video-take-player")).to_have_count(1)
-            expect(page.locator(".video-take-player")).to_be_visible()
-            expect(page.locator(".video-review-reason")).to_have_count(1)
-            expect(page.locator(".video-review-reason")).to_be_visible()
+            expect(page.locator("#wfVideoTakes_video_plans .video-take-player")).to_have_count(1)
+            expect(page.locator("#wfVideoTakes_video_plans .video-review-reason")).to_have_count(1)
+            expect(page.locator("#wfPictureCuts_video_plans")).to_contain_text("整集画面初剪")
+            expect(page.locator("#wfPictureCuts_video_plans .video-take-player")).to_have_count(1)
+            expect(page.locator("#wfPictureCuts_video_plans .video-review-reason")).to_have_count(1)
             page.screenshot(path=str(OUT/"real-video-review-ui-1440x900.png"),
                             full_page=True)
             # Exercise ALL seven production workflows with the same owner-only
