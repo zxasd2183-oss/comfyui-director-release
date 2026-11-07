@@ -309,10 +309,39 @@ jobs:
               --prerelease
           fi
 
+  signing_preflight:
+    name: Check permanent Glacier Android signing configuration
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        name: Check signing input presence without exposing secrets
+        shell: bash
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          ready=true
+          for name in GLACIER_ANDROID_KEYSTORE_BASE64 GLACIER_ANDROID_SIGNING_STORE_PASSWORD GLACIER_ANDROID_SIGNING_KEY_PASSWORD GLACIER_ANDROID_SIGNING_KEY_ALIAS GLACIER_ANDROID_CERT_SHA256; do
+            if [ -z "${!name:-}" ]; then ready=false; fi
+          done
+          if [[ ! "$GLACIER_ANDROID_CERT_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then ready=false; fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          if [ "$ready" = true ]; then
+            echo 'Permanent signer configured; signed APK may publish after Android gates succeed.'
+          else
+            echo 'Permanent signer not configured; signed release will be skipped without exposing key material.'
+          fi
+
   publish_signed:
-    name: Explicit fixed-signature M05 Android release
-    needs: [build, emulator_saved_node, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_signed == true
+    name: Auto-publish permanent-signature M05 Android release after gates
+    needs: [build, signing_preflight, emulator_saved_node, emulator_smoke, emulator_proxy_fail_closed, emulator_proxy_mock_route]
+    if: needs.signing_preflight.outputs.ready == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_signed == true))
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
