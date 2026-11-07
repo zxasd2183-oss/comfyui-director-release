@@ -982,7 +982,8 @@ public final class MainActivity extends Activity {
             try {
                 if (!manager.hasPrimaryClip()) return;
                 CharSequence latest=manager.getPrimaryClip().getItemAt(0).coerceToText(this);
-                if (value.contentEquals(latest)) manager.clearPrimaryClip();
+                if (value.contentEquals(latest)) manager.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Glacier", ""));
             } catch (Exception ignored) {}
         }, 30000);
         android.widget.Toast.makeText(this, "已复制，30 秒后自动清除",
