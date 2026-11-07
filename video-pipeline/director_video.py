@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -720,6 +721,107 @@ def archived_clips(plan, results_dir):
     return clips
 
 
+def export_studio_delivery(plan, results_dir, destination):
+    """Make a single browser-importable folder for every collected MP4.
+
+    Offline only. Copies verified collected files; never uploads, starts GPU,
+    changes a source archive or claims server acceptance. Returns a manifest
+    tied to the exact Studio episode/shot handoff revisions.
+    """
+    if not isinstance(plan,dict):
+        raise PlanError("Invalid Studio delivery plan")
+    episode=plan.get("studio_episode_handoff")
+    single=plan.get("studio_handoff")
+    receipts=(episode.get("shot_receipts") if isinstance(episode,dict)
+              else [single] if isinstance(single,dict) else None)
+    jobs=plan.get("jobs")
+    if (not isinstance(jobs,list) or not jobs or not isinstance(receipts,list)
+        or len(jobs)!=len(receipts) or len(jobs)>500):
+        raise PlanError("Studio delivery requires versioned shot receipts")
+    project_id=receipts[0].get("project_id")
+    episode_id=receipts[0].get("episode_id")
+    if (not isinstance(project_id,str) or not SHOT.fullmatch(project_id) or
+        not isinstance(episode_id,str) or not SHOT.fullmatch(episode_id)):
+        raise PlanError("Missing Studio project and episode receipt scope")
+    if episode is not None and (episode.get("project_id")!=project_id or
+        episode.get("episode_id")!=episode_id or not
+        HASH.fullmatch(str(episode.get("bundle_sha256","")))):
+        raise PlanError("Invalid Studio episode bundle receipt")
+
+    shots=[]
+    seen=set()
+    for job,receipt in zip(jobs,receipts):
+        if not isinstance(job,dict) or not isinstance(receipt,dict):
+            raise PlanError("Invalid Studio delivery shot receipt")
+        sid=job.get("shot_id")
+        if (not isinstance(sid,str) or not SHOT.fullmatch(sid) or sid in seen
+            or receipt.get("shot_id")!=sid
+            or receipt.get("project_id")!=project_id
+            or receipt.get("episode_id")!=episode_id
+            or not HASH.fullmatch(str(receipt.get("package_sha256","")))
+            or type(receipt.get("video_revision")) is not int
+            or receipt["video_revision"]<1):
+            raise PlanError("Studio delivery shot/receipt mismatch")
+        seen.add(sid)
+        shots.append(sid)
+    if episode and (plan.get("shot_count")!=len(shots) or
+        len(episode.get("shot_receipts",[]))!=len(shots)):
+        raise PlanError("Studio delivery shot inventory incomplete")
+
+    clips=archived_clips(plan,results_dir)
+    dest=Path(destination)
+    if (not dest.is_absolute() or dest.exists() or dest.is_symlink()
+        or not dest.parent.is_dir() or dest.parent.is_symlink()):
+        raise PlanError("Delivery destination must be a new absolute directory")
+    staging=dest.parent/(".studio-delivery-"+os.urandom(12).hex())
+    staging.mkdir(mode=0o700)
+    try:
+        items=[]
+        for sid,receipt,clip in zip(shots,receipts,clips):
+            manifest_path=clip.parent/"manifest.json"
+            collected=read_json(manifest_path)
+            prompt_id=collected.get("prompt_id")
+            if (not isinstance(prompt_id,str) or
+                not re.fullmatch(r"[A-Za-z0-9_-]{0,100}",prompt_id)):
+                raise PlanError("Invalid collected ComfyUI prompt ID")
+            src_hash,size=file_checksum(clip)
+            if not 128<=size<=MAX_ASSET:
+                raise PlanError("Studio delivery clip exceeds 250MB limit")
+            target_name=f"SH_{sid}_{src_hash[:16]}.mp4"
+            target=staging/target_name
+            if target.exists():
+                raise PlanError("Duplicate Studio delivery clip filename")
+            with clip.open("rb") as src, target.open("xb") as out:
+                shutil.copyfileobj(src,out,1024*1024)
+                out.flush()
+                os.fsync(out.fileno())
+            if file_checksum(target)!=(src_hash,size):
+                raise PlanError("Studio delivery copy hash mismatch")
+            items.append({"shot_id":sid,"filename":target_name,
+                "file_sha256":src_hash,"size_bytes":size,
+                "prompt_id":prompt_id,
+                "package_sha256":receipt["package_sha256"],
+                "plan_revision":receipt["video_revision"]})
+        inventory={"schema":"director_studio_video_delivery_v1",
+            "project_id":project_id,"episode_id":episode_id,
+            "shot_count":len(items),"shots":items,
+            "episode_bundle_sha256":(
+                episode["bundle_sha256"] if episode else None),
+            "requires_owner_upload":True,
+            "automatically_uploaded":False,"gpu_dispatch_authorized":False}
+        digest=hashlib.sha256(json.dumps(inventory,sort_keys=True,
+            ensure_ascii=False,separators=(",",":")).encode()).hexdigest()
+        atomic_json(staging/"manifest.json",{
+            "ok":True,"manifest":inventory,"manifest_sha256":digest,
+            "checksum_type":"sha256_canonical_json_not_signature"})
+        os.rename(staging,dest)
+        return {"ok":True,"directory":str(dest),"shot_count":len(items),
+            "manifest_sha256":digest,"gpu_actions":0,"network_calls":0}
+    except BaseException:
+        shutil.rmtree(staging,ignore_errors=True)
+        raise
+
+
 def video_stream_signature(path, runner=None):
     """Require identical stream layouts before -c copy; never run a shell."""
     runner = subprocess.run if runner is None else runner
@@ -837,6 +939,11 @@ def run_cli(argv=None):
         elif cmd == "collect":
             item.add_argument("--out", required=True)
             item.add_argument("--download", action="store_true")
+    delivery = sub.add_parser("export-studio-delivery",
+        help="Make one offline browser-uploadable folder of all verified MP4 clips")
+    delivery.add_argument("--plan",required=True)
+    delivery.add_argument("--results",required=True)
+    delivery.add_argument("--out",required=True)
     merge = sub.add_parser("assemble", help="Verify archived MP4 clips and concatenate locally")
     merge.add_argument("--plan", required=True)
     merge.add_argument("--results", required=True)
@@ -868,6 +975,10 @@ def run_cli(argv=None):
               "Future submit requires --execute AND --acknowledge-gpu-cost.")
         return 0
     plan = load_plan(args.plan)
+    if args.command == "export-studio-delivery":
+        print(json.dumps(export_studio_delivery(plan,args.results,args.out),
+                         ensure_ascii=False,sort_keys=True))
+        return 0
     if args.command == "assemble":
         print(json.dumps(assemble_movie(plan, args.results, args.movie), ensure_ascii=False))
         return 0
