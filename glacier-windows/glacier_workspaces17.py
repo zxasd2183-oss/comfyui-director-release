@@ -5,6 +5,7 @@ No sync server, external requests, or plaintext URL persistence.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -13,6 +14,7 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QColor
+from PySide6.QtWebEngineCore import QWebEngineProfile
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QToolButton
 
 
@@ -104,6 +106,45 @@ def _clean_workspaces17(raw):
 class GlacierWorkspaces17:
     """Multiple local workspaces and group labels without modifying WebEngine."""
 
+    def initialize_workspace_profiles17(self, data_directory, cipher):
+        """Pick the active workspace profile before creating WebEngine tabs.
+
+        Legacy default profile remains at its original storage path; other
+        workspaces use physically separate cookies, caches and service workers.
+        Never copy shared legacy cookies into a newly isolated workspace.
+        """
+        self._workspace_profiles17 = {"default": self.profile}
+        self._workspace_profile_root17 = Path(data_directory) / "workspace-profiles"
+        path = Path(data_directory) / "workspaces-v17.enc"
+        active = "default"
+        if path.exists():
+            try:
+                if path.stat().st_size > STORAGE_LIMIT17:
+                    raise ValueError("workspace store too large")
+                doc = _clean_workspaces17(json.loads(
+                    cipher(path.read_bytes(), True).decode("utf-8")))
+                active = doc["active"]
+            except Exception:
+                # setup_workspaces17 will preserve and report corrupted data.
+                active = "default"
+        self.profile = self._workspace_profile17(active)
+
+    def _workspace_profile17(self, wid):
+        profiles = getattr(self, "_workspace_profiles17", None)
+        if profiles is None:
+            return self.profile
+        if wid in profiles:
+            return profiles[wid]
+        digest = hashlib.sha256(wid.encode("utf-8")).hexdigest()[:24]
+        base = self._workspace_profile_root17 / digest
+        profile = QWebEngineProfile("Glacier-space-" + digest, self)
+        profile.setPersistentStoragePath(str(base / "profile"))
+        profile.setCachePath(str(base / "cache"))
+        profile.setPersistentCookiesPolicy(
+            QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+        profiles[wid] = profile
+        return profile
+
     def setup_workspaces17(self, nav, data_directory, cipher):
         self._workspace_file17 = Path(data_directory) / "workspaces-v17.enc"
         self._workspace_cipher17 = cipher
@@ -135,7 +176,7 @@ class GlacierWorkspaces17:
         workspace_button = QToolButton(self)
         workspace_button.setObjectName("GlacierWorkspaceButton17")
         workspace_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        workspace_button.setToolTip("独立工作区：保存标签与分组")
+        workspace_button.setToolTip("独立工作区：Cookie、网站存储、标签与分组均分别保存")
         workspace_button.setMinimumWidth(120)
         workspace_menu = QMenu(workspace_button)
         workspace_menu.aboutToShow.connect(self._build_workspace_menu17)
@@ -370,6 +411,9 @@ QToolButton#GlacierWorkspaceButton17:hover,QToolButton#GlacierTabGroupsButton17:
                 return False
         self._workspace_switching17 = True
         try:
+            # Switch the actual WebEngine profile BEFORE constructing tabs.
+            # Cookies/localStorage/service workers never cross workspaces.
+            self.profile = self._workspace_profile17(wid)
             self._workspace_doc17["active"] = wid
             self._workspace_group_by_view17.clear()
             for index in reversed(range(self.tabs.count())):
