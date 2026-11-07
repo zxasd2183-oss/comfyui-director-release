@@ -945,6 +945,236 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void restoreAccountVault() {
+        try {
+            accountCards.clear();
+            accountCards.addAll(BrowserAccountsStore.load(this));
+        } catch (Exception ignored) {
+            // Never replace unreadable ciphertext with an empty vault.
+            accountsReadonly = true;
+            accountCards.clear();
+        }
+    }
+
+    private boolean persistAccountVault(List<BrowserAccountsStore.Card> candidate) {
+        if (accountsReadonly) return false;
+        try {
+            BrowserAccountsStore.save(this, candidate);
+            accountCards.clear();
+            accountCards.addAll(candidate);
+            return true;
+        } catch (Exception ignored) {
+            // No private account details ever enter logs.
+            return false;
+        }
+    }
+
+    private String currentAccountSite() {
+        return active == null ? "" : BrowserAccountsStore.siteFromUrl(active.url);
+    }
+
+    private void copyAccountValue(String value) {
+        android.content.ClipboardManager manager =
+                (android.content.ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+        if (manager == null) return;
+        manager.setPrimaryClip(android.content.ClipData.newPlainText("Glacier", value));
+        tabSaveHandler.postDelayed(() -> {
+            try {
+                if (!manager.hasPrimaryClip()) return;
+                CharSequence latest=manager.getPrimaryClip().getItemAt(0).coerceToText(this);
+                if (value.contentEquals(latest)) manager.clearPrimaryClip();
+            } catch (Exception ignored) {}
+        }, 30000);
+        android.widget.Toast.makeText(this, "已复制，30 秒后自动清除",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void showAccountVault() {
+        if (accountsReadonly) {
+            new AlertDialog.Builder(this).setTitle("Glacier · 账号资料保护")
+                    .setMessage("本机账号加密文件无法解密，已进入只读保护，原文件不会被覆盖。")
+                    .setPositiveButton("知道了", null).show();
+            return;
+        }
+        final String profile = active == null ? selectedProfile : active.profile;
+        final String site = currentAccountSite();
+        List<BrowserAccountsStore.Card> shown = new ArrayList<>();
+        for (BrowserAccountsStore.Card card : accountCards) {
+            if (profile.equals(card.profile)) shown.add(card);
+        }
+        String[] labels = new String[shown.size()];
+        for (int i=0;i<shown.size();i++) {
+            BrowserAccountsStore.Card c=shown.get(i);
+            labels[i]=c.name+" · "+c.site;
+        }
+        String space = WORK.equals(profile) ? "工作空间" : "私人空间";
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle("Glacier · "+space+"账号保险箱")
+                .setItems(labels,(dialog,index)->showAccountCard(shown.get(index)))
+                .setNegativeButton("关闭",null);
+        if (!site.isEmpty()) {
+            builder.setPositiveButton("添加当前网站账号",
+                    (dialog,index)->editAccountCard(null,profile,site));
+        }
+        builder.show();
+    }
+
+    private EditText cardInput(LinearLayout layout,String label,String value,boolean secret) {
+        TextView heading=new TextView(this);
+        heading.setText(label);
+        heading.setTextSize(13);
+        heading.setTextColor(MUTED);
+        layout.addView(heading);
+        EditText field=new EditText(this);
+        field.setSingleLine(true);
+        field.setText(value);
+        if(secret)field.setInputType(InputType.TYPE_CLASS_TEXT
+                |InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        layout.addView(field,new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,dp(48)));
+        return field;
+    }
+
+    private void editAccountCard(BrowserAccountsStore.Card original,String profile,String site) {
+        if(accountsReadonly)return;
+        LinearLayout form=new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20),dp(8),dp(20),0);
+        EditText name=cardInput(form,"名称",
+                original==null?"":original.name,false);
+        EditText username=cardInput(form,"账号",
+                original==null?"":original.username,false);
+        EditText password=cardInput(form,"密码（可留空）",
+                original==null?"":original.password,true);
+        EditText api=cardInput(form,"接码 API HTTPS 地址（可留空）",
+                original==null?"":original.codeApi,false);
+        ScrollView scroll=new ScrollView(this);
+        scroll.addView(form);
+        new AlertDialog.Builder(this)
+                .setTitle(original==null?"添加网站账号 · "+site:"编辑网站账号 · "+site)
+                .setView(scroll)
+                .setNegativeButton("取消",null)
+                .setPositiveButton("加密保存",(d,which)->{
+                    BrowserAccountsStore.Card updated=new BrowserAccountsStore.Card(
+                            profile,site,name.getText().toString().trim(),
+                            username.getText().toString(),password.getText().toString(),
+                            api.getText().toString().trim());
+                    if(!BrowserAccountsStore.valid(updated)) {
+                        new AlertDialog.Builder(this).setMessage("账号字段或接码 API 地址不合法；未保存。")
+                                .setPositiveButton("知道了",null).show();
+                        return;
+                    }
+                    List<BrowserAccountsStore.Card> next=new ArrayList<>(accountCards);
+                    if(original!=null)next.remove(original);
+                    next.add(updated);
+                    if(!persistAccountVault(next)) {
+                        new AlertDialog.Builder(this).setMessage("加密保存失败；原有资料保持不变。")
+                                .setPositiveButton("知道了",null).show();
+                    } else {
+                        android.widget.Toast.makeText(this,"账号已加密保存",
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                }).show();
+    }
+
+    private void showAccountCard(BrowserAccountsStore.Card card) {
+        List<String> actions=new ArrayList<>();
+        actions.add("复制账号");
+        if(!card.password.isEmpty())actions.add("复制密码");
+        if(!card.codeApi.isEmpty())actions.add("点击获取验证码");
+        actions.add("编辑");
+        actions.add("删除");
+        new AlertDialog.Builder(this)
+                .setTitle(card.name+" · "+card.site)
+                .setItems(actions.toArray(new String[0]),(d,which)->{
+                    String item=actions.get(which);
+                    if("复制账号".equals(item))copyAccountValue(card.username);
+                    else if("复制密码".equals(item))copyAccountValue(card.password);
+                    else if("点击获取验证码".equals(item))fetchAccountCode(card.codeApi);
+                    else if("编辑".equals(item))editAccountCard(card,card.profile,card.site);
+                    else if("删除".equals(item)) {
+                        new AlertDialog.Builder(this).setTitle("删除本机账号卡片")
+                                .setMessage("删除后无法恢复。")
+                                .setNegativeButton("取消",null)
+                                .setPositiveButton("删除",(dialog,button)->{
+                                    List<BrowserAccountsStore.Card> next=new ArrayList<>(accountCards);
+                                    next.remove(card);
+                                    if(!persistAccountVault(next)) {
+                                        android.widget.Toast.makeText(this,"删除失败，原数据已保留",
+                                                android.widget.Toast.LENGTH_LONG).show();
+                                    }
+                                }).show();
+                    }
+                }).setNegativeButton("关闭",null).show();
+    }
+
+    private void fetchAccountCode(String api) {
+        if(!BrowserAccountsStore.validApi(api) || api.isEmpty())return;
+        if(!proxyMode) {
+            new AlertDialog.Builder(this).setMessage(
+                    "接码 API 必须通过已经启动的 VLESS/SOCKS5 连接访问；当前未启用代理。")
+                    .setPositiveButton("知道了",null).show();
+            return;
+        }
+        accountCodeQueue.execute(() -> {
+            String code="";
+            try {
+                java.net.Proxy proxy=new java.net.Proxy(java.net.Proxy.Type.SOCKS,
+                        new java.net.InetSocketAddress("127.0.0.1",NativeProxy.PORT));
+                java.net.HttpURLConnection connection=(java.net.HttpURLConnection)
+                        new java.net.URL(api).openConnection(proxy);
+                connection.setInstanceFollowRedirects(false);
+                connection.setConnectTimeout(7500);
+                connection.setReadTimeout(7500);
+                connection.setUseCaches(false);
+                try {
+                    if(connection.getResponseCode()==200) {
+                        java.io.InputStream input=connection.getInputStream();
+                        java.io.ByteArrayOutputStream buffer=new java.io.ByteArrayOutputStream();
+                        try(input) {
+                            byte[] chunk=new byte[512];int n;
+                            while((n=input.read(chunk))!=-1) {
+                                if(buffer.size()+n>4096)throw new java.io.IOException("Response too large");
+                                buffer.write(chunk,0,n);
+                            }
+                        }
+                        code=parseAccountCode(buffer.toByteArray());
+                    }
+                } finally {connection.disconnect();}
+            } catch(Exception ignored) {
+                // Do not print OTP endpoints, credentials or response data.
+            }
+            final String result=code;
+            runOnUiThread(() -> {
+                if(isFinishing())return;
+                if(result.isEmpty()) {
+                    new AlertDialog.Builder(this).setMessage("接口未返回可识别的 4–10 位数字验证码。")
+                            .setPositiveButton("知道了",null).show();
+                } else {
+                    copyAccountValue(result);
+                }
+            });
+        });
+    }
+
+    private static String parseAccountCode(byte[] response) {
+        if(response.length>4096)return "";
+        String body=new String(response,java.nio.charset.StandardCharsets.UTF_8).trim();
+        if(body.matches("[0-9]{4,10}"))return body;
+        try {
+            org.json.JSONObject payload=new org.json.JSONObject(body);
+            for(int i=0;i<2;i++) {
+                org.json.JSONObject obj=i==0?payload:payload.optJSONObject("data");
+                if(obj==null)continue;
+                for(String field:new String[]{"code","otp","verification_code","sms_code"}) {
+                    String value=obj.optString(field,"");
+                    if(value.matches("[0-9]{4,10}"))return value;
+                }
+            }
+        } catch(Exception ignored) {}
+        return "";
+    }
+
     private void showBrowserMenu() {
         final List<String> actions = new ArrayList<>();
         actions.add("新建标签页");
