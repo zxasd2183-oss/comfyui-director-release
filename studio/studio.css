@@ -1644,3 +1644,14 @@ body[data-page="characters"] .character-media-drawer[open]{max-height:42%}
 .video-upload-progress{flex-basis:100%;font-size:11px;color:#397ba8;margin:0}
 @media(max-width:740px){.workflow-video-takes{padding:10px}
 .video-take-player{max-height:230px}}
+
+/* Episode audio tracks: identical visual hierarchy to audited video takes. */
+.studio-audio-player{display:block;width:100%;min-height:44px;max-width:100%}
+.audio-rights-verified{display:flex;align-items:flex-start;gap:8px;
+  padding:7px 0;color:#315e7b;font-size:12px;line-height:1.5}
+.audio-rights-verified input{margin-top:3px;accent-color:#3089b8}
+#uploadAudioStems_video_plans .video-review-reason,
+#wfAudioStems_video_plans .video-review-reason{width:100%;min-width:0}
+#wfAudioStems_video_plans .video-upload-form select{border:1px solid #c5deee;
+  padding:9px;border-radius:8px;background:#fff;color:#315e7b}
+#wfAudioStems_video_plans .video-upload-form textarea{flex-basis:100%;max-width:100%}
