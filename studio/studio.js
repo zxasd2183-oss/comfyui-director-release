@@ -679,7 +679,10 @@
     $("wfMessage_"+kind).textContent="正在读取真实项目数据…";
     try{
       await workflowFetch(kind,state);
-      if(kind==="video_plans")await workflowLoadReadiness(state);
+      if(kind==="video_plans"){
+        await workflowLoadReadiness(state);
+        await loadPictureCuts(state);
+      }
     }catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
   }
 
@@ -1593,6 +1596,123 @@
       btn.disabled=!state.project||!state.episode;
     }
   });
+
+  // Picture edit requires every real shot approved and version-current.
+  // This is a separate review gate, never final sound-master authorization.
+  let pictureCutReadSerial=0;
+  async function loadPictureCuts(state){
+    const serial=++pictureCutReadSerial;
+    const root=$("wfPictureCuts_video_plans");
+    if(!root)return;
+    const pid=state.project,eid=state.episode;
+    root.replaceChildren();
+    if(!pid||!eid){
+      root.appendChild(el("p","","选择剧集后检查整集画面初剪。"));
+      return;
+    }
+    const current=()=>serial===pictureCutReadSerial&&
+      state.project===pid&&state.episode===eid;
+    const qs=new URLSearchParams({project:pid,episode:eid});
+    try{
+      const [readyResponse,listResponse]=await Promise.all([
+        fetch("./api/v1/picture-cuts/readiness?"+qs,{cache:"no-store"}),
+        fetch("./api/v1/picture-cuts?"+qs,{cache:"no-store"})
+      ]);
+      const ready=await readyResponse.json();
+      const data=await listResponse.json();
+      if(!readyResponse.ok||!listResponse.ok)
+        throw Error(ready.reason||data.reason||"初剪记录暂不可读");
+      if(!current())return;
+      const summary=el("div","workflow-readiness-head");
+      summary.appendChild(el("strong","",
+        "整集画面初剪 · "+ready.approved_count+"/"+ready.shot_count+
+        " 个有效视频已批准 · "+(ready.total_duration_ms/1000)+" 秒"));
+      summary.appendChild(el("small","",
+        ready.ready?"允许本地 CPU 画面拼接，仍须独立审片":
+          "仍有 "+ready.blocked.length+" 镜头未满足合成条件"));
+      root.appendChild(summary);
+      if(ready.blocked?.length){
+        const reasons=ready.blocked.slice(0,8).map(b=>
+          "SH"+b.shot_id+"："+b.reasons.join(", ")).join("；");
+        root.appendChild(el("p","video-take-stale",
+          "缺失或过期镜头："+reasons+
+          (ready.blocked.length>8?"；其余请查看整集状态":"")));
+      }else{
+        root.appendChild(el("small","",
+          "当前批准镜头清单 SHA-256："+ready.source_manifest_sha256));
+      }
+      if(!data.picture_cuts?.length){
+        root.appendChild(el("p","",
+          "尚无实际初剪。批准全部镜头后，使用 VPS 本地受控 CPU 合成命令生成待审初剪；不会自动调用 GPU。"));
+      }
+      for(const cut of data.picture_cuts||[]){
+        const card=el("div","video-take-card");
+        const name=el("div","workflow-readiness-head");
+        name.appendChild(el("strong","",
+          "画面初剪 · "+cut.cut_id.slice(-8)+" · "+
+          (!cut.source_current?"来源已过期":
+            cut.status==="approved"?"画面审核已批准":
+            cut.status==="rejected"?"已驳回":"待人工查看")));
+        name.appendChild(el("small","",
+          cut.duration_seconds.toFixed(2)+" 秒 · 未进行最终音频混制"));
+        card.appendChild(name);
+        const player=el("video","video-take-player");
+        player.controls=true;player.preload="metadata";
+        player.src="./api/v1/picture-cuts/file?"+new URLSearchParams({
+          project:pid,episode:eid,cut:cut.cut_id});
+        card.appendChild(player);
+        card.appendChild(el("small","",
+          "初剪 SHA-256："+cut.file_sha256+
+          " · 镜头来源："+cut.source_manifest_sha256));
+        if(cut.status==="in_review"&&cut.source_current){
+          const reason=el("textarea","video-review-reason");
+          reason.maxLength=600;reason.rows=2;
+          reason.placeholder="填写镜头顺序与画面连续性审核意见（至少 8 字）";
+          reason.setAttribute("aria-label","整集画面初剪审核理由");
+          card.appendChild(reason);
+          const actions=el("div","workflow-review-actions");
+          for(const [decision,title] of [
+            ["approve","批准画面初剪"],["reject","驳回并重新剪辑"]]){
+            const button=el("button","prod-new"+(
+              decision==="approve"?" workflow-approve-button":""),title);
+            button.type="button";
+            button.addEventListener("click",async()=>{
+              if(reason.value.trim().length<8){
+                $("wfMessage_video_plans").textContent="初剪审核理由至少 8 字";return;
+              }
+              if(decision==="approve"&&!window.confirm(
+                "确认已完整观看所有镜头拼接效果？此批准仅针对画面初剪，不代表完成配音/混音。"))return;
+              button.disabled=true;
+              try{
+                const resp=await fetch("./api/v1/picture-cuts/review",{
+                  method:"POST",headers:{"Content-Type":"application/json"},
+                  body:JSON.stringify({csrf,project_id:pid,episode_id:eid,
+                    cut_id:cut.cut_id,decision,rationale:reason.value.trim()}),
+                  cache:"no-store"});
+                const out=await resp.json();
+                if(!resp.ok)throw Error(out.reason||"初剪审核失败");
+                if(current())await loadPictureCuts(state);
+              }catch(error){
+                $("wfMessage_video_plans").textContent=error.message;
+                button.disabled=false;
+              }
+            });
+            actions.appendChild(button);
+          }
+          card.appendChild(actions);
+        }else if(!cut.source_current){
+          card.appendChild(el("p","video-take-stale",
+            "已有镜头/素材产生新修订，此初剪只能作为历史版本查看。"));
+        }else card.appendChild(el("p","",cut.review_reason||"已留存独立审核记录"));
+        root.appendChild(card);
+      }
+      root.appendChild(el("p","",
+        "画面初剪与正式成片不同：配音、背景音乐、音效、字幕、版权及最终质量仍须单独制作和批准。"));
+    }catch(error){
+      if(current())root.replaceChildren(el("p","",
+        "初剪状态读取失败："+error.message));
+    }
+  }
 
   // A real GPU collector can export one directory containing a manifest
   // and uniquely named MP4 files. A Microsoft owner selects it ONCE.
