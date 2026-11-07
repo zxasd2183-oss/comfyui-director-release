@@ -25,7 +25,6 @@ permissions:
   actions: write
 jobs:
   macos-arm64:
-    if: vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX != ''
     runs-on: macos-26
     env:
       GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
