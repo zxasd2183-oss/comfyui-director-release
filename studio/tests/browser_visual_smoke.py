@@ -313,10 +313,11 @@ def main():
             PICTURE_MOCK["existing"]=False
             page.locator('a[data-page="tasks"]').click()
             page.locator('a[data-page="video_plans"]').click()
-            expect(page.locator("#wfPictureCuts_video_plans button")).to_contain_text(
-                "一键生成整集画面初剪")
+            cut_start=page.get_by_role("button",
+                name="一键生成整集画面初剪（本地 CPU）")
+            expect(cut_start).to_be_visible()
             page.once("dialog",lambda dialog:dialog.accept())
-            page.locator("#wfPictureCuts_video_plans button").click()
+            cut_start.click()
             expect(page.locator("#wfPictureCuts_video_plans")).to_contain_text(
                 "已排队")
             assert PICTURE_MOCK["queued"]
