@@ -353,8 +353,7 @@ def main():
             page.locator('#wfAudioStems_video_plans .video-upload-form textarea').fill(
                 "TEST-EFFECTS-LICENSE-001 operator checked rights file")
             page.get_by_role("button",name="上传整集 WAV 轨道").click()
-            expect(page.locator("#wfAudioStems_video_plans")).to_contain_text(
-                "音效 / 环境声")
+            expect(page.locator("#wfAudioStems_video_plans .studio-audio-player")).to_have_count(2)
             assert AUDIO_EVENTS.count("start")==1
             assert AUDIO_EVENTS.count("chunk")==1
             assert AUDIO_EVENTS.count("finish")==1
