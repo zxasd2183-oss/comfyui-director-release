@@ -48,7 +48,7 @@ Windows PowerShell 可本地生成 Base64 以粘贴进 GitHub Secret：
 
 以上输出包含完整私钥，**仅粘贴到 GitHub Repository Secret**；不要保存到仓库或聊天记录。
 
-首次签名发布：在 GitHub Actions 中运行 `Glacier Android Mobile v0.2.1 M05 stable signing and verified updates` 的 **Run workflow**，选择分支 `feature/glacier-android-m05-updates`，将 `publish_signed` 设为 `true`。
+首次签名发布：当上述 Glacier 专属 Secrets 和变量全部配置好后，推送 `feature/glacier-android-m05-updates` 分支会在 APK 编译和 Android 15 回归全部通过后**自动发布首个固定签名正式 Release**。如果签名材料缺失，会仅保留 Debug 构建，正式发布任务安全跳过。也可在 GitHub Actions 中使用 **Run workflow**，选择该分支并设置 `publish_signed=true` 手动触发；重复运行不会覆盖已经发布的正式 APK。
 
 发布门禁将强制检查：全部 Android 15 回归、keystore 密码与 alias、实际 APK 签名、公钥 SHA-256 固定指纹、APK 文件大小、唯一版本标签。正式发布标签 `glacier-android-browser-v0.2.1` 一旦存在不可覆盖，后续版本必须递增 versionCode、versionName。
 
