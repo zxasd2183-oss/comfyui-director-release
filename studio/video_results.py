@@ -412,8 +412,21 @@ def list_takes(db_path,project_id,episode_id,shot_id):
             "project_id=? AND episode_id=? AND shot_id=? "
             "ORDER BY created_at DESC,take_id DESC LIMIT 80",
             (pid,eid,sid)).fetchall()
+        try:
+            current=get_video_handoff_package(db_path,pid,eid,sid)
+            current_sha=current["package_sha256"]
+            current_revision=current["package"]["video_plan"]["revision"]
+        except WorkflowError:
+            current_sha=None
+            current_revision=None
+        takes=[]
+        for row in rows:
+            result=_public(row)
+            result["source_current"]=(row["package_sha256"]==current_sha
+                and row["plan_revision"]==current_revision)
+            takes.append(result)
         return {"ok":True,"project_id":pid,"episode_id":eid,
-                "shot_id":sid,"takes":[_public(x) for x in rows],
+                "shot_id":sid,"takes":takes,
                 "gpu_action":False}
 
 
