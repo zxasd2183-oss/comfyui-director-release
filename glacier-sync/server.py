@@ -325,6 +325,7 @@ def revoke(device_id: str, authorization: str | None = Header(default=None)):
 def read_vault(authorization: str | None = Header(default=None)):
     with db() as conn:
         session = authorize(conn, authorization)
+        require_owner(conn, session)
         row = conn.execute("SELECT version,envelope FROM vaults WHERE user_id=?",
                            (session["user_id"],)).fetchone()
         return {"version": row["version"], "envelope": row["envelope"]} if row else {
@@ -343,6 +344,7 @@ def write_vault(data: Vault, authorization: str | None = Header(default=None)):
         raise HTTPException(status_code=422, detail="Expected encrypted vault envelope")
     with db() as conn:
         session = authorize(conn, authorization)
+        require_owner(conn, session)
         row = conn.execute("SELECT version FROM vaults WHERE user_id=?",
                            (session["user_id"],)).fetchone()
         current = row["version"] if row else 0
