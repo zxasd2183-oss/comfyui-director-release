@@ -607,6 +607,22 @@
                  aria-label="本集逐镜头真实制作就绪情况" aria-live="polite">
           <p>登录后按镜头检查项目规格、分镜、白模及真实执行依赖。</p>
         </section>
+        <section id="wfBatchReturn_video_plans" class="workflow-video-takes"
+                 aria-label="从 GPU 导入完整镜头结果目录">
+          <div class="workflow-readiness-head">
+            <strong>整集视频批量回传 · 单次选择目录</strong>
+            <small>仅 Microsoft owner；仍须逐镜头人工审片</small>
+          </div>
+          <form id="wfBatchReturnForm_video_plans" class="video-upload-form">
+            <label for="wfBatchReturnFiles_video_plans">选择包含 manifest.json 与全部 MP4 的导出目录</label>
+            <input id="wfBatchReturnFiles_video_plans" type="file" webkitdirectory directory multiple
+                   aria-label="选择 GPU 导出的 Studio 视频结果目录" required>
+            <button class="prod-new" id="wfBatchReturnSubmit_video_plans" type="submit">核对并批量回传</button>
+            <p id="wfBatchReturnMessage_video_plans" class="video-upload-progress" role="status">
+              先在 GPU 本地执行 export-studio-delivery，再在此选择完整目录；不会自动启动 GPU。
+            </p>
+          </form>
+        </section>
         <section id="wfVideoTakes_video_plans" class="workflow-video-takes"
                  aria-label="真实视频产物回传与独立人工审片" aria-live="polite">
           <p>选择镜头并提交制作单后，可上传真实 MP4，核对来源版本并人工审片；不会自动批准。</p>
