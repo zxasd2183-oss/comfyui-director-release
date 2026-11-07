@@ -80,6 +80,9 @@ public final class MainActivity extends Activity {
     private final Runnable saveLibraryTask = this::persistLibrary;
     private BrowserLibraryStore.Snapshot libraryState = new BrowserLibraryStore.Snapshot();
     private boolean restoringTabs;
+    private final List<BrowserAccountsStore.Card> accountCards = new ArrayList<>();
+    private final ExecutorService accountCodeQueue = Executors.newSingleThreadExecutor();
+    private boolean accountsReadonly;
     private GeckoView web;
     private BrowserTransfers transfers;
     private BrowserUpdater updater;
@@ -121,6 +124,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         restoreLibrary();
+        restoreAccountVault();
         updater = new BrowserUpdater(this);
         transfers = new BrowserTransfers(this, (profile, filename, mime, bytes, document) -> {
             if (!BrowserLibraryStore.validProfile(profile)
@@ -954,6 +958,7 @@ public final class MainActivity extends Activity {
         actions.add("下载记录");
         actions.add("更新与版本");
         actions.add("切换账号空间");
+        actions.add("网站账号保险箱");
         actions.add("网络连接信息");
         actions.add("打开 ChatGPT");
         actions.add("打开 GitHub");
@@ -989,6 +994,8 @@ public final class MainActivity extends Activity {
                         showUpdatePanel();
                     } else if ("切换账号空间".equals(item)) {
                         chooseProfile();
+                    } else if ("网站账号保险箱".equals(item)) {
+                        showAccountVault();
                     } else if ("网络连接信息".equals(item)) {
                         showNetworkStatus();
                     } else if ("打开 ChatGPT".equals(item)) {
@@ -1793,6 +1800,7 @@ public final class MainActivity extends Activity {
                 // Never log browsing metadata.
             }
         }
+        if (isFinishing()) accountCodeQueue.shutdownNow();
         if (transfers != null && isFinishing()) transfers.dispose();
         if (updater != null && isFinishing()) updater.dispose();
         if (isFinishing()) {
