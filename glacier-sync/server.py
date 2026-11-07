@@ -77,6 +77,20 @@ def initialize():
           device_id TEXT NOT NULL REFERENCES devices(id),
           expires INTEGER NOT NULL, pending INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS owner_devices (
+          device_id TEXT PRIMARY KEY REFERENCES devices(id)
+        );
+        CREATE TABLE IF NOT EXISTS device_grants (
+          device_id TEXT NOT NULL REFERENCES devices(id),
+          space TEXT NOT NULL,
+          PRIMARY KEY(device_id, space)
+        );
+        CREATE TABLE IF NOT EXISTS space_vaults (
+          user_id TEXT NOT NULL REFERENCES users(id),
+          space TEXT NOT NULL, version INTEGER NOT NULL,
+          envelope TEXT NOT NULL, updated INTEGER NOT NULL,
+          PRIMARY KEY(user_id,space)
+        );
         CREATE TABLE IF NOT EXISTS vaults (
           user_id TEXT PRIMARY KEY REFERENCES users(id),
           version INTEGER NOT NULL, envelope TEXT NOT NULL,
@@ -97,6 +111,34 @@ class Login(BaseModel):
     password: str
     device_name: str = Field(min_length=1, max_length=80)
     device_id: str | None = None
+
+
+class Grants(BaseModel):
+    spaces: list[str] = Field(min_length=1, max_length=2)
+
+
+def validate_spaces(spaces):
+    if len(set(spaces)) != len(spaces) or not all(
+            space in ("private", "work") for space in spaces):
+        raise HTTPException(status_code=422, detail="Invalid account spaces")
+    return spaces
+
+
+def require_owner(conn, session):
+    owner = conn.execute("SELECT 1 FROM owner_devices WHERE device_id=?",
+                         (session["device_id"],)).fetchone()
+    if not owner:
+        raise HTTPException(status_code=403, detail="Owner device required")
+
+
+def require_space(conn, session, space):
+    if space not in ("private", "work"):
+        raise HTTPException(status_code=404, detail="Unknown account space")
+    grant = conn.execute("""
+      SELECT 1 FROM device_grants WHERE device_id=? AND space=?
+    """, (session["device_id"], space)).fetchone()
+    if not grant:
+        raise HTTPException(status_code=403, detail="Account space not shared with device")
 
 
 class Vault(BaseModel):
@@ -161,6 +203,9 @@ def register(data: Register):
             raise HTTPException(status_code=409, detail="Account already exists")
         conn.execute("INSERT INTO devices VALUES(?,?,?,?,?,?)",
                      (device_id, user_id, data.device_name, 1, now, now))
+        conn.execute("INSERT INTO owner_devices VALUES(?)", (device_id,))
+        conn.executemany("INSERT INTO device_grants VALUES(?,?)",
+                         [(device_id, "private"), (device_id, "work")])
         return issue_session(conn, user_id, device_id, pending=False)
 
 
@@ -228,14 +273,24 @@ def devices(authorization: str | None = Header(default=None)):
           SELECT id, name, approved, created, approved_at FROM devices
            WHERE user_id=? ORDER BY created DESC
         """, (session["user_id"],)).fetchall()
-        return {"devices": [dict(x) for x in entries],
-                "current_device_id": session["device_id"]}
+        result = []
+        for item in entries:
+            entry = dict(item)
+            entry["owner"] = bool(conn.execute(
+                "SELECT 1 FROM owner_devices WHERE device_id=?",
+                (entry["id"],)).fetchone())
+            entry["spaces"] = [row["space"] for row in conn.execute(
+                "SELECT space FROM device_grants WHERE device_id=? ORDER BY space",
+                (entry["id"],)).fetchall()]
+            result.append(entry)
+        return {"devices": result, "current_device_id": session["device_id"]}
 
 
 @app.post("/v1/devices/{device_id}/approve")
 def approve(device_id: str, authorization: str | None = Header(default=None)):
     with db() as conn:
         session = authorize(conn, authorization)
+        require_owner(conn, session)
         if device_id == session["device_id"]:
             raise HTTPException(status_code=400, detail="Cannot self-approve")
         cursor = conn.execute("""
@@ -244,17 +299,21 @@ def approve(device_id: str, authorization: str | None = Header(default=None)):
         """, (int(time.time()), device_id, session["user_id"]))
         if cursor.rowcount != 1:
             raise HTTPException(status_code=404, detail="No pending device")
-        return {"approved": True}
+        # Least privilege: newly approved devices start with private space.
+        conn.execute("INSERT INTO device_grants VALUES(?,?)", (device_id, "private"))
+        return {"approved": True, "spaces": ["private"]}
 
 
 @app.delete("/v1/devices/{device_id}")
 def revoke(device_id: str, authorization: str | None = Header(default=None)):
     with db() as conn:
         session = authorize(conn, authorization)
+        require_owner(conn, session)
         if device_id == session["device_id"]:
             raise HTTPException(status_code=400, detail="Use logout for current device")
         cursor = conn.execute("DELETE FROM sessions WHERE device_id=? AND user_id=?",
                               (device_id, session["user_id"]))
+        conn.execute("DELETE FROM device_grants WHERE device_id=?", (device_id,))
         found = conn.execute("DELETE FROM devices WHERE id=? AND user_id=?",
                              (device_id, session["user_id"]))
         if found.rowcount != 1:
@@ -295,4 +354,75 @@ def write_vault(data: Vault, authorization: str | None = Header(default=None)):
           ON CONFLICT(user_id) DO UPDATE SET version=excluded.version,
             envelope=excluded.envelope,updated=excluded.updated
         """, (session["user_id"], version, data.envelope, int(time.time())))
+        return {"version": version}
+
+@app.put("/v1/devices/{device_id}/grants")
+def set_device_grants(device_id: str, data: Grants,
+                      authorization: str | None = Header(default=None)):
+    spaces = validate_spaces(data.spaces)
+    with db() as conn:
+        session = authorize(conn, authorization)
+        require_owner(conn, session)
+        if conn.execute("SELECT 1 FROM owner_devices WHERE device_id=?",
+                        (device_id,)).fetchone():
+            raise HTTPException(status_code=400, detail="Owner grants cannot be changed")
+        device = conn.execute("SELECT approved FROM devices WHERE id=? AND user_id=?",
+                              (device_id, session["user_id"])).fetchone()
+        if not device or not device["approved"]:
+            raise HTTPException(status_code=404, detail="Approved device not found")
+        conn.execute("DELETE FROM device_grants WHERE device_id=?", (device_id,))
+        conn.executemany("INSERT INTO device_grants VALUES(?,?)",
+                         [(device_id, space) for space in spaces])
+        return {"spaces": spaces}
+
+
+@app.get("/v1/spaces")
+def my_spaces(authorization: str | None = Header(default=None)):
+    with db() as conn:
+        session = authorize(conn, authorization)
+        spaces = [row["space"] for row in conn.execute(
+            "SELECT space FROM device_grants WHERE device_id=? ORDER BY space",
+            (session["device_id"],)).fetchall()]
+        return {"spaces": spaces}
+
+
+@app.get("/v1/vault/{space}")
+def read_space(space: str, authorization: str | None = Header(default=None)):
+    with db() as conn:
+        session = authorize(conn, authorization)
+        require_space(conn, session, space)
+        row = conn.execute(
+            "SELECT version,envelope FROM space_vaults WHERE user_id=? AND space=?",
+            (session["user_id"], space)).fetchone()
+        return {"version": row["version"], "envelope": row["envelope"]} if row else {
+            "version": 0, "envelope": None}
+
+
+@app.put("/v1/vault/{space}")
+def write_space(space: str, data: Vault,
+                authorization: str | None = Header(default=None)):
+    try:
+        wrapper = json.loads(data.envelope)
+        if (not isinstance(wrapper, dict) or
+                wrapper.get("format") != "glacier-vault-v1"
+                or not all(isinstance(wrapper.get(k), str)
+                           for k in ("salt", "nonce", "ciphertext"))):
+            raise ValueError("Bad encrypted envelope")
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="Expected encrypted vault envelope")
+    with db() as conn:
+        session = authorize(conn, authorization)
+        require_space(conn, session, space)
+        row = conn.execute("SELECT version FROM space_vaults WHERE user_id=? AND space=?",
+                           (session["user_id"], space)).fetchone()
+        current = row["version"] if row else 0
+        if current != data.expected_version:
+            raise HTTPException(status_code=409, detail="Remote account space changed")
+        version = current + 1
+        conn.execute("""
+          INSERT INTO space_vaults(user_id,space,version,envelope,updated)
+          VALUES(?,?,?,?,?)
+          ON CONFLICT(user_id,space) DO UPDATE SET version=excluded.version,
+            envelope=excluded.envelope,updated=excluded.updated
+        """, (session["user_id"], space, version, data.envelope, int(time.time())))
         return {"version": version}
