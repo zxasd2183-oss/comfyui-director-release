@@ -175,6 +175,14 @@ class GlacierAccounts22:
             return
         view.urlChanged.connect(lambda url, v=view: self._on_account_url22(v, url))
 
+    def unregister_account_tab22(self, view):
+        """Drop ephemeral popup state when a tab is closed or workspace swaps."""
+        if view is None:
+            return
+        key = id(view)
+        self._account_last_site22.pop(key, None)
+        self._account_presented22.pop(key, None)
+
     def _on_account_url22(self, view, url):
         site = page_site22(url)
         key = id(view)
