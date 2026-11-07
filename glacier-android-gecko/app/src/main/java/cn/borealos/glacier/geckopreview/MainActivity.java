@@ -1184,6 +1184,266 @@ public final class MainActivity extends Activity {
         return "";
     }
 
+    private interface CloudTask {
+        String run() throws Exception;
+    }
+
+    private void cloudRun(CloudTask task) {
+        if(!proxyMode) {
+            new AlertDialog.Builder(this).setTitle("Glacier 云端账号")
+                    .setMessage("当前不是 VLESS/SOCKS5 网络模式，已禁止同步直连。")
+                    .setPositiveButton("知道了",null).show();
+            return;
+        }
+        cloudQueue.execute(() -> {
+            String message;
+            try {
+                message=task.run();
+            } catch(Exception ignored) {
+                // Never expose account IDs, access tokens, vault passphrases,
+                // provider responses, or raw URL parameters to the UI/logs.
+                message="同步操作未完成，请检查代理、设备授权与加密口令。";
+            }
+            final String output=message;
+            runOnUiThread(() -> {
+                if(isFinishing())return;
+                new AlertDialog.Builder(this).setTitle("Glacier 统一账号")
+                        .setMessage(output).setPositiveButton("知道了",null).show();
+            });
+        });
+    }
+
+    private EditText cloudField(LinearLayout form,String label,String initial,boolean password) {
+        TextView caption=new TextView(this);
+        caption.setText(label);caption.setTextColor(MUTED);
+        form.addView(caption);
+        EditText input=new EditText(this);
+        input.setSingleLine(true);
+        input.setText(initial);
+        if(password)input.setInputType(InputType.TYPE_CLASS_TEXT
+                |InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        form.addView(input,new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,dp(52)));
+        return input;
+    }
+
+    private void showCloudMenu() {
+        if(cloudSessionReadonly) {
+            new AlertDialog.Builder(this).setTitle("加密登录会话受保护")
+                    .setMessage("旧的云端会话文件无法解密，原文件不会被覆盖。")
+                    .setPositiveButton("知道了",null).show();
+            return;
+        }
+        String[] actions={"注册 Glacier 账号","登录 / 申请设备授权","确认设备已获批准",
+                "管理其他设备","加密上传当前账号空间","解密下载当前账号空间","退出 Glacier 账号"};
+        new AlertDialog.Builder(this).setTitle("Glacier 统一账号 · "
+                +(cloudState.username.isEmpty()?"未登录":cloudState.username))
+                .setItems(actions,(dialog,which)->{
+                    if(which==0||which==1)cloudPromptLogin(which==0);
+                    else if(which==2)cloudActivate();
+                    else if(which==3)cloudDevices();
+                    else if(which==4||which==5)cloudPromptVault(which==4);
+                    else cloudLogout();
+                }).setNegativeButton("关闭",null).show();
+    }
+
+    private void cloudPromptLogin(boolean register) {
+        LinearLayout form=new LinearLayout(this);
+        form.setPadding(dp(22),dp(14),dp(22),0);
+        form.setOrientation(LinearLayout.VERTICAL);
+        EditText base=cloudField(form,"Glacier Sync HTTPS 服务器地址",
+                cloudState.base,false);
+        EditText user=cloudField(form,"Glacier 账号 ID",
+                cloudState.username,false);
+        EditText pass=cloudField(form,"登录密码（至少 12 位）","",true);
+        EditText invite=register?cloudField(form,"管理员注册邀请码","",true):null;
+        ScrollView scroller=new ScrollView(this);scroller.addView(form);
+        new AlertDialog.Builder(this)
+                .setTitle(register?"创建 Glacier 账号":"登录 Glacier 账号")
+                .setView(scroller)
+                .setNegativeButton("取消",null)
+                .setPositiveButton(register?"创建":"登录",(dialog,button)->{
+                    final String server=GlacierCloudSync.validateBase(base.getText().toString());
+                    final String username=user.getText().toString().trim();
+                    final String password=pass.getText().toString();
+                    final String invitation=register?invite.getText().toString():"";
+                    if(server.isEmpty()||password.length()<12||username.length()<3) {
+                        new AlertDialog.Builder(this).setMessage("HTTPS 地址、账号或密码不合法。")
+                                .setPositiveButton("知道了",null).show();
+                        return;
+                    }
+                    cloudRun(() -> {
+                        GlacierCloudSync.State pending=new GlacierCloudSync.State();
+                        pending.base=server;
+                        JSONObject payload=new JSONObject();
+                        payload.put("username",username);
+                        payload.put("password",password);
+                        payload.put("device_name",android.os.Build.MANUFACTURER+" "
+                                +android.os.Build.MODEL);
+                        if(register)payload.put("invite",invitation);
+                        else if(!cloudState.deviceId.isEmpty())
+                            payload.put("device_id",cloudState.deviceId);
+                        JSONObject response=GlacierCloudSync.call(pending,"POST",
+                                register?"/v1/register":"/v1/login",payload);
+                        GlacierCloudSync.State next=new GlacierCloudSync.State();
+                        next.base=server;next.username=username;
+                        next.token=response.getString("token");
+                        next.deviceId=response.getString("device_id");
+                        next.approved=response.getBoolean("approved");
+                        GlacierCloudSync.save(this,next);
+                        cloudState=next;
+                        return next.approved?"账号已登录，当前设备已授权。":
+                                "登录成功，已提交新设备申请。请在已授权主设备中批准设备 ID："
+                                        +next.deviceId;
+                    });
+                }).show();
+    }
+
+    private void cloudActivate() {
+        cloudRun(() -> {
+            JSONObject status=GlacierCloudSync.call(cloudState,"GET","/v1/session",null);
+            if(!status.getBoolean("approved"))return "此设备仍在等待主设备批准。";
+            if(status.optBoolean("pending",false)) {
+                JSONObject approved=GlacierCloudSync.call(cloudState,"POST",
+                        "/v1/session/activate",new JSONObject());
+                cloudState.token=approved.getString("token");
+                cloudState.approved=true;
+                GlacierCloudSync.save(this,cloudState);
+            }
+            return "设备已授权；可以同步被允许的账号空间。";
+        });
+    }
+
+    private void cloudDevices() {
+        cloudRun(() -> {
+            JSONObject response=GlacierCloudSync.call(cloudState,"GET","/v1/devices",null);
+            JSONArray devices=response.getJSONArray("devices");
+            String[] labels=new String[devices.length()];
+            for(int i=0;i<devices.length();i++) {
+                JSONObject d=devices.getJSONObject(i);
+                labels[i]=d.optString("name","设备")+" · "+d.optString("id","").substring(0,10)
+                        +(d.optBoolean("approved")?" · 已批准":" · 待批准");
+            }
+            runOnUiThread(() -> {
+                if(isFinishing())return;
+                new AlertDialog.Builder(this).setTitle("Glacier 已关联设备")
+                        .setItems(labels,(dialog,index)->{
+                            try {cloudDeviceAction(devices.optJSONObject(index));}
+                            catch(Exception ignored) {}
+                        }).setNegativeButton("关闭",null).show();
+            });
+            return "请选择需要管理的设备。";
+        });
+    }
+
+    private void cloudDeviceAction(JSONObject device) throws Exception {
+        if(device==null)return;
+        String id=device.getString("id");
+        String[] actions={"批准新设备","允许私人空间","允许私人和工作空间","撤销设备"};
+        new AlertDialog.Builder(this).setTitle(device.optString("name","设备"))
+                .setItems(actions,(dialog,which)->{
+                    if(which==3) {
+                        new AlertDialog.Builder(this).setMessage("撤销后此设备无法再次同步，确定？")
+                                .setNegativeButton("取消",null)
+                                .setPositiveButton("撤销",(d,b)->cloudUpdateDevice(id,3))
+                                .show();
+                    } else cloudUpdateDevice(id,which);
+                }).show();
+    }
+
+    private void cloudUpdateDevice(String id,int action) {
+        cloudRun(() -> {
+            String route="/v1/devices/"+id;
+            if(action==0)GlacierCloudSync.call(cloudState,"POST",
+                    route+"/approve",new JSONObject());
+            else if(action==3)GlacierCloudSync.call(cloudState,"DELETE",route,null);
+            else {
+                JSONObject payload=new JSONObject();
+                JSONArray spaces=new JSONArray();
+                spaces.put("private");
+                if(action==2)spaces.put("work");
+                payload.put("spaces",spaces);
+                GlacierCloudSync.call(cloudState,"PUT",route+"/grants",payload);
+            }
+            return "设备授权已更新。";
+        });
+    }
+
+    private void cloudPromptVault(boolean push) {
+        final String space=active==null?selectedProfile:active.profile;
+        EditText secret=new EditText(this);
+        secret.setSingleLine(true);
+        secret.setHint("云端保险箱加密口令（至少 12 位）");
+        secret.setInputType(InputType.TYPE_CLASS_TEXT
+                |InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout layout=new LinearLayout(this);
+        layout.setPadding(dp(22),dp(14),dp(22),0);
+        layout.addView(secret);
+        new AlertDialog.Builder(this)
+                .setTitle(push?"加密上传当前空间":"解密下载当前空间")
+                .setMessage("只处理"+(WORK.equals(space)?"工作":"私人")
+                        +"空间。云端仅接收密文，不保存加密口令。"
+                        +(push?"已有远端数据将更新为本地版本。":"本地对应空间的账号将被替换。"))
+                .setView(layout)
+                .setNegativeButton("取消",null)
+                .setPositiveButton(push?"加密上传":"下载并替换",(d,w)->{
+                    final String password=secret.getText().toString();
+                    if(password.length()<12) {
+                        new AlertDialog.Builder(this).setMessage("加密口令至少 12 位，未执行。")
+                                .setPositiveButton("知道了",null).show();
+                        return;
+                    }
+                    if(push)cloudPush(space,password);
+                    else cloudPull(space,password);
+                }).show();
+    }
+
+    private void cloudPush(String space,String password) {
+        cloudRun(() -> {
+            JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
+                    "/v1/vault/"+space,null);
+            int version=remote.getInt("version");
+            List<BrowserAccountsStore.Card> snapshot=new ArrayList<>();
+            for(BrowserAccountsStore.Card c:accountCards)
+                if(space.equals(c.profile))snapshot.add(c);
+            String envelope=GlacierCloudSync.encrypt(space,snapshot,password);
+            JSONObject body=new JSONObject();
+            body.put("expected_version",version);
+            body.put("envelope",envelope);
+            GlacierCloudSync.call(cloudState,"PUT","/v1/vault/"+space,body);
+            return "当前账号空间已端到端加密同步。";
+        });
+    }
+
+    private void cloudPull(String space,String password) {
+        cloudRun(() -> {
+            JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
+                    "/v1/vault/"+space,null);
+            if(remote.isNull("envelope"))return "该账号空间尚未上传云端资料。";
+            List<BrowserAccountsStore.Card> received=GlacierCloudSync.decrypt(
+                    space,remote.getString("envelope"),password);
+            if(accountsReadonly)return "本机账号保险箱只读，未覆盖原始资料。";
+            List<BrowserAccountsStore.Card> merged=new ArrayList<>();
+            for(BrowserAccountsStore.Card old:accountCards)
+                if(!space.equals(old.profile))merged.add(old);
+            merged.addAll(received);
+            final boolean saved=persistAccountVault(merged);
+            return saved?"当前账号空间已解密导入本机。":"本地加密保存失败；原有资料未变。";
+        });
+    }
+
+    private void cloudLogout() {
+        cloudRun(() -> {
+            try {GlacierCloudSync.call(cloudState,"POST",
+                    "/v1/logout",new JSONObject());}
+            catch(Exception ignored) {}
+            cloudState.token="";
+            cloudState.approved=false;
+            GlacierCloudSync.save(this,cloudState);
+            return "已退出同步账号。本机已保存账号不受影响。";
+        });
+    }
+
     private void showBrowserMenu() {
         final List<String> actions = new ArrayList<>();
         actions.add("新建标签页");
