@@ -116,6 +116,7 @@ from release_candidates import (
     readiness as get_release_readiness,
     list_candidates as list_release_candidates,
     get_file as get_release_file,
+    get_private_delivery_receipt,
     review as review_release_candidate
 )
 from release_jobs import (
@@ -507,17 +508,23 @@ class StudioHandler(BaseHTTPRequestHandler):
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
         if path in ("/api/v1/release","/api/v1/release/readiness",
-                    "/api/v1/release/file","/api/v1/release/jobs"):
+                    "/api/v1/release/file","/api/v1/release/jobs",
+                    "/api/v1/release/receipt"):
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
             try:
                 fields={"project","episode"}
-                if path.endswith("/file"):fields.add("release")
+                if path.endswith("/file") or path.endswith("/receipt"):
+                    fields.add("release")
                 pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
                 if len(pairs)!=len(fields) or len({k for k,v in pairs})!=len(pairs) or (
                     set(dict(pairs))!=fields):
                     raise ReleaseError("invalid_release_query")
                 args=dict(pairs)
+                if path.endswith("/receipt"):
+                    return self.reply(200,get_private_delivery_receipt(
+                        self.server.production_db_path,args["project"],
+                        args["episode"],args["release"]))
                 if path.endswith("/readiness"):
                     return self.reply(200,get_release_readiness(
                         self.server.production_db_path,args["project"],args["episode"]))
