@@ -229,7 +229,7 @@ def main():
     record("m02_mobile_ui","Chrome-style single omnibox row, home, tabs and overflow visible")
     tap(desc="更多选项")
     tap_menu_item("更新与版本")
-    await_ui(text="Glacier · 更新与版本 0.2.1",timeout=35)
+    await_ui(text="Glacier · 更新与版本 0.2.2",timeout=35)
     tap(text="检查更新")
     await_ui(text="未能检查更新",timeout=25)
     tap(text="知道了")
@@ -445,7 +445,7 @@ if __name__=="__main__":
                     out.write("\n### Glacier Android M05 UI smoke — FAILED\n\n")
                     out.write("**Failure:** `"+reason.replace("`","'")+"`\n\n")
                     out.write("**Completed checks:** "+(", ".join(completed) if completed else "none")+"\n")
-                    out.write("\nEvidence artifact: `GlacierAndroid-v0.2.1-M05-emulator-evidence`\n")
+                    out.write("\nEvidence artifact: `GlacierAndroid-v0.2.2-M05-emulator-evidence`\n")
             except OSError as summary_error:
                 print("Could not write smoke summary:",type(summary_error).__name__,flush=True)
         print("SMOKE_FAILED; cannot conclude GeckoView itself failed",flush=True)
