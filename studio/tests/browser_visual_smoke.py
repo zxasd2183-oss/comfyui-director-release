@@ -79,6 +79,8 @@ BATCH_DOCUMENT={"ok":True,"manifest":BATCH_INVENTORY,
         sort_keys=True,ensure_ascii=False,separators=(",",":")).encode()).hexdigest()}
 BATCH_POST_EVENTS=[]
 PICTURE_MOCK={"existing":True,"queued":False}
+AV_MOCK={"existing":False,"queued":False,"reviewed":False}
+
 AUDIO_EVENTS=[]
 AUDIO_TRACKS=[{"stem":"music","revision":1,"audio_id":"AUD_"+"a"*32,
     "sha256":"e"*64,"status":"in_review","source_current":True,
@@ -89,6 +91,21 @@ def response(route):
     path=urlparse(route.request.url).path
     if path.endswith("/api/v1/stream"):
         route.abort()
+        return
+    if route.request.method=="POST" and path.startswith("/api/v1/av-master/"):
+        action=path.rsplit("/",1)[-1]
+        if action=="assemble":
+            AV_MOCK["queued"]=True
+            result={"ok":True,"job_id":"AMJOB_"+"c"*32,
+                "status":"queued","gpu_action":False}
+            code=202
+        else:
+            AV_MOCK["reviewed"]=True
+            result={"ok":True,"master_id":"MASTER_"+"f"*32,
+                "status":"approved","gpu_action":False}
+            code=200
+        route.fulfill(status=code,content_type="application/json",
+                      body=json.dumps(result))
         return
     if route.request.method=="POST" and path.startswith("/api/v1/audio-stems/"):
         action=path.rsplit("/",1)[-1]
@@ -159,6 +176,21 @@ def response(route):
             {"shot_id":"01","ordinal":1,"duration_ms":3000},
             {"shot_id":"02","ordinal":2,"duration_ms":5000}],
             "assets":[],"episode":EPISODE}
+    elif path.endswith("/api/v1/av-master/readiness"):
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+            "ready":True,"approved_audio_count":3,"blocked":[],
+            "source_manifest_sha256":"a"*64,"gpu_action":False}
+    elif path.endswith("/api/v1/av-master/jobs"):
+        result={"ok":True,"jobs":[{
+            "job_id":"AMJOB_"+"c"*32,"status":"queued","error_code":None
+            }] if AV_MOCK["queued"] else [],"gpu_action":False}
+    elif path.endswith("/api/v1/av-master"):
+        result={"ok":True,"masters":[{
+            "master_id":"MASTER_"+"f"*32,"source_current":True,
+            "source_manifest_sha256":"a"*64,"file_sha256":"b"*64,
+            "status":"approved" if AV_MOCK["reviewed"] else "in_review",
+            "duration_seconds":8.0,"review_reason":None,"reviewer":None
+            }] if AV_MOCK["existing"] else [],"gpu_action":False}
     elif path.endswith("/api/v1/audio-stems"):
         result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
             "tracks":AUDIO_TRACKS,"gpu_action":False}
@@ -364,6 +396,29 @@ def main():
             page.get_by_role("button",name="核准此轨及权利").first.click()
             expect(page.locator("#wfAudioStems_video_plans")).to_contain_text("批准")
             assert AUDIO_EVENTS.count("review")==1
+            expect(page.get_by_role("button",name="一键合成整集音画版本（本地 CPU）")
+                   ).to_be_visible()
+            page.once("dialog",lambda dialog:dialog.accept())
+            page.get_by_role("button",name="一键合成整集音画版本（本地 CPU）").click()
+            expect(page.locator("#wfAVMasters_video_plans")).to_contain_text(
+                "混音作业")
+            assert AV_MOCK["queued"]
+            AV_MOCK["existing"]=True
+            page.locator('a[data-page="tasks"]').click()
+            page.locator('a[data-page="video_plans"]').click()
+            expect(page.locator("#wfAVMasters_video_plans .video-take-player")
+                   ).to_have_count(1)
+            rights=page.locator("#wfAVMasters_video_plans .audio-rights-verified input")
+            expect(rights).to_have_count(2)
+            rights.nth(0).check()
+            rights.nth(1).check()
+            page.locator("#wfAVMasters_video_plans .video-review-reason").fill(
+                "完整听审整集对白、音乐与音效并核查授权来源及声画同步")
+            page.once("dialog",lambda dialog:dialog.accept())
+            page.get_by_role("button",name="批准当前音画版本").click()
+            expect(page.locator("#wfAVMasters_video_plans")).to_contain_text(
+                "音画审核已批准")
+            assert AV_MOCK["reviewed"]
             PICTURE_MOCK["existing"]=False
             page.locator('a[data-page="tasks"]').click()
             page.locator('a[data-page="video_plans"]').click()
