@@ -47,7 +47,7 @@ class BrainRpcTests(unittest.TestCase):
         self.env={"CREDENTIALS_DIRECTORY":self.temp.name}
 
     def test_ten_tools_are_distinct_from_power_and_gpu(self):
-        self.assertEqual(len(hub_rpc.ALL_TOOLS),23)
+        self.assertEqual(len(hub_rpc.ALL_TOOLS),25)
         self.assertEqual(len(hub_rpc.BRAIN_TOOLS),10)
         self.assertFalse(hub_rpc.BRAIN_TOOLS & hub_rpc.POWER_TOOLS)
         self.assertFalse(hub_rpc.BRAIN_TOOLS & hub_rpc.GPU_TOOLS)

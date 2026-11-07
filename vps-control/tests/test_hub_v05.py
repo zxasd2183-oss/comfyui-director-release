@@ -47,11 +47,11 @@ class HubV05Tests(unittest.TestCase):
         self.token.write_text("b" * 64 + "\n")
         self.token.chmod(0o640)
 
-    def test_exactly_13_allowlisted_tools(self):
-        self.assertEqual(len(hub.ALL_TOOLS), 23)
+    def test_allowlisted_tools_are_scoped(self):
+        self.assertEqual(len(hub.ALL_TOOLS), 25)
         self.assertEqual(len(hub.GPU_TOOLS), 8)
         self.assertEqual(len(hub.VPS_TOOLS), 2)
-        self.assertEqual(len(hub.POWER_TOOLS), 3)
+        self.assertEqual(len(hub.POWER_TOOLS), 5)
         self.assertEqual(len(hub.BRAIN_TOOLS), 10)
         self.assertFalse(hub.BRAIN_TOOLS & hub.POWER_TOOLS)
         self.assertFalse(set(hub.GPU_TOOLS) & set(hub.POWER_TOOLS))
