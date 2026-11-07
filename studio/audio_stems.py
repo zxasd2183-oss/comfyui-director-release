@@ -93,7 +93,7 @@ def _uid(value,prefix):
 
 
 def _stem(value):
-    if value not in STEMS or not isinstance(value,str):
+    if not isinstance(value,str) or value not in STEMS:
         raise AudioError("invalid_audio_stem")
     return value
 
