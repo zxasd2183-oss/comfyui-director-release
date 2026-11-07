@@ -431,8 +431,23 @@ if __name__=="__main__":
     try: main()
     except Exception as e:
         status=1
-        checks.append({"step":"failure","result":"failed","detail":str(e)})
+        reason=f"{type(e).__name__}: {e}"
+        checks.append({"step":"failure","result":"failed","detail":reason})
         traceback.print_exc()
+        # GitHub shows this in the run's Annotations even without job logs.
+        annotation=reason.replace("%","%25").replace("\r","%0D").replace("\n","%0A")
+        print(f"::error title=Glacier Android UI smoke failed::{annotation}",flush=True)
+        summary=os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            try:
+                completed=[str(c["step"]) for c in checks if c.get("result")=="observed"]
+                with open(summary,"a",encoding="utf-8") as out:
+                    out.write("\n### Glacier Android M05 UI smoke — FAILED\n\n")
+                    out.write("**Failure:** `"+reason.replace("`","'")+"\`\n\n")
+                    out.write("**Completed checks:** "+(", ".join(completed) if completed else "none")+"\n")
+                    out.write("\nEvidence artifact: `GlacierAndroid-v0.2.1-M05-emulator-evidence`\n")
+            except OSError as summary_error:
+                print("Could not write smoke summary:",type(summary_error).__name__,flush=True)
         print("SMOKE_FAILED; cannot conclude GeckoView itself failed",flush=True)
     finally: collect()
     sys.exit(status)
