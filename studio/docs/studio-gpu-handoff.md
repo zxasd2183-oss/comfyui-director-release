@@ -213,3 +213,51 @@ rights, loudness and mastering still need separate approval. Incompatible
 source streams fail closed with picture_cut_streams_incompatible; the
 system does not silently transcode or fabricate a finished film.
 
+
+## 6. Rights-aware episode sound and private release
+
+The Video Production workspace has three further independently approved
+stages. They do NOT replace real H3/GPU model and media acceptance tests.
+
+**Sound stems.** A signed-in Microsoft owner supplies three true, whole-
+episode 48 kHz stereo PCM WAV recordings: dialogue/dubbing, licensed music,
+and effects/ambience. Every WAV must match the episode duration to within
+0.25 seconds. Each file is checked by SHA-256 and actual ffprobe format.
+Authentication, per-owner resumable blocks, private storage and a 150 MB
+limit apply. The owner must record a specific rights/consent provenance.
+Human listening plus a separate rights confirmation are required to approve
+each immutable revision. New versions supersede old approvals.
+
+**CPU audio mix.** Only a current approved picture cut and the latest
+approved version of all three WAV stems can be combined. After owner CPU
+confirmation, a persistent serial worker copies the video stream, mixes
+three tracks to stereo AAC at 48 kHz with loudness treatment targeted to
+-16 LUFS and -1.5 dBTP, then validates the resulting MP4. Source SHA-256,
+target SHA-256, stream format and approved source revisions are checked.
+The result is queued for a distinct full-watch/full-listen human review
+and rights approval; technical passing is not artistic endorsement.
+
+**Subtitles.** Owner-uploaded SRT text is checked for a valid UTF-8 sequence,
+numbered, monotonic, non-overlapping cues, accurate time syntax and boundaries
+within the registered episode duration; markup and oversized files are
+rejected. Separate subtitle language revisions and text provenance are
+retained; approval requires independent script/rightsholder verification.
+The initial release policy requires approved current Simplified Chinese SRT.
+
+**Private release candidate.** A current approved A/V master and approved
+current Chinese SRT may be packaged after an explicit local CPU confirmation.
+FFmpeg preserves the approved video and audio streams and embeds the SRT as
+MP4 mov_text. A source change aborts mux, and the output stream layout,
+duration and SHA-256 are checked. The owner must separately sign off on
+the full media, subtitle correctness, all rights/consents and actual
+end-to-end playback before approving the private candidate.
+
+No candidate is publicly released automatically. Other subtitle languages,
+platform distribution, real H3 production, externally sourced sound licences,
+and actual artistic acceptance need separate human verification. The GPU
+remains stopped and this code is not yet deployed to VPS.
+
+The single CPU worker serializes picture cuts, A/V mixing and subtitle mux
+with durable audited job state, finite restart recovery and no GPU prompt
+submission. These steps still depend on actual approved source content.
+
