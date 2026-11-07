@@ -65,7 +65,8 @@ for sid in ("01","02"):
     BATCH_CLIPS[filename]=content
     BATCH_ENTRIES.append({"shot_id":sid,"filename":filename,
         "file_sha256":digest,"size_bytes":len(content),
-        "plan_revision":1,"package_sha256":sid*64,
+        "plan_revision":1,
+        "package_sha256":hashlib.sha256(sid.encode()).hexdigest(),
         "prompt_id":"comfy_fixture_"+sid})
 BATCH_INVENTORY={"schema":"director_studio_video_delivery_v1",
     "project_id":"VisualSmoke","episode_id":"EP01","shot_count":2,
