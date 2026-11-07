@@ -8,7 +8,7 @@ die(){ echo "ERROR: $*" >&2; exit 2; }
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/director-studio
 [[ -f "$SRC/studio_core.py" && ! -L "$SRC/studio_core.py" ]] || die "Missing trusted studio sources"
-for file in studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg director-studio.service; do
+for file in studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py release_candidates.py release_jobs.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg director-studio.service; do
   [[ -f "$SRC/$file" && ! -L "$SRC/$file" ]] || die "Missing source $file"
 done
 systemctl is-active --quiet director-hub-mcp || die "Existing Director Hub must be running"
@@ -20,7 +20,7 @@ if ! id directorstudio >/dev/null 2>&1; then
 fi
 [[ ! -L "$DEST" ]] || die "Destination cannot be symlink"
 install -d -o root -g root -m 0755 "$DEST"
-for file in studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg; do
+for file in studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py release_candidates.py release_jobs.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg; do
     install -o root -g root -m 0644 "$SRC/$file" "$DEST/$file"
 done
 install -o root -g root -m 0644 "$SRC/director-studio.service" \
