@@ -22,6 +22,7 @@ from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
 from glacier_input21 import GlacierInput21
 from glacier_accounts22 import GlacierAccounts22
+from glacier_splash import show_glacier_splash
 
 APP = "Glacier Browser"
 def appdir():
@@ -208,7 +209,16 @@ def main():
  # The proxy remains configured even when the core is unavailable: fail closed.
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
- win=Browser(proc,port);win.show();code=app.exec()
+ splash=show_glacier_splash("Windows v0.20.1")
+ try:
+  win=Browser(proc,port)
+ except Exception:
+  splash.close()
+  if proc and proc.poll() is None:proc.terminate()
+  raise
+ win.show()
+ splash.finish(win)
+ code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
 if __name__=="__main__":sys.exit(main())
