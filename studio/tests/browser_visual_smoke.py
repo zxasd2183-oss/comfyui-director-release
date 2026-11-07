@@ -79,11 +79,41 @@ BATCH_DOCUMENT={"ok":True,"manifest":BATCH_INVENTORY,
         sort_keys=True,ensure_ascii=False,separators=(",",":")).encode()).hexdigest()}
 BATCH_POST_EVENTS=[]
 PICTURE_MOCK={"existing":True,"queued":False}
+AUDIO_EVENTS=[]
+AUDIO_TRACKS=[{"stem":"music","revision":1,"audio_id":"AUD_"+"a"*32,
+    "sha256":"e"*64,"status":"in_review","source_current":True,
+    "duration_seconds":8.0,"review_reason":None,"reviewer":None}]
+
 
 def response(route):
     path=urlparse(route.request.url).path
     if path.endswith("/api/v1/stream"):
         route.abort()
+        return
+    if route.request.method=="POST" and path.startswith("/api/v1/audio-stems/"):
+        action=path.rsplit("/",1)[-1]
+        payload=route.request.post_data_json
+        AUDIO_EVENTS.append(action)
+        if action=="start":
+            result={"ok":True,"upload_id":"AUP_"+"b"*32,
+                "received_bytes":0,"size_bytes":payload["size_bytes"]}
+        elif action=="chunk":
+            result={"ok":True,"received_bytes":payload["offset"]+
+                len(base64.b64decode(payload["chunk_base64"]))}
+        elif action=="finish":
+            result={"ok":True,"audio_id":"AUD_"+"b"*32,"revision":1,
+                "status":"in_review"}
+            AUDIO_TRACKS.append({"stem":"effects","revision":1,
+                "audio_id":result["audio_id"],"sha256":"f"*64,
+                "status":"in_review","source_current":True,
+                "duration_seconds":8.0,"review_reason":None,"reviewer":None})
+        elif action=="review":
+            for item in AUDIO_TRACKS:
+                if item["audio_id"]==payload["audio_id"]:
+                    item["status"]="approved" if payload["decision"]=="approve" else "rejected"
+            result={"ok":True,"status":payload["decision"]}
+        route.fulfill(status=200,content_type="application/json",
+                      body=json.dumps(result))
         return
     if route.request.method=="POST" and path.endswith("/api/v1/picture-cuts/assemble"):
         PICTURE_MOCK["queued"]=True
@@ -129,6 +159,9 @@ def response(route):
             {"shot_id":"01","ordinal":1,"duration_ms":3000},
             {"shot_id":"02","ordinal":2,"duration_ms":5000}],
             "assets":[],"episode":EPISODE}
+    elif path.endswith("/api/v1/audio-stems"):
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+            "tracks":AUDIO_TRACKS,"gpu_action":False}
     elif path.endswith("/api/v1/picture-cuts/readiness"):
         result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
             "shot_count":2,"approved_count":2,"total_duration_ms":8000,
@@ -222,6 +255,8 @@ def main():
         BATCH_DOCUMENT,ensure_ascii=False),encoding="utf-8")
     for filename,content in BATCH_CLIPS.items():
         (folder/filename).write_bytes(content)
+    wav=Path(fixture.name)/"studio-test-effects.wav"
+    wav.write_bytes(b"RIFF"+bytes(8)+b"WAVE"+bytes(500))
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),QuietHandler)
     thread=threading.Thread(target=server.serve_forever,daemon=True)
     thread.start()
@@ -310,6 +345,26 @@ def main():
             assert BATCH_POST_EVENTS.count("start")==2
             assert BATCH_POST_EVENTS.count("chunk")==1
             assert BATCH_POST_EVENTS.count("finish")==1
+            expect(page.locator("#wfAudioStems_video_plans")).to_contain_text(
+                "独立声音制作")
+            page.locator('#wfAudioStems_video_plans input[type="file"]').set_input_files(
+                str(wav))
+            page.locator('#wfAudioStems_video_plans select').select_option("effects")
+            page.locator('#wfAudioStems_video_plans .video-upload-form textarea').fill(
+                "TEST-EFFECTS-LICENSE-001 operator checked rights file")
+            page.get_by_role("button",name="上传整集 WAV 轨道").click()
+            expect(page.locator("#wfAudioStems_video_plans")).to_contain_text(
+                "音效 / 环境声")
+            assert AUDIO_EVENTS.count("start")==1
+            assert AUDIO_EVENTS.count("chunk")==1
+            assert AUDIO_EVENTS.count("finish")==1
+            page.locator('#wfAudioStems_video_plans .audio-rights-verified input').first.check()
+            page.locator('#wfAudioStems_video_plans .video-review-reason').first.fill(
+                "已审查音乐轨版权和同步质量，确认拥有许可凭证且同意使用。")
+            page.once("dialog",lambda dialog:dialog.accept())
+            page.get_by_role("button",name="核准此轨及权利").first.click()
+            expect(page.locator("#wfAudioStems_video_plans")).to_contain_text("批准")
+            assert AUDIO_EVENTS.count("review")==1
             PICTURE_MOCK["existing"]=False
             page.locator('a[data-page="tasks"]').click()
             page.locator('a[data-page="video_plans"]').click()
