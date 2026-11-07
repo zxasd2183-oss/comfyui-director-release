@@ -173,6 +173,34 @@ class VideoReturnTests(unittest.TestCase):
             "duration":"3","seed":"1234"},revision=1)
         self.review("video_plans","submit",revision=2)
 
+    def test_completed_clip_retries_are_idempotent_and_stale_clips_visible(self):
+        started=self.begin()
+        self.chunks(started["upload_id"])
+        first=self.finish(started["upload_id"])
+        again=self.begin()
+        self.assertTrue(again["already_imported"])
+        self.assertEqual(again["take_id"],first["take_id"])
+        self.assertEqual(again["received_bytes"],len(MP4))
+        self.assertEqual(len(vr.list_takes(
+            self.db,"WaitingOffice","EP01","01")["takes"]),1)
+        self.review_take_result(first["take_id"])
+        after_approval=self.begin()
+        self.assertTrue(after_approval["already_imported"])
+        self.assertEqual(after_approval["take_id"],first["take_id"])
+        self.assertTrue(vr.list_takes(
+            self.db,"WaitingOffice","EP01","01")["takes"][0]["source_current"])
+        self.review_video_plan_rejected_then_revised()
+        archived=vr.list_takes(
+            self.db,"WaitingOffice","EP01","01")["takes"][0]
+        self.assertEqual(archived["status"],"approved")
+        self.assertFalse(archived["source_current"])
+        with self.assertRaises(vr.VideoResultError) as ctx:
+            self.begin()
+        self.assertEqual(ctx.exception.reason,"video_source_revision_changed")
+        with fixture.closing(fixture.core.open_db(
+            self.db,initialize=False)) as db:
+            self.assertTrue(fixture.core.verify_chain(db))
+
     def test_tampered_sha_and_wrong_owner_rejected(self):
         self.payload["file_sha256"]="0"*64
         started=self.begin()
