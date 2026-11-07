@@ -154,7 +154,8 @@ jobs:
             -ov -format UDZO 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
           test -s 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
           hdiutil verify 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
-          shasum -a 256 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
+          shasum -a 256 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg' > 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg.sha256'
+          cat 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg.sha256'
       - name: Upload actual DMG for inspection
         uses: actions/upload-artifact@v4
         with:
@@ -176,7 +177,7 @@ jobs:
               echo 'Immutable D03 preview already exists; preserving old build'
               break
             else
-              gh release create "$tag" "$dmg" --target build/glacier-browser-v0-20-ui-refresh \
+              gh release create "$tag" "$dmg" "$dmg.sha256" --target "$GITHUB_SHA" \
                 --title 'Glacier Browser 0.20.0 D03 · macOS account cards preview' \
                 --notes 'D03 preview: local encrypted website account cards, explicit manual copy and no automatic login; existing VLESS network and signed updater implementation unchanged, preview not added to signed feed. Preview DMG is not Apple Developer ID signed/notarized.' \
                 --prerelease && break
