@@ -3,7 +3,9 @@ import base64
 from contextlib import closing
 import hashlib
 import http.client
+import io
 import json
+from contextlib import redirect_stdout
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +18,7 @@ sys.path.insert(0,str(HERE))
 sys.path.insert(0,str(HERE.parent))
 import production_core as core
 import picture_cuts as cuts
+import assemble_approved_cut as cut_cli
 import video_results as media
 import studio_server as web
 import test_video_results as sample
@@ -175,6 +178,29 @@ class PictureCutTests(unittest.TestCase):
                          assembled["file_sha256"])
         self.assertEqual(cuts.get_readiness(
             self.db,"WaitingOffice","EP01")["approved_count"],1)
+
+    def test_cut_cli_preflight_and_explicit_cpu_approval_required(self):
+        self.approved_shot()
+        args=["--db",self.db,"--project","WaitingOffice",
+              "--episode","EP01"]
+        output=io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(cut_cli.main(args+["--check"]),0)
+        doc=json.loads(output.getvalue())
+        self.assertTrue(doc["ready"])
+        self.assertFalse(doc["gpu_action"])
+        with patch.object(cut_cli,"assemble") as mock:
+            with self.assertRaises(cuts.PictureCutError) as rejected:
+                cut_cli.main(args+["--assemble"])
+            self.assertEqual(rejected.exception.reason,
+                "explicit_local_cpu_assembly_acknowledgment_required")
+            with self.assertRaises(cuts.PictureCutError) as stale:
+                cut_cli.main(args+["--assemble",
+                    "--acknowledge-local-cpu",
+                    "--expected-manifest-sha","0"*64])
+            self.assertEqual(stale.exception.reason,
+                "approved_manifest_checksum_mismatch")
+            mock.assert_not_called()
 
     def test_picture_cut_http_requires_owner_and_video_range(self):
         self.approved_shot()
