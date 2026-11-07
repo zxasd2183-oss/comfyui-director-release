@@ -109,6 +109,7 @@ public final class MainActivity extends Activity {
         String geckoState;
         byte[] thumbnail;
         boolean pendingRestore;
+        String lastAccountPromptSite = "";
         String expectedRestoreUrl;
         boolean canBack = false;
         boolean canForward = false;
@@ -998,6 +999,38 @@ public final class MainActivity extends Activity {
                 android.widget.Toast.LENGTH_SHORT).show();
     }
 
+    private void maybePromptSiteAccount(Tab tab) {
+        if(tab==null || tab!=active || isFinishing())return;
+        final String site=BrowserAccountsStore.siteFromUrl(tab.url);
+        if(site.isEmpty() || site.equals(tab.lastAccountPromptSite))return;
+        boolean matched=false;
+        for(BrowserAccountsStore.Card card:accountCards) {
+            if(card.profile.equals(tab.profile) && card.site.equals(site)) {
+                matched=true;
+                break;
+            }
+        }
+        if(!matched)return;
+        tabSaveHandler.postDelayed(() -> {
+            if(isFinishing() || tab!=active || !site.equals(
+                    BrowserAccountsStore.siteFromUrl(tab.url))
+                    || site.equals(tab.lastAccountPromptSite))return;
+            List<BrowserAccountsStore.Card> matchedCards=new ArrayList<>();
+            for(BrowserAccountsStore.Card card:accountCards) {
+                if(card.profile.equals(tab.profile) && card.site.equals(site))
+                    matchedCards.add(card);
+            }
+            if(matchedCards.isEmpty())return;
+            tab.lastAccountPromptSite=site;
+            String[] names=new String[matchedCards.size()];
+            for(int i=0;i<matchedCards.size();i++)names[i]=matchedCards.get(i).name;
+            new AlertDialog.Builder(this)
+                    .setTitle("Glacier · "+site+" 的已保存账号")
+                    .setItems(names,(dialog,which)->showAccountCard(matchedCards.get(which)))
+                    .setNegativeButton("暂不使用",null).show();
+        },350);
+    }
+
     private void showAccountVault() {
         if (accountsReadonly) {
             new AlertDialog.Builder(this).setTitle("Glacier · 账号资料保护")
@@ -1594,6 +1627,7 @@ public final class MainActivity extends Activity {
                         Tab target = findBySession(source);
                         if (target != null) {
                             rememberVisit(target);
+                            maybePromptSiteAccount(target);
                             tabSaveHandler.postDelayed(
                                     () -> captureTabThumbnail(target), 950);
                         }
@@ -1642,6 +1676,9 @@ public final class MainActivity extends Activity {
                     if ("about:blank".equals(url) && t.expectedRestoreUrl != null
                             && !"about:blank".equals(t.expectedRestoreUrl)) return;
                     if (!"about:blank".equals(url)) t.expectedRestoreUrl = null;
+                    String nextAccountSite=BrowserAccountsStore.siteFromUrl(url);
+                    if(!nextAccountSite.equals(BrowserAccountsStore.siteFromUrl(t.url)))
+                        t.lastAccountPromptSite="";
                     t.url = url;
                     t.title = url.length() > 40 ? url.substring(0, 40) + "…" : url;
                     if (t == active) updateChrome();
@@ -1715,6 +1752,7 @@ public final class MainActivity extends Activity {
         selectedProfile = next.profile;
         web.setSession(next.session);
         next.session.setActive(true);
+        maybePromptSiteAccount(next);
         if (next.pendingRestore) {
             next.pendingRestore = false;
             boolean usedState = false;
