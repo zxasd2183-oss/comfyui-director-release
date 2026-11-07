@@ -80,6 +80,14 @@ BATCH_DOCUMENT={"ok":True,"manifest":BATCH_INVENTORY,
 BATCH_POST_EVENTS=[]
 PICTURE_MOCK={"existing":True,"queued":False}
 AV_MOCK={"existing":False,"queued":False,"reviewed":False}
+RELEASE_MOCK={"existing":False,"queued":False,"reviewed":False}
+SUB_EVENTS=[]
+SUB_DATA="1\n00:00:00,000 --> 00:00:01,500\n欢迎回来。\n"
+SUB_RECORDS=[{"subtitle_id":"SUB_"+"f"*32,"language":"zh-CN",
+    "revision":1,"cue_count":1,"content_sha256":"a"*64,
+    "status":"in_review","source_current":True,
+    "review_reason":None,"reviewer":None}]
+
 
 AUDIO_EVENTS=[]
 AUDIO_TRACKS=[{"stem":"music","revision":1,"audio_id":"AUD_"+"a"*32,
@@ -91,6 +99,39 @@ def response(route):
     path=urlparse(route.request.url).path
     if path.endswith("/api/v1/stream"):
         route.abort()
+        return
+    if route.request.method=="POST" and path.startswith("/api/v1/release/"):
+        command=path.rsplit("/",1)[-1]
+        if command=="assemble":
+            RELEASE_MOCK["queued"]=True
+            out={"ok":True,"job_id":"RLJOB_"+"e"*32,
+                "status":"queued","gpu_action":False}
+            status=202
+        else:
+            RELEASE_MOCK["reviewed"]=True
+            out={"ok":True,"release_id":"REL_"+"e"*32,
+                "status":"approved","publicly_released":False}
+            status=200
+        route.fulfill(status=status,content_type="application/json",
+                      body=json.dumps(out))
+        return
+    if route.request.method=="POST" and path.startswith("/api/v1/subtitles/"):
+        cmd=path.rsplit("/",1)[-1]
+        SUB_EVENTS.append(cmd)
+        if cmd=="save":
+            SUB_RECORDS.append({"subtitle_id":"SUB_"+"e"*32,
+                "language":"en-US","revision":1,"cue_count":1,
+                "content_sha256":"b"*64,"status":"in_review",
+                "source_current":True,"review_reason":None,"reviewer":None})
+            out={"ok":True,"subtitle_id":"SUB_"+"e"*32,
+                "revision":1,"cue_count":1,"status":"in_review"}
+        else:
+            ident=route.request.post_data_json["subtitle_id"]
+            for x in SUB_RECORDS:
+                if x["subtitle_id"]==ident:x["status"]="approved"
+            out={"ok":True,"status":"approved"}
+        route.fulfill(status=200,content_type="application/json",
+                      body=json.dumps(out))
         return
     if route.request.method=="POST" and path.startswith("/api/v1/av-master/"):
         action=path.rsplit("/",1)[-1]
@@ -176,6 +217,27 @@ def response(route):
             {"shot_id":"01","ordinal":1,"duration_ms":3000},
             {"shot_id":"02","ordinal":2,"duration_ms":5000}],
             "assets":[],"episode":EPISODE}
+    elif path.endswith("/api/v1/release/readiness"):
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+            "ready":True,"blocked":[],"source_manifest_sha256":"c"*64,
+            "publicly_released":False,"gpu_action":False}
+    elif path.endswith("/api/v1/release/jobs"):
+        result={"ok":True,"jobs":[{
+            "job_id":"RLJOB_"+"e"*32,"status":"queued","error_code":None
+            }] if RELEASE_MOCK["queued"] else [],"gpu_action":False}
+    elif path.endswith("/api/v1/release"):
+        result={"ok":True,"candidates":[{
+            "release_id":"REL_"+"e"*32,"source_current":True,
+            "source_manifest_sha256":"c"*64,"file_sha256":"d"*64,
+            "status":"approved" if RELEASE_MOCK["reviewed"] else "in_review",
+            "duration_seconds":8.0,"review_reason":None,"reviewer":None
+            }] if RELEASE_MOCK["existing"] else [],
+            "publicly_released":False,"gpu_action":False}
+    elif path.endswith("/api/v1/subtitles/file"):
+        result={"ok":True,"text":SUB_DATA,"gpu_action":False}
+    elif path.endswith("/api/v1/subtitles"):
+        result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
+                "subtitles":SUB_RECORDS,"gpu_action":False}
     elif path.endswith("/api/v1/av-master/readiness"):
         result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
             "ready":True,"approved_audio_count":3,"blocked":[],
@@ -289,6 +351,9 @@ def main():
         (folder/filename).write_bytes(content)
     wav=Path(fixture.name)/"studio-test-effects.wav"
     wav.write_bytes(b"RIFF"+bytes(8)+b"WAVE"+bytes(500))
+    srt=Path(fixture.name)/"studio-test-captions.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,900\nHello from Studio.\n",
+                   encoding="utf-8")
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),QuietHandler)
     thread=threading.Thread(target=server.serve_forever,daemon=True)
     thread.start()
@@ -419,6 +484,51 @@ def main():
             expect(page.locator("#wfAVMasters_video_plans")).to_contain_text(
                 "音画审核已批准")
             assert AV_MOCK["reviewed"]
+            # Subtitle approval is distinct from AV approval, with rights
+            # checkbox and a real browser-selected .srt file.
+            expect(page.locator("#wfSubtitles_video_plans")).to_contain_text(
+                "字幕制作")
+            page.locator('#wfSubtitles_video_plans .audio-rights-verified input').first.check()
+            page.locator('#wfSubtitles_video_plans .video-review-reason').first.fill(
+                "已核对每一句字幕与时码，并核实翻译及文字使用授权。")
+            page.once("dialog",lambda dialog:dialog.accept())
+            page.get_by_role("button",name="批准此字幕版本").first.click()
+            expect(page.locator("#wfSubtitles_video_plans")).to_contain_text(
+                "zh-CN · V1 · 已批准")
+            page.locator('#wfSubtitles_video_plans .video-upload-form input[type=file]'
+                         ).set_input_files(str(srt))
+            page.locator('#wfSubtitles_video_plans select').select_option("en-US")
+            page.locator('#wfSubtitles_video_plans .video-upload-form textarea').fill(
+                "OWNER-SRT-TRANSLATION-LICENSE-TEST-001")
+            page.get_by_role("button",name="导入并校验 SRT").click()
+            expect(page.locator("#wfSubtitles_video_plans")).to_contain_text(
+                "en-US · V1 · 待人工核对")
+            assert SUB_EVENTS.count("save")==1
+            assert SUB_EVENTS.count("review")==1
+            # A private release is not a public publication action.
+            release_start=page.get_by_role("button",
+                name="生成带字幕的整集交付候选（本地 CPU）")
+            expect(release_start).to_be_visible()
+            page.once("dialog",lambda dialog:dialog.accept())
+            release_start.click()
+            expect(page.locator("#wfRelease_video_plans")).to_contain_text("封装作业")
+            assert RELEASE_MOCK["queued"]
+            RELEASE_MOCK["existing"]=True
+            page.locator('a[data-page="tasks"]').click()
+            page.locator('a[data-page="video_plans"]').click()
+            expect(page.locator("#wfRelease_video_plans .video-take-player")
+                   ).to_have_count(1)
+            release_checks=page.locator(
+                "#wfRelease_video_plans .audio-rights-verified input")
+            expect(release_checks).to_have_count(4)
+            for index in range(4):release_checks.nth(index).check()
+            page.locator("#wfRelease_video_plans .video-review-reason").fill(
+                "已全片观看并核对配音、音乐、音效、字幕时间轴及全部版权凭证")
+            page.once("dialog",lambda dialog:dialog.accept())
+            page.get_by_role("button",name="批准私有交付候选").click()
+            expect(page.locator("#wfRelease_video_plans")).to_contain_text(
+                "已完成私有终审")
+            assert RELEASE_MOCK["reviewed"]
             PICTURE_MOCK["existing"]=False
             page.locator('a[data-page="tasks"]').click()
             page.locator('a[data-page="video_plans"]').click()
