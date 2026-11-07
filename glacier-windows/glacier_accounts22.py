@@ -62,7 +62,7 @@ def clean_accounts22(payload):
         domain, name, username, password = (
             r.get("site"), r.get("name"), r.get("username"), r.get("password")
         )
-        if (safe_site22(domain) != domain or not isinstance(name, str)
+        if (not domain or safe_site22(domain) != domain or not isinstance(name, str)
                 or not isinstance(username, str) or not isinstance(password, str)
                 or not (1 <= len(name.strip()) <= 60)
                 or not (1 <= len(username) <= 250) or len(password) > 2048):
@@ -153,6 +153,8 @@ class GlacierAccounts22:
             return
         key = id(view)
         if self._account_presented22.get(key) == site:
+            return
+        if not any(r["site"] == site for r in self._accounts_doc22["accounts"]):
             return
         self._account_presented22[key] = site
         self.show_accounts22(site)
