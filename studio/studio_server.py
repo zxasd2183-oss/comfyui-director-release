@@ -82,6 +82,16 @@ from picture_cut_jobs import (
     list_jobs as list_picture_cut_jobs,
     worker_loop as picture_cut_worker_loop
 )
+from audio_stems import (
+    AudioError, MAX_BYTES as MAX_AUDIO_BYTES,
+    prepare_schema as prepare_audio_stems,
+    start as begin_audio_upload,
+    append as append_audio_chunk,
+    finish as finish_audio_upload,
+    list_stems as list_audio_stems,
+    get_stem_file as get_audio_stem_file,
+    review as review_audio_stem
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -173,6 +183,7 @@ class StudioServer(ThreadingHTTPServer):
         self.poller = poller if poller is not None else Poller()
         self.csrf_token = secrets.token_urlsafe(32)
         self.video_upload_lock = threading.Lock()
+        self.audio_upload_lock = threading.Lock()
         self.identity = from_systemd()
         # Private signed Hub->Studio channel, independent from browser OIDC.
         self.brain_auth = BrainAuthenticator(systemd_secret())
@@ -190,6 +201,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_video_results(db)
             prepare_picture_cuts(db)
             prepare_picture_cut_jobs(db)
+            prepare_audio_stems(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -277,6 +289,12 @@ class StudioHandler(BaseHTTPRequestHandler):
         return value
 
     def stream_private_mp4(self, filename, size):
+        return self.stream_private_media(filename,size,"video/mp4")
+
+    def stream_private_wav(self, filename, size):
+        return self.stream_private_media(filename,size,"audio/wav")
+
+    def stream_private_media(self, filename, size, mime):
         # Stream only from a validated owner-scoped immutable file path.
         # One exact HTTP Range only; video player seeking must not
         # trigger a 250MB in-memory response.
@@ -298,7 +316,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not stat.S_ISREG(info.st_mode) or info.st_size!=size:
                 raise VideoResultError("video_take_storage_mismatch",503)
             self.send_response(206 if header else 200)
-            self.common_headers("video/mp4")
+            self.common_headers(mime)
             self.send_header("Accept-Ranges","bytes")
             self.send_header("Content-Length",str(end-start+1))
             if header:
@@ -453,6 +471,28 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path in ("/api/v1/audio-stems","/api/v1/audio-stems/file"):
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                required={"project","episode"}
+                if path.endswith("/file"):required.add("audio")
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if len(pairs)!=len(required) or len({k for k,v in pairs})!=len(pairs) or (
+                    set(dict(pairs))!=required):
+                    raise AudioError("invalid_audio_query")
+                args=dict(pairs)
+                if not path.endswith("/file"):
+                    return self.reply(200,list_audio_stems(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                filename,size=get_audio_stem_file(
+                    self.server.production_db_path,args["project"],
+                    args["episode"],args["audio"])
+                return self.stream_private_wav(filename,size)
+            except (AudioError,VideoResultError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"audio_storage_unavailable"})
         if path in ("/api/v1/picture-cuts/readiness","/api/v1/picture-cuts",
                     "/api/v1/picture-cuts/file","/api/v1/picture-cuts/jobs"):
             if not secured:
@@ -780,14 +820,19 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/video-results/finish",
                         "/api/v1/video-results/review",
                         "/api/v1/picture-cuts/review",
-                        "/api/v1/picture-cuts/assemble"):
+                        "/api/v1/picture-cuts/assemble",
+                        "/api/v1/audio-stems/start",
+                        "/api/v1/audio-stems/chunk",
+                        "/api/v1/audio-stems/finish",
+                        "/api/v1/audio-stems/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
                 path.startswith("/api/v1/scenes/") or
                 path.startswith("/api/v1/workflow/") or
                 path.startswith("/api/v1/video-results/") or
-                path.startswith("/api/v1/picture-cuts/")) and not secured:
+                path.startswith("/api/v1/picture-cuts/") or
+                path.startswith("/api/v1/audio-stems/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -821,7 +866,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.reply(400,{"ok":False,"reason":"invalid_content_length"})
         length=int(raw_len)
         max_allowed=(MAX_POST_BYTES if path.endswith("/visual/upload") else
-                     VIDEO_CHUNK_BYTES*4//3+4096 if path=="/api/v1/video-results/chunk"
+                     VIDEO_CHUNK_BYTES*4//3+4096 if path in (
+                         "/api/v1/video-results/chunk","/api/v1/audio-stems/chunk")
                      else MAX_BODY)
         if not 1 <= length <= max_allowed:
             return self.reply(413, {"ok": False, "reason": "invalid_request_size"})
@@ -837,6 +883,32 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path.startswith("/api/v1/audio-stems/"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                if path=="/api/v1/audio-stems/start":
+                    with self.server.audio_upload_lock:
+                        result=begin_audio_upload(
+                            self.server.production_db_path,fields,actor)
+                elif path=="/api/v1/audio-stems/chunk":
+                    result=append_audio_chunk(
+                        self.server.production_db_path,fields,actor,
+                        self.server.audio_upload_lock)
+                elif path=="/api/v1/audio-stems/finish":
+                    result=finish_audio_upload(
+                        self.server.production_db_path,fields,actor,
+                        self.server.audio_upload_lock)
+                else:
+                    result=review_audio_stem(
+                        self.server.production_db_path,fields,actor)
+                return self.reply(200,result)
+            except AudioError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError,TypeError):
+                return self.reply(400,{"ok":False,"reason":"invalid_audio_request"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"audio_storage_unavailable"})
         if path=="/api/v1/picture-cuts/assemble":
             try:
                 actor=operator_from_verified_session(session)
