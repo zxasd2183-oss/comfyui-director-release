@@ -177,12 +177,13 @@ def start(db_path,data,actor):
         with transaction(db):
             # Exact immutable audio may already be present after a retry;
             # do not turn it into an extra unreviewed revision.
-            existing=db.execute("SELECT audio_id,status FROM studio_audio_stems "
-                "WHERE project_id=? AND episode_id=? AND stem=? AND "
-                "sha256=? AND size_bytes=? AND rights_ref=? "
+            existing=db.execute("SELECT audio_id,status,sha256,size_bytes,"
+                "rights_ref FROM studio_audio_stems WHERE project_id=? "
+                "AND episode_id=? AND stem=? "
                 "ORDER BY revision DESC LIMIT 1",
-                (pid,eid,stem,digest,size,rights)).fetchone()
-            if existing:
+                (pid,eid,stem)).fetchone()
+            if existing and (existing["sha256"]==digest and
+                existing["size_bytes"]==size and existing["rights_ref"]==rights):
                 path=root/(existing["audio_id"]+".wav")
                 if path.is_symlink() or not path.is_file() or (
                     path.stat().st_size!=size or _file_digest(path)!=digest):
