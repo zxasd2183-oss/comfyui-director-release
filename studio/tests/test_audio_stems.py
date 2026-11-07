@@ -20,6 +20,7 @@ import audio_stems as audio
 import production_core as core
 import studio_server as server
 import test_video_results as fixture
+import test_video_handoff_integration as plan_fixture
 from studio_identity import COOKIE_SID
 
 
@@ -36,7 +37,7 @@ def pcm_wav(duration=3,rate=48000,channels=2):
 
 class AudioStemsTests(unittest.TestCase):
     def setUp(self):
-        fixture.VideoReturnTests.setUp(self)
+        plan_fixture.StudioToGpuHandoffTests.setUp(self)
         self.lock=threading.Lock()
         self.content=pcm_wav()
         self.sha=hashlib.sha256(self.content).hexdigest()
