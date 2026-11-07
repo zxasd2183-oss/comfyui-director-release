@@ -135,11 +135,12 @@ def save(db_path,data,actor):
         digest=hashlib.sha256(raw).hexdigest()
         folder=_root(db_path,create=True)
         with transaction(db):
-            old=db.execute("SELECT subtitle_id,status FROM studio_subtitle_tracks "
-                "WHERE project_id=? AND episode_id=? AND language=? "
-                "AND content_sha256=? AND source_ref=? ORDER BY revision DESC LIMIT 1",
-                (pid,eid,lang,digest,source.strip())).fetchone()
-            if old:
+            old=db.execute("SELECT subtitle_id,status,content_sha256,source_ref "
+                "FROM studio_subtitle_tracks WHERE project_id=? AND episode_id=? "
+                "AND language=? ORDER BY revision DESC LIMIT 1",
+                (pid,eid,lang)).fetchone()
+            if old and (old["content_sha256"]==digest and
+                old["source_ref"]==source.strip()):
                 file=folder/(old["subtitle_id"]+".srt")
                 if file.is_symlink() or not file.is_file() or _file_digest(file)!=digest:
                     raise SubtitleError("subtitle_storage_mismatch",503)
