@@ -1590,6 +1590,153 @@
     }
   });
 
+  // A real GPU collector can export one directory containing a manifest
+  // and uniquely named MP4 files. A Microsoft owner selects it ONCE.
+  // No direct GPU-to-public-VPS trust path is opened.
+  function stableVideoJSON(value){
+    if(Array.isArray(value))
+      return "["+value.map(stableVideoJSON).join(",")+"]";
+    if(value!==null&&typeof value==="object")
+      return "{"+Object.keys(value).sort().map(k=>
+        JSON.stringify(k)+":"+stableVideoJSON(value[k])).join(",")+"}";
+    return JSON.stringify(value);
+  }
+  async function videoSHA256(bytes){
+    const digest=await crypto.subtle.digest("SHA-256",bytes);
+    return Array.from(new Uint8Array(digest))
+      .map(v=>v.toString(16).padStart(2,"0")).join("");
+  }
+  $("wfBatchReturnForm_video_plans").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const state=wfState.video_plans;
+    const pid=state.project,eid=state.episode;
+    const files=Array.from($("wfBatchReturnFiles_video_plans").files||[]);
+    const report=$("wfBatchReturnMessage_video_plans");
+    const submit=$("wfBatchReturnSubmit_video_plans");
+    if(!microsoftOwner||!pid||!eid||!files.length){
+      report.textContent="请先选择正式项目、剧集和 GPU 输出目录。";return;
+    }
+    submit.disabled=true;
+    const sameScope=()=>pid===state.project&&eid===state.episode;
+    try{
+      report.textContent="正在核对目录完整性与服务器上的批准素材版本…";
+      const manifests=files.filter(f=>f.name==="manifest.json");
+      if(manifests.length!==1||manifests[0].size>1024*1024)
+        throw Error("结果目录必须包含唯一且不超过 1MB 的 manifest.json");
+      const doc=JSON.parse(await manifests[0].text());
+      const m=doc.manifest;
+      if(!doc.ok||doc.checksum_type!=="sha256_canonical_json_not_signature"||
+         !m||m.schema!=="director_studio_video_delivery_v1"||
+         m.project_id!==pid||m.episode_id!==eid||
+         !Array.isArray(m.shots)||!Number.isInteger(m.shot_count)||
+         m.shot_count<1||m.shot_count>500||
+         m.shot_count!==m.shots.length||
+         m.gpu_dispatch_authorized!==false||
+         m.automatically_uploaded!==false)
+        throw Error("目录制作清单与当前项目或剧集不一致");
+      const expectedHash=await videoSHA256(
+        new TextEncoder().encode(stableVideoJSON(m)));
+      if(doc.manifest_sha256!==expectedHash)
+        throw Error("结果目录清单内容校验失败（SHA-256）");
+      const names=new Map();
+      for(const file of files.filter(f=>/\.mp4$/i.test(f.name))){
+        if(names.has(file.name))throw Error("存在重复 MP4 文件名："+file.name);
+        names.set(file.name,file);
+      }
+      if(names.size!==m.shot_count)
+        throw Error("结果目录 MP4 数量与镜头总数不一致，禁止漏镜头导入");
+      const uniqueShots=new Set(),uniqueNames=new Set();
+      for(const item of m.shots){
+        if(!/^[A-Za-z0-9_-]{1,48}$/.test(item.shot_id||"")||
+           !/^SH_[A-Za-z0-9_-]+_[0-9a-f]{16}\.mp4$/.test(item.filename||"")||
+           !/^[0-9a-f]{64}$/.test(item.file_sha256||"")||
+           !/^[A-Za-z0-9_-]{0,100}$/.test(item.prompt_id||"")||
+           !/^[0-9a-f]{64}$/.test(item.package_sha256||"")||
+           !Number.isInteger(item.plan_revision)||item.plan_revision<1||
+           !Number.isInteger(item.size_bytes)||
+           item.size_bytes<128||item.size_bytes>250000000||
+           uniqueShots.has(item.shot_id)||uniqueNames.has(item.filename))
+          throw Error("结果目录存在无效镜头编号、版本或文件摘要");
+        uniqueShots.add(item.shot_id);uniqueNames.add(item.filename);
+        const file=names.get(item.filename);
+        if(!file||file.size!==item.size_bytes)
+          throw Error("结果文件缺失或长度不符："+item.filename);
+      }
+      const qs=new URLSearchParams({project:pid,episode:eid});
+      const response=await fetch("./api/v1/workflow/video-packages?"+qs,{
+        cache:"no-store"});
+      const data=await response.json();
+      if(!response.ok)throw Error(data.reason||"服务器整集制作包读取失败");
+      const bundle=data.bundle;
+      if(!sameScope())throw Error("剧集已切换，已中止批量导入");
+      if(!bundle||bundle.all_ready!==true||
+         bundle.shot_count!==m.shot_count||
+         bundle.shot_ids.length!==m.shot_count||
+         bundle.packages.length!==m.shot_count||
+         bundle.shot_ids.some((sid,i)=>sid!==m.shots[i].shot_id)||
+         (m.episode_bundle_sha256!==null&&
+          data.bundle_sha256!==m.episode_bundle_sha256))
+        throw Error("整集镜头、版本或批准状态与服务器不一致，须重新导出");
+      for(let i=0;i<m.shots.length;i++){
+        const item=m.shots[i];
+        const pkg=bundle.packages[i];
+        if(pkg.package.shot_id!==item.shot_id||
+           pkg.package.video_plan.revision!==item.plan_revision||
+           pkg.package.video_plan.status!=="in_review"||
+           pkg.package_sha256!==item.package_sha256)
+          throw Error("镜头 SH"+item.shot_id+" 的来源版本已变动");
+      }
+      let completed=0,already=0;
+      for(const item of m.shots){
+        if(!sameScope())throw Error("已切换项目，剩余视频未导入");
+        const f=names.get(item.filename);
+        report.textContent="镜头 "+item.shot_id+"（"+
+          (completed+1)+"/"+m.shot_count+"）· 本地核验原文件…";
+        const originalHash=await videoSHA256(await f.arrayBuffer());
+        if(originalHash!==item.file_sha256)
+          throw Error("镜头 SH"+item.shot_id+" 的原始视频 SHA-256 不一致");
+        const scope={project_id:pid,episode_id:eid,shot_id:item.shot_id};
+        const started=await videoResultPost("start",{
+          ...scope,plan_revision:item.plan_revision,
+          package_sha256:item.package_sha256,
+          file_sha256:item.file_sha256,size_bytes:item.size_bytes,
+          prompt_id:item.prompt_id});
+        if(started.already_imported){
+          completed++;already++;
+          continue;
+        }
+        let offset=started.received_bytes;
+        while(offset<f.size){
+          if(!sameScope())throw Error("已切换项目，上传已暂停");
+          const chunk=f.slice(offset,offset+786432);
+          const encoded=await fileAsBase64(chunk);
+          const sent=await videoResultPost("chunk",{
+            upload_id:started.upload_id,offset,chunk_base64:encoded});
+          if(!Number.isInteger(sent.received_bytes)||sent.received_bytes<=offset||
+             sent.received_bytes>f.size)
+            throw Error("服务器返回无效断点位置");
+          offset=sent.received_bytes;
+          report.textContent="镜头 "+item.shot_id+" · 已上传 "+(
+            100*offset/f.size).toFixed(1)+"% · 已完成 "+completed+"/"+m.shot_count;
+        }
+        const finished=await videoResultPost("finish",{
+          upload_id:started.upload_id});
+        if(finished.status!=="in_review")
+          throw Error("回传未进入待人工审核状态");
+        completed++;
+      }
+      report.textContent="回传完成："+completed+"/"+m.shot_count+
+        " 镜头（其中 "+already+" 个已存在，未重复上传）。"+
+        "所有新视频仍须逐镜头人工审片，不会自动批准。";
+      await workflowLoad("video_plans");
+    }catch(error){
+      report.textContent="批量回传未完成："+error.message+
+        "。请保留目录并重新提交；已验收的镜头不会重复入库，未完成的可断点续传。";
+    }finally{
+      submit.disabled=false;
+    }
+  });
+
   // UI handlers are bound once. Project/episode changes discard stale scopes.
   for(const kind of wfKinds){
     const state=wfState[kind];
