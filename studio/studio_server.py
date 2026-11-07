@@ -111,6 +111,17 @@ from subtitle_tracks import (
     list_tracks as list_subtitle_tracks,
     get_file as get_subtitle_file
 )
+from release_candidates import (
+    ReleaseError, prepare_schema as prepare_release_candidates,
+    readiness as get_release_readiness,
+    list_candidates as list_release_candidates,
+    get_file as get_release_file,
+    review as review_release_candidate
+)
+from release_jobs import (
+    ReleaseJobError, prepare_schema as prepare_release_jobs,
+    enqueue as enqueue_release_job, list_jobs as list_release_jobs
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -224,6 +235,8 @@ class StudioServer(ThreadingHTTPServer):
             prepare_av_masters(db)
             prepare_av_master_jobs(db)
             prepare_subtitle_tracks(db)
+            prepare_release_candidates(db)
+            prepare_release_jobs(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -493,6 +506,35 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path in ("/api/v1/release","/api/v1/release/readiness",
+                    "/api/v1/release/file","/api/v1/release/jobs"):
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                fields={"project","episode"}
+                if path.endswith("/file"):fields.add("release")
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if len(pairs)!=len(fields) or len({k for k,v in pairs})!=len(pairs) or (
+                    set(dict(pairs))!=fields):
+                    raise ReleaseError("invalid_release_query")
+                args=dict(pairs)
+                if path.endswith("/readiness"):
+                    return self.reply(200,get_release_readiness(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                if path.endswith("/jobs"):
+                    return self.reply(200,list_release_jobs(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                if not path.endswith("/file"):
+                    return self.reply(200,list_release_candidates(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                file,size=get_release_file(
+                    self.server.production_db_path,args["project"],
+                    args["episode"],args["release"])
+                return self.stream_private_mp4(file,size)
+            except (ReleaseError,ReleaseJobError,VideoResultError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"release_storage_unavailable"})
         if path in ("/api/v1/subtitles","/api/v1/subtitles/file"):
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
@@ -903,7 +945,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/av-master/assemble",
                         "/api/v1/av-master/review",
                         "/api/v1/subtitles/save",
-                        "/api/v1/subtitles/review"):
+                        "/api/v1/subtitles/review",
+                        "/api/v1/release/assemble",
+                        "/api/v1/release/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
@@ -913,7 +957,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 path.startswith("/api/v1/picture-cuts/") or
                 path.startswith("/api/v1/audio-stems/") or
                 path.startswith("/api/v1/av-master/") or
-                path.startswith("/api/v1/subtitles/")) and not secured:
+                path.startswith("/api/v1/subtitles/") or
+                path.startswith("/api/v1/release/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -965,6 +1010,23 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path in ("/api/v1/release/assemble","/api/v1/release/review"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                if path.endswith("/assemble"):
+                    result=enqueue_release_job(
+                        self.server.production_db_path,fields,actor)
+                    return self.reply(202,result)
+                result=review_release_candidate(
+                    self.server.production_db_path,fields,actor)
+                return self.reply(200,result)
+            except (ReleaseError,ReleaseJobError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError,TypeError):
+                return self.reply(400,{"ok":False,"reason":"invalid_release_request"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"release_storage_unavailable"})
         if path in ("/api/v1/subtitles/save","/api/v1/subtitles/review"):
             try:
                 actor=operator_from_verified_session(session)
