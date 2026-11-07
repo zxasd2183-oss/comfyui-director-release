@@ -213,10 +213,20 @@ def main():
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
  try:
   win=Browser(proc,port)
- except Exception:
+ except Exception as exc:
   splash.close()
+  # Avoid exposing proxy links, account entries or saved credentials in dialogs.
+  import traceback
+  frames=traceback.extract_tb(exc.__traceback__)
+  last=frames[-1] if frames else None
+  location=(str(Path(last.filename).name)+":"+str(last.lineno)) if last else "startup"
+  safe_error=f"{type(exc).__name__} at {location}"
+  try:
+   (appdir()/"startup-error.txt").write_text(safe_error+"\\n",encoding="utf-8")
+  except OSError:pass
+  QMessageBox.critical(None,APP,"Windows 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt。")
   if proc and proc.poll() is None:proc.terminate()
-  raise
+  return 1
  win.show()
  splash.finish(win)
  code=app.exec()
