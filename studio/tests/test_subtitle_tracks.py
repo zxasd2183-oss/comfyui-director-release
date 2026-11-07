@@ -109,6 +109,16 @@ class SubtitleTrackTests(unittest.TestCase):
         self.assertEqual(stale.exception.reason,"subtitle_revision_stale")
         self.assertEqual(self.approve(second["subtitle_id"])["status"],"approved")
 
+    def test_webvtt_preview_has_safe_timestamps_and_no_html(self):
+        converted=subtitles.as_webvtt(SRT)
+        self.assertTrue(converted.startswith("WEBVTT\\n\\n".replace("\\n","\n")))
+        self.assertIn("00:00:00.000 --> 00:00:01.100",converted)
+        self.assertIn("欢迎来到事务所。",converted)
+        self.assertNotIn("<script>",converted)
+        with self.assertRaises(subtitles.SubtitleError):
+            subtitles.as_webvtt(SRT.replace("00:00:01,300",
+                                            "00:00:01,X00"))
+
     def test_subtitle_http_never_exposes_private_text_anonymously(self):
         created=self.save()
         app=server.StudioServer(str(Path(self.db).with_name("srt-http.sqlite")),
@@ -143,6 +153,14 @@ class SubtitleTrackTests(unittest.TestCase):
             self.assertEqual(status,200)
             self.assertEqual(payload["text"],SRT)
             self.assertEqual(req("GET","/api/v1/subtitles"+q)[0],200)
+            conn=http.client.HTTPConnection("127.0.0.1",app.server_port,timeout=7)
+            conn.request("GET","/api/v1/subtitles/vtt"+q+
+                "&subtitle="+created["subtitle_id"],headers=common)
+            resp=conn.getresponse()
+            self.assertEqual(resp.status,200)
+            self.assertIn("text/vtt",resp.getheader("Content-Type"))
+            self.assertTrue(resp.read().decode().startswith("WEBVTT"))
+            conn.close()
             data={"csrf":session_fixture.CSRF,
                 "project_id":"WaitingOffice","episode_id":"EP01",
                 "subtitle_id":created["subtitle_id"],"decision":"approve",
