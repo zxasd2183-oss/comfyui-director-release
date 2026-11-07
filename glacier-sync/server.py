@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 DB = Path(os.environ.get("GLACIER_SYNC_DB", "./glacier-sync.sqlite3"))
 INVITE = os.environ.get("GLACIER_SYNC_INVITE", "")
-SESSION_SECONDS = 24 * 3600
+SESSION_SECONDS = 30 * 24 * 3600
 PENDING_SECONDS = 15 * 60
 MAX_VAULT = 256 * 1024
 LOCK = threading.RLock()
@@ -62,6 +62,10 @@ def db():
 def initialize():
     with db() as conn:
         conn.executescript("""
+        CREATE TABLE IF NOT EXISTS auth_failures (
+          username TEXT PRIMARY KEY, attempts INTEGER NOT NULL,
+          locked_until INTEGER NOT NULL, last_failure INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS users (
           id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL,
           salt BLOB NOT NULL, password_digest BLOB NOT NULL,
@@ -107,8 +111,8 @@ class Register(BaseModel):
 
 
 class Login(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=1, max_length=256)
     device_name: str = Field(min_length=1, max_length=80)
     device_id: str | None = None
 
@@ -214,12 +218,26 @@ def login(data: Login):
     # Password verification precedes any device grant. Unknown devices remain
     # pending until an approved session explicitly authorizes them.
     with db() as conn:
+        now = int(time.time())
+        failed = conn.execute("SELECT attempts, locked_until, last_failure FROM auth_failures WHERE username=?",
+                              (data.username,)).fetchone()
+        if failed and failed["locked_until"] > now:
+            raise HTTPException(status_code=429, detail="Account login temporarily restricted")
         user = conn.execute("SELECT * FROM users WHERE name=?",
                             (data.username,)).fetchone()
         salt = user["salt"] if user else b"no-such-glacier-user"
         candidate = password_hash(data.password, salt)
         if not user or not hmac.compare_digest(candidate, user["password_digest"]):
+            attempts = (failed["attempts"] + 1) if failed and now - failed["last_failure"] < 900 else 1
+            lock_until = now + 900 if attempts >= 5 else 0
+            conn.execute("""
+              INSERT INTO auth_failures(username,attempts,locked_until,last_failure)
+              VALUES(?,?,?,?) ON CONFLICT(username) DO UPDATE SET
+              attempts=excluded.attempts, locked_until=excluded.locked_until,
+              last_failure=excluded.last_failure
+            """, (data.username, attempts, lock_until, now))
             raise HTTPException(status_code=401, detail="Invalid credentials")
+        conn.execute("DELETE FROM auth_failures WHERE username=?", (data.username,))
         known = None
         if data.device_id:
             known = conn.execute("SELECT * FROM devices WHERE id=? AND user_id=?",
@@ -337,6 +355,7 @@ def write_vault(data: Vault, authorization: str | None = Header(default=None)):
     try:
         wrapper = json.loads(data.envelope)
         if (wrapper.get("format") != "glacier-vault-v1"
+                or wrapper.get("kdf") != "pbkdf2-sha256-400k"
                 or not all(isinstance(wrapper.get(k), str)
                            for k in ("salt", "nonce", "ciphertext"))):
             raise ValueError("Bad encrypted envelope")
@@ -407,6 +426,7 @@ def write_space(space: str, data: Vault,
         wrapper = json.loads(data.envelope)
         if (not isinstance(wrapper, dict) or
                 wrapper.get("format") != "glacier-vault-v1"
+                or wrapper.get("kdf") != "pbkdf2-sha256-400k"
                 or not all(isinstance(wrapper.get(k), str)
                            for k in ("salt", "nonce", "ciphertext"))):
             raise ValueError("Bad encrypted envelope")
