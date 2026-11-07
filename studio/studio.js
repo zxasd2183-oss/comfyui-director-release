@@ -682,7 +682,8 @@
       if(kind==="video_plans"){
         await workflowLoadReadiness(state);
         await Promise.all([
-          loadAudioStems(state),loadPictureCuts(state),loadAVMasters(state)
+          loadAudioStems(state),loadPictureCuts(state),
+          loadAVMasters(state),loadSubtitles(state)
         ]);
       }
     }catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
@@ -1951,6 +1952,174 @@
       if(current())root.replaceChildren(el("p","",
         "初剪状态读取失败："+error.message));
     }
+  }
+
+  // Captions are versioned/approved dialogue text, not synthetic speech.
+  let subtitleReadSerial=0;
+  async function subtitlePost(action,fields){
+    const response=await fetch("./api/v1/subtitles/"+action,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({csrf,...fields}),cache:"no-store"});
+    const result=await response.json();
+    if(!response.ok)throw Error(result.reason||"字幕操作失败");
+    return result;
+  }
+  async function loadSubtitles(state){
+    const serial=++subtitleReadSerial;
+    const root=$("wfSubtitles_video_plans");
+    if(!root)return;
+    const pid=state.project,eid=state.episode;
+    const current=()=>serial===subtitleReadSerial&&
+      state.project===pid&&state.episode===eid;
+    root.replaceChildren();
+    if(!pid||!eid){
+      root.appendChild(el("p","","选择剧集后查看字幕版本。"));return;
+    }
+    const head=el("div","workflow-readiness-head");
+    head.appendChild(el("strong","","字幕制作 · 逐条时间轴与版权审核"));
+    head.appendChild(el("small","",
+      "SRT 纯文本；支持简体、繁体、英语和日语；正式镜头时长为硬边界"));
+    root.appendChild(head);
+    try{
+      const response=await fetch("./api/v1/subtitles?"+new URLSearchParams({
+        project:pid,episode:eid}),{cache:"no-store"});
+      const doc=await response.json();
+      if(!response.ok)throw Error(doc.reason||"字幕不可读");
+      if(!current())return;
+      if(!doc.subtitles?.length){
+        root.appendChild(el("p","","尚未登记字幕稿。字幕文件不会自动从语音生成。"));
+      }
+      for(const sub of doc.subtitles||[]){
+        const card=el("div","video-take-card");
+        const title=el("div","workflow-readiness-head");
+        title.appendChild(el("strong","",sub.language+" · V"+sub.revision+
+          " · "+(!sub.source_current?"历史已过期":
+           sub.status==="approved"?"已批准":
+           sub.status==="rejected"?"已驳回":"待人工核对")));
+        title.appendChild(el("small","",sub.cue_count+" 条字幕"+
+          " · 内容 SHA-256："+sub.content_sha256.slice(0,16)+"…"));
+        card.appendChild(title);
+        const show=el("button","prod-new prod-secondary","查看字幕全文");
+        show.type="button";
+        show.addEventListener("click",async()=>{
+          show.disabled=true;
+          try{
+            const qs=new URLSearchParams({project:pid,episode:eid,
+              subtitle:sub.subtitle_id});
+            const res=await fetch("./api/v1/subtitles/file?"+qs,{cache:"no-store"});
+            const out=await res.json();
+            if(!res.ok)throw Error(out.reason||"字幕读取失败");
+            if(!current())return;
+            const existing=card.querySelector("pre");
+            if(existing)existing.remove();
+            else{
+              const pre=el("pre","subtitle-text-preview",out.text);
+              pre.setAttribute("aria-label","字幕全文预览");
+              card.appendChild(pre);
+            }
+          }catch(error){
+            $("wfMessage_video_plans").textContent=error.message;
+          }finally{show.disabled=false;}
+        });
+        card.appendChild(show);
+        if(sub.status==="in_review"&&sub.source_current){
+          const reason=el("textarea","video-review-reason");
+          reason.rows=2;reason.maxLength=600;
+          reason.placeholder="字幕台词、时间轴、人物一致性、文本权利依据审核意见";
+          reason.setAttribute("aria-label",sub.language+" 字幕审核理由");
+          card.appendChild(reason);
+          const label=el("label","audio-rights-verified");
+          const rights=el("input","");
+          rights.type="checkbox";
+          label.append(rights,document.createTextNode(
+            "我已核对台词与时间轴，并确认字幕文字使用授权"));
+          card.appendChild(label);
+          const actions=el("div","workflow-review-actions");
+          for(const [decision,title] of [
+            ["approve","批准此字幕版本"],["reject","驳回字幕"]]){
+            const btn=el("button","prod-new",title);
+            btn.type="button";
+            btn.addEventListener("click",async()=>{
+              if(reason.value.trim().length<8){
+                $("wfMessage_video_plans").textContent="字幕审核意见至少 8 字";
+                return;
+              }
+              if(decision==="approve"&&!rights.checked){
+                $("wfMessage_video_plans").textContent=
+                  "批准字幕前必须完成台词及使用授权核实";return;
+              }
+              if(decision==="approve"&&!window.confirm(
+                "确认已核对所有字幕时间与内容，并核实来源和授权？"))return;
+              btn.disabled=true;
+              try{
+                await subtitlePost("review",{project_id:pid,episode_id:eid,
+                  subtitle_id:sub.subtitle_id,decision,
+                  rationale:reason.value.trim(),
+                  text_rights_verified:decision==="approve"&&rights.checked});
+                if(current())await loadSubtitles(state);
+              }catch(error){
+                $("wfMessage_video_plans").textContent=
+                  "字幕审批失败："+error.message;
+                btn.disabled=false;
+              }
+            });
+            actions.appendChild(btn);
+          }
+          card.appendChild(actions);
+        }
+        root.appendChild(card);
+      }
+    }catch(error){
+      if(current())root.appendChild(el("p","",
+        "字幕读取失败："+error.message));
+      return;
+    }
+    const form=el("form","video-upload-form");
+    const language=el("select","");
+    language.setAttribute("aria-label","字幕语言");
+    for(const [code,name] of [
+      ["zh-CN","简体中文"],["zh-TW","繁体中文"],
+      ["en-US","英语"],["ja-JP","日语"]]){
+      const option=el("option","",name);
+      option.value=code;language.appendChild(option);
+    }
+    const file=el("input","");
+    file.type="file";file.accept=".srt";file.required=true;
+    file.setAttribute("aria-label","选择 SRT 字幕文件");
+    const evidence=el("textarea","video-review-reason");
+    evidence.rows=2;evidence.maxLength=300;evidence.required=true;
+    evidence.placeholder="必填：台词原稿/翻译授权或权利凭证来源编号（至少 8 字）";
+    evidence.setAttribute("aria-label","字幕文字来源与授权依据");
+    const button=el("button","prod-new","导入并校验 SRT");
+    button.type="submit";
+    const message=el("p","video-upload-progress","");
+    form.append(language,file,evidence,button,message);
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      const f=file.files?.[0];
+      if(!f)return;
+      if(!/\.srt$/i.test(f.name)||f.size>300000||
+         f.size<16||evidence.value.trim().length<8){
+        message.textContent="选择合法 SRT，且填写完整授权来源。";return;
+      }
+      button.disabled=true;
+      try{
+        const text=await f.text();
+        if(!current())throw Error("剧集已经切换");
+        const result=await subtitlePost("save",{
+          project_id:pid,episode_id:eid,language:language.value,
+          text,source_ref:evidence.value.trim()});
+        message.textContent=result.already_imported?
+          "已存在同一份字幕版本，无需重复上传。":
+          "已生成字幕 V"+result.revision+"（"+
+          result.cue_count+" 条），等待人工审阅。";
+        if(current())await loadSubtitles(state);
+      }catch(error){
+        message.textContent="SRT 校验失败："+error.message;
+        button.disabled=false;
+      }
+    });
+    root.appendChild(form);
   }
 
   // Final A/V mix is still an owner-reviewed candidate, NOT a release.
