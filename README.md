@@ -1,5 +1,7 @@
 # ComfyUI Director · 官方发布仓库
 
+> **Director Studio 影视制作主线现状（2026-11-06）**：请优先阅读 [可核查的实际交付与部署状态](./docs/STUDIO_DELIVERY_CHECKPOINT.md)。新版 GPU 直接开关、H3 整集执行、GPU 自动回传已提交 GitHub，但尚未部署到 VPS/GPU，也尚未产生正式 EP01 成片；下文早期 V0.3/V0.6 文档是历史阶段说明。
+
 [![V3](https://img.shields.io/badge/Director-0.3.0-blue)](./bootstrap/install-v3.sh)
 
 面向优云智算 GPU 上的 **ComfyUI + MiniMax H3**。这是已连接 ChatGPT Plus 的 Director **只读 MCP 网关**的发布源，不包含用户的模型权重、任务历史、MCP URL 密钥、云 GPU 密码或 API 凭证。

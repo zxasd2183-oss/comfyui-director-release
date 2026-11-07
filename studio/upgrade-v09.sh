@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Safe additive V0.9 production upgrade: backups, tests, no Nginx or GPU.
+# Safe production upgrade: backups, tests, scoped authenticated Nginx upload route; no GPU power action.
 set -Eeuo pipefail
 umask 077
 fail() { echo "ERROR: $*" >&2; exit 2; }
@@ -80,4 +80,4 @@ COMMITTED=1
 echo "SUCCESS: Director Studio V0.9 production foundation installed"
 echo "Previous version and consistent legacy DB backup: $BACKUP"
 echo "Production DB: /var/lib/director-studio/production.sqlite"
-echo "Nginx/HTTPS auth, GPU, phone approval and OIDC unchanged"
+echo "Added scoped Nginx GPU upload route; existing Microsoft OIDC and power state unchanged"

@@ -102,5 +102,6 @@ done
 echo 'Six private media APIs deny anonymous requests with HTTP 401.'
 echo 'SUCCESS: VPS Hub+Studio deployed and verified; current repository SHA:'
 printf '  %s\n' "$DEPLOY_SHA"
-echo 'GPU remains untouched. Real H3 compatibility, local executor installation,'
-echo 'Comfy submission and artistic clip approval require separate explicit review.'
+echo 'VPS owner power buttons, scoped GPU video return and Studio UI installed.'
+echo 'GPU remains untouched; install the local GPU video runner after booting.'
+echo 'Real H3 workflow compatibility and artistic clip review still require source assets.'
