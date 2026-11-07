@@ -8,12 +8,12 @@ die(){ echo "ERROR: $*" >&2; exit 2; }
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/director-studio
 [[ -f "$SRC/studio_core.py" && ! -L "$SRC/studio_core.py" ]] || die "Missing trusted studio sources"
-for file in studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py release_candidates.py release_jobs.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg director-studio.service; do
+for file in gpu_return.py gpu_power_bridge.py studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py release_candidates.py release_jobs.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg director-studio.service; do
   [[ -f "$SRC/$file" && ! -L "$SRC/$file" ]] || die "Missing source $file"
 done
 systemctl is-active --quiet director-hub-mcp || die "Existing Director Hub must be running"
 [[ -x /usr/bin/python3 ]] || die "Python3 required"
-python3 -m py_compile "$SRC"/studio_*.py "$SRC"/production_*.py "$SRC"/visual_library.py "$SRC"/character_library.py "$SRC"/character_library_v2.py "$SRC"/shot_character_bindings.py "$SRC"/scene_library.py "$SRC"/production_workflows.py "$SRC"/session_store.py "$SRC"/manage.py
+python3 -m py_compile "$SRC"/gpu_return.py "$SRC"/gpu_power_bridge.py "$SRC"/studio_*.py "$SRC"/production_*.py "$SRC"/visual_library.py "$SRC"/character_library.py "$SRC"/character_library_v2.py "$SRC"/shot_character_bindings.py "$SRC"/scene_library.py "$SRC"/production_workflows.py "$SRC"/session_store.py "$SRC"/manage.py
 python3 -m unittest discover -s "$SRC/tests" -p "test_*.py" -q
 if ! id directorstudio >/dev/null 2>&1; then
     useradd --system --no-create-home --shell /usr/sbin/nologin directorstudio

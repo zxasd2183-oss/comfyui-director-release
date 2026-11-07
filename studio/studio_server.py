@@ -19,6 +19,10 @@ from urllib.parse import urlsplit, parse_qsl
 
 from studio_core import StudioError, connect, decide, snapshot
 from gpu_power_bridge import operate as operate_gpu_power
+from gpu_return import (ReturnError,prepare_schema as prepare_gpu_return,
+                        issue as issue_gpu_return_token,
+                        authenticate as authenticate_gpu_return,
+                        check_scope as check_gpu_return_scope)
 from studio_backend import query
 from studio_identity import (from_systemd, cookies, COOKIE_SID, COOKIE_STATE,
     state_cookie, session_cookie, clear_cookie, IdentityError,
@@ -231,6 +235,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_scenes(db)
             prepare_workflows(db)
             prepare_video_results(db)
+            prepare_gpu_return(db)
             prepare_picture_cuts(db)
             prepare_picture_cut_jobs(db)
             prepare_audio_stems(db)
@@ -915,6 +920,53 @@ class StudioHandler(BaseHTTPRequestHandler):
             # Do not emit private creative text or database content in logs.
             return self.reply(503,{"ok":False,"reason":"studio_brain_unavailable"})
 
+    def receive_gpu_video(self, path):
+        # Dedicated token route; NEVER shares the web UI's Microsoft session.
+        # Nginx forwards Bearer only for this path; the backend checks TLS
+        # proxy identity and episode-scoped owner-issued capability.
+        if not self.microsoft_proxy():
+            return self.reply(403,{"ok":False,"reason":"trusted_tls_proxy_required"})
+        try:
+            capability=authenticate_gpu_return(
+                self.server.production_db_path,self.headers.get("Authorization",""))
+        except ReturnError as exc:
+            return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+        except (sqlite3.Error,OSError,ProductionError):
+            return self.reply(503,{"ok":False,"reason":"gpu_return_storage_unavailable"})
+        if (self.headers.get("Content-Type","").split(";")[0].strip()
+                !="application/json" or self.headers.get("Transfer-Encoding")):
+            return self.reply(415,{"ok":False,"reason":"gpu_return_json_only"})
+        length=self.headers.get("Content-Length","")
+        limit=VIDEO_CHUNK_BYTES*4//3+4096
+        if (not length.isascii() or not length.isdigit() or len(length)>9
+                or not 1<=int(length)<=limit):
+            return self.reply(413,{"ok":False,"reason":"gpu_return_invalid_size"})
+        try:
+            fields=json.loads(self.rfile.read(int(length)))
+            if not isinstance(fields,dict):
+                raise ValueError
+        except (ValueError,UnicodeDecodeError):
+            return self.reply(400,{"ok":False,"reason":"gpu_return_invalid_json"})
+        try:
+            actor=capability["actor"]
+            if path=="/api/v1/gpu-return/start":
+                check_gpu_return_scope(capability,fields)
+                with self.server.video_upload_lock:
+                    result=begin_video_upload(self.server.production_db_path,fields,actor)
+            elif path=="/api/v1/gpu-return/chunk":
+                result=append_video_chunk(self.server.production_db_path,
+                                          fields,actor,self.server.video_upload_lock)
+            elif path=="/api/v1/gpu-return/finish":
+                result=finish_video_upload(self.server.production_db_path,
+                                          fields,actor,self.server.video_upload_lock)
+            else:
+                return self.reply(404,{"ok":False,"reason":"not_found"})
+            return self.reply(200,result)
+        except (ReturnError,VideoResultError) as exc:
+            return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+        except (OSError,sqlite3.Error,ProductionError):
+            return self.reply(503,{"ok":False,"reason":"gpu_return_storage_unavailable"})
+
     def do_POST(self):
         if not self.headers_safe():
             return self.reply(403, {"ok": False, "reason": "invalid_host"})
@@ -926,6 +978,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self.reply(403, {"ok": False, "reason": "invalid_host"})
         path = urlsplit(self.path).path
         secured = self.microsoft_proxy()
+        if path.startswith("/api/v1/gpu-return/"):
+            return self.receive_gpu_video(path)
         if secured:
             if self.server.identity is None:
                 return self.reply(503, {"ok":False,"reason":"microsoft_login_not_configured"})
@@ -934,6 +988,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(401,{"ok":False,"reason":"microsoft_login_required"})
         if path not in ("/api/v1/action", "/auth/logout",
                         "/api/v1/gpu-power/operate",
+                        "/api/v1/gpu-return-token/issue",
                         "/api/v1/production/action",
                         "/api/v1/production/visual/upload",
                         "/api/v1/production/visual/select",
@@ -969,6 +1024,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/release/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path=="/api/v1/gpu-power/operate" or
+                path=="/api/v1/gpu-return-token/issue" or
                 path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
                 path.startswith("/api/v1/scenes/") or
@@ -1030,6 +1086,19 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path=="/api/v1/gpu-return-token/issue":
+            try:
+                if set(data)!={"csrf","project_id","episode_id"}:
+                    raise ReturnError("invalid_gpu_return_scope")
+                actor=operator_from_verified_session(session)
+                result=issue_gpu_return_token(
+                    self.server.production_db_path,
+                    data["project_id"],data["episode_id"],actor)
+                return self.reply(201,result)
+            except (ReturnError,ProductionWebError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (OSError,sqlite3.Error,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"gpu_return_issue_unavailable"})
         if path=="/api/v1/gpu-power/operate":
             if set(data)!={"csrf","action"} or data.get("action") not in ("start","stop"):
                 return self.reply(400,{"ok":False,"reason":"invalid_power_action"})
