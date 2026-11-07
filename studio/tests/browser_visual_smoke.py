@@ -78,11 +78,18 @@ BATCH_DOCUMENT={"ok":True,"manifest":BATCH_INVENTORY,
     "manifest_sha256":hashlib.sha256(json.dumps(BATCH_INVENTORY,
         sort_keys=True,ensure_ascii=False,separators=(",",":")).encode()).hexdigest()}
 BATCH_POST_EVENTS=[]
+PICTURE_MOCK={"existing":True,"queued":False}
 
 def response(route):
     path=urlparse(route.request.url).path
     if path.endswith("/api/v1/stream"):
         route.abort()
+        return
+    if route.request.method=="POST" and path.endswith("/api/v1/picture-cuts/assemble"):
+        PICTURE_MOCK["queued"]=True
+        route.fulfill(status=202,content_type="application/json",body=json.dumps({
+            "ok":True,"job_id":"PCJOB_"+"a"*32,"status":"queued",
+            "gpu_action":False}))
         return
     if route.request.method=="POST" and path.startswith("/api/v1/video-results/"):
         event=path.rsplit("/",1)[-1]
@@ -126,12 +133,17 @@ def response(route):
         result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
             "shot_count":2,"approved_count":2,"total_duration_ms":8000,
             "ready":True,"blocked":[],"source_manifest_sha256":"d"*64}
+    elif path.endswith("/api/v1/picture-cuts/jobs"):
+        result={"ok":True,"jobs":[{
+            "job_id":"PCJOB_"+"a"*32,"status":"queued","error_code":None}]
+            if PICTURE_MOCK["queued"] else [],"gpu_action":False}
     elif path.endswith("/api/v1/picture-cuts"):
         result={"ok":True,"picture_cuts":[{
             "cut_id":"CUT_"+"a"*32,"source_current":True,
             "source_manifest_sha256":"d"*64,"file_sha256":"e"*64,
             "size_bytes":88888,"duration_seconds":8.0,"status":"in_review",
-            "review_reason":None,"reviewer":None}],
+            "review_reason":None,"reviewer":None}]
+            if PICTURE_MOCK["existing"] else [],
             "final_audio_mixed":False,"gpu_action":False}
     elif path.endswith("/api/v1/video-results"):
         result={"ok":True,"project_id":"VisualSmoke","episode_id":"EP01",
@@ -298,6 +310,16 @@ def main():
             assert BATCH_POST_EVENTS.count("start")==2
             assert BATCH_POST_EVENTS.count("chunk")==1
             assert BATCH_POST_EVENTS.count("finish")==1
+            PICTURE_MOCK["existing"]=False
+            page.locator('a[data-page="tasks"]').click()
+            page.locator('a[data-page="video_plans"]').click()
+            expect(page.locator("#wfPictureCuts_video_plans button")).to_contain_text(
+                "一键生成整集画面初剪")
+            page.once("dialog",lambda dialog:dialog.accept())
+            page.locator("#wfPictureCuts_video_plans button").click()
+            expect(page.locator("#wfPictureCuts_video_plans")).to_contain_text(
+                "已排队")
+            assert PICTURE_MOCK["queued"]
             page.screenshot(path=str(OUT/"video-readiness-1440x900.png"),
                             full_page=True)
 
