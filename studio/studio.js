@@ -922,7 +922,8 @@
         const name=el("div","workflow-readiness-head");
         name.appendChild(el("strong","",
           "真实候选 · "+take.take_id.slice(-8)+" · "+
-          (take.status==="approved"?"已批准":
+          (!take.source_current?"历史视频 · 来源已过期":
+           take.status==="approved"?"当前成片已批准":
            take.status==="rejected"?"已驳回":"待人工审片")));
         name.appendChild(el("small","",take.width+"×"+take.height+
           " · "+take.fps.toFixed(2)+"fps · "+take.duration_seconds.toFixed(2)+"s"));
@@ -934,7 +935,10 @@
         card.appendChild(video);
         card.appendChild(el("small","",
           "SHA-256: "+take.sha256+" · 关联制作单 V"+take.plan_revision));
-        if(take.status==="in_review"){
+        if(take.status==="in_review"&&!take.source_current){
+          card.appendChild(el("p","video-take-stale",
+            "该视频关联的镜头或批准素材已经更新，不能批准为当前版本。请依据新制作单重新生成并回传。"));
+        }else if(take.status==="in_review"){
           const reason=el("textarea","video-review-reason");
           reason.placeholder="填写人工审片意见（至少 8 个字）";
           reason.maxLength=600;reason.rows=2;
