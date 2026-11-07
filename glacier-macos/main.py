@@ -23,6 +23,7 @@ from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
 from glacier_accounts22 import GlacierAccounts22
+from glacier_splash import show_glacier_splash
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -164,9 +165,11 @@ def main():
  # The proxy remains configured even when the core is unavailable: fail closed.
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
+ splash=show_glacier_splash("macOS v0.20.0")
  try:
   win=Browser(proc,port)
  except Exception as exc:
+  splash.close()
   # Expose a startup error instead of a silent macOS .app exit.
   # Never write VLESS credentials or raw traceback values to logs.
   import traceback
@@ -180,7 +183,7 @@ def main():
   QMessageBox.critical(None,APP,"Mac 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt 以便排查。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- win.show();code=app.exec()
+ win.show();splash.finish(win);code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
 if __name__=="__main__":sys.exit(main())
