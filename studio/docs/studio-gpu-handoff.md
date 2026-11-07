@@ -261,3 +261,12 @@ The single CPU worker serializes picture cuts, A/V mixing and subtitle mux
 with durable audited job state, finite restart recovery and no GPU prompt
 submission. These steps still depend on actual approved source content.
 
+
+**Private delivery after QC:** An approved and still-current subtitled
+candidate shows two owner-only download actions: the immutable MP4 and a
+checksummed provenance/QC receipt. The receipt independently re-hashes the
+current MP4 and confirms that approved picture, sound, subtitle versions
+have not changed. It records original master and subtitle content digests,
+reviewer and review timestamp; it is not a digital signature and does not
+authorize external distribution. Neither download makes the video public.
+
