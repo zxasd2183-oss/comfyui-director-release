@@ -100,6 +100,10 @@ def response(route):
     if path.endswith("/api/v1/stream"):
         route.abort()
         return
+    if path.endswith("/api/v1/subtitles/vtt"):
+        route.fulfill(status=200,content_type="text/vtt",
+                      body="WEBVTT\n\n00:00:00.000 --> 00:00:01.500\n欢迎回来。\n")
+        return
     if route.request.method=="POST" and path.startswith("/api/v1/release/"):
         command=path.rsplit("/",1)[-1]
         if command=="assemble":
@@ -228,6 +232,7 @@ def response(route):
     elif path.endswith("/api/v1/release"):
         result={"ok":True,"candidates":[{
             "release_id":"REL_"+"e"*32,"source_current":True,
+            "subtitle_id":"SUB_"+"f"*32,"subtitle_language":"zh-CN",
             "source_manifest_sha256":"c"*64,"file_sha256":"d"*64,
             "status":"approved" if RELEASE_MOCK["reviewed"] else "in_review",
             "duration_seconds":8.0,"review_reason":None,"reviewer":None
@@ -518,6 +523,9 @@ def main():
             page.locator('a[data-page="video_plans"]').click()
             expect(page.locator("#wfRelease_video_plans .video-take-player")
                    ).to_have_count(1)
+            expect(page.locator(
+                "#wfRelease_video_plans video track[kind=subtitles]"
+                )).to_have_count(1)
             release_checks=page.locator(
                 "#wfRelease_video_plans .audio-rights-verified input")
             expect(release_checks).to_have_count(4)
