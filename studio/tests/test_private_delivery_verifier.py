@@ -149,7 +149,8 @@ class PrivateDeliveryVerifierTests(unittest.TestCase):
             checker.verify(self.receipt_path, self.movie)
         with self.assertRaisesRegex(checker.PrivateDeliveryError,
                                     "mp4_missing_or_symlink"):
-            checker.verify(self.base / "does-not-exist.json", self.base / "bad.mp4")
+            self.write_receipt()
+            checker.verify(self.receipt_path, self.base / "bad.mp4")
 
 
 if __name__ == "__main__":
