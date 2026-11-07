@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QUrl
 from glacier_accounts22 import (
-    GlacierAccounts22, clean_accounts22, page_site22, safe_site22,
+    GlacierAccounts22, account_site_summary22, clean_accounts22, page_site22, safe_site22,
 )
 
 
@@ -69,6 +69,25 @@ class AccountCardTests(unittest.TestCase):
             host.current = lambda: background
             host._schedule_site_account22(background, "chatgpt.com")
             schedule.assert_called_once()
+
+    def test_global_vault_search_never_indexes_credentials(self):
+        records = [
+            {"site": "chatgpt.com", "name": "Personal",
+             "username": "hidden-user@example.invalid", "password": "secret-key-123"},
+            {"site": "chatgpt.com", "name": "Work",
+             "username": "other@example.invalid", "password": "another-secret"},
+            {"site": "github.com", "name": "Code",
+             "username": "developer@example.invalid", "password": "private-token"},
+        ]
+        self.assertEqual(account_site_summary22(records),
+                         [("chatgpt.com", 2), ("github.com", 1)])
+        self.assertEqual(account_site_summary22(records, "work"),
+                         [("chatgpt.com", 1)])
+        self.assertEqual(account_site_summary22(records, "github"),
+                         [("github.com", 1)])
+        for sensitive in ("secret-key-123", "private-token",
+                          "hidden-user@example.invalid"):
+            self.assertEqual(account_site_summary22(records, sensitive), [])
 
     def test_domains_require_exact_sanitized_https_hostname(self):
         self.assertEqual(safe_site22("www.ChatGPT.com"), "chatgpt.com")
