@@ -64,6 +64,11 @@
         </div>
         <div class="hero-controls">
           <div class="mode-label"><span class="dot blue"></span>监制模式 · 人工监督</div>
+          <div id="gpuPowerControls" class="gpu-power-controls" hidden>
+            <button type="button" id="gpuStartNow" class="gpu-power-start" disabled>⚡ 启动 GPU</button>
+            <button type="button" id="gpuStopNow" class="gpu-power-stop" disabled>■ 关闭 GPU</button>
+            <small id="gpuPowerMessage" role="status">仅已登录 Microsoft 所有者可操作；不需要二次审批</small>
+          </div>
           <button id="dispatchToggle" class="main-button" type="button" disabled>读取状态中…</button>
         </div>
       </section>
@@ -758,7 +763,7 @@
         <div class="panel-header"><div><div class="kicker">AUDIT & EVENTS</div><h2>监制记录</h2><p>每一次介入都有记录</p></div><span class="small-tag">AUDIT LOG</span></div>
         <div id="eventList" class="events"><div class="empty-state">尚无操作记录</div></div>
       </section>
-      <footer class="footer">DIRECTOR STUDIO · GLACIER UI <span>●</span> Microsoft 所有者登录 <span>●</span> 项目及导演操作全程留痕 <span>●</span> GPU 电源仍由吉皮提独立指纹审批</footer>
+      <footer class="footer">DIRECTOR STUDIO · GLACIER UI <span>●</span> Microsoft 所有者登录 <span>●</span> 项目及导演操作全程留痕 <span>●</span> GPU 电源可由 Microsoft 所有者在工作台直接控制</footer>
     </div>
   </main>
 </div>

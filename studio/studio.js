@@ -11,6 +11,7 @@
     review:"待审片",approved:"审核通过",failed:"生成失败",done:"已完成"};
   let latest = null, selectedId = null, csrf = null, pending = null;
   let microsoftOwner = false, selectedProductionEpisode = null, productionAction = null;
+  let gpuPowerBusy=false;
   let currentVisual = null;
   let characterProjectId = "", characterCurrentId = "", characterData = null;
   let characterEditingId = null;
@@ -46,7 +47,10 @@
     $("headerGpuStatus").dataset.state = gpu.ok?gpu.state:"unknown";
     $("gpuValue").textContent=gpu.ok?String(gpu.state):"连接异常";
     $("gpuValue").className=active?"on":gpu.ok?"off":"error";
-    $("gpuSub").textContent=gpu.ok?"CompShare · "+(gpu.gpu_type||"GPU"):"只读电源状态暂不可读";
+    $("gpuSub").textContent=gpu.ok?"CompShare · "+(gpu.gpu_type||"GPU"):"GPU 电源状态暂不可读";
+    $("gpuPowerControls").hidden=!microsoftOwner;
+    $("gpuStartNow").disabled=!microsoftOwner||gpuPowerBusy||!gpu.ok||gpu.state!=="Stopped";
+    $("gpuStopNow").disabled=!microsoftOwner||gpuPowerBusy||!gpu.ok||gpu.state!=="Running";
     $("queueValue").textContent=queue.ok?
       String((queue.running??queue.queue_running??0)+(queue.pending??queue.queue_pending??0)):"—";
     $("queueSub").textContent=queue.ok?
@@ -4326,6 +4330,38 @@
     if(!res.ok)throw Error("snapshot_unavailable");
     render(await res.json());
   }
+  async function operateGpuPower(action){
+    if(!microsoftOwner||!csrf||gpuPowerBusy)return;
+    const btn=$("gpuStartNow"),stop=$("gpuStopNow"),message=$("gpuPowerMessage");
+    gpuPowerBusy=true;btn.disabled=true;stop.disabled=true;
+    message.textContent=action==="start"?"正在向云平台提交开机…":"正在检查任务队列并提交关机…";
+    try{
+      const res=await fetch("./api/v1/gpu-power/operate",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({csrf,action}),cache:"no-store"});
+      const data=await res.json();
+      if(!res.ok||data.ok!==true){
+        const err={comfyui_queue_not_verified:"ComfyUI 队列不可验证，拒绝关机",
+          comfyui_queue_not_empty:"仍有镜头在生成，已阻止关机",
+          power_operation_in_progress_or_cooldown:"已有电源操作或正在冷却，请查询状态",
+          instance_state_not_stopped:"GPU 不是关机状态",
+          instance_state_not_running:"GPU 不是运行状态",
+          power_backend_unavailable:"VPS 电源服务不可用，请检查部署"
+        };
+        throw Error(err[data.reason]||data.reason||"电源操作未被接受");
+      }
+      message.textContent="云平台已收到"+(action==="start"?"开机":"关机")+"请求，等待真实电源状态更新";
+      await refresh();
+    }catch(error){message.textContent=error.message||"电源控制失败";}
+    finally{
+      gpuPowerBusy=false;
+      const gpu=latest?.live?.gpu_power||{};
+      btn.disabled=!microsoftOwner||!gpu.ok||gpu.state!=="Stopped";
+      stop.disabled=!microsoftOwner||!gpu.ok||gpu.state!=="Running";
+    }
+  }
+  $("gpuStartNow").addEventListener("click",()=>operateGpuPower("start"));
+  $("gpuStopNow").addEventListener("click",()=>operateGpuPower("stop"));
   async function start(){
     try{
       const r=await fetch("./api/v1/bootstrap",{cache:"no-store"});

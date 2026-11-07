@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qsl
 
 from studio_core import StudioError, connect, decide, snapshot
+from gpu_power_bridge import operate as operate_gpu_power
 from studio_backend import query
 from studio_identity import (from_systemd, cookies, COOKIE_SID, COOKIE_STATE,
     state_cookie, session_cookie, clear_cookie, IdentityError,
@@ -932,6 +933,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if session is None:
                 return self.reply(401,{"ok":False,"reason":"microsoft_login_required"})
         if path not in ("/api/v1/action", "/auth/logout",
+                        "/api/v1/gpu-power/operate",
                         "/api/v1/production/action",
                         "/api/v1/production/visual/upload",
                         "/api/v1/production/visual/select",
@@ -966,7 +968,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/release/assemble",
                         "/api/v1/release/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
-        if (path.startswith("/api/v1/production/") or
+        if (path=="/api/v1/gpu-power/operate" or
+                path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
                 path.startswith("/api/v1/scenes/") or
                 path.startswith("/api/v1/workflow/") or
@@ -1027,6 +1030,11 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path=="/api/v1/gpu-power/operate":
+            if set(data)!={"csrf","action"} or data.get("action") not in ("start","stop"):
+                return self.reply(400,{"ok":False,"reason":"invalid_power_action"})
+            result=operate_gpu_power(data["action"])
+            return self.reply(202 if result.get("ok") else 409,result)
         if path in ("/api/v1/release/assemble","/api/v1/release/review"):
             try:
                 actor=operator_from_verified_session(session)
