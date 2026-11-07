@@ -91,6 +91,37 @@ and IDs, consistent fps, no missing project approvals and exact total duration.
 It fails closed instead of silently skipping blocked shots. The output is an
 **offline pending queue plan**, not submitted jobs.
 
+### Whole-episode delivery without 31 manual uploads
+
+After separately approved local ComfyUI generation and
+`director_video.py collect --download`, the GPU operator can create a
+single *offline* folder from locally archived, per-shot checksum-verified MP4s:
+
+```sh
+python3 director_video.py export-studio-delivery \
+  --plan /safe/work/episode-plan.json \
+  --results /safe/work/collected-videos \
+  --out /safe/work/StudioDelivery_EP01
+```
+
+This creates `manifest.json` and exactly one uniquely named MP4 per shot;
+each entry pins the Studio project, episode, shot, video-plan revision,
+original Studio package SHA-256, file SHA-256 and ComfyUI prompt ID.
+The command checks all archive manifests and copied bytes and makes **zero**
+network/GPU calls. Its checksum is **not a digital signature**.
+
+Transfer that folder privately to the logged-in owner's local computer.
+In Studio → Video Production → **整集视频批量回传**, select the folder
+once (Chromium directory picker). The browser compares every entry with a
+fresh, current owner-authenticated Studio episode bundle and streams one
+file at a time using the already-protected video-result endpoints. Re-trying
+the same folder resumes the 24-hour partial upload and skips exact immutable
+clips already stored; it never doubles already approved assets or auto-approves
+new clips. The directory contains project footage: avoid publishing it.
+
+This is a **safe batch owner-mediated return**, not a headless GPU-to-VPS
+network callback or GPU power operation. It does not change GPU permissions.
+
 ## 4. Verified MP4 return and formal human review
 
 After a separately authorized GPU execution, use the existing local
