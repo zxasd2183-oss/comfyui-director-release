@@ -1,0 +1,26 @@
+[Unit]
+Description=Glacier private encrypted account sync API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=glacier-sync
+Group=glacier-sync
+WorkingDirectory=/opt/glacier-sync
+EnvironmentFile=/etc/glacier-sync/secrets.env
+Environment=GLACIER_SYNC_DB=/var/lib/glacier-sync/sync.sqlite3
+ExecStart=/opt/glacier-sync/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 18991 --workers 1
+Restart=on-failure
+RestartSec=5
+UMask=0077
+StateDirectory=glacier-sync
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/glacier-sync
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
