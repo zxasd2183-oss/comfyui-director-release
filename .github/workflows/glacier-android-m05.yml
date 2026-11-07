@@ -1,4 +1,4 @@
-name: Glacier Android Mobile v0.2.1 M05 stable signing and verified updates
+name: Glacier Android Mobile v0.2.2 M05 stable signing and verified updates
 
 on:
   push:
@@ -75,7 +75,7 @@ jobs:
       - name: Upload verified sing-box native cores for optional stable signing
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-native-cores
+          name: GlacierAndroid-v0.2.2-M05-native-cores
           path: |
             glacier-android-gecko/app/src/main/jniLibs/arm64-v8a/libsingbox.so
             glacier-android-gecko/app/src/main/jniLibs/x86_64/libsingbox.so
@@ -103,20 +103,20 @@ jobs:
               assert 'classes.dex' in names, 'Missing app bytecode'
               assert not any(n.startswith('lib/armeabi-v7a') for n in names), 'Unexpected 32-bit library'
           PY
-          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk"
-          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk'
+          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk"
+          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk'
       - name: Upload real installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug
-          path: glacier-android-gecko/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
+          path: glacier-android-gecko/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload Android instrumentation test APK
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-instrumentation
+          name: GlacierAndroid-v0.2.2-M05-instrumentation
           path: glacier-android-gecko/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 30
@@ -130,11 +130,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
           path: .glacier-test-apk
       - uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-instrumentation
+          name: GlacierAndroid-v0.2.2-M05-instrumentation
           path: .glacier-test-app
       - name: Configure KVM
         run: |
@@ -158,7 +158,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-storage-evidence
+          name: GlacierAndroid-v0.2.2-M05-storage-evidence
           path: emulator-storage-evidence/
           if-no-files-found: warn
           retention-days: 30
@@ -173,7 +173,7 @@ jobs:
       - name: Download the exact APK built by this run
         uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Configure KVM access for emulator
         run: |
@@ -192,12 +192,12 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk" bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_emulator_smoke.sh"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk" bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_emulator_smoke.sh"
       - name: Preserve screenshots and ADB/logcat evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-emulator-evidence
+          name: GlacierAndroid-v0.2.2-M05-emulator-evidence
           path: emulator-evidence/
           if-no-files-found: warn
           retention-days: 30
@@ -211,7 +211,7 @@ jobs:
       - name: Download built APK from this exact run
         uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Configure emulator KVM
         run: |
@@ -230,12 +230,12 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
       - name: Preserve proxy-failure evidence on success or failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-failclosed-evidence
+          name: GlacierAndroid-v0.2.2-M05-failclosed-evidence
           path: emulator-proxy-evidence/
           if-no-files-found: warn
           retention-days: 30
@@ -250,7 +250,7 @@ jobs:
       - name: Download exact APK from this run
         uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Configure emulator KVM
         run: |
@@ -269,12 +269,12 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
       - name: Preserve synthetic proxy evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-mock-route-evidence
+          name: GlacierAndroid-v0.2.2-M05-mock-route-evidence
           path: emulator-proxy-mock-evidence/
           if-no-files-found: warn
           retention-days: 30
@@ -289,22 +289,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
           path: .glacier-test-apk
       - name: Publish separate NON-upgradeable debug preview
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='glacier-android-browser-v0.2.1-m05-debug-preview'
-          apk='.glacier-test-apk/GlacierAndroid-v0.2.1-Mobile-M05-ARM64-x86_64-debug.apk'
+          tag='glacier-android-browser-v0.2.2-m05-debug-preview'
+          apk='.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk'
           test -s "$apk"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo '::notice::M05 debug preview is already published; never overwrite it.'
           else
             gh release create "$tag" "$apk" \
               --target feature/glacier-android-m05-updates \
-              --title 'Glacier Android v0.2.1 M05 · 更新功能调试预览' \
+              --title 'Glacier Android v0.2.2 M05 · 更新功能调试预览' \
               --notes '仅用于确认更新界面、Android Keystore、SOCKS5、下载与回归测试。此 APK 使用临时 Debug 签名，不能作为长期应用内更新来源，不能保证覆盖升级。固定签名版需独立签名 Secret 与证书指纹。' \
               --prerelease
           fi
@@ -389,7 +389,7 @@ jobs:
           gradle-version: '9.3.1'
       - uses: actions/download-artifact@v4
         with:
-          name: GlacierAndroid-v0.2.1-M05-native-cores
+          name: GlacierAndroid-v0.2.2-M05-native-cores
           path: glacier-android-gecko/app/src/main/jniLibs
       - name: Prepare independently held Glacier APK signing key
         shell: bash
@@ -431,7 +431,7 @@ jobs:
             exit 3
           fi
           mkdir -p dist
-          cp "$source" 'dist/GlacierAndroid-v0.2.1-ARM64-x86_64-release.apk'
+          cp "$source" 'dist/GlacierAndroid-v0.2.2-ARM64-x86_64-release.apk'
           sha256sum dist/*.apk >> "$GITHUB_STEP_SUMMARY"
       - name: Clear signing material from ephemeral runner
         if: always()
@@ -445,9 +445,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='glacier-android-browser-v0.2.1'
+          tag='glacier-android-browser-v0.2.2'
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            state="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets --jq '[.isDraft,.isPrerelease,([.assets[].name] | index("GlacierAndroid-v0.2.1-ARM64-x86_64-release.apk") != null)] | @json')"
+            state="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets --jq '[.isDraft,.isPrerelease,([.assets[].name] | index("GlacierAndroid-v0.2.2-ARM64-x86_64-release.apk") != null)] | @json')"
             if [ "$state" = '[false,false,true]' ]; then
               echo '::notice::Immutable stable Glacier M05 release already exists with expected APK asset; no overwrite or duplicate publication.'
               exit 0
@@ -455,10 +455,10 @@ jobs:
             echo '::error::Glacier stable release tag exists but is not a valid stable APK release; refusing overwrite.'
             exit 3
           fi
-          file='dist/GlacierAndroid-v0.2.1-ARM64-x86_64-release.apk'
+          file='dist/GlacierAndroid-v0.2.2-ARM64-x86_64-release.apk'
           test -s "$file"
           gh release create "$tag" "$file" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title 'Glacier Android v0.2.1 · M05 固定签名安全更新' \
+            --title 'Glacier Android v0.2.2 · M05 固定签名安全更新' \
             --notes '采用独立固定的 Glacier Android 签名，已通过 Android 15 模拟器测试及 apksigner 证书指纹钉扎。应用仅信任对应官方 Glacier 更新资产的 SHA-256、包名、版本升级和已安装签名；下载后通过 Android 系统安装确认。M05 为 Glacier 首个正式固定签名版本，后续更新必须延续同一签名证书；不兼容历史 Debug 测试包。'
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,assets
