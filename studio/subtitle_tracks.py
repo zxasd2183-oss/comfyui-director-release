@@ -214,6 +214,29 @@ def get_file(db_path,project,episode,subtitle_id):
         return path
 
 
+def as_webvtt(srt_text):
+    """Render a validated, private SRT track for browser text-track playback."""
+    if not isinstance(srt_text,str) or len(srt_text)>MAX_CHARS:
+        raise SubtitleError("invalid_subtitle_length")
+    # Every SRT saved by Studio has already passed the strict cue parser.
+    # Never interpret subtitle bytes as HTML, CSS or a network reference.
+    lines=srt_text.replace("\r\n","\n").replace("\r","\n").splitlines()
+    output=["WEBVTT",""]
+    for line in lines:
+        if " --> " in line:
+            part=line.split(" --> ")
+            if len(part)!=2 or not all(TIME.fullmatch(x) for x in part):
+                raise SubtitleError("invalid_subtitle_timestamp",422)
+            output.append(line.replace(",","."))
+        elif line.strip().isdigit() and (
+            not output or output[-1]==""):
+            # Omit SRT cue counters; WebVTT doesn't need them.
+            continue
+        else:
+            output.append(line)
+    return "\n".join(output).strip()+"\n"
+
+
 def review(db_path,data,actor):
     fields={"project_id","episode_id","subtitle_id","decision",
             "rationale","text_rights_verified"}
