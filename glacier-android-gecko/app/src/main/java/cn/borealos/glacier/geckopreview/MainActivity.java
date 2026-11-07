@@ -51,7 +51,7 @@ import java.util.Locale;
 /**
  * Glacier Android mobile browser v0.2.0: M02 Chrome-inspired light UI.
  * A REAL, app-bundled VLESS core may feed Gecko through a loopback SOCKS5 proxy.
- * No credential vault, automatic login or cloud sync exists yet.
+ * Local Keystore-encrypted per-profile account cards are available; no autofill or cloud sync.
  *
  * Profile isolation is provided by GeckoSessionSettings.contextId, NOT UI only.
  * Each tab retains the contextId with which it was created for its entire life.
@@ -1974,7 +1974,7 @@ public final class MainActivity extends Activity {
                 .setMessage("已集成 GeckoView 真正的网页内核，可比较网页显示、导航、账号空间隔离和兼容性。"
                         + "\n\n已接入 VLESS/本地 SOCKS5，可选择加密记住节点、下次启动自动连接。不是 Android 系统级 VPN，也未经过独立安全审计。"
                         + "\n\n现已增加系统文件选择器和实验性下载保存（单文件最大 64 MB）；文件夹上传暂不支持。"
-                        + "\n\n仍未提供账号保险箱、验证码 API、云同步、完整权限管理。"
+                        + "\n\n已提供本机加密账号保险箱与点击获取验证码 API；尚未提供自动登录、云同步或完整设备权限管理。"
                         + "\n\n直连模式仅用于对照测试；VLESS 模式必须验证真实出口。请勿输入关键账号。")
                 .setPositiveButton("知道了", null)
                 .show();
