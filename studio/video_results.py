@@ -203,6 +203,24 @@ def begin_upload(db_path, data, actor):
         root=_safe_root(db_path,create=True)
         now=int(time.time())
         with transaction(db):
+            # Idempotency for owner-approved batch returns: an interrupted
+            # 31-shot delivery should not create duplicate takes or re-upload
+            # large immutable files that already passed verification.
+            existing=db.execute("SELECT take_id FROM studio_video_takes WHERE "
+                "project_id=? AND episode_id=? AND shot_id=? AND "
+                "plan_revision=? AND package_sha256=? AND sha256=? AND "
+                "size_bytes=? AND prompt_id=? AND status IN "
+                "('in_review','approved','rejected') LIMIT 1",
+                (pid,eid,sid,revision,source,digest,size,prompt)).fetchone()
+            if existing:
+                take_id=existing["take_id"]
+                path=root/(take_id+".mp4")
+                if path.is_symlink() or not path.is_file() or (
+                    path.stat().st_size!=size or _file_digest(path)!=digest):
+                    raise VideoResultError("video_take_storage_mismatch",503)
+                return {"ok":True,"already_imported":True,
+                    "take_id":take_id,"received_bytes":size,
+                    "size_bytes":size,"gpu_action":False}
             # An upload is only resumable for 24 hours. Reap abandoned byte
             # files on the next owner start to avoid unbounded disk growth.
             expired=db.execute("SELECT upload_id FROM studio_video_uploads "
