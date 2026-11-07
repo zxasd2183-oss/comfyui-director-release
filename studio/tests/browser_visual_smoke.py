@@ -536,6 +536,10 @@ def main():
             page.get_by_role("button",name="批准私有交付候选").click()
             expect(page.locator("#wfRelease_video_plans")).to_contain_text(
                 "已完成私有终审")
+            expect(page.get_by_role("button",
+                name="导出来源与终审校验单")).to_be_visible()
+            expect(page.locator(
+                '#wfRelease_video_plans a[download]')).to_have_count(1)
             assert RELEASE_MOCK["reviewed"]
             PICTURE_MOCK["existing"]=False
             page.locator('a[data-page="tasks"]').click()
