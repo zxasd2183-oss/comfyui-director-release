@@ -4,11 +4,14 @@ All project/API responses are intentionally mocked in the browser.
 No VPS, Microsoft account, production database, or GPU is contacted.
 Screenshots are demonstrative fixtures, not production renders.
 """
+import base64
 import functools
+import hashlib
 import http.server
 import json
 import os
 from pathlib import Path
+import tempfile
 import threading
 from urllib.parse import urlparse, parse_qs
 
@@ -53,10 +56,54 @@ ASSETS={
     "counts":{k:{"total":0,"approved":0} for k in CATS}
 }
 
+BATCH_CLIPS={}
+BATCH_ENTRIES=[]
+for sid in ("01","02"):
+    content=b"\\x00\\x00\\x00\\x18ftypisom"+bytes([int(sid)])*300
+    digest=hashlib.sha256(content).hexdigest()
+    filename=f"SH_{sid}_{digest[:16]}.mp4"
+    BATCH_CLIPS[filename]=content
+    BATCH_ENTRIES.append({"shot_id":sid,"filename":filename,
+        "file_sha256":digest,"size_bytes":len(content),
+        "plan_revision":1,"package_sha256":sid*64,
+        "prompt_id":"comfy_fixture_"+sid})
+BATCH_INVENTORY={"schema":"director_studio_video_delivery_v1",
+    "project_id":"VisualSmoke","episode_id":"EP01","shot_count":2,
+    "shots":BATCH_ENTRIES,"episode_bundle_sha256":"c"*64,
+    "requires_owner_upload":True,
+    "automatically_uploaded":False,"gpu_dispatch_authorized":False}
+BATCH_DOCUMENT={"ok":True,"manifest":BATCH_INVENTORY,
+    "checksum_type":"sha256_canonical_json_not_signature",
+    "manifest_sha256":hashlib.sha256(json.dumps(BATCH_INVENTORY,
+        sort_keys=True,ensure_ascii=False,separators=(",",":")).encode()).hexdigest()}
+BATCH_POST_EVENTS=[]
+
 def response(route):
     path=urlparse(route.request.url).path
     if path.endswith("/api/v1/stream"):
         route.abort()
+        return
+    if route.request.method=="POST" and path.startswith("/api/v1/video-results/"):
+        event=path.rsplit("/",1)[-1]
+        payload=route.request.post_data_json
+        BATCH_POST_EVENTS.append(event)
+        if event=="start":
+            result={"ok":True,"upload_id":"UP_"+"a"*32,
+                "received_bytes":0,"size_bytes":payload["size_bytes"]}
+            if payload["shot_id"]=="02":
+                result={"ok":True,"already_imported":True,
+                    "take_id":"TAKE_"+"b"*32,
+                    "received_bytes":payload["size_bytes"],
+                    "size_bytes":payload["size_bytes"]}
+        elif event=="chunk":
+            result={"ok":True,"received_bytes":payload["offset"]+
+                len(base64.b64decode(payload["chunk_base64"]))}
+        elif event=="finish":
+            result={"ok":True,"status":"in_review","take_id":"TAKE_"+"a"*32}
+        else:
+            result={"ok":True}
+        route.fulfill(status=200,content_type="application/json",
+                      body=json.dumps(result))
         return
     if path.endswith("/api/v1/bootstrap"):
         result={"csrf":"not-a-real-token","mode":"microsoft_owner"}
@@ -90,6 +137,14 @@ def response(route):
             "kind":"video_take","unit_id":"TAKE_"+"a"*32,
             "shot_id":"01","revision":1,"fields":{"name":"SH01 已回传视频"},
             "status":"in_review","source_visual_id":None}]}
+    elif path.endswith("/api/v1/workflow/video-packages"):
+        result={"ok":True,"bundle_sha256":"c"*64,
+            "bundle":{"all_ready":True,"shot_count":2,
+                "shot_ids":["01","02"],"packages":[{
+                    "package":{"shot_id":entry["shot_id"],
+                        "video_plan":{"revision":1,"status":"in_review"}},
+                    "package_sha256":entry["package_sha256"]}
+                    for entry in BATCH_ENTRIES]}}
     elif path.endswith("/api/v1/workflow/readiness"):
         blockers=["project_spec_not_approved","shot_plans_not_approved",
                   "storyboards_not_approved","white_models_not_approved"]
@@ -136,6 +191,13 @@ def check_layout(page, name):
         f"{area['width']:.0f})")
 
 def main():
+    fixture=tempfile.TemporaryDirectory()
+    folder=Path(fixture.name)/"StudioGpuDelivery"
+    folder.mkdir()
+    (folder/"manifest.json").write_text(json.dumps(
+        BATCH_DOCUMENT,ensure_ascii=False),encoding="utf-8")
+    for filename,content in BATCH_CLIPS.items():
+        (folder/filename).write_bytes(content)
     server=http.server.ThreadingHTTPServer(("127.0.0.1",0),QuietHandler)
     thread=threading.Thread(target=server.serve_forever,daemon=True)
     thread.start()
@@ -216,6 +278,13 @@ def main():
             expect(page.locator("#wfStageTitle_video_plans")).to_contain_text("02")
             expect(page.locator("#wfBatchReturnFiles_video_plans")).to_be_visible()
             expect(page.locator("#wfBatchReturnSubmit_video_plans")).to_be_visible()
+            page.locator("#wfBatchReturnFiles_video_plans").set_input_files(str(folder))
+            page.locator("#wfBatchReturnSubmit_video_plans").click()
+            expect(page.locator("#wfBatchReturnMessage_video_plans")).to_contain_text(
+                "回传完成：2/2")
+            assert BATCH_POST_EVENTS.count("start")==2
+            assert BATCH_POST_EVENTS.count("chunk")==1
+            assert BATCH_POST_EVENTS.count("finish")==1
             page.screenshot(path=str(OUT/"video-readiness-1440x900.png"),
                             full_page=True)
 
@@ -232,6 +301,7 @@ def main():
     finally:
         server.shutdown()
         server.server_close()
+        fixture.cleanup()
 
 if __name__=="__main__":
     main()
