@@ -77,6 +77,17 @@ def clean_accounts22(payload):
     return {"schema": 1, "accounts": result}
 
 
+def account_site_summary22(records, query=""):
+    """Search domain/alias only: never index usernames, passwords or tokens."""
+    words = query.strip().casefold().split()
+    sites = {}
+    for record in records:
+        site = record["site"]
+        if all(word in (site + " " + record["name"]).casefold() for word in words):
+            sites[site] = sites.get(site, 0) + 1
+    return sorted(sites.items())
+
+
 class GlacierAccounts22:
     def setup_accounts22(self, directory, encrypt, decrypt):
         self._accounts_path22 = Path(directory) / "accounts-d03.dpapi"
@@ -303,14 +314,8 @@ class GlacierAccounts22:
 
         def refresh(query=""):
             items.clear()
-            words = query.strip().casefold().split()
-            sites = {}
-            for record in self._accounts_doc22["accounts"]:
-                site = record["site"]
-                if all(word in (site + " " + record["name"]).casefold()
-                       for word in words):
-                    sites[site] = sites.get(site, 0) + 1
-            for site, count in sorted(sites.items()):
+            for site, count in account_site_summary22(
+                    self._accounts_doc22["accounts"], query):
                 from PySide6.QtWidgets import QListWidgetItem
                 item = QListWidgetItem(site + "  ·  " + str(count) + " 个账号")
                 item.setData(Qt.ItemDataRole.UserRole, site)
