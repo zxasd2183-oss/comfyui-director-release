@@ -105,6 +105,12 @@ from audio_master_jobs import (
     list_jobs as list_av_master_jobs,
     media_worker_loop
 )
+from subtitle_tracks import (
+    SubtitleError, prepare_schema as prepare_subtitle_tracks,
+    save as save_subtitle_track, review as review_subtitle_track,
+    list_tracks as list_subtitle_tracks,
+    get_file as get_subtitle_file
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -217,6 +223,7 @@ class StudioServer(ThreadingHTTPServer):
             prepare_audio_stems(db)
             prepare_av_masters(db)
             prepare_av_master_jobs(db)
+            prepare_subtitle_tracks(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -486,6 +493,30 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path in ("/api/v1/subtitles","/api/v1/subtitles/file"):
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                fields={"project","episode"}
+                if path.endswith("/file"):fields.add("subtitle")
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if len(pairs)!=len(fields) or len({k for k,v in pairs})!=len(pairs) or (
+                    set(dict(pairs))!=fields):
+                    raise SubtitleError("invalid_subtitle_query")
+                args=dict(pairs)
+                if not path.endswith("/file"):
+                    return self.reply(200,list_subtitle_tracks(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                path_to_text=get_subtitle_file(self.server.production_db_path,
+                    args["project"],args["episode"],args["subtitle"])
+                return self.reply(200,{"ok":True,
+                    "subtitle_id":args["subtitle"],
+                    "text":path_to_text.read_text(encoding="utf-8"),
+                    "gpu_action":False})
+            except SubtitleError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,UnicodeError):
+                return self.reply(503,{"ok":False,"reason":"subtitle_storage_unavailable"})
         if path in ("/api/v1/av-master","/api/v1/av-master/readiness",
                     "/api/v1/av-master/file","/api/v1/av-master/jobs"):
             if not secured:
@@ -870,7 +901,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/audio-stems/finish",
                         "/api/v1/audio-stems/review",
                         "/api/v1/av-master/assemble",
-                        "/api/v1/av-master/review"):
+                        "/api/v1/av-master/review",
+                        "/api/v1/subtitles/save",
+                        "/api/v1/subtitles/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
@@ -879,7 +912,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 path.startswith("/api/v1/video-results/") or
                 path.startswith("/api/v1/picture-cuts/") or
                 path.startswith("/api/v1/audio-stems/") or
-                path.startswith("/api/v1/av-master/")) and not secured:
+                path.startswith("/api/v1/av-master/") or
+                path.startswith("/api/v1/subtitles/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -915,6 +949,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         max_allowed=(MAX_POST_BYTES if path.endswith("/visual/upload") else
                      VIDEO_CHUNK_BYTES*4//3+4096 if path in (
                          "/api/v1/video-results/chunk","/api/v1/audio-stems/chunk")
+                     else 400000 if path=="/api/v1/subtitles/save"
                      else MAX_BODY)
         if not 1 <= length <= max_allowed:
             return self.reply(413, {"ok": False, "reason": "invalid_request_size"})
@@ -930,6 +965,19 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path in ("/api/v1/subtitles/save","/api/v1/subtitles/review"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                action=save_subtitle_track if path.endswith("/save") else review_subtitle_track
+                return self.reply(200,action(
+                    self.server.production_db_path,fields,actor))
+            except SubtitleError as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError,TypeError):
+                return self.reply(400,{"ok":False,"reason":"invalid_subtitle_request"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"subtitle_storage_unavailable"})
         if path in ("/api/v1/av-master/assemble","/api/v1/av-master/review"):
             try:
                 actor=operator_from_verified_session(session)
