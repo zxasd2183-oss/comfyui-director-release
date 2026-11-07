@@ -16,7 +16,8 @@ from urllib.parse import urlsplit
 
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMessageBox, QPushButton, QVBoxLayout,
@@ -67,11 +68,13 @@ def encrypt_space23(records, space, password):
     if len(plain) > 150000:
         raise SyncError23("Account space too large to sync")
     salt, nonce = secrets.token_bytes(16), secrets.token_bytes(12)
-    key = Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(
-        password.encode("utf-8"))
+    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
+                     salt=salt, iterations=400000).derive(password.encode("utf-8"))
     context = ("glacier-sync-v1:" + space).encode("utf-8")
     ciphertext = AESGCM(key).encrypt(nonce, plain, context)
-    return json.dumps({"format": "glacier-vault-v1", "salt": _b64(salt),
+    return json.dumps({"format": "glacier-vault-v1",
+                       "kdf": "pbkdf2-sha256-400k",
+                       "salt": _b64(salt),
                        "nonce": _b64(nonce), "ciphertext": _b64(ciphertext)},
                       separators=(",", ":"))
 
@@ -81,14 +84,16 @@ def decrypt_space23(envelope, space, password):
         raise SyncError23("Invalid encryption passphrase or space")
     try:
         doc = json.loads(envelope)
-        if not isinstance(doc, dict) or doc.get("format") != "glacier-vault-v1":
+        if (not isinstance(doc, dict) or doc.get("format") != "glacier-vault-v1"
+                or doc.get("kdf") != "pbkdf2-sha256-400k"):
             raise ValueError("Bad envelope")
         salt, nonce, ciphertext = (_unb64(doc[k])
                                    for k in ("salt", "nonce", "ciphertext"))
         if len(salt) != 16 or len(nonce) != 12 or len(ciphertext) > 200000:
             raise ValueError("Bad encrypted length")
-        key = Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(
-            password.encode("utf-8"))
+        key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
+                            salt=salt, iterations=400000).derive(
+                                password.encode("utf-8"))
         plaintext = AESGCM(key).decrypt(nonce, ciphertext,
                                       ("glacier-sync-v1:" + space).encode("utf-8"))
         if len(plaintext) > 150000:
