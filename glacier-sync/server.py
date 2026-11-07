@@ -236,6 +236,9 @@ def login(data: Login):
               attempts=excluded.attempts, locked_until=excluded.locked_until,
               last_failure=excluded.last_failure
             """, (data.username, attempts, lock_until, now))
+            # Authentication failure must persist despite the expected HTTP
+            # error; the db context otherwise rolls back the penalty update.
+            conn.commit()
             raise HTTPException(status_code=401, detail="Invalid credentials")
         conn.execute("DELETE FROM auth_failures WHERE username=?", (data.username,))
         known = None
