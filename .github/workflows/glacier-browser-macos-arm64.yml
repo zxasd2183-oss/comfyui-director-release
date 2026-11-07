@@ -1,4 +1,4 @@
-name: Glacier Browser macOS Apple Silicon v0.20 D03 account cards preview
+name: Glacier Browser macOS Apple Silicon v0.20.2 unified accounts sync preview
 on:
   push:
     branches:
@@ -73,7 +73,7 @@ jobs:
           cp ../glacier-windows/test_productivity16.py test_productivity16.py
           for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py; do cp ../glacier-windows/"$file" "$file"; done
           python ../scripts/glacier_prepare_rotated_update.py macos .
-          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py test_accounts22.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
+          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py glacier_sync23.py test_accounts22.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
           python -m unittest -v test_mac_update
           python -m unittest -v test_mac_https_probe
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_gui_start
@@ -170,7 +170,7 @@ jobs:
         working-directory: glacier-macos
         run: |
           set -euo pipefail
-          tag="glacier-macos-v0.20.2-d03-${GITHUB_SHA:0:7}"
+          tag="glacier-macos-v0.20.2-sync-v1-${GITHUB_SHA:0:7}"
           dmg='GlacierBrowser-v0.20.2-macOS-AppleSilicon.dmg'
           for attempt in 1 2 3 4 5; do
             if gh release view "$tag" >/dev/null 2>&1; then
@@ -178,8 +178,8 @@ jobs:
               break
             else
               gh release create "$tag" "$dmg" "$dmg.sha256" --target "$GITHUB_SHA" \
-                --title 'Glacier Browser 0.20.2 D03 · macOS account cards preview' \
-                --notes 'D03 preview: local encrypted website account cards, explicit manual copy and no automatic login; existing VLESS network and signed updater implementation unchanged, preview not added to signed feed. Preview DMG is not Apple Developer ID signed/notarized.' \
+                --title 'Glacier Browser 0.20.2 · macOS unified accounts preview' \
+                --notes 'Unified account preview: device approvals and E2E encrypted private/work vault sync via self-hosted server, manual credential copying and OTP API; no automatic login; existing VLESS network and signed updater implementation unchanged, preview not added to signed feed. Preview DMG is not Apple Developer ID signed/notarized.' \
                 --prerelease && break
             fi
             if [ "$attempt" = 5 ]; then exit 1; fi
