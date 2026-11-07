@@ -34,6 +34,14 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Verify pinned updater trust key before packaging
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.glacier_prepare_rotated_update import validate_public
+          validate_public(os.environ.get("GLACIER_UPDATE_SIGNING_PUBLIC_HEX", ""))
+          print("Glacier updater public key configured")
+          PY
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
