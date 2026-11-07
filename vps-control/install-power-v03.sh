@@ -22,7 +22,7 @@ id directorctl >/dev/null 2>&1 || { echo "directorctl account missing"; exit 1; 
 id directorpower >/dev/null 2>&1 || useradd --system --home-dir "$APP" --shell /usr/sbin/nologin directorpower
 
 mkdir -p "$APP"
-for name in power_ops.py power_v03.py power_write_mcp.py power_approval_http.py; do
+for name in power_ops.py power_v03.py power_direct.py power_write_mcp.py power_approval_http.py; do
   install -o root -g root -m 0644 "$SRC/$name" "$APP/$name"
 done
 install -o root -g root -m 0644 "$SRC/bridge.py" "$BRIDGE"

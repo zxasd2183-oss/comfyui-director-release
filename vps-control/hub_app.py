@@ -1,8 +1,7 @@
 """ChatGPT-facing Director Hub: GPU/VPS/power plus authenticated Studio brain tools.
 
-The Hub NEVER invokes provider Start/Stop APIs. The unified protected VPS core
-creates pending requests, and Jipite's biometric approval remains the
-only normal path that authorizes a real provider operation.
+The Hub has no cloud provider credentials. Its authenticated private bridge
+can call protected VPS immediate GPU power tools without per-action approval.
 """
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -77,6 +76,27 @@ def get_control_center_status() -> dict:
 def get_gpu_power_status() -> dict:
     """Read actual GPU instance power state from the unified VPS core."""
     return call("get_gpu_power_status")
+
+
+@app.tool(annotations=WRITE)
+def start_gpu_now() -> dict:
+    """Start the GPU immediately through the protected VPS core.
+
+    No separate TOTP or biometric approval. GPU billing may begin.
+    Returns provider submission state; verify actual Running state separately.
+    """
+    return call("start_gpu_now")
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True,
+                                      idempotentHint=False, openWorldHint=False))
+def stop_gpu_now() -> dict:
+    """Stop GPU immediately only when its ComfyUI queue is verified empty.
+
+    Confirm that generated results are already saved to persistent storage.
+    No separate phone/browser approval.
+    """
+    return call("stop_gpu_now")
 
 
 @app.tool(annotations=WRITE)

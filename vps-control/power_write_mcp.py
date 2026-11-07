@@ -1,7 +1,7 @@
 """V0.6 unified VPS status + staged power requests MCP. MCP cannot power GPU.
 
-Authentication boundary: bind to localhost only; configure authenticated HTTPS
-proxy separately. Requests require independent Jipite biometric owner approval (legacy TOTP remains available).
+Authentication boundary: bind to localhost only; use authenticated Director Hub
+private bridge for immediate operator actions. Legacy approval remains optional.
 """
 import os
 import stat
@@ -12,6 +12,7 @@ from mcp.types import ToolAnnotations
 
 from power_ops import PowerError, read_env_file, read_systemd_credential_env
 from power_v03 import DB_DEFAULT, plan_and_request, request_status
+from power_direct import execute_direct
 from vps_unified_status import control_center_status, gpu_power_status
 
 app = FastMCP("ComfyUI Director VPS - Power Requests",
@@ -107,6 +108,38 @@ def get_power_service_health() -> dict:
             "zone_set": bool(cfg.get("COMP_ZONE")),
             "write_request_tools_enabled": True,
             "gpu_power_operation_executed": False}
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=False,
+                                      destructiveHint=False,
+                                      idempotentHint=False,
+                                      openWorldHint=False))
+def start_gpu_now() -> dict:
+    """Immediately submit GPU START to the provider; no second approval.
+
+    Restricted to the existing owner-authenticated private Director Hub route.
+    May start GPU billing. Always check get_gpu_power_status afterward.
+    """
+    try:
+        return execute_direct("start", _config(), _db())
+    except Exception:
+        return {"ok": False, "reason": "direct_power_service_unavailable"}
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=False,
+                                      destructiveHint=True,
+                                      idempotentHint=False,
+                                      openWorldHint=False))
+def stop_gpu_now() -> dict:
+    """Immediately submit GPU STOP if ComfyUI queue is VERIFIED empty.
+
+    Does not independently attest that all output files are persisted.
+    Never auto-retries uncertain cloud outcomes.
+    """
+    try:
+        return execute_direct("stop", _config(), _db())
+    except Exception:
+        return {"ok": False, "reason": "direct_power_service_unavailable"}
 
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=False,

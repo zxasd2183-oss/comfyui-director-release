@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Director Hub V0.6: unify VPS status and staged power requests on port 8892.
-# NEVER invokes GPU start/stop APIs; keeps Microsoft/Jipite approval isolated.
+# Director Hub: protected owner direct GPU actions plus legacy staged requests.
+# Installer itself NEVER executes a provider GPU power operation.
 set -Eeuo pipefail
 umask 077
 fail() { echo "ERROR: $*" >&2; exit 2; }
@@ -31,7 +31,7 @@ for name in director-hub-mcp director-hub-bridge director-power-mcp director-mob
 done
 [[ -x "$PYTHON" && -f "$DB" && ! -L "$DB" ]] || fail "Existing Python or approval DB missing"
 [[ -d "$HUB" && ! -L "$HUB" && -d "$POWER" && ! -L "$POWER" ]] || fail "Existing installation missing"
-for name in power_ops.py power_write_mcp.py vps_unified_status.py \
+for name in power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py \
             hub_rpc.py hub_brain.py hub_file_sync.py hub_sync_jobs.py hub_app.py hub_bridge.py director-hub-mcp.service; do
     [[ -f "$SRC/$name" && ! -L "$SRC/$name" ]] || fail "Missing source $name"
 done
@@ -62,6 +62,11 @@ BACKUP="$(mktemp -d /var/tmp/director-hub-v06-backup-XXXXXXXX)"
 chmod 0700 "$BACKUP"
 cp -p "$POWER/power_ops.py" "$BACKUP/power_ops.py"
 cp -p "$POWER/power_write_mcp.py" "$BACKUP/power_write_mcp.py"
+HAD_DIRECT=0
+if [[ -f "$POWER/power_direct.py" && ! -L "$POWER/power_direct.py" ]]; then
+    HAD_DIRECT=1
+    cp -p "$POWER/power_direct.py" "$BACKUP/power_direct.py"
+fi
 cp -p "$HUB/hub_rpc.py" "$BACKUP/hub_rpc.py"
 cp -p "$HUB/hub_app.py" "$BACKUP/hub_app.py"
 HAD_SYNC_JOBS=0
@@ -94,6 +99,11 @@ restore_on_exit() {
         echo "Upgrade failed: restoring old binaries and service unit" >&2
         cp -p "$BACKUP/power_ops.py" "$POWER/power_ops.py" || :
         cp -p "$BACKUP/power_write_mcp.py" "$POWER/power_write_mcp.py" || :
+        if (( HAD_DIRECT )); then
+            cp -p "$BACKUP/power_direct.py" "$POWER/power_direct.py" || :
+        else
+            rm -f "$POWER/power_direct.py" || :
+        fi
         cp -p "$BACKUP/hub_rpc.py" "$HUB/hub_rpc.py" || :
         cp -p "$BACKUP/hub_app.py" "$HUB/hub_app.py" || :
         if (( HAD_SYNC_JOBS )); then
@@ -134,6 +144,7 @@ restore_on_exit() {
 trap 'restore_on_exit $?' EXIT
 install -o root -g root -m 0644 "$SRC/power_ops.py" "$POWER/power_ops.py"
 install -o root -g root -m 0644 "$SRC/power_write_mcp.py" "$POWER/power_write_mcp.py"
+install -o root -g root -m 0644 "$SRC/power_direct.py" "$POWER/power_direct.py"
 install -o root -g root -m 0644 "$SRC/vps_unified_status.py" "$POWER/vps_unified_status.py"
 install -o root -g root -m 0644 "$SRC/hub_rpc.py" "$HUB/hub_rpc.py"
 install -o root -g root -m 0644 "$SRC/hub_brain.py" "$HUB/hub_brain.py"
@@ -143,7 +154,7 @@ install -o root -g root -m 0644 "$SRC/hub_app.py" "$HUB/hub_app.py"
 install -o root -g root -m 0644 "$SRC/hub_bridge.py" "$HUB/hub_bridge.py"
 install -o root -g root -m 0644 "$SRC/director-hub-mcp.service" "$UNIT"
 "$PYTHON" -m py_compile "$POWER"/power_ops.py "$POWER"/power_write_mcp.py \
-    "$POWER"/vps_unified_status.py "$HUB"/hub_rpc.py "$HUB"/hub_brain.py "$HUB"/hub_file_sync.py "$HUB"/hub_sync_jobs.py "$HUB"/hub_app.py "$HUB"/hub_bridge.py
+    "$POWER"/vps_unified_status.py "$POWER"/power_direct.py "$HUB"/hub_rpc.py "$HUB"/hub_brain.py "$HUB"/hub_file_sync.py "$HUB"/hub_sync_jobs.py "$HUB"/hub_app.py "$HUB"/hub_bridge.py
 systemctl daemon-reload
 systemctl restart director-power-mcp director-hub-mcp
 systemctl restart director-hub-bridge
@@ -176,11 +187,13 @@ def read(port,name):
         data=json.loads(values[0]) if values else {}
     return data
 core={"get_power_service_health","get_control_center_status","get_gpu_power_status",
-      "request_gpu_start","request_gpu_stop","get_power_request_status"}
+      "request_gpu_start","request_gpu_stop","get_power_request_status",
+      "start_gpu_now","stop_gpu_now"}
 hub={"get_studio_status","get_queue_summary","list_h3_nodes","list_h3_workflows",
      "get_h3_workflow_structure","audit_h3_workflow","get_h3_node_inputs",
      "get_upgrade_readiness","get_control_center_status","get_gpu_power_status",
      "request_gpu_start","request_gpu_stop","get_power_request_status",
+     "start_gpu_now","stop_gpu_now",
      "get_production_dashboard","get_production_episode",
      "create_production_project","create_production_episode",
      "add_production_shot","save_production_outline",
@@ -201,7 +214,7 @@ for attempt in range(8):
                 raise RuntimeError("Read-only status backend unavailable")
             if not read(port,"get_control_center_status").get("configured"):
                 raise RuntimeError("Provider configuration unavailable")
-        print("PASS: VPS unified core 6 tools; Hub 27 tools; state via both; no power operation")
+        print("PASS: VPS core 8 tools; Hub 29 tools; state via both; no power operation")
         break
     except Exception:
         if attempt==7: raise

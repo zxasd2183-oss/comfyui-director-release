@@ -1,8 +1,7 @@
 """V0.6 unified VPS status module, only used by the existing power MCP process.
 
-Both public read-only status tools and staged power requests now share the same
-systemd LoadCredential-protected provider config. No direct power operation
-is exported here, and no provider response or secret value is returned.
+Read-only status and owner-authenticated immediate power operations share the
+systemd LoadCredential-protected config. No provider secret is returned.
 """
 from __future__ import annotations
 
@@ -21,8 +20,8 @@ def control_center_status(config_fn):
         "version": "0.6.0",
         "configured": valid,
         "instance_selected": valid,
-        "gpu_control_enabled": False,
-        "mode": "read_only",
+        "gpu_control_enabled": valid,
+        "mode": "owner_direct" if valid else "unconfigured",
     }
 
 

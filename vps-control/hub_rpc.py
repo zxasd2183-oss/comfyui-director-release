@@ -1,7 +1,7 @@
 """Director Hub V0.6: strict, local-only routing to GPU and unified VPS core.
 
-The Hub has no direct cloud provider credentials and NO power execution tool.
-All start/stop requests remain behind the existing mobile biometric approval.
+The Hub has no cloud provider credentials. Its owner-authenticated private
+MCP bridge can route immediate power operations to the protected VPS core.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ GPU_TOOLS = frozenset({
 VPS_TOOLS = frozenset({"get_control_center_status", "get_gpu_power_status"})
 POWER_TOOLS = frozenset({
     "request_gpu_start", "request_gpu_stop", "get_power_request_status",
+    "start_gpu_now", "stop_gpu_now",
 })
 BRAIN_READ_TOOLS = frozenset({"get_production_dashboard","get_production_episode",
                              "get_project_characters"})

@@ -1,5 +1,5 @@
 [Unit]
-Description=Director V0.3 staged GPU power requests MCP (no direct power actions)
+Description=Director authenticated GPU power MCP (direct owner actions and legacy staged requests)
 After=network-online.target
 Wants=network-online.target
 

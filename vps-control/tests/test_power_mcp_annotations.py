@@ -13,12 +13,16 @@ class ToolAnnotationsTests(unittest.TestCase):
             "request_gpu_start", "request_gpu_stop", "get_power_request_status",
             "get_power_service_health",
             "get_control_center_status", "get_gpu_power_status",
+            "start_gpu_now", "stop_gpu_now",
         })
-        for name in ("request_gpu_start", "request_gpu_stop"):
+        for name in ("request_gpu_start", "request_gpu_stop",
+                     "start_gpu_now"):
             anno = by_name[name].annotations
             self.assertIsNotNone(anno)
             self.assertIs(anno.readOnlyHint, False)
             self.assertIs(anno.destructiveHint, False)
+        self.assertIs(by_name["stop_gpu_now"].annotations.readOnlyHint, False)
+        self.assertIs(by_name["stop_gpu_now"].annotations.destructiveHint, True)
         self.assertIs(by_name["get_power_request_status"].annotations.readOnlyHint,
                       True)
         for name in ("get_power_service_health", "get_control_center_status",

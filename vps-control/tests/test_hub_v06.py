@@ -36,8 +36,8 @@ class UnifiedVpsV06Tests(unittest.TestCase):
     def test_status_configuration_no_key_leak(self):
         result = status.control_center_status(config)
         self.assertTrue(result["configured"])
-        self.assertFalse(result["gpu_control_enabled"])
-        self.assertEqual(result["mode"], "read_only")
+        self.assertTrue(result["gpu_control_enabled"])
+        self.assertEqual(result["mode"], "owner_direct")
         self.assertNotIn("COMP_PRIVATE_KEY", str(result))
         self.assertNotIn("not-for-logs", str(result))
         self.assertFalse(status.control_center_status(lambda: {})["configured"])
@@ -73,7 +73,7 @@ class UnifiedVpsV06Tests(unittest.TestCase):
     def test_all_five_vps_tools_route_to_single_private_core(self):
         for name in hub_rpc.VPS_TOOLS | hub_rpc.POWER_TOOLS:
             self.assertEqual(hub_rpc.endpoint(name), "http://127.0.0.1:8892/mcp")
-        self.assertEqual(len(hub_rpc.ALL_TOOLS), 23)
+        self.assertEqual(len(hub_rpc.ALL_TOOLS), 25)
         with self.assertRaisesRegex(hub_rpc.HubError, "allowlisted"):
             hub_rpc.endpoint("submit_power_request")
 
