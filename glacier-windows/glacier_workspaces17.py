@@ -424,6 +424,9 @@ QToolButton#GlacierWorkspaceButton17:hover,QToolButton#GlacierTabGroupsButton17:
                 cleanup = getattr(self, "cleanup_closed13", None)
                 if callable(cleanup):
                     cleanup(view)
+                unregister = getattr(self, "unregister_account_tab22", None)
+                if callable(unregister):
+                    unregister(view)
                 self.tabs.removeTab(index)
                 view.deleteLater()
             for row in dest["tabs"]:
