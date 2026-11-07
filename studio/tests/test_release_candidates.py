@@ -140,9 +140,23 @@ class ReleaseTests(unittest.TestCase):
             self.approve(generated["release_id"],checks=False)
         self.assertEqual(incomplete.exception.reason,
             "release_final_qc_confirmation_required")
+        with self.assertRaises(release.ReleaseError) as early:
+            release.get_private_delivery_receipt(
+                self.db,"WaitingOffice","EP01",generated["release_id"])
+        self.assertEqual(early.exception.reason,"release_not_final_qc_approved")
         completed=self.approve(generated["release_id"])
         self.assertEqual(completed["status"],"approved")
         self.assertFalse(completed["publicly_released"])
+        receipt=release.get_private_delivery_receipt(
+            self.db,"WaitingOffice","EP01",generated["release_id"])
+        self.assertEqual(receipt["receipt"]["final_qc_status"],"approved")
+        self.assertFalse(receipt["receipt"]["publicly_released"])
+        self.assertFalse(receipt["receipt"]["signed_receipt"])
+        self.assertEqual(receipt["receipt"]["subtitle_id"],sub_id)
+        self.assertEqual(receipt["receipt"]["av_master_id"],master_id)
+        self.assertEqual(receipt["receipt_sha256"],hashlib.sha256(
+            json.dumps(receipt["receipt"],sort_keys=True,
+                ensure_ascii=False,separators=(",",":")).encode()).hexdigest())
         with self.assertRaises(release.ReleaseError):
             self.approve(generated["release_id"])
         with closing(core.open_db(self.db,initialize=False)) as db:
@@ -230,9 +244,18 @@ class ReleaseTests(unittest.TestCase):
                 overrides={"Cookie":""})[0],401)
             self.assertEqual(request("POST","/api/v1/release/review",
                 {**payload,"csrf":"wrong"})[0],403)
+            receipt_path="/api/v1/release/receipt"+q+"&release="+created["release_id"]
+            self.assertEqual(request("GET",receipt_path,
+                overrides={"Cookie":""})[0],401)
+            self.assertEqual(request("GET",receipt_path)[0],409)
             status,body=request("POST","/api/v1/release/review",payload)
             self.assertEqual(status,200)
             self.assertFalse(json.loads(body)["publicly_released"])
+            receipt_status,bytes_received=request("GET",receipt_path)
+            self.assertEqual(receipt_status,200)
+            doc=json.loads(bytes_received)
+            self.assertFalse(doc["receipt"]["publicly_released"])
+            self.assertEqual(doc["receipt"]["final_qc_status"],"approved")
         finally:
             app.shutdown();app.server_close();worker.join(timeout=5)
 
