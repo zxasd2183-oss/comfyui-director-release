@@ -83,6 +83,9 @@ public final class MainActivity extends Activity {
     private final List<BrowserAccountsStore.Card> accountCards = new ArrayList<>();
     private final ExecutorService accountCodeQueue = Executors.newSingleThreadExecutor();
     private boolean accountsReadonly;
+    private GlacierCloudSync.State cloudState = new GlacierCloudSync.State();
+    private boolean cloudSessionReadonly;
+    private final ExecutorService cloudQueue = Executors.newSingleThreadExecutor();
     private GeckoView web;
     private BrowserTransfers transfers;
     private BrowserUpdater updater;
@@ -125,6 +128,11 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         restoreLibrary();
         restoreAccountVault();
+        try {
+            cloudState = GlacierCloudSync.load(this);
+        } catch(Exception ignored) {
+            cloudSessionReadonly = true;
+        }
         updater = new BrowserUpdater(this);
         transfers = new BrowserTransfers(this, (profile, filename, mime, bytes, document) -> {
             if (!BrowserLibraryStore.validProfile(profile)
@@ -1190,6 +1198,7 @@ public final class MainActivity extends Activity {
         actions.add("更新与版本");
         actions.add("切换账号空间");
         actions.add("网站账号保险箱");
+        actions.add("Glacier 统一账号与同步");
         actions.add("网络连接信息");
         actions.add("打开 ChatGPT");
         actions.add("打开 GitHub");
@@ -1227,6 +1236,8 @@ public final class MainActivity extends Activity {
                         chooseProfile();
                     } else if ("网站账号保险箱".equals(item)) {
                         showAccountVault();
+                    } else if ("Glacier 统一账号与同步".equals(item)) {
+                        showCloudMenu();
                     } else if ("网络连接信息".equals(item)) {
                         showNetworkStatus();
                     } else if ("打开 ChatGPT".equals(item)) {
@@ -2032,6 +2043,7 @@ public final class MainActivity extends Activity {
             }
         }
         if (isFinishing()) accountCodeQueue.shutdownNow();
+        if (isFinishing()) cloudQueue.shutdownNow();
         if (transfers != null && isFinishing()) transfers.dispose();
         if (updater != null && isFinishing()) updater.dispose();
         if (isFinishing()) {
