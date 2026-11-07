@@ -683,7 +683,7 @@
         await workflowLoadReadiness(state);
         await Promise.all([
           loadAudioStems(state),loadPictureCuts(state),
-          loadAVMasters(state),loadSubtitles(state)
+          loadAVMasters(state),loadSubtitles(state),loadReleases(state)
         ]);
       }
     }catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
@@ -2056,7 +2056,10 @@
                   subtitle_id:sub.subtitle_id,decision,
                   rationale:reason.value.trim(),
                   text_rights_verified:decision==="approve"&&rights.checked});
-                if(current())await loadSubtitles(state);
+                if(current()){
+                  await loadSubtitles(state);
+                  await loadReleases(state);
+                }
               }catch(error){
                 $("wfMessage_video_plans").textContent=
                   "字幕审批失败："+error.message;
@@ -2290,7 +2293,10 @@
                   }),cache:"no-store"});
                 const result=await response.json();
                 if(!response.ok)throw Error(result.reason||"音画审查失败");
-                if(current())await loadAVMasters(state);
+                if(current()){
+                  await loadAVMasters(state);
+                  await loadReleases(state);
+                }
               }catch(error){
                 $("wfMessage_video_plans").textContent=
                   "音画审核失败："+error.message;
@@ -2312,6 +2318,192 @@
     }catch(error){
       if(current())root.replaceChildren(el("p","",
         "音画混音状态读取失败："+error.message));
+    }
+  }
+
+  // An approved private release candidate is NOT a public publishing action.
+  let releaseReadSerial=0;
+  let releaseRefreshTimer=null;
+  async function loadReleases(state){
+    if(releaseRefreshTimer){
+      clearTimeout(releaseRefreshTimer);
+      releaseRefreshTimer=null;
+    }
+    const serial=++releaseReadSerial;
+    const root=$("wfRelease_video_plans");
+    if(!root)return;
+    const pid=state.project,eid=state.episode;
+    const current=()=>serial===releaseReadSerial&&
+      state.project===pid&&state.episode===eid;
+    root.replaceChildren();
+    if(!pid||!eid){
+      root.appendChild(el("p","","选择剧集后检查带字幕的交付候选。"));return;
+    }
+    const qs=new URLSearchParams({project:pid,episode:eid});
+    try{
+      const [r1,r2,r3]=await Promise.all([
+        fetch("./api/v1/release/readiness?"+qs,{cache:"no-store"}),
+        fetch("./api/v1/release?"+qs,{cache:"no-store"}),
+        fetch("./api/v1/release/jobs?"+qs,{cache:"no-store"})
+      ]);
+      const ready=await r1.json(),items=await r2.json(),
+        tasks=await r3.json();
+      if(!r1.ok||!r2.ok||!r3.ok)
+        throw Error(ready.reason||items.reason||tasks.reason||
+          "交付候选状态不可读");
+      if(!current())return;
+      const head=el("div","workflow-readiness-head");
+      head.appendChild(el("strong","","字幕封装与私有交付候选"));
+      head.appendChild(el("small","",ready.ready?
+        "当前音画与中文字幕均已批准，允许本地封装":
+        "存在 "+ready.blocked.length+" 项交付阻塞"));
+      root.appendChild(head);
+      if(!ready.ready){
+        const names={current_av_master_not_approved:"音画混音当前版尚未批准",
+          chinese_subtitles_missing:"缺少简体中文字幕",
+          chinese_subtitles_not_approved:"当前中文字幕尚未通过审核"};
+        root.appendChild(el("p","video-take-stale",
+          ready.blocked.map(k=>names[k]||k).join(" · ")));
+      }else{
+        root.appendChild(el("small","",
+          "音画 / 字幕来源 SHA-256："+ready.source_manifest_sha256));
+      }
+      const pending=(tasks.jobs||[]).find(x=>
+        x.status==="queued"||x.status==="running");
+      const exists=(items.candidates||[]).find(c=>c.source_current);
+      if(ready.ready&&!exists&&!pending){
+        const action=el("button","prod-new",
+          "生成带字幕的整集交付候选（本地 CPU）");
+        action.type="button";
+        action.addEventListener("click",async()=>{
+          if(!window.confirm(
+            "确认已批准当前音画和中文字幕，允许 VPS 本地 CPU 封装 MP4？生成后仍需独立四项终审，不会自动发布。"))return;
+          action.disabled=true;
+          try{
+            const response=await fetch("./api/v1/release/assemble",{
+              method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({csrf,project_id:pid,episode_id:eid,
+                source_manifest_sha256:ready.source_manifest_sha256,
+                acknowledge_local_cpu:true}),cache:"no-store"});
+            const result=await response.json();
+            if(!response.ok)throw Error(result.reason||"封装任务失败");
+            if(current())await loadReleases(state);
+          }catch(error){
+            $("wfMessage_video_plans").textContent=
+              "交付封装申请失败："+error.message;
+            action.disabled=false;
+          }
+        });
+        root.appendChild(action);
+      }
+      const statuses={queued:"正在等候 CPU",running:"正在封装字幕",
+        done:"封装完成，待四项终审",failed:"封装失败"};
+      for(const job of (tasks.jobs||[]).slice(0,5)){
+        root.appendChild(el("p",job.status==="failed"?"video-take-stale":"",
+          "封装作业 "+job.job_id.slice(-8)+" · "+
+          (statuses[job.status]||"状态未知")+
+          (job.error_code?" · "+job.error_code:"")));
+      }
+      if(pending){
+        releaseRefreshTimer=setTimeout(()=>{
+          if(current())loadReleases(state);
+        },4000);
+      }
+      if(!items.candidates?.length&&!pending){
+        root.appendChild(el("p","",
+          "没有真实的带字幕交付候选；请先完成当前音画母版和中文字幕的审核。"));
+      }
+      for(const item of items.candidates||[]){
+        const card=el("div","video-take-card");
+        const header=el("div","workflow-readiness-head");
+        header.appendChild(el("strong","",
+          "私有交付候选 · "+item.release_id.slice(-8)+" · "+
+          (!item.source_current?"来源已过期":
+            item.status==="approved"?"已完成私有终审":
+            item.status==="rejected"?"终审驳回":"等待终审")));
+        header.appendChild(el("small","",
+          item.duration_seconds.toFixed(2)+" 秒 · 已封装简体中文字幕"));
+        card.appendChild(header);
+        const player=el("video","video-take-player");
+        player.controls=true;player.preload="metadata";
+        player.src="./api/v1/release/file?"+new URLSearchParams({
+          project:pid,episode:eid,release:item.release_id});
+        card.appendChild(player);
+        card.appendChild(el("small","",
+          "文件 SHA-256："+item.file_sha256+
+          " · 归档来源："+item.source_manifest_sha256));
+        if(item.status==="in_review"&&item.source_current){
+          const reason=el("textarea","video-review-reason");
+          reason.rows=2;reason.maxLength=600;
+          reason.placeholder="记录最终字幕、配音、音乐、音效、镜头衔接及权利审核结论";
+          reason.setAttribute("aria-label","交付候选终审意见");
+          card.appendChild(reason);
+          const checklist=[
+            ["all_media_checked","已复核镜头、配音、音乐、音效以及声画同步"],
+            ["subtitle_checked","已核对字幕完整性、逐条时序和翻译准确性"],
+            ["rights_checked","已核实所有素材、音乐、配音和文字版权"],
+            ["final_playback_checked","已从头到尾实际播放整集交付候选"]
+          ];
+          const checks={};
+          for(const [key,labelText] of checklist){
+            const label=el("label","audio-rights-verified");
+            const checkbox=el("input","");
+            checkbox.type="checkbox";
+            checks[key]=checkbox;
+            label.append(checkbox,document.createTextNode(labelText));
+            card.appendChild(label);
+          }
+          const actions=el("div","workflow-review-actions");
+          for(const [decision,title] of [
+            ["approve","批准私有交付候选"],["reject","驳回并重新封装"]]){
+            const button=el("button","prod-new",title);
+            button.type="button";
+            button.addEventListener("click",async()=>{
+              if(reason.value.trim().length<8){
+                $("wfMessage_video_plans").textContent="终审意见至少 8 字";return;
+              }
+              if(decision==="approve"&&!Object.values(checks).every(
+                 checkbox=>checkbox.checked)){
+                $("wfMessage_video_plans").textContent=
+                  "终审批准前须分别完成人工四项核实";return;
+              }
+              if(decision==="approve"&&!window.confirm(
+                "确认已经完整播放、核对全部音画/字幕并查验版权？该批准只授权私有交付候选，不会对外发布。"))return;
+              button.disabled=true;
+              try{
+                const answer=await fetch("./api/v1/release/review",{
+                  method:"POST",headers:{"Content-Type":"application/json"},
+                  body:JSON.stringify({csrf,project_id:pid,episode_id:eid,
+                    release_id:item.release_id,decision,
+                    rationale:reason.value.trim(),
+                    ...Object.fromEntries(Object.entries(checks).map(
+                      ([key,c])=>[key,decision==="approve"&&c.checked]))}),
+                  cache:"no-store"});
+                const doc=await answer.json();
+                if(!answer.ok)throw Error(doc.reason||"交付终审失败");
+                if(current())await loadReleases(state);
+              }catch(error){
+                $("wfMessage_video_plans").textContent=
+                  "交付终审失败："+error.message;
+                button.disabled=false;
+              }
+            });
+            actions.appendChild(button);
+          }
+          card.appendChild(actions);
+        }else if(!item.source_current){
+          card.appendChild(el("p","video-take-stale",
+            "音画、字幕或上游素材已经改版，此版本不得批准为当前交付候选。"));
+        }else card.appendChild(el("p","",
+          item.review_reason||"人工终审记录已归档"));
+        root.appendChild(card);
+      }
+      root.appendChild(el("small","",
+        "这是受保护的内部交付版本：没有自动公开发布或第三方平台上传功能。"+
+        "未完成真实 GPU/H3 验收前不可将模拟视频称为最终作品。"));
+    }catch(error){
+      if(current())root.replaceChildren(el("p","",
+        "交付候选状态读取失败："+error.message));
     }
   }
 
