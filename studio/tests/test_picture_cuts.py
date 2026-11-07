@@ -1,8 +1,11 @@
 """Offline all-approved picture cut + owner review; never GPU or public media."""
+import base64
 from contextlib import closing
+import hashlib
 import http.client
 import json
 from pathlib import Path
+import subprocess
 import sys
 import threading
 import unittest
@@ -136,6 +139,42 @@ class PictureCutTests(unittest.TestCase):
             with self.assertRaises(cuts.PictureCutError):
                 cuts.assemble(self.db,"WaitingOffice","EP01","local_test")
             runner.assert_not_called()
+
+    @unittest.skipUnless(Path("/usr/bin/ffmpeg").is_file() and
+                         Path("/usr/bin/ffprobe").is_file(),
+                         "ffmpeg and ffprobe not installed")
+    def test_real_cpu_ffmpeg_picture_cut_and_actual_mp4_probe(self):
+        movie=Path(self.db).parent/"source-1080x1920.mp4"
+        subprocess.run(["/usr/bin/ffmpeg","-nostdin","-hide_banner",
+            "-loglevel","error","-f","lavfi","-i",
+            "color=c=black:s=1080x1920:r=24:d=3",
+            "-c:v","mpeg4","-q:v","8","-pix_fmt","yuv420p",
+            "-y",str(movie)],check=True,capture_output=True,timeout=60)
+        raw=movie.read_bytes()
+        self.payload["size_bytes"]=len(raw)
+        self.payload["file_sha256"]=hashlib.sha256(raw).hexdigest()
+        start=self.begin()
+        offset=0
+        while offset<len(raw):
+            chunk=raw[offset:offset+media.CHUNK_BYTES]
+            result=media.append_chunk(self.db,{"upload_id":start["upload_id"],
+                "offset":offset,
+                "chunk_base64":base64.b64encode(chunk).decode()},
+                sample.OWNER,self.lock)
+            offset=result["received_bytes"]
+        result=media.finish_upload(self.db,
+            {"upload_id":start["upload_id"]},sample.OWNER,self.lock)
+        self.assertEqual(result["status"],"in_review")
+        self.review_take_result(result["take_id"])
+        assembled=cuts.assemble(self.db,"WaitingOffice","EP01","local_test")
+        self.assertEqual(assembled["status"],"in_review")
+        path,size=cuts.get_cut_file(self.db,"WaitingOffice","EP01",
+                                     assembled["cut_id"])
+        self.assertEqual(size,path.stat().st_size)
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),
+                         assembled["file_sha256"])
+        self.assertEqual(cuts.get_readiness(
+            self.db,"WaitingOffice","EP01")["approved_count"],1)
 
     def test_picture_cut_http_requires_owner_and_video_range(self):
         self.approved_shot()
