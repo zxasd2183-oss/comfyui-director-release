@@ -117,14 +117,17 @@ def clean_accounts22(payload):
             raise ValueError("Invalid HTTPS OTP API endpoint")
         if not isinstance(code_api, str):
             raise ValueError("Invalid OTP API field")
+        space = r.get("space", "private")
+        if space not in ("private", "work"):
+            raise ValueError("Invalid account space")
         normalized_name = name.strip()
-        key = (domain, normalized_name.casefold())
+        key = (space, domain, normalized_name.casefold())
         if key in seen:
             raise ValueError("Duplicate account")
         seen.add(key)
         result.append({"site": domain, "name": normalized_name,
                        "username": username, "password": password,
-                       "code_api": code_api})
+                       "code_api": code_api, "space": space})
     return {"schema": 1, "accounts": result}
 
 
@@ -140,6 +143,10 @@ def account_site_summary22(records, query=""):
 
 
 class GlacierAccounts22:
+    def _account_space22(self):
+        current = getattr(self, "_workspace_doc17", {}).get("active", "default")
+        return "private" if current == "default" else "work"
+
     def setup_accounts22(self, directory, encrypt, decrypt):
         self._accounts_path22 = Path(directory) / "accounts-d03.dpapi"
         self._accounts_encrypt22 = encrypt
@@ -192,7 +199,7 @@ class GlacierAccounts22:
         if (not site or view is not self.current()
                 or self._account_presented22.get(key) == site):
             return
-        if any(r["site"] == site for r in self._accounts_doc22["accounts"]):
+        if any(r["site"] == site and r.get("space", "private") == self._account_space22() for r in self._accounts_doc22["accounts"]):
             # Recheck at display time: navigation or focus may change.
             QTimer.singleShot(350, lambda v=view, s=site: self._show_site_accounts22(v, s))
 
@@ -205,7 +212,7 @@ class GlacierAccounts22:
         key = id(view)
         if self._account_presented22.get(key) == site:
             return
-        if not any(r["site"] == site for r in self._accounts_doc22["accounts"]):
+        if not any(r["site"] == site and r.get("space", "private") == self._account_space22() for r in self._accounts_doc22["accounts"]):
             return
         self._account_presented22[key] = site
         self.show_accounts22(site)
@@ -277,6 +284,7 @@ class GlacierAccounts22:
         record = {"site": site, "name": name.text().strip(),
                   "username": username.text(), "password": password.text(),
                   "code_api": code_api.text().strip()}
+        record["space"] = self._account_space22()
         candidate = {"schema": 1, "accounts": self._accounts_doc22["accounts"] + [record]}
         previous = self._accounts_doc22
         try:
@@ -294,8 +302,10 @@ class GlacierAccounts22:
         if self._accounts_readonly22:
             return False
         old = self._accounts_doc22
+        space = self._account_space22()
         index = next((i for i, r in enumerate(old["accounts"])
-                      if r["site"] == site and r["name"] == original_name), -1)
+                      if r["site"] == site and r["name"] == original_name
+                      and r.get("space", "private") == space), -1)
         if index < 0:
             return False
         records = [dict(r) for r in old["accounts"]]
@@ -305,7 +315,8 @@ class GlacierAccounts22:
                 return False
             records[index] = {"site": site, "name": name.strip(),
                               "username": username, "password": password,
-                              "code_api": records[index].get("code_api", "") if code_api is None else code_api}
+                              "code_api": records[index].get("code_api", "") if code_api is None else code_api,
+                              "space": space}
             clean_accounts22(candidate)
             self._accounts_doc22 = candidate
             self._save_accounts22()
@@ -346,8 +357,10 @@ class GlacierAccounts22:
         if self._accounts_readonly22:
             return False
         previous = self._accounts_doc22
+        space = self._account_space22()
         remaining = [r for r in previous["accounts"]
-                     if not (r["site"] == site and r["name"] == name)]
+                     if not (r["site"] == site and r["name"] == name
+                             and r.get("space", "private") == space)]
         if len(remaining) == len(previous["accounts"]):
             return False
         self._accounts_doc22 = {"schema": 1, "accounts": remaining}
@@ -379,8 +392,10 @@ class GlacierAccounts22:
 
         def refresh(query=""):
             items.clear()
-            for site, count in account_site_summary22(
-                    self._accounts_doc22["accounts"], query):
+            space = self._account_space22()
+            local = [r for r in self._accounts_doc22["accounts"]
+                     if r.get("space", "private") == space]
+            for site, count in account_site_summary22(local, query):
                 from PySide6.QtWidgets import QListWidgetItem
                 item = QListWidgetItem(site + "  ·  " + str(count) + " 个账号")
                 item.setData(Qt.ItemDataRole.UserRole, site)
@@ -455,7 +470,9 @@ class GlacierAccounts22:
         if not site:
             QMessageBox.information(self, "Glacier", "当前页面没有可匹配的 HTTPS 网站域名。")
             return
-        entries = [r for r in self._accounts_doc22["accounts"] if r["site"] == site]
+        space = self._account_space22()
+        entries = [r for r in self._accounts_doc22["accounts"]
+                   if r["site"] == site and r.get("space", "private") == space]
         if not entries:
             self.add_account22(site)
             return
