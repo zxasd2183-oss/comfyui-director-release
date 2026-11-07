@@ -165,9 +165,12 @@ def media_worker_loop(db_path,should_continue):
     """One CPU lane; prevents independent picture and audio FFmpeg contention."""
     from picture_cut_jobs import recover_running as recover_picture
     from picture_cut_jobs import process_one as process_picture
+    from release_jobs import recover_running as recover_release
+    from release_jobs import process_one as process_release
     try:
         recover_picture(db_path)
         recover_running(db_path)
+        recover_release(db_path)
     except Exception:
         return
     while should_continue():
@@ -175,6 +178,8 @@ def media_worker_loop(db_path,should_continue):
             processed=process_picture(db_path)
             if processed is None:
                 processed=process_one(db_path)
+            if processed is None:
+                processed=process_release(db_path)
         except Exception:
             processed=None
         if not should_continue():break
