@@ -133,7 +133,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = '0.20.1'
-          $tag = "glacier-v$version-account-cards-d03-preview"
+          $tag = "glacier-v$version-d03-$($env:GITHUB_SHA.Substring(0,7))"
           $name = "GlacierBrowser-v$version-Windows-Setup-x64.exe"
           $installer = "dist/$name"
           if (-not (Test-Path $installer)) { throw 'Windows setup missing.' }
