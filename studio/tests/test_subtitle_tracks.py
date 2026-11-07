@@ -72,6 +72,11 @@ class SubtitleTrackTests(unittest.TestCase):
         self.assertFalse(old["source_current"])
         self.assertTrue(next(x for x in items if x["subtitle_id"]==
             second["subtitle_id"])["source_current"])
+        self.record["text"]=SRT
+        reverted=self.save()
+        self.assertEqual(reverted["revision"],3)
+        self.assertNotEqual(reverted["subtitle_id"],created["subtitle_id"])
+        self.assertEqual(self.approve(reverted["subtitle_id"])["status"],"approved")
         with closing(core.open_db(self.db,initialize=False)) as db:
             self.assertTrue(core.verify_chain(db))
 
