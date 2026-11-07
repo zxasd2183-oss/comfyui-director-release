@@ -20,7 +20,7 @@ if ! id directorstudio >/dev/null 2>&1; then
 fi
 [[ ! -L "$DEST" ]] || die "Destination cannot be symlink"
 install -d -o root -g root -m 0755 "$DEST"
-for file in studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py release_candidates.py release_jobs.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg; do
+for file in gpu_return.py gpu_power_bridge.py studio_server.py studio_identity.py session_store.py studio_brain.py studio_backend.py studio_core.py production_core.py production_web.py production_manage.py visual_library.py character_library.py character_library_v2.py shot_character_bindings.py scene_library.py production_workflows.py video_results.py picture_cuts.py picture_cut_jobs.py audio_stems.py audio_master.py audio_master_jobs.py subtitle_tracks.py release_candidates.py release_jobs.py assemble_approved_cut.py manage.py index.html login.html login.css studio.css studio.js glacier-peaks.svg glacier-banner.svg; do
     install -o root -g root -m 0644 "$SRC/$file" "$DEST/$file"
 done
 install -o root -g root -m 0644 "$SRC/director-studio.service" \
