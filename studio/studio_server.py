@@ -92,6 +92,19 @@ from audio_stems import (
     get_stem_file as get_audio_stem_file,
     review as review_audio_stem
 )
+from audio_master import (
+    MasterError, prepare_schema as prepare_av_masters,
+    readiness as get_av_master_readiness,
+    list_masters as list_av_masters,
+    get_file as get_av_master_file,
+    review as review_av_master
+)
+from audio_master_jobs import (
+    MasterJobError, prepare_schema as prepare_av_master_jobs,
+    enqueue as enqueue_av_master,
+    list_jobs as list_av_master_jobs,
+    media_worker_loop
+)
 from studio_brain import (
     BrainAuthenticator, BrainError, systemd_secret,
     execute as execute_brain, BRAIN_PATH, MAX_BODY as MAX_BRAIN_BODY
@@ -202,6 +215,8 @@ class StudioServer(ThreadingHTTPServer):
             prepare_picture_cuts(db)
             prepare_picture_cut_jobs(db)
             prepare_audio_stems(db)
+            prepare_av_masters(db)
+            prepare_av_master_jobs(db)
         super().__init__(bind, StudioHandler)
 
     def stop(self):
@@ -471,6 +486,35 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError,ValueError):
                 return self.reply(503,{"ok":False,"reason":"workflow_storage_unavailable"})
+        if path in ("/api/v1/av-master","/api/v1/av-master/readiness",
+                    "/api/v1/av-master/file","/api/v1/av-master/jobs"):
+            if not secured:
+                return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
+            try:
+                required={"project","episode"}
+                if path.endswith("/file"):required.add("master")
+                pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
+                if len(pairs)!=len(required) or len({k for k,v in pairs})!=len(pairs) or (
+                    set(dict(pairs))!=required):
+                    raise MasterError("invalid_master_query")
+                args=dict(pairs)
+                if path.endswith("/readiness"):
+                    return self.reply(200,get_av_master_readiness(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                if path.endswith("/jobs"):
+                    return self.reply(200,list_av_master_jobs(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                if not path.endswith("/file"):
+                    return self.reply(200,list_av_masters(
+                        self.server.production_db_path,args["project"],args["episode"]))
+                filename,size=get_av_master_file(
+                    self.server.production_db_path,args["project"],
+                    args["episode"],args["master"])
+                return self.stream_private_mp4(filename,size)
+            except (MasterError,MasterJobError,VideoResultError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (sqlite3.Error,OSError,ProductionError):
+                return self.reply(503,{"ok":False,"reason":"master_storage_unavailable"})
         if path in ("/api/v1/audio-stems","/api/v1/audio-stems/file"):
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
@@ -824,7 +868,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                         "/api/v1/audio-stems/start",
                         "/api/v1/audio-stems/chunk",
                         "/api/v1/audio-stems/finish",
-                        "/api/v1/audio-stems/review"):
+                        "/api/v1/audio-stems/review",
+                        "/api/v1/av-master/assemble",
+                        "/api/v1/av-master/review"):
             return self.reply(404, {"ok": False, "reason": "not_found"})
         if (path.startswith("/api/v1/production/") or
                 path.startswith("/api/v1/characters/") or
@@ -832,7 +878,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 path.startswith("/api/v1/workflow/") or
                 path.startswith("/api/v1/video-results/") or
                 path.startswith("/api/v1/picture-cuts/") or
-                path.startswith("/api/v1/audio-stems/")) and not secured:
+                path.startswith("/api/v1/audio-stems/") or
+                path.startswith("/api/v1/av-master/")) and not secured:
             return self.reply(403, {"ok":False,"reason":"microsoft_owner_required"})
         if path=="/auth/logout" and not secured:
             return self.reply(404, {"ok": False, "reason": "not_found"})
@@ -883,6 +930,23 @@ class StudioHandler(BaseHTTPRequestHandler):
         expected_csrf=session["csrf"] if secured else self.server.csrf_token
         if not secrets.compare_digest(str(data.get("csrf", "")), expected_csrf):
             return self.reply(403, {"ok": False, "reason": "csrf_denied"})
+        if path in ("/api/v1/av-master/assemble","/api/v1/av-master/review"):
+            try:
+                actor=operator_from_verified_session(session)
+                fields={k:v for k,v in data.items() if k!="csrf"}
+                if path.endswith("/assemble"):
+                    result=enqueue_av_master(
+                        self.server.production_db_path,fields,actor)
+                    return self.reply(202,result)
+                result=review_av_master(
+                    self.server.production_db_path,fields,actor)
+                return self.reply(200,result)
+            except (MasterError,MasterJobError) as exc:
+                return self.reply(exc.status,{"ok":False,"reason":exc.reason})
+            except (ProductionWebError,ProductionError,ValueError,TypeError):
+                return self.reply(400,{"ok":False,"reason":"invalid_master_request"})
+            except (sqlite3.Error,OSError):
+                return self.reply(503,{"ok":False,"reason":"master_storage_unavailable"})
         if path.startswith("/api/v1/audio-stems/"):
             try:
                 actor=operator_from_verified_session(session)
@@ -1059,10 +1123,12 @@ def main():
     server = StudioServer(args.db)
     worker = threading.Thread(target=server.poller.loop, daemon=True)
     worker.start()
-    cut_worker = threading.Thread(target=picture_cut_worker_loop,
+    # Single CPU lane for picture-cuts and approved A/V masters.
+    # An owner request never directly starts FFmpeg on the HTTP thread.
+    media_worker = threading.Thread(target=media_worker_loop,
         args=(server.production_db_path,lambda:server.is_running),
         daemon=True)
-    cut_worker.start()
+    media_worker.start()
     print("Director Studio V0.8 listening ONLY on 127.0.0.1:8900", flush=True)
     print("Connect using SSH local port forwarding; never publish this HTTP port", flush=True)
     try:
