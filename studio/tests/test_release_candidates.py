@@ -1,10 +1,12 @@
 """Private subtitle mux release candidate, explicit final QC, no publication."""
 import hashlib
+import http.client
 import json
 import subprocess
 from contextlib import closing
 from pathlib import Path
 import sys
+import threading
 import unittest
 
 HERE=Path(__file__).resolve().parent
@@ -21,6 +23,8 @@ import release_candidates as release
 import release_jobs as jobs
 import test_video_handoff_integration as fixture
 import test_video_results as take_fixture
+from studio_identity import COOKIE_SID
+import studio_server as web
 import test_audio_master as master_fixture
 import test_subtitle_tracks as subtitle_fixture
 
@@ -175,6 +179,74 @@ class ReleaseTests(unittest.TestCase):
         listed=jobs.list_jobs(self.db,"WaitingOffice","EP01")["jobs"]
         self.assertEqual(listed[0]["release_id"],done["release_id"])
         self.assertEqual(listed[0]["attempts"],1)
+
+    def test_owner_only_release_http_and_four_confirmations(self):
+        self.ready()
+        created=release.mux(self.db,"WaitingOffice","EP01",
+            "release_owner",runner=self.fake_mux)
+        app=web.StudioServer(str(Path(self.db).with_name("release-http.sqlite")),
+            poller=web.Poller(probe=lambda _:{"ok":False}),
+            bind=("127.0.0.1",0))
+        app.production_db_path=self.db
+        app.identity=take_fixture.MockOwner()
+        worker=threading.Thread(target=app.serve_forever,daemon=True)
+        worker.start()
+        try:
+            headers={"Host":"127.0.0.1:8900",
+                "X-Forwarded-Proto":"https",
+                "X-Forwarded-Host":"jipite.borealos.cn",
+                "X-Director-Studio-Auth-Mode":"microsoft",
+                "Origin":"https://jipite.borealos.cn",
+                "Cookie":COOKIE_SID+"="+take_fixture.SID}
+            def request(method,path,payload=None,overrides=None):
+                c=http.client.HTTPConnection("127.0.0.1",app.server_port,timeout=7)
+                h={**headers,**(overrides or {})}
+                if payload is not None:h["Content-Type"]="application/json"
+                c.request(method,path,headers=h,
+                    body=json.dumps(payload).encode() if payload is not None else None)
+                resp=c.getresponse()
+                status,content=resp.status,resp.read()
+                c.close()
+                return status,content
+            q="?project=WaitingOffice&episode=EP01"
+            self.assertEqual(request("GET","/api/v1/release/readiness"+q,
+                                     overrides={"Cookie":""})[0],401)
+            self.assertEqual(request("GET","/api/v1/release/jobs"+q,
+                                     overrides={"Cookie":""})[0],401)
+            file="/api/v1/release/file"+q+"&release="+created["release_id"]
+            self.assertEqual(request("GET",file,
+                                     overrides={"Cookie":""})[0],401)
+            self.assertEqual(request("GET",file,
+                overrides={"Range":"bytes=0-23"})[0],206)
+            self.assertEqual(request("GET",file,
+                overrides={"Range":"bytes=9999999-"})[0],416)
+            payload={"csrf":take_fixture.CSRF,
+                "project_id":"WaitingOffice","episode_id":"EP01",
+                "release_id":created["release_id"],"decision":"approve",
+                "rationale":"完成全片字幕、声音、音乐及素材版权终审。",
+                "all_media_checked":True,"subtitle_checked":True,
+                "rights_checked":True,"final_playback_checked":True}
+            self.assertEqual(request("POST","/api/v1/release/review",payload,
+                overrides={"Cookie":""})[0],401)
+            self.assertEqual(request("POST","/api/v1/release/review",
+                {**payload,"csrf":"wrong"})[0],403)
+            status,body=request("POST","/api/v1/release/review",payload)
+            self.assertEqual(status,200)
+            self.assertFalse(json.loads(body)["publicly_released"])
+        finally:
+            app.shutdown();app.server_close();worker.join(timeout=5)
+
+    def test_release_queue_fails_closed_when_subtitle_changes_after_enqueue(self):
+        ready,_,_=self.ready()
+        fields={"project_id":"WaitingOffice","episode_id":"EP01",
+            "source_manifest_sha256":ready["source_manifest_sha256"],
+            "acknowledge_local_cpu":True}
+        jobs.enqueue(self.db,fields,"release_owner")
+        self.subtitle(text=subtitle_fixture.SRT.replace("大家好","新台词"))
+        done=jobs.process_one(self.db,runner=lambda *_args,**_kw:
+            self.fail("FFmpeg must not run on stale source"))
+        self.assertEqual(done["status"],"failed")
+        self.assertEqual(done["error_code"],"release_inputs_changed_or_incomplete")
 
     @unittest.skipUnless(Path("/usr/bin/ffmpeg").exists() and
                          Path("/usr/bin/ffprobe").exists(),
