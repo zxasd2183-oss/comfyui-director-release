@@ -78,6 +78,7 @@ class MacDesktop15:
         add("在网页中查找               ⌘F", self.open_find13)
         menu.addSeparator()
         if callable(getattr(self, "show_accounts22", None)):
+            add("管理全部网站账号", self.manage_accounts22)
             add("当前网站账号卡片", self.show_accounts22)
             add("添加网站账号卡片", self.add_account22)
             menu.addSeparator()
