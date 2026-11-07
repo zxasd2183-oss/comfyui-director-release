@@ -81,6 +81,7 @@ def response(route):
                 "size_bytes":1024000,"width":1080,"height":1920,
                 "fps":24.0,"duration_seconds":3.0,"codec":"h264",
                 "status":"in_review","plan_revision":1,
+                "source_current":True,
                 "review_reason":None,"reviewer":None,
                 "prompt_id":"fixture-prompt"}]}
     elif path.endswith("/api/v1/workflow/reviews"):
@@ -213,6 +214,8 @@ def main():
             expect(page.locator(".workflow-readiness-shot")).to_have_count(2)
             page.locator(".workflow-readiness-shot").nth(1).click()
             expect(page.locator("#wfStageTitle_video_plans")).to_contain_text("02")
+            expect(page.locator("#wfBatchReturnFiles_video_plans")).to_be_visible()
+            expect(page.locator("#wfBatchReturnSubmit_video_plans")).to_be_visible()
             page.screenshot(path=str(OUT/"video-readiness-1440x900.png"),
                             full_page=True)
 
