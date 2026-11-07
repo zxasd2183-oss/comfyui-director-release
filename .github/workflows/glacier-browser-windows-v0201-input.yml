@@ -16,7 +16,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build-publish:
-    if: vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX != ''
     runs-on: windows-2022
     env:
       GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
