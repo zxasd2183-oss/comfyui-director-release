@@ -1239,7 +1239,7 @@ public final class MainActivity extends Activity {
             }
             final String output=message;
             runOnUiThread(() -> {
-                if(isFinishing())return;
+                if(isFinishing() || output==null)return;
                 new AlertDialog.Builder(this).setTitle("Glacier 统一账号")
                         .setMessage(output).setPositiveButton("知道了",null).show();
             });
@@ -1365,7 +1365,7 @@ public final class MainActivity extends Activity {
                             catch(Exception ignored) {}
                         }).setNegativeButton("关闭",null).show();
             });
-            return "请选择需要管理的设备。";
+            return null; // The device picker is the result; avoid a second dialog.
         });
     }
 
@@ -1432,13 +1432,13 @@ public final class MainActivity extends Activity {
     }
 
     private void cloudPush(String space,String password) {
+        final List<BrowserAccountsStore.Card> snapshot=new ArrayList<>();
+        for(BrowserAccountsStore.Card card:accountCards)
+            if(space.equals(card.profile))snapshot.add(card);
         cloudRun(() -> {
             JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
                     "/v1/vault/"+space,null);
             int version=remote.getInt("version");
-            List<BrowserAccountsStore.Card> snapshot=new ArrayList<>();
-            for(BrowserAccountsStore.Card c:accountCards)
-                if(space.equals(c.profile))snapshot.add(c);
             String envelope=GlacierCloudSync.encrypt(space,snapshot,password);
             JSONObject body=new JSONObject();
             body.put("expected_version",version);
@@ -1449,19 +1449,30 @@ public final class MainActivity extends Activity {
     }
 
     private void cloudPull(String space,String password) {
+        if(accountsReadonly) {
+            new AlertDialog.Builder(this).setMessage("本机账号资料处于只读保护，未覆盖。")
+                    .setPositiveButton("知道了",null).show();
+            return;
+        }
         cloudRun(() -> {
             JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
                     "/v1/vault/"+space,null);
             if(remote.isNull("envelope"))return "该账号空间尚未上传云端资料。";
-            List<BrowserAccountsStore.Card> received=GlacierCloudSync.decrypt(
+            final List<BrowserAccountsStore.Card> received=GlacierCloudSync.decrypt(
                     space,remote.getString("envelope"),password);
-            if(accountsReadonly)return "本机账号保险箱只读，未覆盖原始资料。";
-            List<BrowserAccountsStore.Card> merged=new ArrayList<>();
-            for(BrowserAccountsStore.Card old:accountCards)
-                if(!space.equals(old.profile))merged.add(old);
-            merged.addAll(received);
-            final boolean saved=persistAccountVault(merged);
-            return saved?"当前账号空间已解密导入本机。":"本地加密保存失败；原有资料未变。";
+            runOnUiThread(() -> {
+                if(isFinishing())return;
+                List<BrowserAccountsStore.Card> merged=new ArrayList<>();
+                for(BrowserAccountsStore.Card old:accountCards)
+                    if(!space.equals(old.profile))merged.add(old);
+                merged.addAll(received);
+                boolean saved=persistAccountVault(merged);
+                new AlertDialog.Builder(this).setTitle("Glacier 加密同步")
+                        .setMessage(saved?"账号空间已成功下载并加密保存到本机。":
+                                "本地保存失败，原有账号资料未更改。")
+                        .setPositiveButton("知道了",null).show();
+            });
+            return null;
         });
     }
 
