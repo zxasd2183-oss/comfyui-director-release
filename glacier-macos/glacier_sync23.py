@@ -280,7 +280,10 @@ class GlacierSync23:
         result = SyncTransport23(base, int(self.proxy_port)).call(
             "POST", "/v1/login", {"username": username, "password": password,
                                   "device_name": platform.node()[:80] or "Glacier Desktop",
-                                  "device_id": self._sync_state23.get("device_id")})
+                                  "device_id": (self._sync_state23.get("device_id")
+                                                if username == self._sync_state23.get("username")
+                                                and sync_url23(base) == self._sync_state23.get("base")
+                                                else None)})
         self._sync_state23 = {"base": sync_url23(base), "username": username,
                               "device_id": result["device_id"], "token": result["token"],
                               "approved": result["approved"]}
