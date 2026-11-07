@@ -242,10 +242,12 @@ class GlacierAccounts22:
         if index < 0:
             return False
         records = [dict(r) for r in old["accounts"]]
-        records[index] = {"site": site, "name": name.strip(),
-                          "username": username, "password": password}
         candidate = {"schema": 1, "accounts": records}
         try:
+            if not isinstance(name, str):
+                return False
+            records[index] = {"site": site, "name": name.strip(),
+                              "username": username, "password": password}
             clean_accounts22(candidate)
             self._accounts_doc22 = candidate
             self._save_accounts22()
