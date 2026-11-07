@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -202,6 +203,63 @@ class AVMasterTests(unittest.TestCase):
         self.assertIsNone(jobs.process_one(self.db))
         with closing(core.open_db(self.db,initialize=False)) as db:
             self.assertTrue(core.verify_chain(db))
+
+    def test_av_http_is_owner_only_with_csrf_and_private_range(self):
+        self.complete()
+        made=master.mix(self.db,"WaitingOffice","EP01","test_owner",
+            runner=self.fake_master_runner)
+        app=web.StudioServer(str(Path(self.db).with_name("av-http.sqlite")),
+            poller=web.Poller(probe=lambda _:{"ok":False}),
+            bind=("127.0.0.1",0))
+        app.production_db_path=self.db
+        app.identity=take_fixture.MockOwner()
+        worker=threading.Thread(target=app.serve_forever,daemon=True)
+        worker.start()
+        try:
+            headers={"Host":"127.0.0.1:8900",
+                "X-Forwarded-Proto":"https",
+                "X-Forwarded-Host":"jipite.borealos.cn",
+                "X-Director-Studio-Auth-Mode":"microsoft",
+                "Origin":"https://jipite.borealos.cn",
+                "Cookie":COOKIE_SID+"="+take_fixture.SID}
+            def request(method,path,body=None,overrides=None):
+                conn=http.client.HTTPConnection("127.0.0.1",app.server_port,
+                                                timeout=7)
+                opts={**headers,**(overrides or {})}
+                if body is not None:opts["Content-Type"]="application/json"
+                conn.request(method,path,headers=opts,
+                    body=json.dumps(body).encode() if body is not None else None)
+                response=conn.getresponse()
+                result=(response.status,response.read())
+                conn.close()
+                return result
+            qs="?project=WaitingOffice&episode=EP01"
+            for endpoint in ("/api/v1/av-master",
+                             "/api/v1/av-master/readiness",
+                             "/api/v1/av-master/jobs"):
+                self.assertEqual(request("GET",endpoint+qs,
+                    overrides={"Cookie":""})[0],401)
+                self.assertEqual(request("GET",endpoint+qs)[0],200)
+            file="/api/v1/av-master/file"+qs+"&master="+made["master_id"]
+            self.assertEqual(request("GET",file,overrides={"Cookie":""})[0],401)
+            self.assertEqual(request("GET",file,
+                overrides={"Range":"bytes=0-22"})[0],206)
+            self.assertEqual(request("GET",file,
+                overrides={"Range":"bytes=999999-"})[0],416)
+            review={"csrf":take_fixture.CSRF,
+                "project_id":"WaitingOffice","episode_id":"EP01",
+                "master_id":made["master_id"],"decision":"approve",
+                "rationale":"已经完整试听和核实混音授权及声画同步。",
+                "rights_verified":True,"final_listen_completed":True}
+            self.assertEqual(request("POST","/api/v1/av-master/review",
+                review,{"Cookie":""})[0],401)
+            self.assertEqual(request("POST","/api/v1/av-master/review",
+                {**review,"csrf":"wrong"})[0],403)
+            code,result=request("POST","/api/v1/av-master/review",review)
+            self.assertEqual(code,200,result)
+            self.assertEqual(json.loads(result)["status"],"approved")
+        finally:
+            app.shutdown();app.server_close();worker.join(timeout=5)
 
     @unittest.skipUnless(Path("/usr/bin/ffmpeg").exists(),
                          "Requires actual ffmpeg")
