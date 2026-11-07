@@ -681,7 +681,7 @@
       await workflowFetch(kind,state);
       if(kind==="video_plans"){
         await workflowLoadReadiness(state);
-        await loadPictureCuts(state);
+        await Promise.all([loadAudioStems(state),loadPictureCuts(state)]);
       }
     }catch(error){$("wfMessage_"+kind).textContent="读取失败："+error.message;}
   }
@@ -1596,6 +1596,188 @@
       btn.disabled=!state.project||!state.episode;
     }
   });
+
+  // Real episode-length sound stems; approval must include rights verification.
+  // All bytes are owner-uploaded WAV; no voice model, synthesis or GPU call.
+  let audioReadSerial=0;
+  async function audioPost(action,fields){
+    const response=await fetch("./api/v1/audio-stems/"+action,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({csrf,...fields}),cache:"no-store"});
+    const result=await response.json();
+    if(!response.ok)throw Error(result.reason||"音频操作失败");
+    return result;
+  }
+  async function loadAudioStems(state){
+    const serial=++audioReadSerial;
+    const root=$("wfAudioStems_video_plans");
+    if(!root)return;
+    const pid=state.project,eid=state.episode;
+    root.replaceChildren();
+    const still=()=>serial===audioReadSerial&&pid===state.project&&
+      eid===state.episode;
+    if(!pid||!eid){
+      root.appendChild(el("p","","请先选择要制作声音的剧集。"));return;
+    }
+    const title=el("div","workflow-readiness-head");
+    title.appendChild(el("strong","","独立声音制作 · 对白 / 音乐 / 音效"));
+    title.appendChild(el("small","",
+      "每轨 48kHz 双声道 WAV；整集时长；必须人工核验授权"));
+    root.appendChild(title);
+    const names={dialogue:"对白 / 配音",music:"背景音乐",
+      effects:"音效 / 环境声"};
+    try{
+      const response=await fetch("./api/v1/audio-stems?"+
+        new URLSearchParams({project:pid,episode:eid}),{cache:"no-store"});
+      const doc=await response.json();
+      if(!response.ok)throw Error(doc.reason||"音轨不可读");
+      if(!still())return;
+      const latest={};
+      for(const row of doc.tracks||[]){
+        if(!latest[row.stem])latest[row.stem]=row;
+      }
+      for(const kind of ["dialogue","music","effects"]){
+        const item=latest[kind];
+        const status=!item?"未上传":
+          item.status==="approved"?"批准":
+          item.status==="rejected"?"已驳回":"待试听审核";
+        const card=el("div","video-take-card");
+        const heading=el("div","workflow-readiness-head");
+        heading.appendChild(el("strong","",names[kind]+" · "+status));
+        heading.appendChild(el("small","",item?
+          ("版本 V"+item.revision+" · "+item.duration_seconds.toFixed(2)+"s"):
+          "缺少此轨道的已审版本"));
+        card.appendChild(heading);
+        if(item){
+          const player=el("audio","studio-audio-player");
+          player.controls=true;player.preload="metadata";
+          player.src="./api/v1/audio-stems/file?"+new URLSearchParams({
+            project:pid,episode:eid,audio:item.audio_id});
+          card.appendChild(player);
+          card.appendChild(el("small","",
+            "SHA-256："+item.sha256+" · 授权依据已登记"));
+          if(item.status==="in_review"){
+            const reason=el("textarea","video-review-reason");
+            reason.rows=2;reason.maxLength=600;
+            reason.placeholder="试听结论、授权来源审核及声线同意记录（至少 8 字）";
+            reason.setAttribute("aria-label",names[kind]+" 审核理由");
+            card.appendChild(reason);
+            const rightsLabel=el("label","audio-rights-verified");
+            const rights=el("input","");
+            rights.type="checkbox";
+            rightsLabel.append(rights,document.createTextNode(
+              "我已核实本轨版权、配音授权与相关人员同意"));
+            card.appendChild(rightsLabel);
+            const controls=el("div","workflow-review-actions");
+            for(const [decision,label] of [
+              ["approve","核准此轨及权利"],["reject","驳回此轨"]]){
+              const button=el("button","prod-new",label);
+              button.type="button";
+              button.addEventListener("click",async()=>{
+                if(reason.value.trim().length<8){
+                  $("wfMessage_video_plans").textContent=
+                    "声音审查理由至少 8 字";return;
+                }
+                if(decision==="approve"&&!rights.checked){
+                  $("wfMessage_video_plans").textContent=
+                    "批准前必须人工核实版权和声线授权";return;
+                }
+                if(decision==="approve"&&!window.confirm(
+                  "确认已完整试听，并实际核对轨道授权与人员同意？"))return;
+                button.disabled=true;
+                try{
+                  await audioPost("review",{project_id:pid,episode_id:eid,
+                    audio_id:item.audio_id,decision,
+                    rationale:reason.value.trim(),
+                    rights_verified:decision==="approve"&&rights.checked});
+                  if(still())await loadAudioStems(state);
+                }catch(error){
+                  $("wfMessage_video_plans").textContent=
+                    "音频审核失败："+error.message;
+                  button.disabled=false;
+                }
+              });
+              controls.appendChild(button);
+            }
+            card.appendChild(controls);
+          }else if(item.status==="approved"){
+            card.appendChild(el("small","","此轨为当前批准版本；新录音会产生新的修订。"));
+          }else{
+            card.appendChild(el("small","",
+              "此轨被驳回，请上传新版本；历史不会覆盖。"));
+          }
+        }
+        root.appendChild(card);
+      }
+    }catch(error){
+      if(still())root.appendChild(el("p","",
+        "读取音轨失败："+error.message));
+      return;
+    }
+    const form=el("form","video-upload-form");
+    const select=el("select","");
+    select.setAttribute("aria-label","音轨类别");
+    for(const [key,name] of Object.entries(names)){
+      const option=el("option","",name);option.value=key;select.appendChild(option);
+    }
+    const file=el("input","");
+    file.type="file";file.accept=".wav,audio/wav";file.required=true;
+    file.setAttribute("aria-label","选择真实 WAV 音轨");
+    const rightsRef=el("textarea","video-review-reason");
+    rightsRef.rows=2;rightsRef.maxLength=500;rightsRef.required=true;
+    rightsRef.placeholder="必填：授权或许可凭证编号、提供者、配音人员同意来源（不会自动认定有效）";
+    rightsRef.setAttribute("aria-label","音频授权来源凭证");
+    const send=el("button","prod-new","上传整集 WAV 轨道");
+    send.type="submit";
+    const message=el("p","video-upload-progress","");
+    form.append(select,file,rightsRef,send,message);
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      const f=file.files?.[0];
+      if(!f)return;
+      if(!/\.wav$/i.test(f.name)||f.size<128||f.size>150000000||
+         rightsRef.value.trim().length<8){
+        message.textContent="请选择 150MB 内完整 WAV，并填写授权来源（至少 8 字）";
+        return;
+      }
+      send.disabled=true;
+      try{
+        message.textContent="校验原始音轨 SHA-256…";
+        const digest=await videoSHA256(await f.arrayBuffer());
+        if(!still())throw Error("剧集已切换");
+        const started=await audioPost("start",{
+          project_id:pid,episode_id:eid,stem:select.value,
+          file_sha256:digest,size_bytes:f.size,
+          rights_ref:rightsRef.value.trim()});
+        if(started.already_imported){
+          message.textContent="相同音轨已存档，无需重复上传："+started.audio_id;
+        }else{
+          let offset=started.received_bytes;
+          while(offset<f.size){
+            if(!still())throw Error("剧集切换，上传已暂停");
+            const base64=await fileAsBase64(f.slice(offset,offset+786432));
+            const sent=await audioPost("chunk",{
+              upload_id:started.upload_id,offset,chunk_base64:base64});
+            if(!Number.isInteger(sent.received_bytes)||
+               sent.received_bytes<=offset||sent.received_bytes>f.size)
+              throw Error("服务端音轨断点异常");
+            offset=sent.received_bytes;
+            message.textContent="音轨已上传 "+(100*offset/f.size).toFixed(1)+"%";
+          }
+          const done=await audioPost("finish",{
+            upload_id:started.upload_id});
+          message.textContent="音轨 V"+done.revision+
+            " 已入库，待试听和授权人工核验："+done.audio_id;
+        }
+        if(still())await loadAudioStems(state);
+      }catch(error){
+        message.textContent="音频传输或校验失败："+error.message+
+          "；可重选同一 WAV 断点续传，已批准的录音不会被覆盖。";
+        send.disabled=false;
+      }
+    });
+    root.appendChild(form);
+  }
 
   // Picture edit requires every real shot approved and version-current.
   // This is a separate review gate, never final sound-master authorization.
