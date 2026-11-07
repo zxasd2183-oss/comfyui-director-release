@@ -229,6 +229,8 @@ class GlacierAccounts22:
         finally:
             if os.path.exists(tmp):
                 os.unlink(tmp)
+        # Normalize legacy cards only after encrypted atomic replacement succeeded.
+        self._accounts_doc22 = doc
 
     def _copy_account22(self, value):
         # Copy only on an explicit button press. Never paste into a webpage.
