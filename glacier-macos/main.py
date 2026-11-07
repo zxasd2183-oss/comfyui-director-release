@@ -157,6 +157,7 @@ class Browser(GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspace
   super().closeEvent(event)
 def main():
  app=QApplication(sys.argv);app.setApplicationName(APP)
+ splash=show_glacier_splash("macOS v0.20.0")
  link=get_link(app,parse_node)
  with socket.socket() as s:
   s.bind(("127.0.0.1",0));port=s.getsockname()[1]
@@ -166,7 +167,6 @@ def main():
  # The proxy remains configured even when the core is unavailable: fail closed.
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
- splash=show_glacier_splash("macOS v0.20.0")
  try:
   win=Browser(proc,port)
  except Exception as exc:
