@@ -42,8 +42,25 @@ git pull --ff-only
   die "Working tree is dirty after pull"
 DEPLOY_SHA="$(git rev-parse HEAD)"
 printf 'DEPLOY SHA: %s\n' "$DEPLOY_SHA"
-[[ -f studio/video_results.py && -f studio/tests/test_video_results.py ]] ||
-  die "New video result code/tests missing from deployed ref"
+required_modules=(
+  video_results.py picture_cuts.py picture_cut_jobs.py
+  audio_stems.py audio_master.py audio_master_jobs.py
+  subtitle_tracks.py release_candidates.py release_jobs.py
+)
+required_tests=(
+  test_video_results.py test_picture_cuts.py test_picture_cut_jobs.py
+  test_audio_stems.py test_audio_master.py test_subtitle_tracks.py
+  test_release_candidates.py
+)
+for module in "${required_modules[@]}"; do
+  [[ -f "studio/$module" ]] || die "Required Studio source module absent: $module"
+done
+for test_file in "${required_tests[@]}"; do
+  [[ -f "studio/tests/$test_file" ]] || die "Required Studio regression test absent: $test_file"
+done
+[[ -f video-pipeline/director_video.py ]] ||
+  die "Required video production runner missing"
+echo 'All current audio/video/subtitle/release modules and test suites present.'
 if [[ ! -x /usr/bin/ffprobe || ! -x /usr/bin/ffmpeg ]]; then
   echo 'Installing local FFmpeg/FFprobe for mandatory actual MP4 verification...'
   sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
@@ -67,11 +84,22 @@ done
 status_code="$(curl --silent --show-error --location --output /dev/null \
   --write-out '%{http_code}' --max-time 20 'https://jipite.borealos.cn/studio/')"
 [[ "$status_code" == "200" ]] || die "Studio homepage returned $status_code (expected 200)"
-anonymous="$(curl --silent --show-error --output /dev/null \
-  --write-out '%{http_code}' --max-time 20 \
-  'https://jipite.borealos.cn/studio/api/v1/video-results?project=WaitingOffice&episode=EP01&shot=01')"
-[[ "$anonymous" == "401" ]] ||
-  die "Private video API anonymous status $anonymous (expected 401)"
+private_paths=(
+  '/studio/api/v1/video-results?project=WaitingOffice&episode=EP01&shot=01'
+  '/studio/api/v1/picture-cuts?project=WaitingOffice&episode=EP01'
+  '/studio/api/v1/audio-stems?project=WaitingOffice&episode=EP01'
+  '/studio/api/v1/av-master?project=WaitingOffice&episode=EP01'
+  '/studio/api/v1/subtitles?project=WaitingOffice&episode=EP01'
+  '/studio/api/v1/release?project=WaitingOffice&episode=EP01'
+)
+for endpoint in "${private_paths[@]}"; do
+  anonymous="$(curl --silent --show-error --output /dev/null \
+    --write-out '%{http_code}' --max-time 20 \
+    "https://jipite.borealos.cn$endpoint")"
+  [[ "$anonymous" == "401" ]] ||
+    die "Anonymous private media API returned $anonymous rather than 401: $endpoint"
+done
+echo 'Six private media APIs deny anonymous requests with HTTP 401.'
 echo 'SUCCESS: VPS Hub+Studio deployed and verified; current repository SHA:'
 printf '  %s\n' "$DEPLOY_SHA"
 echo 'GPU remains untouched. Real H3 compatibility, local executor installation,'
