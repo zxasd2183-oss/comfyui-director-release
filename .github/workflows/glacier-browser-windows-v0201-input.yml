@@ -1,4 +1,4 @@
-name: Glacier Browser v0.20.2 D03 encrypted account cards preview
+name: Glacier Browser v0.20.2 unified accounts + encrypted sync preview
 on:
   push:
     branches:
@@ -72,7 +72,7 @@ jobs:
           # application's displayed patch version be updated.
           python -c "from pathlib import Path; p=Path('secure_update.py'); s=p.read_text(encoding='utf8'); expected='CURRENT_VERSION = '+chr(39)+'0.20.2'+chr(39); assert s.count(expected)==1, 'Updater version must be 0.20.2'; print('Verified Windows signed-updater version 0.20.2')"
           if ($LASTEXITCODE -ne 0) { throw 'Failed to set preview version after secure key rotation' }
-          python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py glacier_accounts22.py test_accounts22.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
+          python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py glacier_accounts22.py glacier_sync23.py test_accounts22.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python -c "import ui12; assert ui12.normalize_input('example.com') == 'https://example.com'; assert ui12.normalize_input('https://example.com').startswith('https:'); print('New window module import checks passed')"
           python -c "from PySide6.QtWebEngineCore import QWebEnginePage; import tabtools13; QWebEnginePage.FindFlag(0); assert tabtools13.copyable_page_url('https://example.com/a') == 'https://example.com/a'; assert not tabtools13.copyable_page_url('javascript:alert(1)'); assert not tabtools13.copyable_page_url('https://name:pass@example.com'); print('Glacier v0.13 tab API and link safety tests passed')"
@@ -137,7 +137,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = '0.20.2'
-          $tag = "glacier-v$version-d03-$($env:GITHUB_SHA.Substring(0,7))"
+          $tag = "glacier-v$version-sync-v1-$($env:GITHUB_SHA.Substring(0,7))"
           $name = "GlacierBrowser-v$version-Windows-Setup-x64.exe"
           $installer = "dist/$name"
           if (-not (Test-Path $installer)) { throw 'Windows setup missing.' }
@@ -152,7 +152,7 @@ jobs:
               $published = $true
               break
             } else {
-              gh release create $tag $installer "dist/$name.sha256" --target $env:GITHUB_SHA --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser v0.20.2 D03 preview: encrypted local per-site account cards, manual username/password copy only, no autofill, alongside pointer diagnostics. Does not automate or bypass verification challenges; Qt WebEngine compatibility with specific verification sites remains unverified. VLESS, account spaces and signed update verification retained. Windows binary is not Authenticode signed." --prerelease
+              gh release create $tag $installer "dist/$name.sha256" --target $env:GITHUB_SHA --title "Glacier Browser $version (Windows preview)" --notes "Glacier Browser v0.20.2 Unified account preview: device approval, encrypted private/work vault sync, manual credentials and OTP API access; self-hosted server must be configured. No autofill. Does not automate or bypass verification challenges; Qt WebEngine compatibility with specific verification sites remains unverified. VLESS, account spaces and signed update verification retained. Windows binary is not Authenticode signed." --prerelease
             }
             if ($LASTEXITCODE -eq 0) { $published = $true; break }
             Write-Warning "Release upload failed on attempt $attempt"
