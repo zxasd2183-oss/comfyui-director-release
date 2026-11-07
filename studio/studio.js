@@ -2506,6 +2506,44 @@
             "音画、字幕或上游素材已经改版，此版本不得批准为当前交付候选。"));
         }else card.appendChild(el("p","",
           item.review_reason||"人工终审记录已归档"));
+        if(item.status==="approved"&&item.source_current){
+          const actions=el("div","workflow-review-actions");
+          const name=new URLSearchParams({
+            project:pid,episode:eid,release:item.release_id});
+          const download=el("a","prod-new","下载已批准的私有 MP4");
+          download.href="./api/v1/release/file?"+name;
+          download.download=eid+"_approved_private_"+item.release_id+".mp4";
+          download.rel="noreferrer";
+          actions.appendChild(download);
+          const receipt=el("button","prod-new prod-secondary",
+            "导出来源与终审校验单");
+          receipt.type="button";
+          receipt.addEventListener("click",async()=>{
+            receipt.disabled=true;
+            try{
+              const response=await fetch("./api/v1/release/receipt?"+name,
+                {cache:"no-store"});
+              const data=await response.json();
+              if(!response.ok)throw Error(data.reason||"无法核验交付候选");
+              if(!current())throw Error("剧集已切换，导出取消");
+              const blob=new Blob([JSON.stringify(data,null,2)],{
+                type:"application/json"});
+              const uri=URL.createObjectURL(blob);
+              const a=document.createElement("a");
+              a.href=uri;
+              a.download=eid+"_delivery_receipt_"+item.release_id+".json";
+              a.click();
+              URL.revokeObjectURL(uri);
+            }catch(error){
+              $("wfMessage_video_plans").textContent=
+                "交付文件校验失败："+error.message;
+            }finally{
+              receipt.disabled=false;
+            }
+          });
+          actions.appendChild(receipt);
+          card.appendChild(actions);
+        }
         root.appendChild(card);
       }
       root.appendChild(el("small","",
