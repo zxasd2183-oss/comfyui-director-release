@@ -26,13 +26,13 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Verify pinned updater trust key before packaging
         run: |
           python -c "import os,sys;sys.path.insert(0,'../scripts');from glacier_prepare_rotated_update import validate_public;validate_public(os.environ.get('GLACIER_UPDATE_SIGNING_PUBLIC_HEX',''));print('Glacier updater public key configured')"
           if ($LASTEXITCODE -ne 0) { throw 'Missing Glacier signed-update public key; packaging blocked before downloads.' }
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Download and verify official sing-box binary
         run: |
           New-Item -ItemType Directory -Force -Path bin | Out-Null
