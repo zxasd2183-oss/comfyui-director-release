@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QMessageBox, QPushButton, QListWidget, QVBoxLayout, QWidget,
 )
 
 MAX_ACCOUNTS = 100
@@ -281,6 +281,61 @@ class GlacierAccounts22:
             self._accounts_doc22 = previous
             return False
         return True
+
+    def manage_accounts22(self):
+        """Local vault directory: expose site names, never passwords in the list."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Glacier · 网站账号管理")
+        dialog.resize(540, 410)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("所有账号仅保存在本机加密资料库。选择网站后查看、编辑或删除。", dialog))
+        search = QLineEdit(dialog)
+        search.setPlaceholderText("搜索网站域名或账号备注")
+        layout.addWidget(search)
+        items = QListWidget(dialog)
+        layout.addWidget(items, 1)
+        footer = QHBoxLayout()
+        open_button = QPushButton("查看所选网站", dialog)
+        add_button = QPushButton("添加账号", dialog)
+        footer.addWidget(open_button)
+        footer.addWidget(add_button)
+        layout.addLayout(footer)
+
+        def refresh(query=""):
+            items.clear()
+            words = query.strip().casefold().split()
+            sites = {}
+            for record in self._accounts_doc22["accounts"]:
+                site = record["site"]
+                if all(word in (site + " " + record["name"]).casefold()
+                       for word in words):
+                    sites[site] = sites.get(site, 0) + 1
+            for site, count in sorted(sites.items()):
+                from PySide6.QtWidgets import QListWidgetItem
+                item = QListWidgetItem(site + "  ·  " + str(count) + " 个账号")
+                item.setData(Qt.ItemDataRole.UserRole, site)
+                items.addItem(item)
+
+        def open_selected():
+            item = items.currentItem()
+            if item is None:
+                return
+            site = item.data(Qt.ItemDataRole.UserRole)
+            if not isinstance(site, str) or not safe_site22(site):
+                return
+            dialog.accept()
+            self.show_accounts22(site)
+
+        def add_new():
+            dialog.accept()
+            self.add_account22()
+
+        search.textChanged.connect(refresh)
+        open_button.clicked.connect(open_selected)
+        items.itemDoubleClicked.connect(lambda _item: open_selected())
+        add_button.clicked.connect(add_new)
+        refresh()
+        dialog.exec()
 
     def show_accounts22(self, site=None):
         if site is None:
