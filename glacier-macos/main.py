@@ -85,6 +85,7 @@ class Browser(GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspace
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
   self.profile.setCachePath(str(appdir()/"cache"))
   self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+  self.initialize_workspace_profiles17(appdir(),dpapi)
   root=QWidget();lay=QVBoxLayout(root);self.setCentralWidget(root)
   bar=QHBoxLayout();lay.addLayout(bar)
   for label,cb in [("←",lambda:self.current().back()),("→",lambda:self.current().forward()),("↻",lambda:self.current().reload()),("＋",self.new_tab)]:
