@@ -281,6 +281,57 @@ def get_file(db_path,project,episode,release_id):
         return file,row["size_bytes"]
 
 
+def get_private_delivery_receipt(db_path,project,episode,release_id):
+    """Owner-visible, checksummed receipt for an approved private export.
+
+    Independent byte verification and exact current approved upstream
+    revisions. This receipt is NOT a digital signature or publishing permit.
+    """
+    pid,eid=_scope(project,episode)
+    if not isinstance(release_id,str) or not ID.fullmatch(release_id):
+        raise ReleaseError("invalid_release_id")
+    current=readiness(db_path,pid,eid)
+    with closing(open_db(db_path,initialize=False)) as db:
+        row=db.execute("SELECT * FROM studio_release_candidates "
+            "WHERE project_id=? AND episode_id=? AND release_id=?",
+            (pid,eid,release_id)).fetchone()
+        if row is None:raise ReleaseError("release_candidate_not_found",404)
+        if row["status"]!="approved":
+            raise ReleaseError("release_not_final_qc_approved",409)
+        if not current["ready"] or (
+            row["source_manifest_sha256"]!=current["source_manifest_sha256"]):
+            raise ReleaseError("release_sources_outdated",409)
+        file=_root(db_path)/(release_id+".mp4")
+        _verify(file,row["file_sha256"],row["size_bytes"])
+        source=json.loads(row["source_manifest_json"])
+        if not isinstance(source,dict) or (
+            source.get("schema")!="director_studio_release_candidate_v1"):
+            raise ReleaseError("release_source_manifest_invalid",409)
+        receipt={"schema":"director_studio_private_delivery_receipt_v1",
+            "project_id":pid,"episode_id":eid,"release_id":release_id,
+            "mp4_sha256":row["file_sha256"],
+            "mp4_bytes":row["size_bytes"],
+            "duration_seconds":row["duration_seconds"],
+            "source_manifest_sha256":row["source_manifest_sha256"],
+            "av_master_id":source["av_master"]["master_id"],
+            "av_master_sha256":source["av_master"]["file_sha256"],
+            "subtitle_id":source["subtitle_track"]["subtitle_id"],
+            "subtitle_sha256":source["subtitle_track"]["content_sha256"],
+            "subtitle_language":source["subtitle_track"]["language"],
+            "reviewer":row["reviewer"],
+            "reviewed_at":row["reviewed_at"],
+            "final_qc_status":"approved",
+            "publicly_released":False,
+            "external_distribution_authorized":False,
+            "signed_receipt":False}
+        canonical=json.dumps(receipt,sort_keys=True,ensure_ascii=False,
+            separators=(",",":")).encode("utf-8")
+        return {"ok":True,"receipt":receipt,
+            "receipt_sha256":hashlib.sha256(canonical).hexdigest(),
+            "checksum_type":"sha256_canonical_json_not_signature",
+            "gpu_action":False}
+
+
 def review(db_path,data,actor):
     fields={"project_id","episode_id","release_id","decision","rationale",
             "all_media_checked","subtitle_checked","rights_checked",
