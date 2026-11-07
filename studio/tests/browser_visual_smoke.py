@@ -59,7 +59,7 @@ ASSETS={
 BATCH_CLIPS={}
 BATCH_ENTRIES=[]
 for sid in ("01","02"):
-    content=b"\\x00\\x00\\x00\\x18ftypisom"+bytes([int(sid)])*300
+    content=bytes((0,0,0,24))+b"ftypisom"+bytes([int(sid)])*300
     digest=hashlib.sha256(content).hexdigest()
     filename=f"SH_{sid}_{digest[:16]}.mp4"
     BATCH_CLIPS[filename]=content
