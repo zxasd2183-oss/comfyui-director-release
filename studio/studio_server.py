@@ -109,7 +109,7 @@ from subtitle_tracks import (
     SubtitleError, prepare_schema as prepare_subtitle_tracks,
     save as save_subtitle_track, review as review_subtitle_track,
     list_tracks as list_subtitle_tracks,
-    get_file as get_subtitle_file
+    get_file as get_subtitle_file, as_webvtt
 )
 from release_candidates import (
     ReleaseError, prepare_schema as prepare_release_candidates,
@@ -535,25 +535,35 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
             except (sqlite3.Error,OSError,ProductionError):
                 return self.reply(503,{"ok":False,"reason":"release_storage_unavailable"})
-        if path in ("/api/v1/subtitles","/api/v1/subtitles/file"):
+        if path in ("/api/v1/subtitles","/api/v1/subtitles/file",
+                    "/api/v1/subtitles/vtt"):
             if not secured:
                 return self.reply(403,{"ok":False,"reason":"microsoft_owner_required"})
             try:
                 fields={"project","episode"}
-                if path.endswith("/file"):fields.add("subtitle")
+                if path.endswith("/file") or path.endswith("/vtt"):
+                    fields.add("subtitle")
                 pairs=parse_qsl(url.query,keep_blank_values=True,max_num_fields=4)
                 if len(pairs)!=len(fields) or len({k for k,v in pairs})!=len(pairs) or (
                     set(dict(pairs))!=fields):
                     raise SubtitleError("invalid_subtitle_query")
                 args=dict(pairs)
-                if not path.endswith("/file"):
+                if not path.endswith("/file") and not path.endswith("/vtt"):
                     return self.reply(200,list_subtitle_tracks(
                         self.server.production_db_path,args["project"],args["episode"]))
                 path_to_text=get_subtitle_file(self.server.production_db_path,
                     args["project"],args["episode"],args["subtitle"])
+                text=path_to_text.read_text(encoding="utf-8")
+                if path.endswith("/vtt"):
+                    content=as_webvtt(text).encode("utf-8")
+                    self.send_response(200)
+                    self.common_headers("text/vtt; charset=utf-8")
+                    self.send_header("Content-Length",str(len(content)))
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
                 return self.reply(200,{"ok":True,
-                    "subtitle_id":args["subtitle"],
-                    "text":path_to_text.read_text(encoding="utf-8"),
+                    "subtitle_id":args["subtitle"],"text":text,
                     "gpu_action":False})
             except SubtitleError as exc:
                 return self.reply(exc.status,{"ok":False,"reason":exc.reason})
