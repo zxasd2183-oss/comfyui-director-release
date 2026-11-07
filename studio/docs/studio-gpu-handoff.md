@@ -164,3 +164,43 @@ assume an already-installed GPU runner updated automatically.
   fixtures only; no production DB/GPU).
 - Required security: owner-only GET, anonymous access denied, project-scoped
   lookup, no secret serialization, revision/stale checks, no GPU operation.
+
+
+## 5. Separate approved picture cut (local CPU, never GPU)
+
+Once **every episode shot** has a human-approved current-source MP4, Studio
+Video Production shows a full-episode picture-cut readiness count and the
+exact source_manifest_sha256. A missing shot, stale revised upstream
+asset, orphaned clip or unsupported stream combination blocks assembly.
+
+The operator uses the local Studio service identity on the VPS only AFTER
+the normal one-time deployment. Assembly is a separately acknowledged
+production action, not part of deployment or GPU power operations:
+
+    sudo -u directorstudio python3 /opt/director-studio/assemble_approved_cut.py \
+      --db /var/lib/director-studio/production.sqlite \
+      --project WaitingOffice --episode EP01 --check
+
+After confirming the real manifest digest and accepting local CPU cost,
+the operator may perform the separately acknowledged action:
+
+    sudo -u directorstudio python3 /opt/director-studio/assemble_approved_cut.py \
+      --db /var/lib/director-studio/production.sqlite \
+      --project WaitingOffice --episode EP01 \
+      --assemble --acknowledge-local-cpu \
+      --expected-manifest-sha YOUR_EXACT_VERIFIED_64_HEX_DIGEST
+
+The command rehashes all approved MP4s, verifies audio/video stream
+compatibility with ffprobe, refuses missing/stale clips, then uses local
+FFmpeg concat-copy without shell invocation. It validates the output,
+publishes the immutable picture cut to the private Studio directory
+and appends a tamper-evident audit event. Repeating the same approved
+manifest returns the existing cut, never overwrites it.
+
+The Microsoft-owner Studio picture-cut player displays the versioned
+result for independent director approve/reject action. A picture cut
+is **not a final release**: dubbing, effects, soundtrack, subtitles,
+rights, loudness and mastering still need separate approval. Incompatible
+source streams fail closed with picture_cut_streams_incompatible; the
+system does not silently transcode or fabricate a finished film.
+
