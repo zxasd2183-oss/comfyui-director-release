@@ -46,7 +46,14 @@ systemctl daemon-reload
 systemctl enable --now glacier-sync.service
 systemctl restart glacier-sync.service
 if systemctl is-active --quiet glacier-sync.service; then
-  echo "Glacier Sync backend active on 127.0.0.1:18991."
+  echo "Glacier Sync service active; checking private health endpoint."
+  if curl --fail --silent --show-error --max-time 7 \
+      http://127.0.0.1:18991/health | grep -q '"status":"ok"'; then
+    echo "Glacier Sync backend healthy on 127.0.0.1:18991."
+  else
+    echo "Glacier Sync service active but /health did not return OK." >&2
+    exit 1
+  fi
 else
   echo "Glacier Sync did not start. Inspect: journalctl -u glacier-sync -n 40" >&2
   exit 1
