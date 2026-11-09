@@ -1,4 +1,5 @@
 name: Glacier Browser signed Windows + macOS auto updates
+# Recheck immutable paired v0.20.8 canonical Releases after both platform builds publish.
 
 on:
   release:
