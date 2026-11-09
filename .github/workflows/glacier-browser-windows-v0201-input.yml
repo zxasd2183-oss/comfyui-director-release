@@ -7,6 +7,8 @@ on:
       - 'glacier-windows/**'
       - '.github/workflows/glacier-browser-windows-v0201-input.yml'
       - 'scripts/glacier_prepare_rotated_update.py'
+      - 'vps-control/sync-glacier-preview-releases.py'
+      - 'vps-control/test_glacier_preview_mirror.py'
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,7 +17,18 @@ concurrency:
   group: glacier-windows-v0201-input
   cancel-in-progress: true
 jobs:
+  mirror-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate VPS-only mirror metadata and upstream checksum policy
+        run: |
+          python -m unittest -v vps-control/test_glacier_preview_mirror.py
   build-publish:
+    needs: mirror-tests
     runs-on: windows-2022
     env:
       GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
