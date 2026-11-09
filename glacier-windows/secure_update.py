@@ -62,8 +62,13 @@ def parse_manifest(document):
     p = urlsplit(manifest.url)
     expected_path = (f'/zxasd2183-oss/comfyui-director-release/releases/download/'
                      f'glacier-v{v}/GlacierBrowser-v{v}-Windows-Setup-x64.exe')
-    if (p.path != expected_path or p.query or p.fragment or p.username or p.password
-            or p.hostname != 'github.com' or p.scheme != 'https'):
+    vps_path = f'/downloads/GlacierBrowser-v{v}-Windows-Setup-x64.exe'
+    permitted = (
+        (p.hostname == 'github.com' and p.path == expected_path) or
+        (p.hostname == 'sync.borealos.cn' and p.path == vps_path)
+    )
+    if (not permitted or p.query or p.fragment or p.username or p.password
+            or p.port is not None or p.scheme != 'https'):
         raise UpdateError('签名版本和可信下载地址不匹配')
     return manifest
 
