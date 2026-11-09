@@ -1,7 +1,7 @@
 import json, os, re, socket, subprocess, sys, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QTimer
 from PySide6.QtNetwork import QNetworkProxy
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
@@ -24,6 +24,7 @@ from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
+from glacier_account_center26 import GlacierAccountCenter26
 from glacier_splash import show_glacier_splash
 
 APP = "Glacier Browser"
@@ -74,13 +75,13 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.2")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.3")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -112,6 +113,7 @@ class Browser(GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, G
   self.setup_shell20(bar)
   self.setup_accounts22(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
   self.setup_sync23(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
+  self.setup_account_center26(bar)
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -160,7 +162,7 @@ class Browser(GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, G
   super().closeEvent(event)
 def main():
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("macOS v0.20.2")
+ splash=show_glacier_splash("macOS v0.20.3")
  link=get_link(app,parse_node)
  with socket.socket() as s:
   s.bind(("127.0.0.1",0));port=s.getsockname()[1]
@@ -187,7 +189,9 @@ def main():
   QMessageBox.critical(None,APP,"Mac 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt 以便排查。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- win.show();splash.finish(win);code=app.exec()
+ win.show()
+ QTimer.singleShot(1100, lambda: splash.finish(win))
+ code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
 if __name__=="__main__":sys.exit(main())
