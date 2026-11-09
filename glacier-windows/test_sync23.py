@@ -58,7 +58,7 @@ class VaultInteroperabilityTests(unittest.TestCase):
 
 class OtpResponseTests(unittest.TestCase):
     def test_plain_digits_with_whitespace(self):
-        self.assertEqual(extract_code22(b"  123456\\n"), "123456")
+        self.assertEqual(extract_code22(b"  123456\n"), "123456")
 
     def test_json_digits_and_unsafe_payloads(self):
         self.assertEqual(extract_code22(b'{"data":{"code":"654321"}}'), "654321")
