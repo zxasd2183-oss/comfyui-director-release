@@ -58,7 +58,9 @@ def verify(doc, channel):
     tag, suffix = PLATFORMS[channel]
     name = f"GlacierBrowser-v{v}-{suffix}"
     expected = f"https://github.com/{REPO}/releases/download/{tag}{v}/{name}"
-    if doc["url"] != expected:
+    vps_expected = f"https://sync.borealos.cn/downloads/{name}"
+    permitted = expected if semver(v) <= (0, 20, 9) else vps_expected
+    if doc["url"] != permitted:
         raise ValueError("noncanonical signed asset URL")
     if not isinstance(doc["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", doc["sha256"]):
         raise ValueError("invalid checksum")
@@ -123,7 +125,12 @@ def sync_one(directory, channel):
         fd, tmp = tempfile.mkstemp(prefix=".glacier-download-", dir=directory)
         try:
             amount, h = 0, hashlib.sha256()
-            with os.fdopen(fd, "wb") as output, fetch(doc["url"]) as source:
+            # The signed public URL may be the VPS itself. Always fetch
+            # the immutable upstream release instead; never fetch our own
+            # mirror URL (which could be stale or partially staged).
+            tag, _ = PLATFORMS[channel]
+            upstream = f"https://github.com/{REPO}/releases/download/{tag}{doc['version']}/{filename}"
+            with os.fdopen(fd, "wb") as output, fetch(upstream) as source:
                 while True:
                     data = source.read(1024 * 1024)
                     if not data:
