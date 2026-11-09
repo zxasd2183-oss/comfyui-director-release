@@ -1,0 +1,22 @@
+[Unit]
+Description=Mirror SHA256-verified Glacier preview installation assets onto owner VPS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=glacierpreview
+Group=glacierpreview
+WorkingDirectory=/var/lib/glacier-preview-downloads
+ExecStart=/usr/bin/python3 /opt/glacier-preview-downloads/sync-glacier-preview-releases.py --directory /var/lib/glacier-preview-downloads
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/glacier-preview-downloads
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+MemoryMax=1024M
+TimeoutStartSec=1200
