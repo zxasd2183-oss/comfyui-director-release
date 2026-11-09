@@ -25,7 +25,7 @@ def asset(version="0.20.10", channel="macos-arm64", data=b"x" * 100_001):
 
 class GlacierStageTests(unittest.TestCase):
     def test_legacy_signed_urls_are_not_altered(self):
-        self.assertIn("github.com", mirror.BASE)
+        self.assertTrue(mirror.BASE.startswith("https://raw.githubusercontent.com/"))
         self.assertEqual(mirror.semver("0.20.10"), (0, 20, 10))
 
     def test_canonical_release_pair_selects_highest_shared_version(self):
