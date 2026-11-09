@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import Mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QWidget
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QDialog, QHBoxLayout, QLineEdit, QWidget
 from glacier_account_center26 import GlacierAccountCenter26, account_label26
 
 
@@ -18,11 +19,13 @@ class FakeWindow(QWidget, GlacierAccountCenter26):
         self.logins = 0
         self.registrations = 0
 
-    def _sync_login23(self):
+    def _sync_login23(self, **fields):
         self.logins += 1
+        self.last_login_fields = fields
 
-    def _sync_register23(self):
+    def _sync_register23(self, **fields):
         self.registrations += 1
+        self.last_register_fields = fields
 
     def _sync_error23(self, e):
         raise AssertionError("Unexpected account handler error")
@@ -71,6 +74,24 @@ class AccountCenterTests(unittest.TestCase):
         self.assertIn("等待", account_label26({"token": "dummy", "approved": False})[0])
         self.assertEqual(account_label26(
             {"token": "dummy", "approved": True, "username": "user-demo"})[0], "user-demo")
+
+    def test_one_screen_login_collects_all_fields(self):
+        window = FakeWindow()
+        def submit():
+            modal = QApplication.activeModalWidget()
+            self.assertIsInstance(modal, QDialog)
+            entries = modal.findChildren(QLineEdit)
+            self.assertEqual(len(entries), 3)
+            entries[0].setText("https://sync.borealos.cn")
+            entries[1].setText("test-user")
+            entries[2].setText("synthetic-password-only")
+            modal.accept()
+        QTimer.singleShot(0, submit)
+        self.assertTrue(window._account_form26(False))
+        self.assertEqual(window.logins, 1)
+        self.assertEqual(window.last_login_fields["username"], "test-user")
+        self.assertEqual(window.last_login_fields["base"], "https://sync.borealos.cn")
+        window.close()
 
     def test_button_label_refreshes_when_signed_in(self):
         window = FakeWindow()
