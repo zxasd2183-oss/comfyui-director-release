@@ -45,18 +45,24 @@ install -m 0644 "$HERE/glacier-sync.service" /etc/systemd/system/glacier-sync.se
 systemctl daemon-reload
 systemctl enable --now glacier-sync.service
 systemctl restart glacier-sync.service
-if systemctl is-active --quiet glacier-sync.service; then
-  echo "Glacier Sync service active; checking private health endpoint."
-  if curl --fail --silent --show-error --max-time 7 \
-      http://127.0.0.1:18991/health | grep -q '"status":"ok"'; then
-    echo "Glacier Sync backend healthy on 127.0.0.1:18991."
-  else
-    echo "Glacier Sync service active but /health did not return OK." >&2
+echo "Glacier Sync restarting; checking local health (up to 20 seconds)."
+ready=false
+for attempt in $(seq 1 20); do
+  if ! systemctl is-active --quiet glacier-sync.service; then
+    echo "Glacier Sync exited during startup. Inspect journalctl -u glacier-sync." >&2
     exit 1
   fi
-else
-  echo "Glacier Sync did not start. Inspect: journalctl -u glacier-sync -n 40" >&2
+  if curl --fail --silent --max-time 2 http://127.0.0.1:18991/health |
+      grep -q '"status":"ok"'; then
+    ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$ready" != true ]; then
+  echo "Glacier Sync failed local HTTP health after 20 attempts." >&2
   exit 1
 fi
+echo "Glacier Sync healthy on 127.0.0.1:18991."
 echo "NEXT: configure TLS / Nginx vhost sync.borealos.cn, then check HTTPS /health."
 echo "Do not publicly expose port 18991 or print the private invite."
