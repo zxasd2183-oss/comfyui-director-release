@@ -25,7 +25,7 @@ PLATFORMS = {
     "macos-arm64": ("glacier-macos-v", "macOS-AppleSilicon.dmg"),
 }
 FIELDS = {"channel", "version", "url", "sha256", "size", "notes", "key_id", "signature"}
-HOSTS = {"github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com",
+HOSTS = {"github.com", "api.github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com",
          "objects.githubusercontent.com", "github-releases.githubusercontent.com"}
 
 def unique(pairs):
@@ -151,15 +151,134 @@ def sync_one(directory, channel):
     save_atomic(manifest, raw)
     print(f"{channel} {doc['version']} verified: {target}", flush=True)
 
+def _canonical_release_pair():
+    """Discover the newest jointly published immutable platform pair.
+
+    Staging unsigned metadata never changes the signed client feed. Each staged
+    installer still has to match its canonical GitHub Release asset digest.
+    """
+    url = f"https://api.github.com/repos/{REPO}/releases?per_page=100"
+    with fetch(url) as source:
+        raw = source.read(2_000_001)
+    if len(raw) > 2_000_000:
+        raise ValueError("oversized GitHub Releases index")
+    releases = json.loads(raw.decode("utf-8"), object_pairs_hook=unique)
+    if not isinstance(releases, list):
+        raise ValueError("invalid GitHub Releases index")
+    by_platform = {channel: {} for channel in PLATFORMS}
+    patterns = {
+        "windows-x64": re.compile(r"^glacier-v((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))$"),
+        "macos-arm64": re.compile(r"^glacier-macos-v((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))$"),
+    }
+    for release in releases:
+        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            continue
+        if not release.get("published_at"):
+            continue
+        tag_name = release.get("tag_name")
+        if not isinstance(tag_name, str):
+            continue
+        for channel, pattern in patterns.items():
+            match = pattern.fullmatch(tag_name)
+            if match:
+                version = match.group(1)
+                if version in by_platform[channel]:
+                    raise ValueError("duplicate canonical release version")
+                by_platform[channel][version] = release
+    matched = set.intersection(*(set(found) for found in by_platform.values()))
+    if not matched:
+        return None
+    version = max(matched, key=semver)
+    return version, {channel: entries[version] for channel, entries in by_platform.items()}
+
+
+def _verified_release_asset(release, filename):
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        raise ValueError("missing GitHub Release assets")
+    matches = [asset for asset in assets
+               if isinstance(asset, dict) and asset.get("name") == filename]
+    if len(matches) != 1:
+        raise ValueError("ambiguous canonical release installer")
+    asset = matches[0]
+    raw_digest = asset.get("digest")
+    size = asset.get("size")
+    if (asset.get("state") != "uploaded" or not isinstance(raw_digest, str)
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", raw_digest)
+            or type(size) is not int or not 1_000_000 <= size <= 900_000_000):
+        raise ValueError("invalid GitHub Release asset SHA-256 or size")
+    return size, raw_digest.removeprefix("sha256:")
+
+
+def _stage_verified_asset(directory, channel, version, release):
+    tag, suffix = PLATFORMS[channel]
+    filename = f"GlacierBrowser-v{version}-{suffix}"
+    size, expected_sha256 = _verified_release_asset(release, filename)
+    target = directory / filename
+    if target.is_symlink():
+        raise ValueError("symlinked installer destination forbidden")
+    if target.is_file() and target.stat().st_size == size and sha256(target) == expected_sha256:
+        print(f"Staged {channel} {version} already verified", flush=True)
+        return
+    fd, tmp = tempfile.mkstemp(prefix=".glacier-stage-", dir=directory)
+    try:
+        url = f"https://github.com/{REPO}/releases/download/{tag}{version}/{filename}"
+        amount, digest = 0, hashlib.sha256()
+        with os.fdopen(fd, "wb") as output, fetch(url) as source:
+            while True:
+                part = source.read(1024 * 1024)
+                if not part:
+                    break
+                amount += len(part)
+                if amount > size:
+                    raise ValueError("staged installer larger than release metadata")
+                digest.update(part)
+                output.write(part)
+            output.flush()
+            os.fsync(output.fileno())
+        if amount != size or digest.hexdigest() != expected_sha256:
+            raise ValueError("staged installer hash/size mismatch")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, target)
+        print(f"Staged {channel} {version}: {target}", flush=True)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
+def stage_latest_pair(directory):
+    """Pre-download BOTH installers while keeping existing signed manifests intact."""
+    pair = _canonical_release_pair()
+    if pair is None:
+        print("No paired GitHub releases to stage", flush=True)
+        return
+    version, releases = pair
+    # Only stage the VPS migration release and later. Older signed feeds are
+    # already mirrored by sync_one; do not rewrite their origin metadata.
+    if semver(version) < (0, 20, 10):
+        return
+    for channel in PLATFORMS:
+        _stage_verified_asset(directory, channel, version, releases[channel])
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", type=Path, default=Path("/var/lib/glacier-preview-downloads"))
-    directory = parser.parse_args().directory
+    parser.add_argument("--stage-only", action="store_true",
+                        help="Stage the latest paired releases without changing signed metadata")
+    args = parser.parse_args()
+    directory = args.directory
     if not directory.is_dir() or directory.is_symlink():
         raise ValueError("missing or symlinked distribution directory")
-    for channel in PLATFORMS:
-        sync_one(directory, channel)
+    try:
+        stage_latest_pair(directory)
+    except Exception as exc:
+        if args.stage_only:
+            raise
+        print("Glacier pre-stage deferred: " + str(exc), file=sys.stderr)
+    if not args.stage_only:
+        for channel in PLATFORMS:
+            sync_one(directory, channel)
 
 if __name__ == "__main__":
     try:
