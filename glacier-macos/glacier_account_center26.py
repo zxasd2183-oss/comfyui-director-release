@@ -199,21 +199,36 @@ class GlacierAccountCenter26:
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             form)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("创建账号" if register else "登录")
-        buttons.accepted.connect(form.accept)
+        def submit():
+            url, name, secret = base.text().strip(), user.text().strip(), password.text()
+            if not sync_url23(url) or not name or len(secret) < 12:
+                QMessageBox.warning(form, "Glacier 账号",
+                                    "请检查 HTTPS 服务器、账号以及至少 12 位的密码。")
+                return
+            invite = invitation.text() if register else ""
+            if register and not invite:
+                QMessageBox.warning(form, "Glacier 账号", "注册邀请码不能为空。")
+                return
+            # Do not dismiss the form on network or permission failures:
+            # users can correct credentials without entering them twice.
+            submit_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+            submit_button.setEnabled(False)
+            try:
+                if register:
+                    self._sync_register23(base=url, username=name,
+                                          password=secret, invite=invite)
+                else:
+                    self._sync_login23(base=url, username=name, password=secret)
+            except Exception as exc:
+                # Never echo URLs with credentials, tokens, or raw server bodies.
+                QMessageBox.warning(form, "Glacier 账号",
+                                    type(exc).__name__ + "：操作未完成。请检查网络、账号或授权。")
+            else:
+                form.accept()
+            finally:
+                submit_button.setEnabled(True)
+
+        buttons.accepted.connect(submit)
         buttons.rejected.connect(form.reject)
         layout.addWidget(buttons)
-        if form.exec() != QDialog.DialogCode.Accepted:
-            return False
-        url, name, secret = base.text().strip(), user.text().strip(), password.text()
-        if not sync_url23(url) or not name or len(secret) < 12:
-            QMessageBox.warning(self, "Glacier 账号", "请检查 HTTPS 服务器、账号以及至少 12 位的密码。")
-            return False
-        if register:
-            invite = invitation.text()
-            if not invite:
-                QMessageBox.warning(self, "Glacier 账号", "注册邀请码不能为空。")
-                return False
-            self._sync_register23(base=url, username=name, password=secret, invite=invite)
-        else:
-            self._sync_login23(base=url, username=name, password=secret)
-        return True
+        return form.exec() == QDialog.DialogCode.Accepted
