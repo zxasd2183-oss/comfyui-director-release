@@ -173,16 +173,18 @@ class Browser(GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierS
   except OSError:pass
   super().closeEvent(event)
 def main():
+ # Chromium reads QTWEBENGINE_CHROMIUM_FLAGS during Qt startup on macOS.
+ # Reserve a per-process local port and set fail-closed proxy flags BEFORE QApplication.
+ with socket.socket() as listener:
+  listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
+ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
  splash=show_glacier_splash("macOS v0.20.9")
  link=get_link(app,parse_node)
- with socket.socket() as s:
-  s.bind(("127.0.0.1",0));port=s.getsockname()[1]
  proc=None
  try:proc=proxy_start(link,port)
  except Exception as e:QMessageBox.warning(None,APP,"代理未启动，禁止直连："+str(e))
  # The proxy remains configured even when the core is unavailable: fail closed.
- os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
  try:
   win=Browser(proc,port)
