@@ -1,4 +1,4 @@
-"""Glacier v0.20.2 account sync release gates.
+"""Glacier v0.20.3 account sync release gates.
 
 Only synthetic credentials are used here. No production token, endpoint,
 account or vault data is required.
