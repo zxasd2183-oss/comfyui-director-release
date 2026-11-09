@@ -90,7 +90,7 @@ jobs:
               releases = json.load(handle)
           needed = needs_new_signed_release(releases, "feed/channels")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write("needed=" + str(needed).lower() + "\\n")
+              output.write("needed=" + str(needed).lower() + "\n")
           if not needed:
               print("No newer canonical signed Release pair. Existing signed manifests stay untouched.")
           PY
