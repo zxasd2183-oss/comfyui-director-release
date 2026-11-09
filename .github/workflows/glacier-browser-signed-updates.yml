@@ -88,8 +88,8 @@ jobs:
           import json, re, os
           from pathlib import Path
           releases = json.loads(Path("releases.json").read_text(encoding="utf-8"))
-          platforms = {"windows": re.compile(r"^glacier-v(\\d+\\.\\d+\\.\\d+)(?:-.*)?$"),
-                       "macos": re.compile(r"^glacier-macos-v(\\d+\\.\\d+\\.\\d+)(?:-.*)?$")}
+          platforms = {"windows": re.compile(r"^glacier-v(\d+\.\d+\.\d+)(?:-.*)?$"),
+                       "macos": re.compile(r"^glacier-macos-v(\d+\.\d+\.\d+)(?:-.*)?$")}
           versions = {}
           for platform, pattern in platforms.items():
               found = []
