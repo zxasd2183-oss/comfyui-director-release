@@ -11,6 +11,7 @@ from glacier_sync23 import (
     SyncError23, decrypt_space23, encrypt_space23, sync_url23,
 )
 from glacier_sync_auto24 import account_digest24, sync_one_space24
+from glacier_accounts22 import extract_code22
 
 
 EXAMPLE = {
@@ -53,6 +54,16 @@ class VaultInteroperabilityTests(unittest.TestCase):
                         "https://localhost",
                         "https://sync.borealos.cn/?token=hello"):
             self.assertEqual(sync_url23(invalid), "")
+
+
+class OtpResponseTests(unittest.TestCase):
+    def test_plain_digits_with_whitespace(self):
+        self.assertEqual(extract_code22(b"  123456\\n"), "123456")
+
+    def test_json_digits_and_unsafe_payloads(self):
+        self.assertEqual(extract_code22(b'{"data":{"code":"654321"}}'), "654321")
+        self.assertEqual(extract_code22(b'{"code":"not-a-code"}'), "")
+        self.assertEqual(extract_code22(b'{"code":"1234567","other":"ignore"}' * 500), "")
 
 
 class ConflictProtectionTests(unittest.TestCase):
