@@ -1,0 +1,14 @@
+[Unit]
+Description=Mirror verified Glacier signed Windows and macOS releases
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/usr/bin/python3 /home/ubuntu/comfyui-director-release/vps-control/sync-glacier-signed-releases.py --directory /var/lib/glacier-preview-downloads
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/glacier-preview-downloads
