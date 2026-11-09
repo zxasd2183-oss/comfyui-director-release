@@ -3,11 +3,12 @@
 No network or actual credentials. Headless offscreen Qt must work in CI.
 """
 import os
+import gc
 import unittest
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QHBoxLayout, QLineEdit, QMessageBox, QWidget
 from glacier_account_center26 import GlacierAccountCenter26, account_label26
 
@@ -59,6 +60,16 @@ class AccountCenterTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+
+    def tearDown(self):
+        # Offscreen Windows Qt can AV on interpreter exit if a modal dialog
+        # or unparented layout survives the QApplication. Clean them now.
+        for widget in list(QApplication.topLevelWidgets()):
+            widget.close()
+            widget.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.app.processEvents()
+        gc.collect()
 
     def test_exactly_visible_login_button_from_fresh_install(self):
         window = FakeWindow()
