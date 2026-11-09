@@ -294,7 +294,8 @@ class GlacierSync23:
     def _queue_auto_sync23(self):
         if (hasattr(self, "_sync_auto_timer23")
                 and self._sync_state23.get("auto_enabled")):
-            self._sync_auto_timer23.start(2500)
+            # Debounce a local edit without changing the normal 3-minute cadence.
+            QTimer.singleShot(2500, self._sync_auto_tick23)
 
     def _sync_mark_baseline23(self, space, version):
         from glacier_sync_auto24 import account_digest24
