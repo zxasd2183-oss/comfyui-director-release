@@ -67,6 +67,15 @@ class SignedFeedTests(unittest.TestCase):
         self.assertFalse(publisher.render_manifests(
             [windows, mac], self.root, self.key))
 
+    def test_vps_migration_requires_bridge_release_first(self):
+        for version, use_vps in (("0.20.9", False), ("0.20.10", True)):
+            pair = fixture(version)
+            payloads = publisher.make_payloads(version, *pair)
+            for channel, item in payloads.items():
+                self.assertEqual(item["url"].startswith("https://sync.borealos.cn/downloads/"), use_vps)
+                if use_vps:
+                    self.assertIn("GlacierBrowser-v" + version, item["url"])
+
     def test_existing_canonical_version_requires_no_replication(self):
         win, mac = fixture("0.20.0")
         self.assertTrue(publisher.render_manifests([win, mac], self.root, self.key))
