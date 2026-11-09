@@ -1,9 +1,10 @@
-"""Independent, opt-in Glacier preview discovery.
+"""Glacier Windows preview discovery exclusively through owner's HTTPS VPS.
 
-Preview releases are NOT signed update manifests. This module only opens the
-official GitHub release page after user confirmation; it never downloads or
-executes an installer, and never modifies the signed production updater.
-GitHub API requests go through the already-running local VLESS/SOCKS proxy.
+GitHub is never queried by the installed client. The unprivileged VPS mirror
+fetches upstream releases, validates upstream SHA-256 and serves a bounded
+informational preview manifest. Formal in-app updates still use independently
+Ed25519-signed manifests. Preview assets are offered for user-confirmed
+manual installation only; never auto-run or silently overwrite.
 """
 from __future__ import annotations
 
@@ -15,12 +16,9 @@ import requests
 from PySide6.QtCore import QObject, Signal, QUrl
 from PySide6.QtWidgets import QMessageBox, QPushButton
 
-REPO = "zxasd2183-oss/comfyui-director-release"
-API = f"https://api.github.com/repos/{REPO}/releases?per_page=30"
-RELEASE_ROOT = f"https://github.com/{REPO}/releases/tag/"
-ASSET_PREFIX = f"https://github.com/{REPO}/releases/download/"
-TAG_PATTERN = re.compile(r"^glacier-v(\d+\.\d+\.\d+)-(?:sync-v\d+-[0-9a-f]{7}|input-preview(?:-r\d+)?|preview-[0-9a-z-]+)$")
-INSTALLER_PATTERN = re.compile(r"^GlacierBrowser-v(\d+\.\d+\.\d+)-Windows-Setup-x64\.exe$")
+PREVIEW_FEED25 = "https://sync.borealos.cn/downloads/windows-preview.json"
+ASSET_ROOT25 = "https://sync.borealos.cn/downloads/"
+FIELDS25 = frozenset(("platform", "channel", "version", "url", "size", "sha256"))
 
 
 class PreviewError25(Exception):
@@ -33,52 +31,34 @@ def _version25(value):
     return tuple(int(x) for x in value.split("."))
 
 
-def select_preview25(releases, current):
-    """Select a newer preview and validate exact official release/asset URLs."""
-    if not isinstance(releases, list) or len(releases) > 30:
-        raise PreviewError25("Invalid release data")
-    local = _version25(current)
-    candidates = []
-    for item in releases:
-        if not isinstance(item, dict) or item.get("draft") or not item.get("prerelease"):
-            continue
-        tag = item.get("tag_name")
-        if not isinstance(tag, str):
-            continue
-        match = TAG_PATTERN.fullmatch(tag)
-        if not match:
-            continue
-        version = match.group(1)
-        if _version25(version) <= local:
-            continue
-        url = item.get("html_url")
-        if url != RELEASE_ROOT + tag:
-            continue
-        assets = item.get("assets")
-        if not isinstance(assets, list) or len(assets) > 30:
-            continue
-        for asset in assets:
-            if not isinstance(asset, dict):
-                continue
-            name = asset.get("name")
-            if not isinstance(name, str):
-                continue
-            matched = INSTALLER_PATTERN.fullmatch(name)
-            if not matched or matched.group(1) != version:
-                continue
-            download = asset.get("browser_download_url")
-            if download != ASSET_PREFIX + tag + "/" + name:
-                continue
-            size = asset.get("size")
-            if not isinstance(size, int) or not (10_000_000 < size < 1_500_000_000):
-                continue
-            candidates.append({
-                "version": version,
-                "tag": tag,
-                "page": url,
-                "size": size,
-            })
-    return max(candidates, key=lambda item: (_version25(item["version"]), item["tag"])) if candidates else None
+def _unique25(pairs):
+    doc = {}
+    for key, value in pairs:
+        if key in doc:
+            raise PreviewError25("Duplicate preview metadata key")
+        doc[key] = value
+    return doc
+
+
+def select_preview25(document, current):
+    """Validate a VPS preview manifest; never treat it as signed update data."""
+    if not isinstance(document, dict) or frozenset(document) != FIELDS25:
+        raise PreviewError25("Invalid VPS preview manifest schema")
+    if document.get("platform") != "windows" or document.get("channel") != "preview-manual":
+        raise PreviewError25("Preview channel/platform mismatch")
+    version = document.get("version")
+    if _version25(version) <= _version25(current):
+        return None
+    expected = ASSET_ROOT25 + f"GlacierBrowser-v{version}-Windows-Setup-x64.exe"
+    if document.get("url") != expected:
+        raise PreviewError25("Preview installer must be hosted on the owner VPS")
+    size = document.get("size")
+    sha = document.get("sha256")
+    if type(size) is not int or not 10_000_000 <= size <= 900_000_000:
+        raise PreviewError25("Invalid installer size")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise PreviewError25("Invalid installer SHA-256")
+    return {"version": version, "url": expected, "size": size, "sha256": sha}
 
 
 def fetch_preview25(current, port):
@@ -90,27 +70,28 @@ def fetch_preview25(current, port):
     session.proxies = {"http": sock, "https": sock}
     try:
         with session.get(
-            API,
-            headers={"Accept": "application/vnd.github+json", "User-Agent": "GlacierBrowser/preview-check"},
+            PREVIEW_FEED25,
+            headers={"Accept": "application/json", "User-Agent": "GlacierBrowser/VPS-preview-check"},
             timeout=(6, 15),
             allow_redirects=False,
             stream=True,
         ) as response:
             if response.status_code != 200:
-                raise PreviewError25("GitHub preview listing unavailable")
-            if int(response.headers.get("Content-Length", "0")) > 512_000:
-                raise PreviewError25("Oversized GitHub response")
+                raise PreviewError25("VPS preview feed unavailable")
+            if int(response.headers.get("Content-Length", "0")) > 16_384:
+                raise PreviewError25("Oversized preview manifest")
             payload = bytearray()
-            for chunk in response.iter_content(8192):
+            for chunk in response.iter_content(4096):
                 payload.extend(chunk)
-                if len(payload) > 512_000:
-                    raise PreviewError25("Oversized GitHub response")
+                if len(payload) > 16_384:
+                    raise PreviewError25("Oversized preview manifest")
             try:
-                return select_preview25(json.loads(payload.decode("utf-8")), current)
+                doc = json.loads(payload.decode("utf-8"), object_pairs_hook=_unique25)
             except (ValueError, UnicodeError) as exc:
-                raise PreviewError25("Invalid preview listing") from exc
+                raise PreviewError25("Invalid VPS preview JSON") from exc
+            return select_preview25(doc, current)
     except requests.RequestException as exc:
-        raise PreviewError25("Cannot reach GitHub via VLESS") from exc
+        raise PreviewError25("Cannot reach VPS preview feed via VLESS") from exc
     finally:
         session.close()
 
@@ -125,7 +106,7 @@ class GlacierPreviewUpdates25:
         self._preview_signal25.ready.connect(self._preview_result25)
         self._preview_busy25 = False
         btn = QPushButton("预览版更新", self)
-        btn.setToolTip("发现官方 GitHub 预览版；手动下载，不绕过正式更新的数字签名校验")
+        btn.setToolTip("通过自有 VPS 查找预览版；手动安装，不改变正式版数字签名校验")
         btn.clicked.connect(self.check_preview_updates25)
         bar.addWidget(btn)
         self._preview_button25 = btn
@@ -135,7 +116,7 @@ class GlacierPreviewUpdates25:
             return
         process = getattr(self, "proc", None)
         if process is None or process.poll() is not None:
-            QMessageBox.warning(self, "Glacier 预览版", "VLESS 核心未运行，禁止直连 GitHub。")
+            QMessageBox.warning(self, "Glacier 预览版", "VLESS 核心未运行，已禁止直连下载。")
             return
         port = int(getattr(self, "proxy_port", 0))
         from secure_update import CURRENT_VERSION
@@ -147,9 +128,9 @@ class GlacierPreviewUpdates25:
             try:
                 result = {"preview": fetch_preview25(CURRENT_VERSION, port)}
             except PreviewError25:
-                result = {"error": "无法通过 VLESS 读取 GitHub 官方预览清单，请检查网络。"}
+                result = {"error": "无法从 VPS 读取预览版清单，请检查代理或镜像服务。"}
             except Exception:
-                result = {"error": "预览版检查失败；正式更新功能未受影响。"}
+                result = {"error": "预览版检查失败；正式版签名更新未受影响。"}
             self._preview_signal25.ready.emit(result)
 
         threading.Thread(target=work, daemon=True, name="glacier-preview-check").start()
@@ -165,18 +146,17 @@ class GlacierPreviewUpdates25:
         if found is None:
             QMessageBox.information(
                 self, "Glacier 预览版",
-                "GitHub 官方预览通道暂无比当前安装版本更新的 Windows 预览版。\n"
-                "正式版仍由独立 Ed25519 签名更新清单检查。")
+                "自有 VPS 镜像暂无比当前版本更新的 Windows 预览版。\n"
+                "正式版仍独立使用 Ed25519 签名更新清单。")
             return
         answer = QMessageBox.question(
             self, "发现 Glacier 预览版 " + found["version"],
-            "发现 Windows 预览版 " + found["version"] + "（约 "
-            + str(round(found["size"] / 1_000_000)) + " MB）。\n\n"
-            "预览版不属于正式签名更新渠道，不能自动下载安装。\n"
-            "是否在 Glacier 浏览器中打开官方 GitHub Release 页面，手动下载安装？",
+            "VPS 上已有 Windows 预览版 " + found["version"] + "（约 "
+            + str(round(found["size"] / 1_000_000)) + " MB）。\n"
+            "镜像已校验 SHA-256，预览版仍需手动安装。\n\n"
+            "是否在 Glacier 中打开 VPS 下载地址？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:
-            # Official release page only; no arbitrary asset URL is opened.
             tab = self.new_tab()
-            tab.setUrl(QUrl(found["page"]))
+            tab.setUrl(QUrl(found["url"]))
