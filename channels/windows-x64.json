@@ -1,10 +1,10 @@
 {
   "channel": "windows-x64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.20.0：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
-  "sha256": "49229d37f93e2a21c9408d4fd61176fe1d0d631af52eeaf5719f6b02a2b2dd1a",
-  "signature": "R8M9wJSRGElQcVpUEzAABir3LCj8lC8Vl86vzmaVXBuY2YHMwyfOQWGuKOxUIUyS1EweoSGGhX2i+bkmRYbuBw==",
-  "size": 173182132,
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.20.0/GlacierBrowser-v0.20.0-Windows-Setup-x64.exe",
-  "version": "0.20.0"
+  "notes": "Glacier Browser v0.20.8：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
+  "sha256": "514c59650ff75bafa8d9141bc9eb69637b878dbf557d89612b1a46624c6b256e",
+  "signature": "AmRMcM6WXUsPnpEW+wrgH7YJYRmgSAkfp9z2hHt0zcDdQZYS8E+kDLBTZYAvRytrlb40SyiM9jLd4qwm4gTcBg==",
+  "size": 175904315,
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-v0.20.8/GlacierBrowser-v0.20.8-Windows-Setup-x64.exe",
+  "version": "0.20.8"
 }
