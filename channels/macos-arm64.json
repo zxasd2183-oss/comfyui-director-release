@@ -1,10 +1,10 @@
 {
   "channel": "macos-arm64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.20.8：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
-  "sha256": "828115aed3f6555d946b2a4b7dcfa6622cf53d841e6fc72658e385f11facda17",
-  "signature": "MQkilwHQvPbwww+UhIqqUfN5A5ctutpgGsGyRfhQPjULdziDr1i7pyXiDjvDkBCQgwTvP7BIn23xqK8a9gimCw==",
-  "size": 275965733,
-  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v0.20.8/GlacierBrowser-v0.20.8-macOS-AppleSilicon.dmg",
-  "version": "0.20.8"
+  "notes": "Glacier Browser v0.20.9：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
+  "sha256": "d7fc95f1abf70ebe980ab9dc9265a02fa1cf507557f05046cbb9315fdc526f32",
+  "signature": "23C5s8ExfjSptqDZIh1tCIfDzOQr68Ytgir1r7XjD1eQaWHPrRC4z0XaDZP+MZypV6KuI68JxDP81vvdn7QJAA==",
+  "size": 272035561,
+  "url": "https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v0.20.9/GlacierBrowser-v0.20.9-macOS-AppleSilicon.dmg",
+  "version": "0.20.9"
 }
