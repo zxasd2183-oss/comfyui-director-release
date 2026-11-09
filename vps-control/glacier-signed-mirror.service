@@ -5,7 +5,11 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=ubuntu
+User=glacierpreview
+Group=glacierpreview
+Environment=HTTPS_PROXY=http://127.0.0.1:1081
+Environment=HTTP_PROXY=http://127.0.0.1:1081
+Environment=NO_PROXY=127.0.0.1,localhost
 ExecStart=/usr/bin/python3 /home/ubuntu/comfyui-director-release/vps-control/sync-glacier-signed-releases.py --directory /var/lib/glacier-preview-downloads
 NoNewPrivileges=true
 PrivateTmp=true
