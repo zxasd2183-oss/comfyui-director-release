@@ -76,6 +76,43 @@ jobs:
             "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
           test -s releases.json
 
+      - name: Report unified-release readiness and version mismatch
+        if: steps.signer.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, re, os
+          from pathlib import Path
+          releases = json.loads(Path("releases.json").read_text(encoding="utf-8"))
+          platforms = {"windows": re.compile(r"^glacier-v(\\d+\\.\\d+\\.\\d+)(?:-.*)?$"),
+                       "macos": re.compile(r"^glacier-macos-v(\\d+\\.\\d+\\.\\d+)(?:-.*)?$")}
+          versions = {}
+          for platform, pattern in platforms.items():
+              found = []
+              for release in releases:
+                  if release.get("draft") or not release.get("published_at"):
+                      continue
+                  match = pattern.fullmatch(str(release.get("tag_name", "")))
+                  if match:
+                      found.append(tuple(map(int, match.group(1).split("."))))
+              versions[platform] = max(found) if found else None
+          pretty = lambda v: ".".join(map(str, v)) if v else "missing"
+          windows, macos = versions["windows"], versions["macos"]
+          lines = ["### Glacier unified update readiness",
+                   f"- Latest published Windows release: {pretty(windows)}",
+                   f"- Latest published macOS release: {pretty(macos)}"]
+          if not windows or not macos or windows != macos:
+              lines.append("- ⚠️ Windows and macOS do not yet have a matched release version. Do not claim a unified client update.")
+              print("::warning::Glacier Windows/macOS published versions differ; unified signed update not ready")
+          else:
+              lines.append("- Versions match; signed publishing still requires canonical immutable release tags and valid signatures.")
+          lines.append("- Preview/prerelease assets are not automatically promoted to the signed client feed.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              output.write("\\n".join(lines) + "\\n")
+          print("\\n".join(lines))
+          PY
+
       - name: Check whether there is a newer immutable signed release pair
         id: release-check
         if: steps.signer.outputs.enabled == 'true'
