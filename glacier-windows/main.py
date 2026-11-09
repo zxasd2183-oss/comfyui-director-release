@@ -23,6 +23,7 @@ from glacier_shell20 import GlacierShell20
 from glacier_input21 import GlacierInput21
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
+from glacier_preview_updates25 import GlacierPreviewUpdates25
 from glacier_splash import show_glacier_splash
 
 APP = "Glacier Browser"
@@ -118,7 +119,7 @@ class Page(QWebEngineView):
   self.setPage(QWebEnginePage(win.profile,self))
   self.win.prepare_page_input21(self)
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierPreviewUpdates25, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -145,6 +146,7 @@ class Browser(GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, 
   self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
   self.setup_ui08(lay,bar)
   self.setup_updater(bar, appdir())
+  self.setup_preview_updates25(bar)
   self.setup_windows_ui12(bar)
   self.setup_chrome14(lay,bar)
   self.restore_startup_session()
