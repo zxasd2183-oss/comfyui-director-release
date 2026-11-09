@@ -67,6 +67,31 @@ class SignedFeedTests(unittest.TestCase):
         self.assertFalse(publisher.render_manifests(
             [windows, mac], self.root, self.key))
 
+    def test_existing_canonical_version_requires_no_replication(self):
+        win, mac = fixture("0.20.0")
+        self.assertTrue(publisher.render_manifests([win, mac], self.root, self.key))
+        before = [(self.root / (name + ".json")).read_bytes()
+                  for name in ("windows-x64", "macos-arm64")]
+        replaced_win, replaced_mac = fixture("0.20.0")
+        replaced_win["assets"][0]["digest"] = "sha256:" + "c" * 64
+        # Immutable previously signed feeds are retained. The replacement
+        # GitHub asset is never re-signed or offered to stable clients.
+        self.assertFalse(publisher.needs_new_signed_release(
+            [replaced_win, replaced_mac], self.root))
+        self.assertEqual(before, [
+            (self.root / (name + ".json")).read_bytes()
+            for name in ("windows-x64", "macos-arm64")])
+
+    def test_strictly_newer_pair_is_needed_before_publishing(self):
+        w0, m0 = fixture("0.20.0")
+        publisher.render_manifests([w0, m0], self.root, self.key)
+        w1, m1 = fixture("0.20.1")
+        self.assertTrue(publisher.needs_new_signed_release(
+            [w0, m0, w1, m1], self.root))
+        with self.assertRaisesRegex(ValueError, "rollback"):
+            publisher.needs_new_signed_release(
+                list(fixture("0.19.0")), self.root)
+
     def test_one_platform_never_publishes_partial_update(self):
         windows, _ = fixture()
         self.assertFalse(publisher.render_manifests(
