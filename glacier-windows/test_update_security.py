@@ -37,6 +37,28 @@ class GlacierUpdateSecurityTests(unittest.TestCase):
     def test_signed_manifest_accepted(self):
         self.assertEqual(self.parse(self.fixture()).version, "0.18.0")
 
+    def test_signed_vps_installer_origin_accepted(self):
+        doc = self.fixture("0.20.10")
+        doc["url"] = "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.10-Windows-Setup-x64.exe"
+        doc["signature"] = base64.b64encode(self.key.sign(
+            update.canonical({k: v for k, v in doc.items() if k != "signature"})
+        )).decode("ascii")
+        self.assertEqual(self.parse(doc).version, "0.20.10")
+
+    def test_signed_vps_wrong_filename_and_nonstandard_port_rejected(self):
+        for url in (
+            "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.11-Windows-Setup-x64.exe",
+            "https://sync.borealos.cn:443/downloads/GlacierBrowser-v0.20.10-Windows-Setup-x64.exe",
+            "https://evil.example/downloads/GlacierBrowser-v0.20.10-Windows-Setup-x64.exe",
+        ):
+            doc = self.fixture("0.20.10")
+            doc["url"] = url
+            doc["signature"] = base64.b64encode(self.key.sign(
+                update.canonical({k: v for k, v in doc.items() if k != "signature"})
+            )).decode("ascii")
+            with self.assertRaises(update.UpdateError):
+                self.parse(doc)
+
     def test_checksum_tamper_rejected(self):
         doc = self.fixture()
         doc["sha256"] = "1" * 64
