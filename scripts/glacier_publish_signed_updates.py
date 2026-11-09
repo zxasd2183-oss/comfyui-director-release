@@ -206,6 +206,41 @@ def verify_signed_doc(document):
     return payload
 
 
+
+def needs_new_signed_release(releases, directory):
+    """Preflight immutable signed feeds without trusting reused Release tags.
+
+    An existing signed version MUST NOT be re-signed from a GitHub Release
+    whose assets were replaced in place. There is nothing to publish unless
+    a strictly newer canonical *paired* Windows+Mac release exists. This
+    preflight never edits a feed and still verifies both existing signatures.
+    """
+    pair = release_index(releases)
+    if pair is None:
+        return False
+    latest, _, _ = pair
+    output = Path(directory)
+    versions = []
+    for channel in ("windows-x64", "macos-arm64"):
+        existing = output / (channel + ".json")
+        if not existing.is_file():
+            return True
+        verified = verify_signed_doc(read_unique(existing))
+        if verified.get("channel") != channel:
+            raise ValueError("Existing feed channel mismatch")
+        versions.append(verified["version"])
+    if versions[0] != versions[1]:
+        raise ValueError("Existing dual-platform signed feed versions differ")
+    if version_tuple(latest) < version_tuple(versions[0]):
+        raise ValueError("Refusing signed feed rollback")
+    if version_tuple(latest) == version_tuple(versions[0]):
+        # Do not trust potentially replaced GitHub assets under the old tag.
+        # Stable clients retain the previously signed and pinned payload.
+        print("No newer canonical dual-platform release; signed feeds remain immutable.")
+        return False
+    return True
+
+
 def render_manifests(releases, directory, key):
     pair = release_index(releases)
     if pair is None:
