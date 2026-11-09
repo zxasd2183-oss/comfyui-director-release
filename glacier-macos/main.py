@@ -53,8 +53,25 @@ def parse_node(link):
  if transport=="ws":
   t={"type":"ws","path":g("path","/")}
   if g("host"):t["headers"]={"Host":g("host")}
+  # Xray WebSocket early data must be preserved or the tunnel handshake fails.
+  ed=g("ed") or g("maxEarlyData")
+  if ed:
+   if not ed.isascii() or not ed.isdecimal() or not 0<=int(ed)<=65535:
+    raise ValueError("WebSocket early data 参数无效")
+   if int(ed):
+    t["max_early_data"]=int(ed)
+    t["early_data_header_name"]=g("eh") or "Sec-WebSocket-Protocol"
   o["transport"]=t
- elif transport=="grpc":o["transport"]={"type":"grpc","service_name":g("serviceName")}
+ elif transport=="grpc":
+  o["transport"]={"type":"grpc","service_name":g("serviceName") or g("service_name") or g("path")}
+ elif transport in ("httpupgrade","http-upgrade"):
+  t={"type":"httpupgrade","path":g("path","/")}
+  if g("host"):t["host"]=g("host")
+  o["transport"]=t
+ elif transport=="http":
+  t={"type":"http","path":g("path","/")}
+  if g("host"):t["host"]=[g("host")]
+  o["transport"]=t
  elif transport not in ("","tcp","raw"):raise ValueError("暂不支持传输类型 "+transport)
  return o
 def proxy_start(link,port):
