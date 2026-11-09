@@ -1348,6 +1348,7 @@ public final class MainActivity extends Activity {
                                 &&server.equals(cloudState.base)?cloudState.deviceSecret:"");
                         next.approved=response.getBoolean("approved");
                         GlacierCloudSync.save(this,next);
+                        cloudEpoch++;
                         cloudState=next;
                         return next.approved?"账号已登录，当前设备已授权。":
                                 "登录成功，已提交新设备申请。请在已授权主设备中批准设备 ID："
@@ -1614,7 +1615,12 @@ public final class MainActivity extends Activity {
             JSONObject body=new JSONObject();
             body.put("expected_version",version);
             body.put("envelope",envelope);
-            GlacierCloudSync.call(cloudState,"PUT","/v1/vault/"+space,body);
+            JSONObject result=GlacierCloudSync.call(cloudState,"PUT",
+                    "/v1/vault/"+space,body);
+            int confirmed=result.getInt("version");
+            runOnUiThread(() -> {
+                if(!isFinishing())cloudMarkBaseline(space,confirmed);
+            });
             return "当前账号空间已端到端加密同步。";
         });
     }
@@ -1638,6 +1644,7 @@ public final class MainActivity extends Activity {
                     if(!space.equals(old.profile))merged.add(old);
                 merged.addAll(received);
                 boolean saved=persistAccountVault(merged);
+                if(saved)cloudMarkBaseline(space,remote.optInt("version",0));
                 new AlertDialog.Builder(this).setTitle("Glacier 加密同步")
                         .setMessage(saved?"账号空间已成功下载并加密保存到本机。":
                                 "本地保存失败，原有账号资料未更改。")
@@ -1652,8 +1659,13 @@ public final class MainActivity extends Activity {
             try {GlacierCloudSync.call(cloudState,"POST",
                     "/v1/logout",new JSONObject());}
             catch(Exception ignored) {}
+            cloudEpoch++;
+            cloudAutoHandler.removeCallbacks(cloudAutoTimer);
             cloudState.token="";
             cloudState.approved=false;
+            cloudState.autoEnabled=false;
+            cloudState.autoPassphrase="";
+            cloudState.baselines=new JSONObject();
             GlacierCloudSync.save(this,cloudState);
             return "已退出同步账号。本机已保存账号不受影响。";
         });
@@ -1810,6 +1822,8 @@ public final class MainActivity extends Activity {
                         if (target != null) {
                             rememberVisit(target);
                             maybePromptSiteAccount(target);
+                            if(cloudState.autoEnabled && !cloudAutoBusy)
+                                scheduleCloudAuto();
                             tabSaveHandler.postDelayed(
                                     () -> captureTabThumbnail(target), 950);
                         }
