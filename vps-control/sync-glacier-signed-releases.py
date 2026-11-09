@@ -217,9 +217,11 @@ def _stage_verified_asset(directory, channel, version, release):
     target = directory / filename
     if target.is_symlink():
         raise ValueError("symlinked installer destination forbidden")
-    if target.is_file() and target.stat().st_size == size and sha256(target) == expected_sha256:
-        print(f"Staged {channel} {version} already verified", flush=True)
-        return
+    if target.is_file():
+        if target.stat().st_size == size and sha256(target) == expected_sha256:
+            print(f"Staged {channel} {version} already verified", flush=True)
+            return
+        raise ValueError("refusing same-version replacement of staged installer")
     fd, tmp = tempfile.mkstemp(prefix=".glacier-stage-", dir=directory)
     try:
         url = f"https://github.com/{REPO}/releases/download/{tag}{version}/{filename}"
