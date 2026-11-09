@@ -57,7 +57,7 @@ class Desktop15Tests(unittest.TestCase):
         self.window.close()
 
     def test_mac_version_theme_and_shortcuts(self):
-        self.assertIn("v0.20.9", self.window.windowTitle())
+        self.assertIn("v0.20.10", self.window.windowTitle())
         self.assertIn("#e9f5fc", self.window.styleSheet())
         keys = {s.key().toString(QKeySequence.SequenceFormat.PortableText)
                 for s in self.window._desktop15_shortcuts}
