@@ -76,6 +76,14 @@ class SignedFeedTests(unittest.TestCase):
                 if use_vps:
                     self.assertIn("GlacierBrowser-v" + version, item["url"])
 
+    def test_vps_release_requires_explicit_bridge_rollout_gate(self):
+        with patch.dict("os.environ", {"GLACIER_VPS_MIGRATION_READY": ""}):
+            self.assertFalse(publisher.needs_new_signed_release(
+                list(fixture("0.20.10")), self.root))
+            with self.assertRaisesRegex(ValueError, "bridge-migration"):
+                publisher.render_manifests(
+                    list(fixture("0.20.10")), self.root, self.key)
+
     def test_existing_canonical_version_requires_no_replication(self):
         win, mac = fixture("0.20.0")
         self.assertTrue(publisher.render_manifests([win, mac], self.root, self.key))
