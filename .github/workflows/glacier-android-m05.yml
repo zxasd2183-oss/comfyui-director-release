@@ -296,16 +296,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='glacier-android-browser-v0.2.2-m05-debug-preview'
+          tag="glacier-android-browser-v0.2.2-m05-debug-preview-${GITHUB_SHA:0:7}"
           apk='.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk'
           test -s "$apk"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo '::notice::M05 debug preview is already published; never overwrite it.'
           else
             gh release create "$tag" "$apk" \
-              --target feature/glacier-android-m05-updates \
-              --title 'Glacier Android v0.2.2 M05 · 更新功能调试预览' \
-              --notes '仅用于确认更新界面、Android Keystore、SOCKS5、下载与回归测试。此 APK 使用临时 Debug 签名，不能作为长期应用内更新来源，不能保证覆盖升级。固定签名版需独立签名 Secret 与证书指纹。' \
+              --target "$GITHUB_SHA" \
+              --title 'Glacier Android v0.2.2 · 当前提交独立调试包' \
+              --notes '源代码与发布标签对应同一提交，包含 Glacier 账号登录、独立空间、设备授权与端到端同步。仅为 CI 验证的 Debug APK，使用临时 Debug 签名，不能保证覆盖安装，不能作为长期或正式账号使用版本。固定签名版必须有独立签名 Secret 与证书指纹。' \
               --prerelease
           fi
 
