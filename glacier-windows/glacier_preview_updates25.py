@@ -7,12 +7,12 @@ GitHub API requests go through the already-running local VLESS/SOCKS proxy.
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
-from urllib.parse import urlsplit
 
 import requests
-from PySide6.QtCore import QObject, Signal, QTimer, QUrl
+from PySide6.QtCore import QObject, Signal, QUrl
 from PySide6.QtWidgets import QMessageBox, QPushButton
 
 REPO = "zxasd2183-oss/comfyui-director-release"
@@ -106,7 +106,7 @@ def fetch_preview25(current, port):
                 if len(payload) > 512_000:
                     raise PreviewError25("Oversized GitHub response")
             try:
-                return select_preview25(requests.models.complexjson.loads(payload.decode("utf-8")), current)
+                return select_preview25(json.loads(payload.decode("utf-8")), current)
             except (ValueError, UnicodeError) as exc:
                 raise PreviewError25("Invalid preview listing") from exc
     except requests.RequestException as exc:
