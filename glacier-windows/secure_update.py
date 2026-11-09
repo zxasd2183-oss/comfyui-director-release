@@ -18,7 +18,7 @@ from update_core import (
     parse_manifest as _parse_insecure_manifest,
 )
 
-CURRENT_VERSION = '0.20.2'
+CURRENT_VERSION = '0.20.3'
 KEY_ID = 'cf9452226375ff7d'
 PUBLIC_KEY = bytes.fromhex('7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab')
 ALLOWED_KEYS = {'channel', 'version', 'url', 'sha256', 'size', 'notes', 'key_id', 'signature'}
