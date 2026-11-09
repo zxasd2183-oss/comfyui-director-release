@@ -392,17 +392,21 @@ class GlacierSync23:
                     self._accounts_doc22 = old
                     self.statusBar().showMessage("账号同步写入失败；原资料已保留", 10000)
 
-    def _sync_register23(self):
-        base = self._prompt_sync23("同步服务器", "https://sync.borealos.cn（留空使用默认地址）")
+    def _sync_register23(self, *, base=None, username=None, password=None, invite=None):
+        if base is None:
+            base = self._prompt_sync23("同步服务器", "https://sync.borealos.cn（留空使用默认地址）")
         if base == "":
             base = DEFAULT_SYNC_URL23
         if base is None:
             return
         if not sync_url23(base):
             raise SyncError23("Sync server URL must use HTTPS with no path")
-        username = self._prompt_sync23("创建 Glacier 账号", "账号 ID（字母与数字）")
-        password = self._prompt_sync23("创建 Glacier 账号", "登录密码（至少 12 位）", secret=True)
-        invite = self._prompt_sync23("创建 Glacier 账号", "管理员提供的注册邀请码", secret=True)
+        if username is None:
+            username = self._prompt_sync23("创建 Glacier 账号", "账号 ID（字母与数字）")
+        if password is None:
+            password = self._prompt_sync23("创建 Glacier 账号", "登录密码（至少 12 位）", secret=True)
+        if invite is None:
+            invite = self._prompt_sync23("创建 Glacier 账号", "管理员提供的注册邀请码", secret=True)
         if None in (username, password, invite):
             return
         if len(password) < 12:
@@ -420,16 +424,19 @@ class GlacierSync23:
         self._save_sync23()
         self._sync_info23("已注册，当前设备成为主设备。\n请单独牢记云端保险箱加密口令；它不会上传服务器。")
 
-    def _sync_login23(self):
-        base = self._sync_state23.get("base")
+    def _sync_login23(self, *, base=None, username=None, password=None):
+        if base is None:
+            base = self._sync_state23.get("base")
         if not base:
             base = self._prompt_sync23("同步服务器", "https://sync.borealos.cn（留空使用默认地址）")
             if base == "":
                 base = DEFAULT_SYNC_URL23
         if base is None or not sync_url23(base):
             return
-        username = self._prompt_sync23("Glacier 登录", "账号 ID")
-        password = self._prompt_sync23("Glacier 登录", "登录密码", secret=True)
+        if username is None:
+            username = self._prompt_sync23("Glacier 登录", "账号 ID")
+        if password is None:
+            password = self._prompt_sync23("Glacier 登录", "登录密码", secret=True)
         if username is None or password is None:
             return
         import platform
