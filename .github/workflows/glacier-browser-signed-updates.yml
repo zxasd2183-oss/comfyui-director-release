@@ -109,8 +109,8 @@ jobs:
               lines.append("- Versions match; signed publishing still requires canonical immutable release tags and valid signatures.")
           lines.append("- Preview/prerelease assets are not automatically promoted to the signed client feed.")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
-              output.write("\\n".join(lines) + "\\n")
-          print("\\n".join(lines))
+              output.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
           PY
 
       - name: Check whether there is a newer immutable signed release pair
