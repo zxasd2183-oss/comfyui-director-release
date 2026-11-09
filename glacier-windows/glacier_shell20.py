@@ -349,7 +349,7 @@ class GlacierShell20:
         menu.addSeparator()
         updater = getattr(getattr(self, "update_manager", None), "show_dialog", None)
         if callable(updater):
-            menu.addAction("检查正式签名更新", updater)
+            menu.addAction("检查更新", updater)
         preview_check = getattr(self, "check_preview_updates25", None)
         if callable(preview_check):
             menu.addAction("检查 VPS 预览版更新", preview_check)
