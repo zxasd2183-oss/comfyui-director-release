@@ -48,6 +48,29 @@ class MirrorGates(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mirror.validate_https(url)
 
+    def test_transient_504_retries_then_succeeds(self):
+        from unittest.mock import patch
+        import urllib.error
+        transient = urllib.error.HTTPError(
+            mirror.RELEASES, 504, "Gateway Timeout", {}, None)
+        with patch.object(mirror.HTTP, "open", side_effect=[transient, transient, "ok"]) as fetch, \\
+             patch.object(mirror.time, "sleep") as sleep:
+            self.assertEqual(mirror.get(mirror.RELEASES), "ok")
+            self.assertEqual(fetch.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+
+    def test_forbidden_404_does_not_retry(self):
+        from unittest.mock import patch
+        import urllib.error
+        bad = urllib.error.HTTPError(
+            mirror.RELEASES, 404, "Not Found", {}, None)
+        with patch.object(mirror.HTTP, "open", side_effect=bad) as fetch, \\
+             patch.object(mirror.time, "sleep") as sleep:
+            with self.assertRaises(urllib.error.HTTPError):
+                mirror.get(mirror.RELEASES)
+            fetch.assert_called_once()
+            sleep.assert_not_called()
+
     def test_never_silently_decreases_version(self):
         self.assertGreater(mirror.version_key("0.20.4"), mirror.version_key("0.20.3"))
 
