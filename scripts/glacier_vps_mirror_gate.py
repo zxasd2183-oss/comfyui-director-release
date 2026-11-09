@@ -10,6 +10,11 @@ import json
 import os
 import urllib.request
 from pathlib import Path
+import sys
+
+# Executed by Actions as python source/scripts/glacier_vps_mirror_gate.py.
+# Make the checked-out repository root importable, not an arbitrary cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from source.scripts.glacier_publish_signed_updates import (
     make_payloads, release_index, version_tuple,
