@@ -223,6 +223,10 @@ def needs_new_signed_release(releases, directory):
     if pair is None:
         return False
     latest, _, _ = pair
+    if (version_tuple(latest) >= (0, 20, 10)
+            and os.environ.get("GLACIER_VPS_MIGRATION_READY") != "1"):
+        print("VPS-origin signing blocked until compatibility bridge rollout is approved.")
+        return False
     output = Path(directory)
     versions = []
     for channel in ("windows-x64", "macos-arm64"):
@@ -251,6 +255,9 @@ def render_manifests(releases, directory, key):
         print("No matching dual-platform release; signed feed unchanged.")
         return False
     version, windows, mac = pair
+    if (version_tuple(version) >= (0, 20, 10)
+            and os.environ.get("GLACIER_VPS_MIGRATION_READY") != "1"):
+        raise ValueError("VPS signed release requires explicit bridge-migration approval")
     if NEW_PUBLIC_HEX and version_tuple(version) < (0, 18, 0):
         print("Waiting for BOTH v0.18.0 key-migration installers; old feeds unchanged.")
         return False
