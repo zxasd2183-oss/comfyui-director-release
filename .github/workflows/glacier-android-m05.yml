@@ -459,6 +459,6 @@ jobs:
           test -s "$file"
           gh release create "$tag" "$file" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title 'Glacier Android v0.2.2 · M05 固定签名安全更新' \
-            --notes '采用独立固定的 Glacier Android 签名，已通过 Android 15 模拟器测试及 apksigner 证书指纹钉扎。应用仅信任对应官方 Glacier 更新资产的 SHA-256、包名、版本升级和已安装签名；下载后通过 Android 系统安装确认。M05 为 Glacier 首个正式固定签名版本，后续更新必须延续同一签名证书；不兼容历史 Debug 测试包。'
+            --title 'Glacier Android v0.2.2 · Glacier 统一账号与加密同步' \
+            --notes 'Glacier Android 0.2.2：冰川启动画面、按私人/工作空间隔离的本机加密账号卡片、手动验证码 API、统一账号登录、设备授权与撤销、端到端加密同步及冲突保护。同步服务：https://sync.borealos.cn；新设备必须由主设备授权。账号不会自动填充或自动登录。正式 APK 需要固定签名与 apksigner 证书指纹钉扎，安装由 Android 系统确认；不兼容历史 Debug 测试包。'
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,assets
