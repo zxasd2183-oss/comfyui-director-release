@@ -79,3 +79,13 @@ jobs:
           fi
           echo "VPS accepted Glacier preview sync request (HTTP 202)." >> "$GITHUB_STEP_SUMMARY"
           echo "Release download and SHA256 verification occur only on the VPS." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check v0.20.10 installer staging after notification
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in GlacierBrowser-v0.20.10-Windows-Setup-x64.exe GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg; do
+            code="$(curl --silent --location --output /dev/null --write-out '%{http_code}' --max-time 15 --head "https://sync.borealos.cn/downloads/$file" || true)"
+            echo "Current owner VPS mirror: $file HTTP $code"
+          done
+          echo "Mirror probe is informational: HTTP 202 notify only means accepted, not staging complete." >> "$GITHUB_STEP_SUMMARY"
