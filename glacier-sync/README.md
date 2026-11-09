@@ -63,6 +63,25 @@ External API verification: `https://sync.borealos.cn/health` must return
 `{"status":"ok","service":"glacier-sync","version":1}`. The site root
 may return HTTP 404 by design; success is checked at `/health`.
 
+## VPS 111 deployment — confirmed 2026-11-08
+
+The operator reports successful HTTPS API activation:
+`https://sync.borealos.cn/health` returns HTTP 200 and Glacier Sync v1,
+while the root returns 404. Director, status, power, approve and Jipite
+remain available and the existing six-host TLS certificate is retained.
+The Nginx `/.well-known/acme-challenge/` location must remain intact.
+
+Installer follow-up fixes:
+- `install-vps.sh` retries the local health check after restart, avoiding
+  a false failure before Uvicorn binds its port.
+- `activate-vhost.sh` permits the known ACME challenge location and only
+  removes the exact `location / { try_files $uri $uri/ =404; }` placeholder,
+  refusing unexpected other locations.
+- Already activated sites are idempotent: the installer does not recreate
+  the private invite; the Nginx activator detects the existing snippet.
+- This recorded acceptance covers service connectivity and isolation, **not**
+  end-to-end account/device/sync behavior or final client installer releases.
+
 ## After DNS points to the VPS
 
 In a fresh clone of this repository on the VPS (use branch
