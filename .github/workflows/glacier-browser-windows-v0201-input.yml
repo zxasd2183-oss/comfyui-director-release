@@ -99,8 +99,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python -c "import ui12; assert ui12.normalize_input('example.com') == 'https://example.com'; assert ui12.normalize_input('https://example.com').startswith('https:'); print('New window module import checks passed')"
           python -c "from PySide6.QtWebEngineCore import QWebEnginePage; import tabtools13; QWebEnginePage.FindFlag(0); assert tabtools13.copyable_page_url('https://example.com/a') == 'https://example.com/a'; assert not tabtools13.copyable_page_url('javascript:alert(1)'); assert not tabtools13.copyable_page_url('https://name:pass@example.com'); print('Glacier v0.13 tab API and link safety tests passed')"
-          python -m unittest -v test_chrome14 test_shell20 test_input21 test_accounts22 test_sync23 test_preview_updates25 test_account_center26 test_update_security test_windows_desktop15 test_productivity16 test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19
-          if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
+          python -m unittest -v test_chrome14 test_shell20 test_input21 test_accounts22 test_sync23 test_preview_updates25 test_update_security test_windows_desktop15 test_productivity16 test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19
+          $generalCode = $LASTEXITCODE
+          Write-Host "Glacier general regression process exit code: $generalCode"
+          if ($generalCode -ne 0) { throw "Glacier general regression process failed: $generalCode" }
+          python -m unittest -v test_account_center26
+          $accountCode = $LASTEXITCODE
+          Write-Host "Glacier account GUI regression process exit code: $accountCode"
+          if ($accountCode -ne 0) { throw "Glacier account GUI regression process failed: $accountCode" }
           python -c "import update_core; assert update_core.newer_than('0.9.0','0.20.7'); assert not update_core.newer_than('0.20.7','0.9.0'); import update_ui; print('Updater imports and semver checks passed')"
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
       - name: Build Windows executable with embedded VLESS core
