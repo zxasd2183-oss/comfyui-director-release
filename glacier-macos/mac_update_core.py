@@ -26,7 +26,7 @@ FEED_URL = "https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-rel
 MAX_MANIFEST = 65536
 MAX_DMG = 1_073_741_824
 FIELDS = frozenset(("channel","version","url","sha256","size","notes","key_id","signature"))
-TRUSTED_REDIRECT_HOSTS = frozenset(("github.com", "release-assets.githubusercontent.com",
+TRUSTED_REDIRECT_HOSTS = frozenset(("github.com", "sync.borealos.cn", "release-assets.githubusercontent.com",
     "objects.githubusercontent.com", "github-releases.githubusercontent.com"))
 VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
@@ -86,8 +86,11 @@ def verify_manifest(doc):
     p=urlsplit(url)
     expected=(f"/zxasd2183-oss/comfyui-director-release/releases/download/"
               f"glacier-macos-v{ver}/GlacierBrowser-v{ver}-macOS-AppleSilicon.dmg")
-    if (p.scheme!="https" or p.hostname!="github.com" or p.username or
-            p.password or p.port or p.query or p.fragment or p.path!=expected):
+    vps_expected=f"/downloads/GlacierBrowser-v{ver}-macOS-AppleSilicon.dmg"
+    permitted=((p.hostname=="github.com" and p.path==expected) or
+               (p.hostname=="sync.borealos.cn" and p.path==vps_expected))
+    if (p.scheme!="https" or not permitted or p.username or
+            p.password or p.port is not None or p.query or p.fragment):
         raise UpdateError("下载地址不符合 Mac 可信发布路径")
     digest=doc["sha256"]
     if not isinstance(digest,str) or not re.fullmatch(r"[0-9a-f]{64}",digest):
