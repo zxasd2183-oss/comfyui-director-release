@@ -158,11 +158,15 @@ def make_payloads(version, windows, mac):
         "：双端工作区、标签分组、增强下载管理。"
     )
     notes = f"Glacier Browser v{version}" + description + "双端自动测试通过。"
+    # Transitional v0.20.9 remains GitHub-origin so installed v0.20.8
+    # clients can authenticate and install the bridge. Later releases may
+    # use VPS-origin signed URLs, only after both updaters trust that origin.
+    vps_origin = version_tuple(version) >= (0, 20, 10)
     windows_doc = {
         "channel": "windows-x64", "version": version,
         "url": (
-            f"https://github.com/{OWNER_REPO}/releases/download/"
-            f"{win_tag}/{win_name}"
+            f"https://sync.borealos.cn/downloads/{win_name}" if vps_origin else
+            f"https://github.com/{OWNER_REPO}/releases/download/{win_tag}/{win_name}"
         ),
         "sha256": win_sha, "size": win_size,
         "notes": notes,
@@ -171,8 +175,8 @@ def make_payloads(version, windows, mac):
     mac_doc = {
         "channel": "macos-arm64", "version": version,
         "url": (
-            f"https://github.com/{OWNER_REPO}/releases/download/"
-            f"{mac_tag}/{mac_name}"
+            f"https://sync.borealos.cn/downloads/{mac_name}" if vps_origin else
+            f"https://github.com/{OWNER_REPO}/releases/download/{mac_tag}/{mac_name}"
         ),
         "sha256": mac_sha, "size": mac_size,
         "notes": notes,
