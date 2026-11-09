@@ -57,7 +57,7 @@ class MacChromeStartTests(unittest.TestCase):
         self.assertEqual(window.chrome_tab14.count(),1)
         self.assertIs(window.update_manager.button,window._mac_update_button)
         self.assertTrue(callable(window.update_manager.show_dialog))
-        self.assertIn("v0.20.2",window.windowTitle())
+        self.assertIn("v0.20.3",window.windowTitle())
         window.close()
 
 
