@@ -111,6 +111,8 @@ jobs:
             --collect-all PySide6.QtWebEngineWidgets \
             --collect-all keyring \
             --hidden-import keyring.backends.macOS \
+            --hidden-import glacier_sync_auto24 \
+            --hidden-import socks \
             --collect-all cryptography \
             --collect-data certifi \
             main.py
