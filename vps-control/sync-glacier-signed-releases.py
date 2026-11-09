@@ -167,8 +167,8 @@ def _canonical_release_pair():
         raise ValueError("invalid GitHub Releases index")
     by_platform = {channel: {} for channel in PLATFORMS}
     patterns = {
-        "windows-x64": re.compile(r"^glacier-v((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))$"),
-        "macos-arm64": re.compile(r"^glacier-macos-v((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))$"),
+        "windows-x64": re.compile(r"^glacier-v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$"),
+        "macos-arm64": re.compile(r"^glacier-macos-v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$"),
     }
     for release in releases:
         if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
