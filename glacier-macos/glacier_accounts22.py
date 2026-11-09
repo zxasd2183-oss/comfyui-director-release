@@ -246,6 +246,9 @@ class GlacierAccounts22:
                 os.unlink(tmp)
         # Normalize legacy cards only after encrypted atomic replacement succeeded.
         self._accounts_doc22 = doc
+        notify = getattr(self, "_queue_auto_sync23", None)
+        if callable(notify):
+            notify()
 
     def _copy_account22(self, value):
         # Copy only on an explicit button press. Never paste into a webpage.
