@@ -3,7 +3,7 @@
 Shown while the main browser window initializes; no blocking delay and no
 network access. Keep this module independent of the browser profile.
 """
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QApplication, QSplashScreen
 
@@ -52,6 +52,14 @@ def show_glacier_splash(version):
     painter.end()
     splash = QSplashScreen(canvas)
     # Keep credential/network dialogs in front of the splash at first launch.
+    splash.setWindowOpacity(0.0)
     splash.show()
+    fade = QPropertyAnimation(splash, b"windowOpacity", splash)
+    fade.setDuration(650)
+    fade.setStartValue(0.0)
+    fade.setEndValue(1.0)
+    fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+    splash._glacier_fade = fade
+    fade.start()
     QApplication.processEvents()
     return splash
