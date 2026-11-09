@@ -46,13 +46,18 @@ final class GlacierCloudSync {
     private static final SecureRandom RANDOM=new SecureRandom();
 
     static final class State {
-        String base="", username="", token="", deviceId="", deviceSecret="";
+        String base="", username="", token="", deviceId="", deviceSecret="", autoPassphrase="";
+        boolean autoEnabled;
+        JSONObject baselines=new JSONObject();
         boolean approved;
         JSONObject toJson() throws Exception {
             JSONObject o=new JSONObject();
             o.put("base",base);o.put("username",username);
             o.put("token",token);o.put("device_id",deviceId);
             o.put("device_secret",deviceSecret);
+            o.put("auto_enabled",autoEnabled);
+            o.put("auto_passphrase",autoPassphrase);
+            o.put("baselines",baselines);
             o.put("approved",approved);
             return o;
         }
@@ -63,6 +68,10 @@ final class GlacierCloudSync {
             state.token=o.optString("token","");
             state.deviceId=o.optString("device_id","");
             state.deviceSecret=o.optString("device_secret","");
+            state.autoEnabled=o.optBoolean("auto_enabled",false);
+            state.autoPassphrase=o.optString("auto_passphrase","");
+            JSONObject existing=o.optJSONObject("baselines");
+            state.baselines=existing==null?new JSONObject():existing;
             state.approved=o.optBoolean("approved",false);
             return state;
         }
