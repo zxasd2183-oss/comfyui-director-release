@@ -337,6 +337,9 @@ class GlacierShell20:
         updater = getattr(getattr(self, "update_manager", None), "show_dialog", None)
         if callable(updater):
             menu.addAction("检查更新", updater)
+        center = getattr(self, "show_account_center26", None)
+        if callable(center):
+            menu.addAction("Glacier 账号中心", center)
         settings = getattr(self, "open_settings", None)
         if callable(settings):
             menu.addAction("浏览器设置", settings)
