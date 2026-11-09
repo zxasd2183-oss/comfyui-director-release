@@ -89,7 +89,7 @@ def extract_code22(raw):
                     value = str(container.get(key, ""))
                     if re.fullmatch(r"[0-9]{4,10}", value):
                         return value
-    if re.fullmatch(r"\\s*[0-9]{4,10}\\s*", decoded):
+    if re.fullmatch(r"\s*[0-9]{4,10}\s*", decoded):
         return decoded.strip()
     return ""
 
