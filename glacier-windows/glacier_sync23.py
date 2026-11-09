@@ -160,6 +160,7 @@ class GlacierSync23:
         self._sync_auto_timer23.setInterval(180000)
         self._sync_auto_timer23.timeout.connect(self._sync_auto_tick23)
         self._sync_auto_busy23 = False
+        self._sync_auto_generation23 = 0
         self._sync_path23 = Path(directory) / "sync-account-v1.enc"
         self._sync_encrypt23 = encrypt
         self._sync_decrypt23 = decrypt
@@ -286,6 +287,7 @@ class GlacierSync23:
 
     def _sync_disable_auto23(self):
         self._sync_auto_timer23.stop()
+        self._sync_auto_generation23 += 1
         self._sync_state23.pop("vault_passphrase", None)
         self._sync_state23["auto_enabled"] = False
         self._save_sync23()
@@ -325,6 +327,9 @@ class GlacierSync23:
             return
         port = int(self.proxy_port)
         self._sync_auto_busy23 = True
+        generation = self._sync_auto_generation23
+        account_id = (settings.get("base"), settings.get("username"),
+                      settings.get("device_id"))
         def task():
             results = []
             try:
@@ -338,12 +343,21 @@ class GlacierSync23:
                         # No service response/body/secrets appear in logs.
                         results.append({"space": space, "kind": "failed"})
             finally:
-                self._sync_auto_bridge23.completed.emit(results)
+                self._sync_auto_bridge23.completed.emit(
+                    {"generation": generation, "account_id": account_id,
+                     "outcomes": results})
         threading.Thread(target=task, daemon=True, name="glacier-sync").start()
 
-    def _sync_auto_finished23(self, outcomes):
+    def _sync_auto_finished23(self, delivery):
         from glacier_sync_auto24 import account_digest24
         self._sync_auto_busy23 = False
+        if delivery["generation"] != self._sync_auto_generation23:
+            return
+        if delivery["account_id"] != (
+                self._sync_state23.get("base"), self._sync_state23.get("username"),
+                self._sync_state23.get("device_id")):
+            return
+        outcomes = delivery["outcomes"]
         if not self._sync_state23.get("auto_enabled"):
             return
         for event in outcomes:
@@ -398,6 +412,7 @@ class GlacierSync23:
             "POST", "/v1/register", {"invite": invite, "username": username,
                                     "password": password,
                                     "device_name": platform.node()[:80] or "Glacier Desktop"})
+        self._sync_auto_generation23 += 1
         self._sync_state23 = {"base": sync_url23(base), "username": username,
                               "device_id": result["device_id"],
                               "device_secret": result["device_secret"],
@@ -428,6 +443,7 @@ class GlacierSync23:
                                                 if username == self._sync_state23.get("username")
                                                 and sync_url23(base) == self._sync_state23.get("base")
                                                 else None)})
+        self._sync_auto_generation23 += 1
         self._sync_state23 = {"base": sync_url23(base), "username": username,
                               "device_id": result["device_id"],
                               "device_secret": result.get("device_secret")
@@ -549,6 +565,7 @@ class GlacierSync23:
             except SyncError23:
                 pass
         self._sync_auto_timer23.stop()
+        self._sync_auto_generation23 += 1
         self._sync_state23["token"] = ""
         self._sync_state23["auto_enabled"] = False
         self._sync_state23.pop("vault_passphrase", None)
