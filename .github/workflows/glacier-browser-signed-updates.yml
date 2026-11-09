@@ -17,7 +17,7 @@ on:
       - 'scripts/glacier_rotate_update_key.py'
       - 'scripts/test_glacier_rotate_update_key.py'
   schedule:
-    - cron: '37 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -116,9 +116,33 @@ jobs:
           print("\n".join(lines))
           PY
 
+      - name: Check if either signed channel needs a newer paired release
+        id: pending
+        if: steps.signer.outputs.enabled == 'true'
+        env:
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from source.scripts.glacier_publish_signed_updates import (
+              release_index, read_unique, verify_signed_doc, version_tuple,
+          )
+          with open("releases.json", encoding="utf-8") as source:
+              pair=release_index(json.load(source))
+          previous=[verify_signed_doc(read_unique("feed/channels/"+channel+".json"))["version"]
+                    for channel in ("windows-x64","macos-arm64")]
+          if previous[0]!=previous[1]:
+              raise RuntimeError("Signed channels disagree on their version")
+          pending=bool(pair and version_tuple(pair[0]) > version_tuple(previous[0]))
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as output:
+              output.write("pending="+str(pending).lower()+"\n")
+          print("Glacier paired signed release pending:",pending)
+          PY
+
       - name: Verify both owner VPS installer SHA256 hashes before enabling VPS signed release
         id: vps-migration
-        if: steps.signer.outputs.enabled == 'true'
+        if: steps.signer.outputs.enabled == 'true' && steps.pending.outputs.pending == 'true'
         env:
           GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
         run: |
