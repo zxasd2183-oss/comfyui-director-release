@@ -17,12 +17,17 @@ jobs:
   notify-vps:
     name: OIDC notify verified Glacier preview mirror on VPS
     if: >-
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == 'zxasd2183-oss/comfyui-director-release' &&
       github.repository == 'zxasd2183-oss/comfyui-director-release' &&
-      github.ref == 'refs/heads/main'
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == 'zxasd2183-oss/comfyui-director-release'
+        )
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     permissions:
