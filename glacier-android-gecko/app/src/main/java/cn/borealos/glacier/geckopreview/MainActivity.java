@@ -1426,6 +1426,153 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void cloudPromptAuto() {
+        if(cloudSessionReadonly || cloudState.token.isEmpty() || !cloudState.approved) {
+            new AlertDialog.Builder(this).setMessage("请先登录并批准当前设备。")
+                    .setPositiveButton("知道了",null).show();
+            return;
+        }
+        EditText password=new EditText(this);
+        password.setSingleLine(true);
+        password.setInputType(InputType.TYPE_CLASS_TEXT
+                |InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.setHint("同步口令（至少 12 位）");
+        LinearLayout form=new LinearLayout(this);
+        form.setPadding(dp(22),dp(12),dp(22),0);
+        form.addView(password);
+        new AlertDialog.Builder(this)
+                .setTitle("开启 Glacier 安全自动同步")
+                .setMessage("每 3 分钟及本机账号变动后自动同步。"
+                        +"同步口令仅用 Android Keystore 在本机加密保存，不上传服务器。"
+                        +"双方都修改时停止覆盖；首次需手动上传或下载空间资料。")
+                .setView(form).setNegativeButton("取消",null)
+                .setPositiveButton("启用",(d,w)->{
+                    String pass=password.getText().toString();
+                    if(pass.length()<12) {
+                        new AlertDialog.Builder(this).setMessage("同步口令至少 12 位，未启用。")
+                                .setPositiveButton("知道了",null).show();
+                        return;
+                    }
+                    try {
+                        cloudState.autoEnabled=true;
+                        cloudState.autoPassphrase=pass;
+                        GlacierCloudSync.save(this,cloudState);
+                        scheduleCloudAuto();
+                        android.widget.Toast.makeText(this,"自动加密同步已开启",
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    } catch(Exception ignored) {
+                        cloudState.autoEnabled=false;
+                        cloudState.autoPassphrase="";
+                    }
+                }).show();
+    }
+
+    private void cloudDisableAuto() {
+        cloudEpoch++;
+        cloudAutoHandler.removeCallbacks(cloudAutoTimer);
+        cloudState.autoEnabled=false;
+        cloudState.autoPassphrase="";
+        try {
+            GlacierCloudSync.save(this,cloudState);
+            android.widget.Toast.makeText(this,"自动同步与本机同步口令已关闭",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        } catch(Exception ignored) {
+            new AlertDialog.Builder(this).setMessage("本机同步状态保存失败。")
+                    .setPositiveButton("知道了",null).show();
+        }
+    }
+
+    private void scheduleCloudAuto() {
+        if(!cloudState.autoEnabled || !cloudState.approved
+                || cloudState.autoPassphrase.length()<12)return;
+        cloudAutoHandler.removeCallbacks(cloudAutoTimer);
+        cloudAutoHandler.postDelayed(cloudAutoTimer,2500);
+    }
+
+    private void cloudMarkBaseline(String space,int version) {
+        try {
+            JSONObject item=new JSONObject();
+            item.put("version",version);
+            item.put("local_hash",GlacierAutoSync.fingerprint(accountCards,space));
+            cloudState.baselines.put(space,item);
+            GlacierCloudSync.save(this,cloudState);
+        } catch(Exception ignored) {
+            // Do not invalidate existing encrypted account cards if sync
+            // session metadata cannot be saved.
+        }
+    }
+
+    private void cloudAutoTick() {
+        if(!proxyMode || cloudAutoBusy || !cloudState.autoEnabled
+                || !cloudState.approved || cloudState.token.isEmpty()
+                || cloudState.autoPassphrase.length()<12 || accountsReadonly)return;
+        boolean hasBaseline=cloudState.baselines.has("private")
+                ||cloudState.baselines.has("work");
+        if(!hasBaseline)return;
+        final GlacierCloudSync.State snapshot=new GlacierCloudSync.State();
+        snapshot.base=cloudState.base;
+        snapshot.username=cloudState.username;
+        snapshot.token=cloudState.token;
+        snapshot.deviceId=cloudState.deviceId;
+        snapshot.deviceSecret=cloudState.deviceSecret;
+        snapshot.autoPassphrase=cloudState.autoPassphrase;
+        final int generation=cloudEpoch;
+        final String device=snapshot.deviceId,account=snapshot.username;
+        final List<BrowserAccountsStore.Card> cards=new ArrayList<>(accountCards);
+        final JSONObject baselines;
+        try {baselines=new JSONObject(cloudState.baselines.toString());}
+        catch(Exception ignored) {return;}
+        cloudAutoBusy=true;
+        cloudQueue.execute(() -> {
+            List<GlacierAutoSync.Result> outcome=new ArrayList<>();
+            for(String space:new String[]{PRIVATE,WORK}) {
+                if(!baselines.has(space))continue;
+                try {
+                    outcome.add(GlacierAutoSync.reconcile(
+                            snapshot,space,cards,baselines.optJSONObject(space)));
+                } catch(Exception ignored) {
+                    outcome.add(new GlacierAutoSync.Result(
+                            space,"failed",0,"",null));
+                }
+            }
+            runOnUiThread(() -> {
+                cloudAutoBusy=false;
+                if(isFinishing() || generation!=cloudEpoch
+                        || !cloudState.autoEnabled
+                        || !device.equals(cloudState.deviceId)
+                        || !account.equals(cloudState.username))return;
+                for(GlacierAutoSync.Result event:outcome) {
+                    if("conflict".equals(event.kind)) {
+                        android.widget.Toast.makeText(this,
+                                "Glacier "+event.space+"账号空间有同步冲突，已禁止覆盖",
+                                android.widget.Toast.LENGTH_LONG).show();
+                    } else if("uploaded".equals(event.kind)) {
+                        try {
+                            JSONObject updated=new JSONObject();
+                            updated.put("version",event.version);
+                            updated.put("local_hash",event.localHash);
+                            cloudState.baselines.put(event.space,updated);
+                            GlacierCloudSync.save(this,cloudState);
+                        } catch(Exception ignored) {}
+                    } else if("downloaded".equals(event.kind)) {
+                        try {
+                            // If a local edit landed during the request, do not
+                            // overwrite it with an older remote snapshot.
+                            if(!GlacierAutoSync.fingerprint(accountCards,event.space)
+                                    .equals(event.localHash))continue;
+                            List<BrowserAccountsStore.Card> merged=new ArrayList<>();
+                            for(BrowserAccountsStore.Card existing:accountCards)
+                                if(!event.space.equals(existing.profile))merged.add(existing);
+                            merged.addAll(event.cards);
+                            if(persistAccountVault(merged))
+                                cloudMarkBaseline(event.space,event.version);
+                        } catch(Exception ignored) {}
+                    }
+                }
+            });
+        });
+    }
+
     private void cloudPromptVault(boolean push) {
         final String space=active==null?selectedProfile:active.profile;
         EditText secret=new EditText(this);
