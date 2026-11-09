@@ -1,6 +1,6 @@
 name: Glacier Browser signed Windows + macOS auto updates
-# Publish matched v0.20.9 compatibility bridge before any VPS-origin signed manifest.
-# Recheck immutable paired v0.20.8 canonical Releases after both platform builds publish.
+# Preserve v0.20.9 signed compatibility bridge until BOTH v0.20.10 VPS
+# installers have independently passed complete SHA-256 and size verification.
 
 on:
   release:
@@ -10,6 +10,7 @@ on:
     paths:
       - '.github/workflows/glacier-browser-signed-updates.yml'
       - 'scripts/glacier_publish_signed_updates.py'
+      - 'scripts/glacier_vps_mirror_gate.py'
       - 'scripts/test_glacier_signed_updates.py'
       - 'scripts/glacier_prepare_rotated_update.py'
       - 'scripts/test_glacier_prepare_rotated_update.py'
@@ -115,11 +116,21 @@ jobs:
           print("\n".join(lines))
           PY
 
+      - name: Verify both owner VPS installer SHA256 hashes before enabling VPS signed release
+        id: vps-migration
+        if: steps.signer.outputs.enabled == 'true'
+        env:
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python source/scripts/glacier_vps_mirror_gate.py
+
       - name: Check whether there is a newer immutable signed release pair
         id: release-check
         if: steps.signer.outputs.enabled == 'true'
         env:
           GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+          GLACIER_VPS_MIGRATION_READY: ${{ steps.vps-migration.outputs.ready }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -139,6 +150,7 @@ jobs:
         env:
           GLACIER_UPDATE_SIGNING_PRIVATE_HEX: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
           GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+          GLACIER_VPS_MIGRATION_READY: ${{ steps.vps-migration.outputs.ready }}
         run: |
           set -euo pipefail
           python source/scripts/glacier_publish_signed_updates.py \
