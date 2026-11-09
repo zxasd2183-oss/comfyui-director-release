@@ -7,6 +7,7 @@ on:
       - 'glacier-windows/**'
       - '.github/workflows/glacier-browser-windows-v0201-input.yml'
       - 'scripts/glacier_prepare_rotated_update.py'
+      - 'scripts/glacier_allow_vps_download.py'
       - 'vps-control/sync-glacier-preview-releases.py'
       - 'vps-control/test_glacier_preview_mirror.py'
   workflow_dispatch:
