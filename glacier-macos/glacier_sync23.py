@@ -423,7 +423,9 @@ class GlacierSync23:
     def _sync_login23(self):
         base = self._sync_state23.get("base")
         if not base:
-            base = self._prompt_sync23("同步服务器", "https://同步服务域名")
+            base = self._prompt_sync23("同步服务器", "https://sync.borealos.cn（留空使用默认地址）")
+            if base == "":
+                base = DEFAULT_SYNC_URL23
         if base is None or not sync_url23(base):
             return
         username = self._prompt_sync23("Glacier 登录", "账号 ID")
