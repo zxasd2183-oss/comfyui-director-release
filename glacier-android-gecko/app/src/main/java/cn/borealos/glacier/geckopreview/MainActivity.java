@@ -89,6 +89,15 @@ public final class MainActivity extends Activity {
     private GlacierCloudSync.State cloudState = new GlacierCloudSync.State();
     private boolean cloudSessionReadonly;
     private final ExecutorService cloudQueue = Executors.newSingleThreadExecutor();
+    private final Handler cloudAutoHandler = new Handler(Looper.getMainLooper());
+    private boolean cloudAutoBusy;
+    private int cloudEpoch;
+    private final Runnable cloudAutoTimer = new Runnable() {
+        @Override public void run() {
+            cloudAutoTick();
+            if(cloudState.autoEnabled)cloudAutoHandler.postDelayed(this,180000);
+        }
+    };
     private GeckoView web;
     private BrowserTransfers transfers;
     private BrowserUpdater updater;
@@ -974,6 +983,7 @@ public final class MainActivity extends Activity {
             BrowserAccountsStore.save(this, candidate);
             accountCards.clear();
             accountCards.addAll(candidate);
+            scheduleCloudAuto();
             return true;
         } catch (Exception ignored) {
             // No private account details ever enter logs.
@@ -1271,7 +1281,8 @@ public final class MainActivity extends Activity {
             return;
         }
         String[] actions={"注册 Glacier 账号","登录 / 申请设备授权","确认设备已获批准",
-                "管理其他设备","加密上传当前账号空间","解密下载当前账号空间","退出 Glacier 账号"};
+                "管理其他设备","加密上传当前账号空间","解密下载当前账号空间",
+                "开启安全自动同步（本机加密保存口令）","关闭自动同步","退出 Glacier 账号"};
         new AlertDialog.Builder(this).setTitle("Glacier 统一账号 · "
                 +(cloudState.username.isEmpty()?"未登录":cloudState.username))
                 .setItems(actions,(dialog,which)->{
@@ -1279,6 +1290,8 @@ public final class MainActivity extends Activity {
                     else if(which==2)cloudActivate();
                     else if(which==3)cloudDevices();
                     else if(which==4||which==5)cloudPromptVault(which==4);
+                    else if(which==6)cloudPromptAuto();
+                    else if(which==7)cloudDisableAuto();
                     else cloudLogout();
                 }).setNegativeButton("关闭",null).show();
     }
@@ -2363,7 +2376,11 @@ public final class MainActivity extends Activity {
             }
         }
         if (isFinishing()) accountCodeQueue.shutdownNow();
-        if (isFinishing()) cloudQueue.shutdownNow();
+        if (isFinishing()) {
+            cloudEpoch++;
+            cloudAutoHandler.removeCallbacks(cloudAutoTimer);
+            cloudQueue.shutdownNow();
+        }
         if (transfers != null && isFinishing()) transfers.dispose();
         if (updater != null && isFinishing()) updater.dispose();
         if (isFinishing()) {
