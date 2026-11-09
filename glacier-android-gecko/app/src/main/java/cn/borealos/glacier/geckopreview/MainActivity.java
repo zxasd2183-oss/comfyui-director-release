@@ -1318,15 +1318,21 @@ public final class MainActivity extends Activity {
                                 +android.os.Build.MODEL);
                         if(register)payload.put("invite",invitation);
                         else if(!cloudState.deviceId.isEmpty()
+                                &&!cloudState.deviceSecret.isEmpty()
                                 &&username.equals(cloudState.username)
-                                &&server.equals(cloudState.base))
+                                &&server.equals(cloudState.base)) {
                             payload.put("device_id",cloudState.deviceId);
+                            payload.put("device_secret",cloudState.deviceSecret);
+                        }
                         JSONObject response=GlacierCloudSync.call(pending,"POST",
                                 register?"/v1/register":"/v1/login",payload);
                         GlacierCloudSync.State next=new GlacierCloudSync.State();
                         next.base=server;next.username=username;
                         next.token=response.getString("token");
                         next.deviceId=response.getString("device_id");
+                        next.deviceSecret=response.optString("device_secret",
+                                username.equals(cloudState.username)
+                                &&server.equals(cloudState.base)?cloudState.deviceSecret:"");
                         next.approved=response.getBoolean("approved");
                         GlacierCloudSync.save(this,next);
                         cloudState=next;
