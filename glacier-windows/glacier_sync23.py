@@ -26,6 +26,9 @@ from PySide6.QtWidgets import (
 from glacier_accounts22 import clean_accounts22
 
 
+DEFAULT_SYNC_URL23 = "https://sync.borealos.cn"
+
+
 class SyncError23(Exception):
     pass
 
@@ -243,7 +246,9 @@ class GlacierSync23:
             self._sync_error23(error)
 
     def _sync_register23(self):
-        base = self._prompt_sync23("同步服务器", "https://同步服务域名")
+        base = self._prompt_sync23("同步服务器", "https://sync.borealos.cn（留空使用默认地址）")
+        if base == "":
+            base = DEFAULT_SYNC_URL23
         if base is None:
             return
         if not sync_url23(base):
