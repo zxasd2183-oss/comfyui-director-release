@@ -37,7 +37,19 @@ systemctl daemon-reload
 
 # No routing changes until BOTH real asset binaries have been downloaded,
 # SHA256 checked against their immutable release sidecars and indexed.
-systemctl start glacier-preview-update-sync.service
+synced=false
+for attempt in 1 2 3 4; do
+  if systemctl start glacier-preview-update-sync.service; then
+    synced=true
+    break
+  fi
+  echo "Mirror sync failed on attempt $attempt; retrying after temporary upstream error." >&2
+  sleep 8
+done
+if [ "$synced" != true ]; then
+  echo "Cannot download and verify releases; leaving Nginx unchanged." >&2
+  exit 3
+fi
 for platform in windows macos-arm64; do
   test -s "$ROOT/$platform-preview.json" || {
     echo "Missing verified $platform preview; no Nginx changes made." >&2; exit 3;
