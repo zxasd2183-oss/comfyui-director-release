@@ -228,6 +228,10 @@ def needs_new_signed_release(releases, directory):
     for channel in ("windows-x64", "macos-arm64"):
         existing = output / (channel + ".json")
         if not existing.is_file():
+            if (version_tuple(latest) >= (0, 20, 10)
+                    and os.environ.get("GLACIER_VPS_MIGRATION_READY") != "1"):
+                print("VPS-origin signing blocked: no verified mirrored installers.")
+                return False
             return True
         verified = verify_signed_doc(read_unique(existing))
         if verified.get("channel") != channel:
