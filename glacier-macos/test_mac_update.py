@@ -40,6 +40,20 @@ class ManifestTests(unittest.TestCase):
     def test_valid_signature(self):
         self.assertEqual(self.check(self.signed())["channel"],"macos-arm64")
 
+    def test_vps_signed_installer_origin_accepted(self):
+        m=self.signed("0.20.10")
+        m["url"]="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg"
+        m["signature"]=base64.b64encode(self.key.sign(u.canonical(
+            {k:v for k,v in m.items() if k!="signature"}))).decode("ascii")
+        self.assertEqual(self.check(m)["version"],"0.20.10")
+
+    def test_vps_signed_wrong_path_rejected(self):
+        m=self.signed("0.20.10")
+        m["url"]="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg"
+        m["signature"]=base64.b64encode(self.key.sign(u.canonical(
+            {k:v for k,v in m.items() if k!="signature"}))).decode("ascii")
+        with self.assertRaises(u.UpdateError):self.check(m)
+
     def test_modified_hash(self):
         m=self.signed()
         m["sha256"]="0"*64
