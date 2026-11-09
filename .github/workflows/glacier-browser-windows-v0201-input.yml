@@ -88,7 +88,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python -c "from pathlib import Path; p=Path('update_core.py'); t=p.read_text(encoding='utf8'); old=next((line for line in t.splitlines() if line.strip().startswith('CURRENT_VERSION = ')),None); assert old is not None, 'Missing version constant'; updated=t.replace(old, 'CURRENT_VERSION = '+chr(39)+'0.20.9'+chr(39),1); p.write_text(updated,encoding='utf8'); print('Updated Windows core local version to 0.20.9')"
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
-          python -c "from pathlib import Path; s=Path('update_core.py').read_text(encoding='utf8'); t='更新下载地址不属于受信任的 HTTPS 发布源'; i=s.find(t); assert i>=0, 'Missing downloader trust policy'; print('GLACIER_DOWNLOAD_POLICY_BEGIN'); print(s[max(0,i-1700):i+400].encode('unicode_escape').decode('ascii')); print('GLACIER_DOWNLOAD_POLICY_END')"
+          python ../scripts/glacier_allow_vps_download.py update_core.py
+          if ($LASTEXITCODE -ne 0) { throw 'Windows VPS installer origin policy failed closed' }
           python ../scripts/glacier_prepare_rotated_update.py windows .
           if ($LASTEXITCODE -ne 0) { throw 'New Glacier v0.20 updater public key is missing or invalid' }
           # Keep the exact historical trust-root rotation guard intact.
