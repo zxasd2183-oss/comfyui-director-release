@@ -91,6 +91,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService cloudQueue = Executors.newSingleThreadExecutor();
     private final Handler cloudAutoHandler = new Handler(Looper.getMainLooper());
     private boolean cloudAutoBusy;
+    private boolean startupShown;
     private int cloudEpoch;
     private final Runnable cloudAutoTimer = new Runnable() {
         @Override public void run() {
@@ -381,6 +382,61 @@ public final class MainActivity extends Activity {
         root.addView(separator, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
         updateChrome();
+        if (!startupShown) {
+            startupShown = true;
+            showGlacierStartup(screen);
+        }
+    }
+
+    private void showGlacierStartup(FrameLayout screen) {
+        // Lightweight local Android splash. Never accesses network, account
+        // vault, clipboard, VLESS credentials or any other stored state.
+        LinearLayout splash = new LinearLayout(this);
+        splash.setOrientation(LinearLayout.VERTICAL);
+        splash.setGravity(Gravity.CENTER);
+        splash.setClickable(true);
+        splash.setBackground(new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] {Color.WHITE, Color.rgb(229, 244, 253)}));
+
+        TextView mountain = new TextView(this);
+        mountain.setText("❄");
+        mountain.setTextSize(64);
+        mountain.setTextColor(Color.rgb(75, 150, 191));
+        mountain.setGravity(Gravity.CENTER);
+        splash.addView(mountain, new LinearLayout.LayoutParams(dp(140), dp(110)));
+
+        TextView wordmark = new TextView(this);
+        wordmark.setText("GLACIER");
+        wordmark.setTextSize(29);
+        wordmark.setLetterSpacing(0.17f);
+        wordmark.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        wordmark.setTextColor(Color.rgb(39, 82, 112));
+        wordmark.setGravity(Gravity.CENTER);
+        splash.addView(wordmark);
+
+        TextView description = new TextView(this);
+        description.setText("冰川浏览器 · 安全、纯净、自由");
+        description.setTextSize(13);
+        description.setTextColor(Color.rgb(113, 149, 173));
+        description.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams descriptionParams =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, dp(36));
+        descriptionParams.topMargin = dp(12);
+        splash.addView(description, descriptionParams);
+
+        screen.addView(splash, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        splash.setAlpha(0f);
+        splash.animate().alpha(1f).setDuration(270).start();
+        splash.postDelayed(() -> {
+            if (!isFinishing()) {
+                splash.animate().alpha(0f).setDuration(400)
+                        .withEndAction(() -> screen.removeView(splash)).start();
+            }
+        }, 1050);
     }
 
     private View createNewTabPage() {
