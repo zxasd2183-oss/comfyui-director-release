@@ -1,7 +1,7 @@
 import ctypes, json, os, re, socket, subprocess, sys, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QTimer
 from PySide6.QtNetwork import QNetworkProxy
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
@@ -24,6 +24,7 @@ from glacier_input21 import GlacierInput21
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_preview_updates25 import GlacierPreviewUpdates25
+from glacier_account_center26 import GlacierAccountCenter26
 from glacier_splash import show_glacier_splash
 
 APP = "Glacier Browser"
@@ -119,7 +120,7 @@ class Page(QWebEngineView):
   self.setPage(QWebEnginePage(win.profile,self))
   self.win.prepare_page_input21(self)
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierPreviewUpdates25, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierAccountCenter26, GlacierPreviewUpdates25, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -158,6 +159,7 @@ class Browser(GlacierPreviewUpdates25, GlacierSync23, GlacierAccounts22, Glacier
   self.setup_shell20(bar)
   self.setup_accounts22(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
   self.setup_sync23(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
+  self.setup_account_center26(bar)
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -233,7 +235,9 @@ def main():
   if proc and proc.poll() is None:proc.terminate()
   return 1
  win.show()
- splash.finish(win)
+ # Keep branded startup visible briefly, including on fast cold starts.
+ # The Qt event loop stays responsive; this is not a blocking sleep.
+ QTimer.singleShot(1100, lambda: splash.finish(win))
  code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
