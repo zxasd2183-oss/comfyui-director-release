@@ -42,6 +42,13 @@ jobs:
                   if len(raw)>65536: raise RuntimeError("Oversize signed feed")
                   doc=json.loads(raw)
                   print(channel,"VPS signed feed version:",doc.get("version"),"key:",doc.get("key_id"))
+                  expected="https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-release/glacier-browser-updates-v2/channels/"+channel+".json"
+                  with urllib.request.urlopen(expected,timeout=18) as source:
+                      canonical=json.load(source)
+                  if doc != canonical:
+                      raise RuntimeError("VPS feed differs from immutable GitHub-signed update")
+                  if doc.get("version")!="0.20.10" or doc.get("url")!=root+filename:
+                      raise RuntimeError("VPS is not yet serving the signed v0.20.10 feed")
               except Exception as exc:
                   print("::error::"+channel+" VPS feed unavailable: "+str(exc))
                   ready=False
