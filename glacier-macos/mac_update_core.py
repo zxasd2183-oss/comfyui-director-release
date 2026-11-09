@@ -22,7 +22,7 @@ CURRENT_VERSION = "0.20.9"
 CHANNEL = "macos-arm64"
 KEY_ID = "cf9452226375ff7d"
 PUBLIC_KEY = bytes.fromhex("7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab")
-FEED_URL = "https://raw.githubusercontent.com/zxasd2183-oss/comfyui-director-release/glacier-browser-updates-v2/channels/macos-arm64.json"
+FEED_URL = "https://sync.borealos.cn/downloads/macos-arm64.json"
 MAX_MANIFEST = 65536
 MAX_DMG = 1_073_741_824
 FIELDS = frozenset(("channel","version","url","sha256","size","notes","key_id","signature"))
@@ -113,6 +113,14 @@ def signed_update_session(port):
     return sess
 
 
+def owner_vps_session():
+    """Use direct TLS to our own HTTPS VPS without system or VLESS proxies."""
+    sess = requests.Session()
+    sess.trust_env = False
+    sess.proxies = {"http": None, "https": None}
+    return sess
+
+
 def _request(session,url,allowed_hosts,stream=True):
     for _ in range(8):
         parsed=urlsplit(url)
@@ -138,10 +146,10 @@ def _request(session,url,allowed_hosts,stream=True):
 
 
 def get_manifest(port):
-    session=signed_update_session(port)
+    session=owner_vps_session()
     try:
-        # Manifest must come from the dedicated first-party HTTPS path.
-        response=_request(session,FEED_URL,{"raw.githubusercontent.com"})
+        # Signed metadata is fetched from our own HTTPS VPS.
+        response=_request(session,FEED_URL,{"sync.borealos.cn"})
         with response:
             buf=bytearray()
             for chunk in response.iter_content(8192):
@@ -163,12 +171,14 @@ def download_dmg(manifest, port, directory, progress=lambda n:None):
     directory.mkdir(parents=True,exist_ok=True)
     final=directory/("GlacierBrowser-v"+manifest["version"]+"-macOS-AppleSilicon.dmg")
     partial=final.with_suffix(".dmg.partial")
-    session=signed_update_session(port)
+    is_vps = urlsplit(manifest["url"]).hostname == "sync.borealos.cn"
+    session=owner_vps_session() if is_vps else signed_update_session(port)
     expected=manifest["size"]
     total=0
     digest=hashlib.sha256()
     try:
-        with _request(session,manifest["url"],TRUSTED_REDIRECT_HOSTS) as response:
+        allowed = {"sync.borealos.cn"} if is_vps else TRUSTED_REDIRECT_HOSTS - {"sync.borealos.cn"}
+        with _request(session,manifest["url"],allowed) as response:
             advertised=response.headers.get("Content-Length")
             if advertised and int(advertised)!=expected:
                 raise UpdateError("远端文件长度与签名清单不一致")
