@@ -276,8 +276,8 @@ public final class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(screen);
 
-        // Android Chrome-style compact toolbar: no persistent logo, profile
-        // badge, diagnostic banner, or second row of navigation buttons.
+        // Android Chrome-style compact toolbar with a visible account action.
+        // No diagnostic banner or second row of navigation buttons.
         LinearLayout toolbar = horizontal();
         toolbar.setPadding(dp(7), dp(6), dp(7), dp(6));
         toolbar.setBackgroundColor(PALE);
@@ -323,6 +323,17 @@ public final class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(0, dp(47), 1);
         addressParams.setMargins(dp(4), 0, dp(8), 0);
         toolbar.addView(omnibox, addressParams);
+
+        // Explicit Glacier account entry: do not bury sign-in under overflow.
+        Button account = button(cloudState.username.isEmpty() ? "登录" : "账号");
+        account.setTextSize(12);
+        account.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        account.setContentDescription("Glacier 账号登录与同步");
+        account.setOnClickListener(v -> showCloudMenu());
+        LinearLayout.LayoutParams accountParams =
+                new LinearLayout.LayoutParams(dp(43), dp(37));
+        accountParams.setMargins(0, 0, dp(5), 0);
+        toolbar.addView(account, accountParams);
 
         tabCounter = new TextView(this);
         tabCounter.setTextSize(14);
