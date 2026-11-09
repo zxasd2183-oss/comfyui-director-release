@@ -19,7 +19,7 @@ def patch_core(path):
     new_origin = """    vps = (
         p.hostname == 'sync.borealos.cn'
         and re.fullmatch(
-            r'/downloads/GlacierBrowser-v[0-9]+\\.[0-9]+\\.[0-9]+-Windows-Setup-x64\\.exe',
+            r'/downloads/GlacierBrowser-v[0-9]+\.[0-9]+\.[0-9]+-Windows-Setup-x64\.exe',
             p.path,
         ) is not None
     )
