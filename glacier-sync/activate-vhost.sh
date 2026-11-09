@@ -47,8 +47,38 @@ block=lines[begin:end]
 if any("include /etc/nginx/snippets/glacier-sync.conf;" in line for line in block):
     print("Glacier snippet already enabled; no change")
     sys.exit(0)
-if any(re.search(r"\blocation\s+", line.split("#",1)[0]) for line in block):
-    raise SystemExit("Sync placeholder has an existing location: refuse automatic rewrite")
+# Preserve the dedicated ACME renewal location. Refuse any unknown
+# location; replace only the exact old placeholder catch-all.
+location_starts = []
+for idx, line in enumerate(block):
+    clean = line.split("#", 1)[0].strip()
+    if re.match(r"^location\s+", clean):
+        location_starts.append((idx, clean))
+allowed_acme = re.compile(r"^location\s+(?:\^~\s+)?/\.well-known/acme-challenge/\s*\{")
+allowed_placeholder = re.compile(r"^location\s+/\s*\{")
+for idx, header in location_starts:
+    if not (allowed_acme.match(header) or allowed_placeholder.match(header)):
+        raise SystemExit("Unknown location in sync TLS server; refusing modification: " + header)
+# Remove only the exact placeholder catch-all, preserving ACME and TLS.
+for idx, header in reversed(location_starts):
+    if not allowed_placeholder.match(header):
+        continue
+    brace_depth = 0
+    closing_index = None
+    for stop in range(idx, len(block)):
+        content = block[stop].split("#", 1)[0]
+        brace_depth += content.count("{") - content.count("}")
+        if brace_depth == 0:
+            closing_index = stop
+            break
+    if closing_index is None:
+        raise SystemExit("Incomplete placeholder location")
+    contents = "".join(block[idx:closing_index + 1])
+    if not re.fullmatch(
+            r"(?s)\s*location\s+/\s*\{\s*try_files\s+\$uri\s+\$uri/\s+=404\s*;\s*\}\s*",
+            contents):
+        raise SystemExit("Existing location / is not the known placeholder; refusing replacement")
+    del block[idx:closing_index + 1]
 # Placeholder server may contain a root directive; remove ONLY the known root.
 block=[line for line in block if not re.match(
     r"^\s*root\s+/var/www/placeholder\s*;\s*(?:#.*)?$",line)]
