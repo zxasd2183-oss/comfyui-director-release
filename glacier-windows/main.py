@@ -126,7 +126,7 @@ class Browser(GlacierAccountCenter26, GlacierPreviewUpdates25, GlacierSync23, Gl
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.5")
+  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.6")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -208,7 +208,7 @@ class Browser(GlacierAccountCenter26, GlacierPreviewUpdates25, GlacierSync23, Gl
   super().closeEvent(event)
 def main():
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("Windows v0.20.5")
+ splash=show_glacier_splash("Windows v0.20.6")
  link=get_link(app)
  with socket.socket() as s:
   s.bind(("127.0.0.1",0));port=s.getsockname()[1]
