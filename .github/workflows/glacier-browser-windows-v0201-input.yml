@@ -82,7 +82,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
       - name: Build Windows executable with embedded VLESS core
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets main.py
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets --hidden-import glacier_sync_auto24 --hidden-import socks main.py
           if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
           if (-not (Test-Path dist/GlacierBrowser/GlacierBrowser.exe)) { throw 'Browser EXE missing' }
           if (-not (Test-Path dist/GlacierBrowser/_internal/bin/sing-box.exe)) { throw 'Bundled sing-box missing' }
