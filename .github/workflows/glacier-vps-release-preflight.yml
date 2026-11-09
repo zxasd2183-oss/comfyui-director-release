@@ -1,0 +1,53 @@
+name: Glacier VPS v0.20.10 release preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-vps-release-preflight.yml'
+permissions:
+  contents: read
+jobs:
+  verify-vps-public-distribution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Verify live VPS signed feed and versioned installer availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error
+          from pathlib import PurePosixPath
+          root="https://sync.borealos.cn/downloads/"
+          entries={
+             "windows-x64": "GlacierBrowser-v0.20.10-Windows-Setup-x64.exe",
+             "macos-arm64": "GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg"
+          }
+          ready=True
+          for channel,filename in entries.items():
+              feed_url=root+channel+".json"
+              try:
+                  req=urllib.request.Request(feed_url, headers={"User-Agent":"Glacier-vps-preflight/1"})
+                  with urllib.request.urlopen(req,timeout=18) as resp:
+                      if resp.status!=200: raise RuntimeError("HTTP "+str(resp.status))
+                      raw=resp.read(65537)
+                  if len(raw)>65536: raise RuntimeError("Oversize signed feed")
+                  doc=json.loads(raw)
+                  print(channel,"VPS signed feed version:",doc.get("version"),"key:",doc.get("key_id"))
+              except Exception as exc:
+                  print("::error::"+channel+" VPS feed unavailable: "+str(exc))
+                  ready=False
+              try:
+                  req=urllib.request.Request(root+filename,method="HEAD",
+                                             headers={"User-Agent":"Glacier-vps-preflight/1"})
+                  with urllib.request.urlopen(req,timeout=25) as resp:
+                      if resp.status not in (200,206): raise RuntimeError("HTTP "+str(resp.status))
+                      size=resp.headers.get("Content-Length")
+                  print(channel,"VPS installer ready:",filename,"bytes:",size)
+              except Exception as exc:
+                  print("::warning::"+channel+" v0.20.10 installer NOT YET mirrored: "+str(exc))
+                  ready=False
+          if not ready:
+              raise SystemExit("VPS preflight incomplete: do not promote v0.20.10 signed update feeds")
+          PY
