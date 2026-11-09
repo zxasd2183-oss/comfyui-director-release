@@ -46,7 +46,7 @@ jobs:
           fi
 
       - name: Checkout trusted publisher from main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           path: source
@@ -54,7 +54,7 @@ jobs:
 
       - name: Checkout existing signed feed branch
         if: steps.signer.outputs.enabled == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: glacier-browser-updates-v2
           path: feed
