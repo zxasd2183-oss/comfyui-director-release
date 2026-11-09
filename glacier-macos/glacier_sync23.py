@@ -267,6 +267,7 @@ class GlacierSync23:
                                     "device_name": platform.node()[:80] or "Glacier Desktop"})
         self._sync_state23 = {"base": sync_url23(base), "username": username,
                               "device_id": result["device_id"],
+                              "device_secret": result["device_secret"],
                               "token": result["token"], "approved": True}
         self._save_sync23()
         self._sync_info23("已注册，当前设备成为主设备。\n请单独牢记云端保险箱加密口令；它不会上传服务器。")
@@ -288,10 +289,17 @@ class GlacierSync23:
                                   "device_id": (self._sync_state23.get("device_id")
                                                 if username == self._sync_state23.get("username")
                                                 and sync_url23(base) == self._sync_state23.get("base")
+                                                and self._sync_state23.get("device_secret")
+                                                else None),
+                                  "device_secret": (self._sync_state23.get("device_secret")
+                                                if username == self._sync_state23.get("username")
+                                                and sync_url23(base) == self._sync_state23.get("base")
                                                 else None)})
         self._sync_state23 = {"base": sync_url23(base), "username": username,
-                              "device_id": result["device_id"], "token": result["token"],
-                              "approved": result["approved"]}
+                              "device_id": result["device_id"],
+                              "device_secret": result.get("device_secret")
+                                      or self._sync_state23.get("device_secret", ""),
+                              "token": result["token"], "approved": result["approved"]}
         self._save_sync23()
         self._sync_info23("登录成功。" if result["approved"] else
                           "新设备正在等待主设备审批。\n设备 ID：" + result["device_id"])
