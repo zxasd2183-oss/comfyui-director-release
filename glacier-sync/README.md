@@ -36,6 +36,30 @@ working service until deployment and client integration are verified.
 
 The production service origin is **https://sync.borealos.cn**. Create an A record for `sync` pointing to the existing Guangzhou VPS public IPv4; do not proxy requests via a third-party CDN during initial TLS deployment. Issue the certificate for `sync.borealos.cn` before enabling the Nginx vhost. The service is NOT deployed merely by creating DNS or committing this repository.
 
+## After DNS points to the VPS
+
+In a fresh clone of this repository on the VPS (use branch
+`fix/glacier-browser-windows-v0201-input`), deploy the isolated sync backend:
+
+```bash
+sudo bash glacier-sync/install-vps.sh
+```
+
+The installer creates a private registration invite, stores it at
+`/etc/glacier-sync/secrets.env`, installs the service at
+`127.0.0.1:18991`, then requires a successful local `/health` response.
+It does **not** alter existing Director/Jipite Nginx configuration.
+
+Next, use the site's existing TLS manager to issue a certificate for
+`sync.borealos.cn`, and adapt `glacier-sync/nginx.example.conf` to the
+currently deployed listener/SNI scheme. Run `nginx -t` before any reload.
+Do not copy the example's `listen 443` unexamined if your VPS uses a
+custom HTTPS listener or multiplexed ports.
+
+Final external health check: `https://sync.borealos.cn/health` should
+return JSON containing `"status":"ok"`. Never put the private invite,
+account passwords or encryption passphrases in a public issue or chat.
+
 ## Deployment prerequisites
 
 1. On a controlled VPS create dedicated system user `glacier-sync`, directory
