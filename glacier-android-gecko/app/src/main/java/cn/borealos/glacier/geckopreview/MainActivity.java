@@ -1288,7 +1288,7 @@ public final class MainActivity extends Activity {
         form.setPadding(dp(22),dp(14),dp(22),0);
         form.setOrientation(LinearLayout.VERTICAL);
         EditText base=cloudField(form,"Glacier Sync HTTPS 服务器地址",
-                cloudState.base,false);
+                cloudState.base.isEmpty()?"https://sync.borealos.cn":cloudState.base,false);
         EditText user=cloudField(form,"Glacier 账号 ID",
                 cloudState.username,false);
         EditText pass=cloudField(form,"登录密码（至少 12 位）","",true);
