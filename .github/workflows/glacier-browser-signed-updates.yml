@@ -76,8 +76,27 @@ jobs:
             "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
           test -s releases.json
 
-      - name: Generate and verify signed Windows and macOS manifests
+      - name: Check whether there is a newer immutable signed release pair
+        id: release-check
         if: steps.signer.outputs.enabled == 'true'
+        env:
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from source.scripts.glacier_publish_signed_updates import needs_new_signed_release
+          with open("releases.json", encoding="utf-8") as handle:
+              releases = json.load(handle)
+          needed = needs_new_signed_release(releases, "feed/channels")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("needed=" + str(needed).lower() + "\\n")
+          if not needed:
+              print("No newer canonical signed Release pair. Existing signed manifests stay untouched.")
+          PY
+
+      - name: Generate and verify signed Windows and macOS manifests
+        if: steps.signer.outputs.enabled == 'true' && steps.release-check.outputs.needed == 'true'
         env:
           GLACIER_UPDATE_SIGNING_PRIVATE_HEX: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
           GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
@@ -87,7 +106,7 @@ jobs:
             releases.json feed/channels
 
       - name: Atomically publish both update channels
-        if: steps.signer.outputs.enabled == 'true'
+        if: steps.signer.outputs.enabled == 'true' && steps.release-check.outputs.needed == 'true'
         run: |
           set -euo pipefail
           cd feed
