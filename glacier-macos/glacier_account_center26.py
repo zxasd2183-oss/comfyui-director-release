@@ -5,8 +5,8 @@ approval and sync routines remain the single source of truth.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
-    QWidget, QScrollArea,
+    QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
+    QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
 )
 
 
@@ -111,11 +111,15 @@ class GlacierAccountCenter26:
             return btn
 
         def execute(handler):
-            # Preserve the old API handlers and their fail-closed validation.
+            # Account operations may open their own form. Cancellation must
+            # leave this center visible, without discarding account state.
             try:
-                handler()
+                result = handler()
             except Exception as exc:
                 self._sync_error23(type(exc).__name__ + "，操作未完成")
+                return
+            if result is False:
+                return
             dialog.accept()
             self.refresh_account_center26()
 
@@ -124,8 +128,8 @@ class GlacierAccountCenter26:
             note.setWordWrap(True)
             column.addWidget(note)
         elif not logged:
-            action("登录已有 Glacier 账号", self._sync_login23, True)
-            action("注册新的 Glacier 账号", self._sync_register23)
+            action("登录已有 Glacier 账号", lambda: self._account_form26(False), True)
+            action("注册新的 Glacier 账号", lambda: self._account_form26(True))
             note = QLabel("注册需要私密邀请码。密码和验证码不会自动填入网页。", panel)
             note.setWordWrap(True)
             note.setStyleSheet("color:#71889a; padding:9px;")
@@ -151,3 +155,65 @@ class GlacierAccountCenter26:
         root.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
         dialog.exec()
         self.refresh_account_center26()
+
+    def _account_form26(self, register=False):
+        """One coherent register/login form, not a series of prompt dialogs."""
+        from glacier_sync23 import DEFAULT_SYNC_URL23, sync_url23
+        form = QDialog(self)
+        form.setWindowTitle("创建 Glacier 账号" if register else "登录 Glacier")
+        form.setMinimumWidth(430)
+        form.setObjectName("GlacierAccountForm26")
+        layout = QVBoxLayout(form)
+        layout.setContentsMargins(25, 22, 25, 22)
+        layout.setSpacing(13)
+        head = QLabel("创建你的 Glacier 账号" if register else "欢迎回来", form)
+        head.setStyleSheet("font-size:20px;font-weight:600;color:#285b7c;")
+        layout.addWidget(head)
+        hint = QLabel("端到端加密账号同步 · 设备授权保护", form)
+        hint.setStyleSheet("color:#718a9c;")
+        layout.addWidget(hint)
+        fields = QFormLayout()
+        base = QLineEdit(form)
+        base.setText(getattr(self, "_sync_state23", {}).get("base") or DEFAULT_SYNC_URL23)
+        user = QLineEdit(form)
+        user.setPlaceholderText("Glacier 账号 ID")
+        user.setText(getattr(self, "_sync_state23", {}).get("username", "") if not register else "")
+        password = QLineEdit(form)
+        password.setEchoMode(QLineEdit.EchoMode.Password)
+        password.setPlaceholderText("至少 12 个字符")
+        fields.addRow("同步服务器", base)
+        fields.addRow("账号", user)
+        fields.addRow("登录密码", password)
+        invitation = None
+        if register:
+            invitation = QLineEdit(form)
+            invitation.setEchoMode(QLineEdit.EchoMode.Password)
+            invitation.setPlaceholderText("私人注册邀请码")
+            fields.addRow("注册邀请码", invitation)
+        layout.addLayout(fields)
+        note = QLabel("不会自动填充网站登录表单；同步密码与设备授权信息保存在本机加密会话。", form)
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#718a9c;font-size:11px;")
+        layout.addWidget(note)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            form)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("创建账号" if register else "登录")
+        buttons.accepted.connect(form.accept)
+        buttons.rejected.connect(form.reject)
+        layout.addWidget(buttons)
+        if form.exec() != QDialog.DialogCode.Accepted:
+            return False
+        url, name, secret = base.text().strip(), user.text().strip(), password.text()
+        if not sync_url23(url) or not name or len(secret) < 12:
+            QMessageBox.warning(self, "Glacier 账号", "请检查 HTTPS 服务器、账号以及至少 12 位的密码。")
+            return False
+        if register:
+            invite = invitation.text()
+            if not invite:
+                QMessageBox.warning(self, "Glacier 账号", "注册邀请码不能为空。")
+                return False
+            self._sync_register23(base=url, username=name, password=secret, invite=invite)
+        else:
+            self._sync_login23(base=url, username=name, password=secret)
+        return True
