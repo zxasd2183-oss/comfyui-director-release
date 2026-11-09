@@ -35,7 +35,7 @@ FILENAME = {
     "macos-arm64": "GlacierBrowser-v{}-macOS-AppleSilicon.dmg",
 }
 ALLOW_REDIRECT = frozenset((
-    "github.com", "release-assets.githubusercontent.com",
+    "api.github.com", "github.com", "release-assets.githubusercontent.com",
     "objects.githubusercontent.com", "github-releases.githubusercontent.com",
 ))
 MAX_INSTALLER = 900_000_000
