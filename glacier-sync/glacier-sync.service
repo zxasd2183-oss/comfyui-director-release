@@ -15,6 +15,7 @@ Restart=on-failure
 RestartSec=5
 UMask=0077
 StateDirectory=glacier-sync
+StateDirectoryMode=0700
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
