@@ -34,3 +34,40 @@ curl -fIs https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.8-macOS-AppleS
 ```
 
 The current v0.20.8 manifests are cryptographically bound to GitHub installer URLs. **Do not edit the signed URL field**: changing it breaks the signature and installed clients refuse it. This step guarantees VPS-side storage/distribution only, not in-app direct-from-VPS installation. A future canonical release must have VPS-origin URLs signed into the manifests, update both client allowlists, and verify the VPS installer hash before prompting installation. Keep legacy client update paths intact until that migration is proven.
+
+## v0.20.10 signed VPS migration: staging before signing
+
+The owner VPS successfully hosted v0.20.8/0.20.9 previously. No new Nginx
+routes, domain, tunnel, secret, or GPU deployment is required.
+
+**Reason for the temporary v0.20.10 404:** the original mirror downloaded
+only the version in the existing signed feed (v0.20.9). The signer correctly
+refused to publish v0.20.10 until both installers existed on VPS, so neither
+side advanced. The mirror now breaks this dependency by staging the newest
+canonical paired GitHub Releases with independent GitHub asset digests; it
+does NOT alter an existing signed manifest during staging.
+
+Existing VPS operator (regular sudo-enabled user), one-time upgrade:
+
+```bash
+cd /home/ubuntu/comfyui-director-release
+HTTPS_PROXY=http://127.0.0.1:1081 HTTP_PROXY=http://127.0.0.1:1081 git pull --ff-only
+bash vps-control/upgrade-glacier-signed-mirror.sh
+```
+
+That script is idempotent and checks for an existing timer and clean branch,
+runs tests, installs only the two existing systemd mirror unit files, stages
+both installers, compares immutable SHA-256 values, and probes the existing
+HTTPS download routes. It does not touch nginx, legacy preview routes, mobile
+services, GPU power, account data or existing signing keys.
+
+After staging, the next scheduled
+`.github/workflows/glacier-browser-signed-updates.yml` run reads BOTH VPS
+installer bytes and independently checks SHA-256 against canonical GitHub
+Release digests. Only after both match will it set
+`GLACIER_VPS_MIGRATION_READY=1` for the signing step. Then the existing VPS
+mirror timer publishes the signed v0.20.10 JSON files, leaving older signed
+versions cryptographically immutable.
+
+**Do not hand-edit signed JSON or force publication against a 404.** Running
+GitHub Actions by itself does not deploy a new Python script onto the VPS.
