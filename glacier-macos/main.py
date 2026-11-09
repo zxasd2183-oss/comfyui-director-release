@@ -1,4 +1,4 @@
-import json, os, re, socket, subprocess, sys, uuid
+import json, os, re, socket, subprocess, sys, time, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
 from PySide6.QtCore import QUrl, QTimer
@@ -68,7 +68,19 @@ def proxy_start(link,port):
  flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
  result=subprocess.run([str(core),"check","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15,creationflags=flags)
  if result.returncode:raise RuntimeError("代理内核无法识别这个 VLESS 节点（可能存在不兼容参数）")
- return subprocess.Popen([str(core),"run","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
+ process=subprocess.Popen([str(core),"run","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
+ # The process may exit or fail to bind even when config validation succeeds.
+ # Do not advertise a working core until its local SOCKS5 port accepts traffic.
+ for _ in range(30):
+  if process.poll() is not None:
+   raise RuntimeError("sing-box 启动后立即退出，请检查线路配置")
+  try:
+   with socket.create_connection(("127.0.0.1",port),timeout=0.3):
+    return process
+  except OSError:
+   time.sleep(0.1)
+ process.terminate()
+ raise RuntimeError("sing-box 未监听本地代理端口，已禁止直连")
 class Page(QWebEngineView):
  def __init__(self,win):
   super().__init__(win)
@@ -96,7 +108,7 @@ class Browser(GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierS
   self.init_features(bar)
   self.init_ui09(bar, lambda data: dpapi(data), lambda data: dpapi(data, True), appdir())
   self.setup_tabtools13(lay,bar)
-  self.proxy_label=QLabel("● 核心运行中（尚未联网验证）" if process else "● 未连接（禁止直连）");bar.addWidget(self.proxy_label)
+  self.proxy_label=QLabel("● 本地代理已启动，正在验证外网…" if process else "● 未连接（禁止直连）");bar.addWidget(self.proxy_label)
   self.tabs=QTabWidget();self.tabs.setTabsClosable(True);self.tabs.tabCloseRequested.connect(self.close_tab);self.tabs.currentChanged.connect(self.sync_url);self.tabs.currentChanged.connect(lambda _idx:self.queue_session_save())
   lay.addWidget(self.tabs);self.connect_tabbar13();self.new_tab()
   self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
@@ -190,6 +202,10 @@ def main():
   if proc and proc.poll() is None:proc.terminate()
   return 1
  win.show()
+ # Actually probe VLESS HTTPS connectivity on startup, rather than equating
+ # sing-box process existence with a working internet connection.
+ if proc:
+  QTimer.singleShot(1400, win.start_connection_check)
  QTimer.singleShot(1100, lambda: splash.finish(win))
  code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
