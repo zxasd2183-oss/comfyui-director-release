@@ -1,0 +1,69 @@
+name: Glacier preview mirror immediate VPS sync
+
+on:
+  workflow_run:
+    workflows: ["Glacier Browser signed Windows + macOS auto updates"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glacier-preview-immediate-vps-sync
+  cancel-in-progress: false
+
+jobs:
+  notify-vps:
+    name: OIDC notify verified Glacier preview mirror on VPS
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == 'zxasd2183-oss/comfyui-director-release' &&
+      github.repository == 'zxasd2183-oss/comfyui-director-release' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Notify owner VPS via workflow-bound short-lived OIDC token
+        shell: bash
+        env:
+          NOTIFY_URL: https://sync.borealos.cn/downloads/notify
+          OIDC_AUDIENCE: glacier-preview-vps-update-sync
+        run: |
+          set -euo pipefail
+          # Never print the short-lived OIDC token or JWT payload to logs.
+          # This workflow must remain at .github/workflows/glacier-preview-immediate.yml
+          # on refs/heads/main: the VPS validates workflow_ref, ref and sub.
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+
+          token_response="$(curl --fail --silent --show-error \
+            --connect-timeout 7 --max-time 12 \
+            --get --data-urlencode "audience=${OIDC_AUDIENCE}" \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}")"
+          token="$(printf '%s' "$token_response" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin)["value"])')"
+          test -n "$token"
+
+          # No user-supplied body/URL: VPS picks releases itself, verifies each
+          # immutable SHA256 sidecar, and atomically replaces published metadata.
+          # A 202 means accepted/queued; it is not proof that mirroring finished.
+          status="$(curl --silent --show-error --connect-timeout 7 \
+            --max-time 25 --retry 2 --retry-delay 3 --retry-all-errors \
+            --output "$RUNNER_TEMP/glacier-preview-notify-response.json" \
+            --write-out '%{http_code}' --request POST "$NOTIFY_URL" \
+            --header "Authorization: Bearer ${token}" \
+            --header "Content-Type: application/json" \
+            --data '{}')"
+          unset token token_response
+          echo "Glacier preview VPS notify HTTP: $status"
+          if [[ "$status" != "202" ]]; then
+            echo "::error::VPS did not accept immediate mirror sync; existing 30-minute timer remains the fallback."
+            exit 1
+          fi
+          echo "VPS accepted Glacier preview sync request (HTTP 202)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Release download and SHA256 verification occur only on the VPS." >> "$GITHUB_STEP_SUMMARY"
