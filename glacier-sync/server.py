@@ -76,6 +76,10 @@ def initialize():
           name TEXT NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
           created INTEGER NOT NULL, approved_at INTEGER
         );
+        CREATE TABLE IF NOT EXISTS device_credentials (
+          device_id TEXT PRIMARY KEY REFERENCES devices(id),
+          secret_hash TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS sessions (
           token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
           device_id TEXT NOT NULL REFERENCES devices(id),
@@ -115,6 +119,7 @@ class Login(BaseModel):
     password: str = Field(min_length=1, max_length=256)
     device_name: str = Field(min_length=1, max_length=80)
     device_id: str | None = None
+    device_secret: str | None = None
 
 
 class Grants(BaseModel):
@@ -207,10 +212,15 @@ def register(data: Register):
             raise HTTPException(status_code=409, detail="Account already exists")
         conn.execute("INSERT INTO devices VALUES(?,?,?,?,?,?)",
                      (device_id, user_id, data.device_name, 1, now, now))
+        device_secret = secrets.token_hex(32)
+        conn.execute("INSERT INTO device_credentials VALUES(?,?)",
+                     (device_id, digest(device_secret)))
         conn.execute("INSERT INTO owner_devices VALUES(?)", (device_id,))
         conn.executemany("INSERT INTO device_grants VALUES(?,?)",
                          [(device_id, "private"), (device_id, "work")])
-        return issue_session(conn, user_id, device_id, pending=False)
+        issued = issue_session(conn, user_id, device_id, pending=False)
+        issued["device_secret"] = device_secret
+        return issued
 
 
 @app.post("/v1/login")
@@ -247,12 +257,28 @@ def login(data: Login):
                                  (data.device_id, user["id"])).fetchone()
             if not known:
                 raise HTTPException(status_code=403, detail="Device was removed")
+            proof = conn.execute(
+                "SELECT secret_hash FROM device_credentials WHERE device_id=?",
+                (data.device_id,)).fetchone()
+            # A public device ID is never sufficient to inherit an approved device.
+            if (not proof or not data.device_secret
+                    or not re.fullmatch(r"[0-9a-f]{64}", data.device_secret)
+                    or not hmac.compare_digest(digest(data.device_secret),
+                                               proof["secret_hash"])):
+                raise HTTPException(status_code=403, detail="Device proof unavailable")
         device_id = known["id"] if known else secrets.token_hex(16)
         approved = bool(known and known["approved"])
+        device_secret = None
         if not known:
+            device_secret = secrets.token_hex(32)
             conn.execute("INSERT INTO devices VALUES(?,?,?,?,?,NULL)",
                          (device_id, user["id"], data.device_name, 0, int(time.time())))
-        return issue_session(conn, user["id"], device_id, pending=not approved)
+            conn.execute("INSERT INTO device_credentials VALUES(?,?)",
+                         (device_id, digest(device_secret)))
+        issued = issue_session(conn, user["id"], device_id, pending=not approved)
+        if device_secret:
+            issued["device_secret"] = device_secret
+        return issued
 
 
 @app.get("/v1/session")
@@ -335,6 +361,7 @@ def revoke(device_id: str, authorization: str | None = Header(default=None)):
         cursor = conn.execute("DELETE FROM sessions WHERE device_id=? AND user_id=?",
                               (device_id, session["user_id"]))
         conn.execute("DELETE FROM device_grants WHERE device_id=?", (device_id,))
+        conn.execute("DELETE FROM device_credentials WHERE device_id=?", (device_id,))
         found = conn.execute("DELETE FROM devices WHERE id=? AND user_id=?",
                              (device_id, session["user_id"]))
         if found.rowcount != 1:
