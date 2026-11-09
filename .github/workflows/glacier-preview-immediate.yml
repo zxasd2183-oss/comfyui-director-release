@@ -2,6 +2,10 @@ name: Glacier preview mirror immediate VPS sync
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-preview-immediate.yml'
   workflow_run:
     workflows: ["Glacier Browser signed Windows + macOS auto updates"]
     types: [completed]
@@ -21,6 +25,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (
         github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'push' ||
         (
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
