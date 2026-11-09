@@ -11,6 +11,7 @@ import json
 import os
 import secrets
 import tempfile
+import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,6 +19,7 @@ import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMessageBox, QPushButton, QVBoxLayout,
@@ -151,6 +153,13 @@ class SyncTransport23:
 
 class GlacierSync23:
     def setup_sync23(self, directory, encrypt, decrypt):
+        from glacier_sync_auto24 import AutoSyncResult24
+        self._sync_auto_bridge23 = AutoSyncResult24(self)
+        self._sync_auto_bridge23.completed.connect(self._sync_auto_finished23)
+        self._sync_auto_timer23 = QTimer(self)
+        self._sync_auto_timer23.setInterval(180000)
+        self._sync_auto_timer23.timeout.connect(self._sync_auto_tick23)
+        self._sync_auto_busy23 = False
         self._sync_path23 = Path(directory) / "sync-account-v1.enc"
         self._sync_encrypt23 = encrypt
         self._sync_decrypt23 = decrypt
@@ -168,6 +177,9 @@ class GlacierSync23:
             except Exception:
                 # Never overwrite corrupted session material silently.
                 self._sync_state23 = {"locked": True}
+        if (self._sync_state23.get("auto_enabled")
+                and self._sync_state23.get("vault_passphrase")):
+            self._sync_auto_timer23.start()
 
     def _save_sync23(self):
         if self._sync_state23.get("locked"):
@@ -220,6 +232,8 @@ class GlacierSync23:
         choices = ["注册统一账号", "登录 / 申请新设备授权",
                    "检查设备审批状态", "管理已授权设备",
                    "上传当前账号空间（加密）", "下载当前账号空间（解密）",
+                   "启用安全自动同步（在本机加密保存同步口令）",
+                   "关闭自动同步并清除本机同步口令",
                    "退出当前设备账号"]
         current = self._sync_state23.get("username", "未登录")
         selected, ok = QInputDialog.getItem(
@@ -240,10 +254,128 @@ class GlacierSync23:
                 self._sync_push23()
             elif selected == choices[5]:
                 self._sync_pull23()
+            elif selected == choices[6]:
+                self._sync_enable_auto23()
+            elif selected == choices[7]:
+                self._sync_disable_auto23()
             else:
                 self._sync_logout23()
         except (SyncError23, ValueError, OSError) as error:
             self._sync_error23(error)
+
+    def _sync_enable_auto23(self):
+        # Opt-in is explicit: the vault passphrase is stored only in the local
+        # existing DPAPI/Keychain-encrypted sync session, never on the server.
+        self._sync_transport23()
+        secret = self._sync_passphrase23()
+        if secret is None:
+            return
+        if QMessageBox.question(
+            self, "启用自动加密同步",
+            "启用后，会将同步口令用本机系统密钥加密保存，并每 3 分钟或本机账号变动后"
+            "尝试同步。两端同时修改时暂停，不会静默覆盖。是否启用？"
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._sync_state23["auto_enabled"] = True
+        self._sync_state23["vault_passphrase"] = secret
+        self._save_sync23()
+        self._sync_auto_timer23.start()
+        self._sync_auto_tick23()
+        self._sync_info23(
+            "自动同步已开启。首次需分别手动上传或下载一次私人/工作空间，以建立冲突检查基线。")
+
+    def _sync_disable_auto23(self):
+        self._sync_auto_timer23.stop()
+        self._sync_state23.pop("vault_passphrase", None)
+        self._sync_state23["auto_enabled"] = False
+        self._save_sync23()
+        self._sync_info23("自动同步已关闭，设备上的自动同步口令已清除。")
+
+    def _queue_auto_sync23(self):
+        if (hasattr(self, "_sync_auto_timer23")
+                and self._sync_state23.get("auto_enabled")):
+            self._sync_auto_timer23.start(2500)
+
+    def _sync_mark_baseline23(self, space, version):
+        from glacier_sync_auto24 import account_digest24
+        baselines = self._sync_state23.setdefault("baselines", {})
+        baselines[space] = {
+            "version": version,
+            "local_hash": account_digest24(
+                self._accounts_doc22["accounts"], space)}
+        self._save_sync23()
+
+    def _sync_auto_tick23(self):
+        if self._sync_auto_busy23 or not self._sync_state23.get("auto_enabled"):
+            return
+        if not self._sync_state23.get("approved") or not self._sync_state23.get("vault_passphrase"):
+            return
+        try:
+            self._sync_transport23()
+        except (SyncError23, KeyError, ValueError):
+            return
+        from glacier_sync_auto24 import account_digest24, sync_one_space24
+        import copy
+        settings = copy.deepcopy(self._sync_state23)
+        accounts = copy.deepcopy(self._accounts_doc22["accounts"])
+        spaces = [space for space in ("private", "work")
+                  if isinstance(settings.get("baselines", {}).get(space), dict)]
+        if not spaces:
+            return
+        port = int(self.proxy_port)
+        self._sync_auto_busy23 = True
+        def task():
+            results = []
+            try:
+                for space in spaces:
+                    try:
+                        results.append(sync_one_space24(
+                            settings["base"], port, settings["token"], space,
+                            accounts, settings["baselines"][space],
+                            settings["vault_passphrase"]))
+                    except Exception:
+                        # No service response/body/secrets appear in logs.
+                        results.append({"space": space, "kind": "failed"})
+            finally:
+                self._sync_auto_bridge23.completed.emit(results)
+        threading.Thread(target=task, daemon=True, name="glacier-sync").start()
+
+    def _sync_auto_finished23(self, outcomes):
+        from glacier_sync_auto24 import account_digest24
+        self._sync_auto_busy23 = False
+        if not self._sync_state23.get("auto_enabled"):
+            return
+        for event in outcomes:
+            space = event["space"]
+            kind = event["kind"]
+            baseline = self._sync_state23.get("baselines", {}).get(space)
+            if not isinstance(baseline, dict):
+                continue
+            if kind == "conflict":
+                self.statusBar().showMessage(
+                    "Glacier " + space + " 账号空间发生同步冲突，已暂停自动覆盖", 12000)
+            elif kind == "uploaded":
+                # Subsequent local edits are not overwritten by an older snapshot.
+                baseline["version"] = event["version"]
+                baseline["local_hash"] = event["local_hash"]
+                self._save_sync23()
+            elif kind == "downloaded":
+                # Never overwrite cards edited while a network request was active.
+                current = account_digest24(self._accounts_doc22["accounts"], space)
+                if current != event["local_hash"] or self._accounts_readonly22:
+                    self.statusBar().showMessage("账号已在本机变更；已拒绝覆盖", 8500)
+                    continue
+                old = self._accounts_doc22
+                keep = [x for x in old["accounts"]
+                        if x.get("space", "private") != space]
+                try:
+                    self._accounts_doc22 = clean_accounts22({
+                        "schema": 1, "accounts": keep + event["records"]})
+                    self._save_accounts22()
+                    self._sync_mark_baseline23(space, event["version"])
+                except Exception:
+                    self._accounts_doc22 = old
+                    self.statusBar().showMessage("账号同步写入失败；原资料已保留", 10000)
 
     def _sync_register23(self):
         base = self._prompt_sync23("同步服务器", "https://sync.borealos.cn（留空使用默认地址）")
@@ -373,8 +505,9 @@ class GlacierSync23:
         records = [r for r in self._accounts_doc22["accounts"]
                    if r.get("space", "private") == space]
         payload = encrypt_space23(records, space, password)
-        transport.call("PUT", "/v1/vault/" + space,
-                       {"expected_version": remote["version"], "envelope": payload})
+        result = transport.call("PUT", "/v1/vault/" + space,
+                                {"expected_version": remote["version"], "envelope": payload})
+        self._sync_mark_baseline23(space, result["version"])
         self._sync_info23("当前账号空间已端到端加密上传。")
 
     def _sync_pull23(self):
@@ -405,6 +538,7 @@ class GlacierSync23:
         except Exception:
             self._accounts_doc22 = previous
             raise SyncError23("Local encrypted save failed; previous records restored")
+        self._sync_mark_baseline23(space, remote["version"])
         self._sync_info23("当前账号空间已解密导入本机。")
 
     def _sync_logout23(self):
@@ -413,6 +547,10 @@ class GlacierSync23:
                 self._sync_transport23().call("POST", "/v1/logout")
             except SyncError23:
                 pass
+        self._sync_auto_timer23.stop()
         self._sync_state23["token"] = ""
+        self._sync_state23["auto_enabled"] = False
+        self._sync_state23.pop("vault_passphrase", None)
+        self._sync_state23.pop("baselines", None)
         self._save_sync23()
         self._sync_info23("已退出云端会话，本机账号资料未删除。")
