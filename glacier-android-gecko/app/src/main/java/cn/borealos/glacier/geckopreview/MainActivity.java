@@ -1492,9 +1492,15 @@ public final class MainActivity extends Activity {
 
     private void cloudMarkBaseline(String space,int version) {
         try {
+            cloudSetBaseline(space,version,GlacierAutoSync.fingerprint(accountCards,space));
+        } catch(Exception ignored) {}
+    }
+
+    private void cloudSetBaseline(String space,int version,String hash) {
+        try {
             JSONObject item=new JSONObject();
             item.put("version",version);
-            item.put("local_hash",GlacierAutoSync.fingerprint(accountCards,space));
+            item.put("local_hash",hash);
             cloudState.baselines.put(space,item);
             GlacierCloudSync.save(this,cloudState);
         } catch(Exception ignored) {
@@ -1607,6 +1613,9 @@ public final class MainActivity extends Activity {
         final List<BrowserAccountsStore.Card> snapshot=new ArrayList<>();
         for(BrowserAccountsStore.Card card:accountCards)
             if(space.equals(card.profile))snapshot.add(card);
+        final String uploadedHash;
+        try {uploadedHash=GlacierAutoSync.fingerprint(snapshot,space);}
+        catch(Exception ignored) {return;}
         cloudRun(() -> {
             JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
                     "/v1/vault/"+space,null);
@@ -1619,13 +1628,16 @@ public final class MainActivity extends Activity {
                     "/v1/vault/"+space,body);
             int confirmed=result.getInt("version");
             runOnUiThread(() -> {
-                if(!isFinishing())cloudMarkBaseline(space,confirmed);
+                if(!isFinishing())cloudSetBaseline(space,confirmed,uploadedHash);
             });
             return "当前账号空间已端到端加密同步。";
         });
     }
 
     private void cloudPull(String space,String password) {
+        final String beforeDownload;
+        try {beforeDownload=GlacierAutoSync.fingerprint(accountCards,space);}
+        catch(Exception ignored) {return;}
         if(accountsReadonly) {
             new AlertDialog.Builder(this).setMessage("本机账号资料处于只读保护，未覆盖。")
                     .setPositiveButton("知道了",null).show();
@@ -1639,6 +1651,14 @@ public final class MainActivity extends Activity {
                     space,remote.getString("envelope"),password);
             runOnUiThread(() -> {
                 if(isFinishing())return;
+                try {
+                    if(!beforeDownload.equals(GlacierAutoSync.fingerprint(accountCards,space))) {
+                        new AlertDialog.Builder(this).setMessage(
+                                "同步期间本机账号发生修改，已拒绝用旧下载数据覆盖。")
+                                .setPositiveButton("知道了",null).show();
+                        return;
+                    }
+                } catch(Exception ignored) {return;}
                 List<BrowserAccountsStore.Card> merged=new ArrayList<>();
                 for(BrowserAccountsStore.Card old:accountCards)
                     if(!space.equals(old.profile))merged.add(old);
