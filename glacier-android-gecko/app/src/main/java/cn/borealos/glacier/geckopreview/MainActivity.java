@@ -196,6 +196,12 @@ public final class MainActivity extends Activity {
             buildChrome();
             openTab(PRIVATE, START_URL);
         }
+        // Restore the opt-in periodic sync on cold launch, even if the
+        // user never revisits the account menu or edits a site card.
+        if (cloudState.autoEnabled && cloudState.approved) {
+            cloudAutoHandler.removeCallbacks(cloudAutoTimer);
+            cloudAutoHandler.postDelayed(cloudAutoTimer, 5000);
+        }
     }
 
     private int dp(float size) {
