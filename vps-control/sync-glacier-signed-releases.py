@@ -37,7 +37,7 @@ def unique(pairs):
     return d
 
 def semver(v):
-    if not isinstance(v, str) or not re.fullmatch(r"(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)", v):
+    if not isinstance(v, str) or not re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)", v):
         raise ValueError("invalid semantic version")
     return tuple(map(int, v.split(".")))
 
