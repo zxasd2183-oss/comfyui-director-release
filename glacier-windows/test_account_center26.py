@@ -4,11 +4,11 @@ No network or actual credentials. Headless offscreen Qt must work in CI.
 """
 import os
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QDialog, QHBoxLayout, QLineEdit, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QHBoxLayout, QLineEdit, QMessageBox, QWidget
 from glacier_account_center26 import GlacierAccountCenter26, account_label26
 
 
@@ -85,12 +85,34 @@ class AccountCenterTests(unittest.TestCase):
             entries[0].setText("https://sync.borealos.cn")
             entries[1].setText("test-user")
             entries[2].setText("synthetic-password-only")
-            modal.accept()
+            modal.findChild(QDialogButtonBox).button(
+                QDialogButtonBox.StandardButton.Ok).click()
         QTimer.singleShot(0, submit)
         self.assertTrue(window._account_form26(False))
         self.assertEqual(window.logins, 1)
         self.assertEqual(window.last_login_fields["username"], "test-user")
         self.assertEqual(window.last_login_fields["base"], "https://sync.borealos.cn")
+        window.close()
+
+    def test_invalid_password_does_not_dismiss_form(self):
+        window = FakeWindow()
+        observed = []
+        def interact():
+            modal = QApplication.activeModalWidget()
+            self.assertIsInstance(modal, QDialog)
+            inputs = modal.findChildren(QLineEdit)
+            inputs[0].setText("https://sync.borealos.cn")
+            inputs[1].setText("test-user")
+            inputs[2].setText("short")
+            box = modal.findChild(QDialogButtonBox)
+            with patch.object(QMessageBox, "warning", return_value=None):
+                box.button(QDialogButtonBox.StandardButton.Ok).click()
+            observed.append(modal.isVisible())
+            observed.append(window.logins)
+            modal.reject()
+        QTimer.singleShot(0, interact)
+        self.assertFalse(window._account_form26(False))
+        self.assertEqual(observed, [True, 0])
         window.close()
 
     def test_button_label_refreshes_when_signed_in(self):
