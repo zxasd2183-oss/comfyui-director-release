@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -60,10 +61,27 @@ HTTP = urllib.request.build_opener(RestrictedRedirect())
 
 
 def get(url, timeout=30):
+    """Retry temporary upstream errors; never retry forbidden redirects/URLs.
+
+    Caller owns the returned response object, so retries occur only while
+    establishing the request. Incomplete streams fail closed and are retried
+    on the next sync invocation, without publishing partial assets.
+    """
     validate_https(url)
-    return HTTP.open(urllib.request.Request(
+    request = urllib.request.Request(
         url, headers={"User-Agent": "Glacier-VPS-Release-Mirror/1",
-                      "Accept": "application/vnd.github+json"}), timeout=timeout)
+                      "Accept": "application/vnd.github+json"})
+    for attempt in range(5):
+        try:
+            return HTTP.open(request, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504) or attempt == 4:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 4:
+                raise
+        time.sleep(2 * (attempt + 1))
+    raise RuntimeError("Unreachable retry state")
 
 
 def version_key(version):
