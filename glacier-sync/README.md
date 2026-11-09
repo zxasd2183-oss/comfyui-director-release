@@ -36,6 +36,33 @@ working service until deployment and client integration are verified.
 
 The production service origin is **https://sync.borealos.cn**. Create an A record for `sync` pointing to the existing Guangzhou VPS public IPv4; do not proxy requests via a third-party CDN during initial TLS deployment. Issue the certificate for `sync.borealos.cn` before enabling the Nginx vhost. The service is NOT deployed merely by creating DNS or committing this repository.
 
+## VPS 111.230.226.74 — DNS and six-domain HTTPS are already configured
+
+The existing `/etc/nginx/conf.d/zz-new-domains.conf` is configured with
+per-host TLS server blocks on **8443**. The `sync.borealos.cn` block serves
+`/var/www/placeholder` until activated. **Do not replace this Nginx file
+or issue a separate certificate:** the existing certificate already includes
+all six hostnames. Use the safe sync-only deployment from the matching repo
+branch on the VPS:
+
+```bash
+sudo bash glacier-sync/deploy-111.sh
+```
+
+It installs the restricted backend on `127.0.0.1:18991`, preserves the
+registration invite across installs, installs
+`/etc/nginx/snippets/glacier-sync.conf`, then adds precisely one include
+to the **existing** sync 8443 server block. It backs up the Nginx file and
+refuses to patch an unknown layout or an existing `location` block. On
+Nginx syntax failure, the old config is restored; the backend remains
+installed but not publicly routed. An unexpected placeholder `location`
+requires manually replacing that location with the snippet include *only
+inside the sync TLS server*; never overwrite the other five blocks.
+
+External API verification: `https://sync.borealos.cn/health` must return
+`{"status":"ok","service":"glacier-sync","version":1}`. The site root
+may return HTTP 404 by design; success is checked at `/health`.
+
 ## After DNS points to the VPS
 
 In a fresh clone of this repository on the VPS (use branch
