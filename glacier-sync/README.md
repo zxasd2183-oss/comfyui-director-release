@@ -32,6 +32,10 @@ working service until deployment and client integration are verified.
   user-initiated, replace the chosen space after confirmation, and require the
   vault passphrase. Other spaces remain unchanged.
 
+## Fixed Glacier account origin
+
+The production service origin is **https://sync.borealos.cn**. Create an A record for `sync` pointing to the existing Guangzhou VPS public IPv4; do not proxy requests via a third-party CDN during initial TLS deployment. Issue the certificate for `sync.borealos.cn` before enabling the Nginx vhost. The service is NOT deployed merely by creating DNS or committing this repository.
+
 ## Deployment prerequisites
 
 1. On a controlled VPS create dedicated system user `glacier-sync`, directory
@@ -64,6 +68,27 @@ working service until deployment and client integration are verified.
 
 The encrypted vault is not equivalent to remotely synchronized website login
 sessions; websites can independently require re-authentication on another device.
+
+## Automatic sync and device proof
+
+- Device IDs are **public identifiers**, not authorization credentials. Each device
+  is provisioned with a random 256-bit secret. The server stores its hash only;
+  the encrypted local client session holds the secret. A known device must prove
+  possession of this secret when restoring a previously approved login.
+- Desktop and Android can opt into per-space automatic synchronization after
+  **one explicit initial manual upload/download per space** establishes a baseline.
+- The locally remembered E2E passphrase is optional and only stored inside
+  Windows DPAPI / macOS Keychain-backed / Android Keystore encryption. Turning
+  off automatic sync clears the remembered passphrase.
+- Periodic sync runs no more often than the selected cadence (3 minutes), plus
+  a debounced local edit trigger. Remote vault contents remain E2E encrypted.
+- Each space tracks remote revision and its local account fingerprint. Changes
+  on both sides produce a **conflict**; no automatic overwrite occurs.
+- Remote data only replaces local accounts if the local fingerprint still
+  matches what was present at the beginning of the network request.
+- There is currently no general-purpose conflict merge or browser settings
+  synchronization; manual resolution remains necessary when both sides edited
+  the same space. The first production release must be validated end to end.
 
 ## Important operational risks and remaining work
 
