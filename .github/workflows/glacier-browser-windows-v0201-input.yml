@@ -54,13 +54,23 @@ jobs:
           $archive = "sing-box-$version-windows-amd64.zip"
           $sources = @("https://dl.sing-box.org/releases/v$version/$archive", "https://github.com/SagerNet/sing-box/releases/download/v$version/$archive")
           $ok = $false
-          foreach ($url in $sources) {
-            try {
-              Invoke-WebRequest -Uri $url -OutFile sing-box.zip -TimeoutSec 90
-              if ((Get-FileHash -Algorithm SHA256 sing-box.zip).Hash.ToLowerInvariant() -eq $expected) { $ok = $true; break }
-            } catch { Write-Warning "Unavailable core source." }
+          foreach ($attempt in 1..4) {
+            foreach ($url in $sources) {
+              try {
+                Invoke-WebRequest -Uri $url -OutFile sing-box.zip -TimeoutSec 90
+                if ((Get-FileHash -Algorithm SHA256 sing-box.zip).Hash.ToLowerInvariant() -eq $expected) {
+                  $ok = $true
+                  break
+                }
+                Write-Warning "sing-box download hash mismatch; refusing file."
+              } catch {
+                Write-Warning "sing-box release source temporarily unavailable (attempt $attempt)."
+              }
+            }
+            if ($ok) { break }
+            Start-Sleep -Seconds (4 * $attempt)
           }
-          if (-not $ok) { throw 'Could not verify official sing-box binary' }
+          if (-not $ok) { throw 'Could not verify official sing-box binary after retry; failing closed' }
           Expand-Archive sing-box.zip -DestinationPath core-unpack
           $exe = @(Get-ChildItem core-unpack -Recurse -Filter sing-box.exe -File)
           if ($exe.Count -ne 1) { throw 'Unexpected sing-box archive layout' }
