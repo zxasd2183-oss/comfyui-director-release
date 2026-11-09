@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Glacier signed VPS installer mirror periodically
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=30min
+Persistent=true
+Unit=glacier-signed-mirror.service
+
+[Install]
+WantedBy=timers.target
