@@ -111,7 +111,11 @@ class ManifestTests(unittest.TestCase):
         self.assertFalse(session.trust_env)
         self.assertEqual(session.proxies["https"],"socks5h://127.0.0.1:18080")
         self.assertEqual(session.proxies["http"],"socks5h://127.0.0.1:18080")
-        self.assertTrue(u.FEED_URL.startswith("https://raw.githubusercontent.com/"))
+        self.assertEqual(u.FEED_URL,"https://sync.borealos.cn/downloads/macos-arm64.json")
+        direct=u.owner_vps_session()
+        self.assertFalse(direct.trust_env)
+        self.assertFalse(direct.proxies.get("https"))
+        direct.close()
         session.close()
         for port in (0, -1, 65536, None):
             with self.assertRaises(u.UpdateError):u.signed_update_session(port)
