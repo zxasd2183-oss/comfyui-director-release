@@ -1,0 +1,3 @@
+# Only the already-authenticated Glacier OIDC receiver may queue this exact
+# existing systemd unit. Never grant wildcard systemctl, bash, or ALL.
+glacierpreview ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block glacier-signed-mirror.service
