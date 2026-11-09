@@ -223,10 +223,6 @@ def needs_new_signed_release(releases, directory):
     if pair is None:
         return False
     latest, _, _ = pair
-    if (version_tuple(latest) >= (0, 20, 10)
-            and os.environ.get("GLACIER_VPS_MIGRATION_READY") != "1"):
-        print("VPS-origin signing blocked until compatibility bridge rollout is approved.")
-        return False
     output = Path(directory)
     versions = []
     for channel in ("windows-x64", "macos-arm64"):
@@ -245,6 +241,10 @@ def needs_new_signed_release(releases, directory):
         # Do not trust potentially replaced GitHub assets under the old tag.
         # Stable clients retain the previously signed and pinned payload.
         print("No newer canonical dual-platform release; signed feeds remain immutable.")
+        return False
+    if (version_tuple(latest) >= (0, 20, 10)
+            and os.environ.get("GLACIER_VPS_MIGRATION_READY") != "1"):
+        print("VPS-origin signing blocked: paired installer hash preflight incomplete.")
         return False
     return True
 
