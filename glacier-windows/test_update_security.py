@@ -1,7 +1,9 @@
 """Glacier Windows updater security regressions, with ephemeral test keys only."""
 import base64
 import copy
+import json
 import unittest
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from cryptography.hazmat.primitives import serialization
@@ -33,6 +35,42 @@ class GlacierUpdateSecurityTests(unittest.TestCase):
     def parse(self, document):
         with patch.object(update, "PUBLIC_KEY", self.pub):
             return update.parse_manifest(document)
+
+    def test_windows_signed_channel_fetched_directly_from_owner_vps(self):
+        doc=self.fixture("0.20.10")
+        doc["url"]="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.10-Windows-Setup-x64.exe"
+        doc["signature"]=base64.b64encode(self.key.sign(
+            update.canonical({k:v for k,v in doc.items() if k!="signature"})
+        )).decode("ascii")
+        payload=json.dumps(doc).encode("utf-8")
+        response=MagicMock()
+        response.status_code=200
+        response.headers={"Content-Length":str(len(payload))}
+        response.iter_content.return_value=[payload]
+        response.__enter__.return_value=response
+        session=MagicMock()
+        session.get.return_value=response
+        with patch.object(update.requests,"Session",return_value=session), patch.object(update,"PUBLIC_KEY",self.pub):
+            result=update.load_remote_manifest(0)
+        self.assertEqual(result.version,"0.20.10")
+        self.assertFalse(session.trust_env)
+        args,kwargs=session.get.call_args
+        self.assertEqual(args[0],"https://sync.borealos.cn/downloads/windows-x64.json")
+        self.assertFalse(kwargs["allow_redirects"])
+        self.assertTrue(kwargs["stream"])
+        session.close.assert_called_once()
+
+    def test_windows_signed_channel_rejects_redirect_without_fallback(self):
+        response=MagicMock()
+        response.status_code=302
+        response.headers={"Location":"https://evil.example/unsigned.json"}
+        response.__enter__.return_value=response
+        session=MagicMock()
+        session.get.return_value=response
+        with patch.object(update.requests,"Session",return_value=session):
+            with self.assertRaises(update.UpdateError):
+                update.load_remote_manifest(0)
+        session.close.assert_called_once()
 
     def test_signed_manifest_accepted(self):
         self.assertEqual(self.parse(self.fixture()).version, "0.18.0")
