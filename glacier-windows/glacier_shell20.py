@@ -291,6 +291,11 @@ class GlacierShell20:
         update = getattr(getattr(self, "update_manager", None), "button", None)
         if update is not None:
             update.hide()
+        # Preview and formal update checks belong together in the main menu.
+        # Avoid a second permanent navigation button crowding the omnibox.
+        preview = getattr(self, "_preview_button25", None)
+        if preview is not None:
+            preview.hide()
 
         # The legacy tab context menu and new v0.19 tab context menu were
         # both connected; remove only the obsolete handler.
@@ -344,7 +349,13 @@ class GlacierShell20:
         menu.addSeparator()
         updater = getattr(getattr(self, "update_manager", None), "show_dialog", None)
         if callable(updater):
-            menu.addAction("检查更新", updater)
+            menu.addAction("检查正式签名更新", updater)
+        preview_check = getattr(self, "check_preview_updates25", None)
+        if callable(preview_check):
+            menu.addAction("检查 VPS 预览版更新", preview_check)
+        center = getattr(self, "show_account_center26", None)
+        if callable(center):
+            menu.addAction("Glacier 账号中心", center)
         settings = getattr(self, "open_settings", None)
         if callable(settings):
             menu.addAction("浏览器设置", settings)
