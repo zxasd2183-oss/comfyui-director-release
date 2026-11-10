@@ -55,7 +55,7 @@ class FakeSequence:
     def get_playback_end(self):
         return self.end
 
-    def add_master_track(self, klass):
+    def add_track(self, klass):
         result = FakeTrack()
         self.tracks.append(result)
         return result
