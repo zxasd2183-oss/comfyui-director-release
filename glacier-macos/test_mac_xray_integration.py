@@ -104,7 +104,14 @@ class XrayRealityLoopbackTests(unittest.TestCase):
                     }
                 }
             }],
-            "outbounds":[{"protocol":"freedom","tag":"direct"}]
+            # Modern Xray blocks private destinations by default for safety.
+            # Permit ONLY this test's ephemeral loopback TCP port; never ship
+            # this override in the real Glacier client or server.
+            "outbounds":[{"protocol":"freedom","tag":"direct",
+                          "settings":{"finalRules":[{
+                              "action":"allow","network":"tcp",
+                              "ip":["127.0.0.1/32"],"port":str(relay_port)
+                          }]}}]
         }
         link=(f"vless://{user}@127.0.0.1:{server_port}?"
               f"encryption=none&security=reality&type=tcp"
