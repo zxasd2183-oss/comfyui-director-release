@@ -139,7 +139,7 @@ class ManifestTests(unittest.TestCase):
                 with self.assertRaises(u.UpdateError):
                     u.verify_local_dmg(manifest, installer)
                 installer.write_bytes(data)
-                wrong_name = Path(root) / "GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg"
+                wrong_name = Path(root) / "GlacierBrowser-v9.9.9-macOS-AppleSilicon.dmg"
                 installer.rename(wrong_name)
                 with self.assertRaises(u.UpdateError):
                     u.verify_local_dmg(manifest, wrong_name)
