@@ -30,9 +30,9 @@ def utcnow():
 
 
 def read_secret(path=None):
-    raw_path = path or os.getenv("DIRECTOR_UE_TOKEN_FILE")
-    if not raw_path:
-        raise RuntimeError("DIRECTOR_UE_TOKEN_FILE is required")
+    raw_path = (path or os.getenv("DIRECTOR_UE_TOKEN_FILE") or
+                str(Path(os.getenv("PROGRAMDATA", r"C:\\ProgramData")) /
+                    "DirectorUEWorker" / "worker.token"))
     f = Path(raw_path)
     if f.is_symlink() or not f.is_file() or f.stat().st_size > 128:
         raise RuntimeError("invalid token file")
