@@ -26,6 +26,7 @@ from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
 from glacier_splash import show_glacier_splash
+from mac_proxy_diagnostics import start_capture, latest_hint, classify
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -44,7 +45,11 @@ def parse_node(link):
  if security!="none":
   tls={"enabled":True,"server_name":g("sni") or p.hostname}
   if g("fp"): tls["utls"]={"enabled":True,"fingerprint":g("fp")}
-  if g("alpn"): tls["alpn"]=g("alpn").split(",")
+  elif security=="reality":
+   # REALITY generally expects a browser-shaped ClientHello; Xray share links
+   # often omit fp even though matching clients default to chrome.
+   tls["utls"]={"enabled":True,"fingerprint":"chrome"}
+  if g("alpn"): tls["alpn"]=[v.strip() for v in g("alpn").split(",") if v.strip()]
   if security=="reality":
    if not g("pbk"): raise ValueError("REALITY 缺少 pbk")
    tls["reality"]={"enabled":True,"public_key":g("pbk"),"short_id":g("sid")}
@@ -74,23 +79,47 @@ def parse_node(link):
   o["transport"]=t
  elif transport not in ("","tcp","raw"):raise ValueError("暂不支持传输类型 "+transport)
  return o
+
+
+def build_proxy_config(link,port):
+ if not 1<=int(port)<=65535:raise ValueError("无效代理端口")
+ outbound=parse_node(link)
+ # sing-box 1.14 requires an explicit outbound dial-domain resolver.
+ # This DNS is used only to resolve the actual node endpoint locally;
+ # browser target names continue through the remote VLESS SOCKS5 connection.
+ return {
+  "log":{"level":"info"},
+  "dns":{"servers":[{"type":"local","tag":"system-local"}],"final":"system-local"},
+  "inbounds":[{"type":"mixed","tag":"in","listen":"127.0.0.1",
+               "listen_port":int(port),"set_system_proxy":False}],
+  "outbounds":[outbound],
+  "route":{"final":"node","default_domain_resolver":"system-local"}
+ }
+
+
 def proxy_start(link,port):
  if not link:return None
  core=core_path()
  if not core:raise RuntimeError("应用包内未找到 Apple Silicon sing-box")
- config={"log":{"level":"warn"},"inbounds":[{"type":"mixed","tag":"in","listen":"127.0.0.1","listen_port":port,"set_system_proxy":False}],"outbounds":[parse_node(link)],"route":{"final":"node"}}
+ config=build_proxy_config(link,port)
  configfile=appdir()/"runtime.json"
  fd=os.open(str(configfile),os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
  with os.fdopen(fd,"w",encoding="utf-8") as handle:json.dump(config,handle)
  flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
- result=subprocess.run([str(core),"check","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15,creationflags=flags)
- if result.returncode:raise RuntimeError("代理内核无法识别这个 VLESS 节点（可能存在不兼容参数）")
- process=subprocess.Popen([str(core),"run","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
+ result=subprocess.run([str(core),"check","-c",str(configfile)],stdout=subprocess.DEVNULL,
+                       stderr=subprocess.PIPE,timeout=15,creationflags=flags)
+ if result.returncode:
+  hint=classify(result.stderr.decode("utf-8",errors="replace")) or "配置与当前 sing-box 内核不兼容"
+  raise RuntimeError("VLESS 配置校验失败："+hint)
+ process=subprocess.Popen([str(core),"run","-c",str(configfile)],
+                          stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                          creationflags=flags)
+ start_capture(process)
  # The process may exit or fail to bind even when config validation succeeds.
  # Do not advertise a working core until its local SOCKS5 port accepts traffic.
  for _ in range(30):
   if process.poll() is not None:
-   raise RuntimeError("sing-box 启动后立即退出，请检查线路配置")
+   raise RuntimeError("sing-box 启动后退出："+(latest_hint(process) or "内核初始化失败"))
   try:
    with socket.create_connection(("127.0.0.1",port),timeout=0.3):
     return process
