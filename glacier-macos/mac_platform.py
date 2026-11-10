@@ -74,6 +74,22 @@ def get_link(app, validate):
         return ""
 
 
+def xray_core_path():
+    """Locate the bundled official Xray-core arm64 binary (no external install)."""
+    roots = [
+        Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)),
+        Path(sys.executable).parent,
+        Path(sys.executable).parent.parent / "Resources",
+        Path(sys.executable).parent.parent / "Frameworks",
+    ]
+    for root in roots:
+        for name in ("bin/xray", "xray", "_internal/bin/xray"):
+            candidate = root / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
 def core_path():
     roots = [
         Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)),
