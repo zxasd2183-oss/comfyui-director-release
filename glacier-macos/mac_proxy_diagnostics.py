@@ -1,7 +1,8 @@
 """Mac sing-box failure classification. NEVER persist raw core logs or VLESS links.
 
-The core writes untrusted diagnostic text to stderr (may contain node hostnames,
-credentials, URLs, IPs). We recognize a small list of fixed error CATEGORIES
+sing-box defaults to logging to stdout, NOT stderr. The caller must merge
+stderr into a captured stdout PIPE; raw output may contain node hostnames,
+credentials, URLs or IPs. We recognize a small list of fixed error CATEGORIES
 and discard each raw line immediately. Only those categories are presented.
 """
 from __future__ import annotations
@@ -34,6 +35,8 @@ _FAILURES=(
     ("connection reset by peer", "远端断开连接"),
     ("unexpected eof", "连接意外中断"),
     ("eof", "连接意外中断"),
+    ("connection: open connection", "出站连接失败，具体协议原因待进一步确认"),
+    ("outbound/vless", "VLESS 出站连接失败，具体原因待进一步确认"),
 )
 
 
@@ -49,8 +52,8 @@ def classify(line):
 
 
 def start_capture(process):
-    """Continuously drain stderr to avoid blocking the core; retain categories only."""
-    if process is None or process.stderr is None:
+    """Drain combined stdout+stderr without retaining secrets or raw log lines."""
+    if process is None or process.stdout is None:
         return
     hints=collections.deque(maxlen=10)
     with _LOCK:
@@ -59,9 +62,11 @@ def start_capture(process):
     def reader():
         try:
             while True:
-                line=process.stderr.readline(4096)
-                if not line:
+                raw=process.stdout.readline(4096)
+                if not raw:
                     break
+                # Raw bytes are discarded immediately after safe categorization.
+                line=raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
                 category=classify(line)
                 if category:
                     with _LOCK:
@@ -70,7 +75,7 @@ def start_capture(process):
             pass
         finally:
             try:
-                process.stderr.close()
+                process.stdout.close()
             except (OSError,ValueError):
                 pass
 
@@ -83,3 +88,11 @@ def latest_hint(process):
     with _LOCK:
         hints=_HINTS.get(process)
         return hints[-1] if hints else None
+
+
+def reset_hints(process):
+    """Clear previous probe's categories so a new failure never shows stale hints."""
+    with _LOCK:
+        hints=_HINTS.get(process) if process is not None else None
+        if hints is not None:
+            hints.clear()
