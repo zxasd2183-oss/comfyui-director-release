@@ -90,7 +90,7 @@ class XrayRealityLoopbackTests(unittest.TestCase):
         relay_thread.start()
 
         server={
-            "log":{"loglevel":"warning","access":"none"},
+            "log":{"loglevel":"debug","access":"none"},
             "inbounds":[{
                 "listen":"127.0.0.1","port":server_port,
                 "protocol":"vless",
@@ -110,6 +110,7 @@ class XrayRealityLoopbackTests(unittest.TestCase):
               f"encryption=none&security=reality&type=tcp"
               f"&sni=www.example.com&pbk={pub}&sid=1a2b&fp=chrome")
         client=build_xray_reality_config(parse_node(link),socks_port)
+        client["log"]["loglevel"]="debug"
         with tempfile.TemporaryDirectory() as folder:
             folder=Path(folder)
             server_cfg=folder/"server.json"
@@ -121,11 +122,22 @@ class XrayRealityLoopbackTests(unittest.TestCase):
                                      stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15)
                 self.assertEqual(check.returncode,0,"local REALITY fixture config failed")
             procs=[]
+            traces=[]
+            def read_synthetic_trace(proc,role):
+                # Only synthetic loopback fixtures are present in this test.
+                # Do not emit raw node data from user-configured environments.
+                import re
+                for raw in iter(proc.stdout.readline,b""):
+                    line=raw.decode("utf-8",errors="replace")
+                    line=re.sub(r"[A-Za-z0-9_-]{32,}","[redacted]",line)
+                    traces.append(role+": "+line.strip()[:300])
             try:
-                for cfg,port in [(server_cfg,server_port),(client_cfg,socks_port)]:
+                for role,cfg,port in [("server",server_cfg,server_port),("client",client_cfg,socks_port)]:
                     proc=subprocess.Popen([str(core),"run","-config",str(cfg)],
-                                          stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                                          stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
                     procs.append(proc)
+                    threading.Thread(target=read_synthetic_trace,args=(proc,role),
+                                     daemon=True).start()
                     _await_port(port,proc)
                 with socket.create_connection(("127.0.0.1",socks_port),timeout=7) as sock:
                     sock.settimeout(8)
@@ -144,7 +156,13 @@ class XrayRealityLoopbackTests(unittest.TestCase):
                         _receive(sock,16)
                     _receive(sock,2)
                     sock.sendall(b"ping")
-                    self.assertEqual(_receive(sock,4),b"pong")
+                    try:
+                        echoed=_receive(sock,4)
+                    except (TimeoutError,OSError,ConnectionError) as exc:
+                        time.sleep(0.2)
+                        self.fail("Xray REALITY loopback relay failed: "+type(exc).__name__
+                                  +" -- "+" | ".join(traces[-18:]))
+                    self.assertEqual(echoed,b"pong")
                 relay_thread.join(timeout=3)
                 self.assertEqual(received,[b"ping"])
             finally:
