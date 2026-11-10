@@ -37,7 +37,7 @@ def sanitized_plan(body):
         "task", "project_id", "episode_id", "fps", "shots", "expected_total_ms"
     }:
         raise JobError("invalid_fields")
-    if body["task"] != "build_episode_timeline":
+    if body["task"] not in ("build_episode_timeline", "build_stage_cameras"):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
     if (type(project_id) is not str or not ID.fullmatch(project_id) or
@@ -76,9 +76,18 @@ def sanitized_plan(body):
         last_frame = next_frame
     if type(body["expected_total_ms"]) is not int or total_ms != body["expected_total_ms"]:
         raise JobError("timeline_total_mismatch")
+    # The V0.3 stage recipe is FIXED to WaitingOffice EP01 and does not
+    # modify V0.2 sequences or accept any user-authored scene/code paths.
+    if body["task"] == "build_stage_cameras":
+        if (project_id, episode_id, fps, len(validated), total_ms) != (
+            "WaitingOffice", "EP01", 24, 31, 160000
+        ):
+            raise JobError("v03_stage_requires_locked_ep01")
+    fmt = ("director_ue_stage_v03" if body["task"] == "build_stage_cameras"
+           else "director_ue_timeline_v1")
     # This is a source-of-truth manifest built from Studio's registered shots.
     return {
-        "format": "director_ue_timeline_v1",
+        "format": fmt,
         "project_id": project_id, "episode_id": episode_id, "fps": fps,
         "shots": validated, "total_frames": last_frame, "total_ms": total_ms,
     }
@@ -130,7 +139,10 @@ def run_commandlet(spec, root, work, timeout=900):
         if username in {"system", "administrator"} or not username:
             raise JobError("ue_executor_must_be_non_admin")
     editor = find_editor_cmd()
-    script = Path(__file__).resolve().with_name("unreal_build_episode.py")
+    script_name = ("unreal_build_stage.py"
+                   if spec["format"] == "director_ue_stage_v03"
+                   else "unreal_build_episode.py")
+    script = Path(__file__).resolve().with_name(script_name)
     if not script.is_file() or script.is_symlink():
         raise JobError("trusted_unreal_script_missing")
     project = ensure_project(root)
@@ -166,12 +178,27 @@ def run_commandlet(spec, root, work, timeout=900):
     if (data.get("shot_count") != len(spec["shots"]) or
             data.get("total_frames") != spec["total_frames"]):
         raise JobError("unreal_timeline_mismatch")
-    return {
+    receipt = {
         "master": data["master"],
         "shot_count": data["shot_count"],
         "total_frames": data["total_frames"], "fps": spec["fps"],
         "render_ready": False,
     }
+    if spec["format"] == "director_ue_stage_v03":
+        if (data.get("stage_map") !=
+                "/Game/Director/V03/Maps/WaitingOffice_EP01_Stage" or
+                data.get("camera_count") != len(spec["shots"]) or
+                data.get("proxy_actor_count") != 5 or
+                data.get("metahuman_bound") is not False):
+            raise JobError("unreal_stage_result_mismatch")
+        receipt.update({
+            "stage_map": data["stage_map"],
+            "camera_count": data["camera_count"],
+            "proxy_actor_count": data["proxy_actor_count"],
+            "metahuman_bound": False,
+            "audio_bound": False,
+        })
+    return receipt
 
 
 class JobManager:
@@ -230,7 +257,7 @@ class JobManager:
             job_id = uuid.uuid4().hex
             entry = {
                 "ok": True, "job_id": job_id,
-                "state": "queued", "task": "build_episode_timeline",
+                "state": "queued", "task": body["task"],
                 "project_id": spec["project_id"],
                 "episode_id": spec["episode_id"],
                 "shot_count": len(spec["shots"]),

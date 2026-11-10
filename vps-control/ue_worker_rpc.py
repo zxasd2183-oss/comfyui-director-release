@@ -128,11 +128,14 @@ def _v2_request(path, method="GET", body=None, opener=None, token_file=None):
 
 
 def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
-                                opener=None, token_file=None):
+                                opener=None, token_file=None,
+                                task="build_episode_timeline"):
     """Obtain immutable ordered shot metadata from Studio, never from the caller."""
     if not all(isinstance(v, str) and STUDIO_ID.fullmatch(v)
                for v in (project_id, episode_id)):
         return {"ok": False, "reason": "invalid_identifiers"}
+    if task not in ("build_episode_timeline", "build_stage_cameras"):
+        return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
     if studio_getter is None:
@@ -161,7 +164,7 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
             raise ValueError("invalid duration")
         total = sum(s["duration_ms"] for s in registered)
         spec = {
-            "task": "build_episode_timeline",
+            "task": task,
             "project_id": project_id,
             "episode_id": episode_id,
             "fps": 24,  # EP01's locked cinematic plan
@@ -180,3 +183,14 @@ def get_ue_episode_job_status(job_id, opener=None, token_file=None):
     if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
         return {"ok": False, "reason": "invalid_job_id"}
     return _v2_request("/v2/jobs/" + job_id, "GET", None, opener, token_file)
+
+
+def enqueue_ue_stage_cameras(project_id, episode_id, studio_getter=None,
+                             opener=None, token_file=None):
+    """Generate V03 assets from Studio's frozen episode. No arbitrary scene paths."""
+    if (project_id, episode_id) != ("WaitingOffice", "EP01"):
+        return {"ok": False, "reason": "v03_stage_requires_locked_ep01"}
+    return enqueue_ue_episode_timeline(
+        project_id, episode_id, studio_getter=studio_getter,
+        opener=opener, token_file=token_file, task="build_stage_cameras",
+    )
