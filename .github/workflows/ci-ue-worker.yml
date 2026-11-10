@@ -30,3 +30,23 @@ jobs:
         run: python -m unittest discover -s ue-worker/tests -p "test_*.py" -v
       - name: Test private VPS adapter
         run: python -m unittest discover -s vps-control/tests -p "test_ue_*.py" -v
+
+  windows-bootstrap-parse:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Windows PowerShell bootstrap syntax
+        shell: pwsh
+        run: |
+          foreach ($path in @("ue-worker/WindowsBootstrap.ps1", "ue-worker/install-v02.ps1")) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path, [ref]$tokens, [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error "$path : $_" }
+              throw "PowerShell syntax verification failed: $path"
+            }
+            Write-Host "Syntax OK: $path"
+          }
