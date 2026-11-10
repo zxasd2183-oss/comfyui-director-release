@@ -23,6 +23,7 @@ jobs:
           encoded=(directory/"update_core.py.xz.b64").read_text(encoding="ascii").strip()
           (directory/"update_core.py").write_bytes(lzma.decompress(base64.b64decode(encoded,validate=True)))
           PY
+          python3 scripts/glacier_allow_vps_download.py glacier-windows/update_core.py
           cd glacier-windows
           python3 -m unittest -v test_update_security.py
 
