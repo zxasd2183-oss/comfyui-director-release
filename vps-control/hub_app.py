@@ -11,6 +11,7 @@ from hub_file_sync import sync_chatgpt_visual
 from hub_sync_jobs import JOBS
 from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_episode_timeline as enqueue_ue_episode_timeline_rpc,
+                           enqueue_ue_stage_cameras as enqueue_ue_stage_cameras_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc)
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
@@ -318,6 +319,17 @@ def enqueue_ue_episode_timeline(project_id: str, episode_id: str) -> dict:
     returns a job ID, not an assertion of successful asset production.
     """
     return enqueue_ue_episode_timeline_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_stage_cameras(project_id: str, episode_id: str) -> dict:
+    """Create a V03 non-destructive stage, 5 visibly marked proxy characters
+    and 31 CineCameraActor shots based on Studio's frozen EP01 plan.
+
+    Runs a fixed Unreal 5.8 script on the metered GPU. Existing V02
+    timeline and approved production assets are never overwritten.
+    """
+    return enqueue_ue_stage_cameras_rpc(project_id, episode_id)
 
 
 @app.tool(annotations=READ)
