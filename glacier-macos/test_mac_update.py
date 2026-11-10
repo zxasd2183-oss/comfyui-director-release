@@ -124,14 +124,14 @@ class ManifestTests(unittest.TestCase):
 
     def test_cached_dmg_is_reverified_before_finder_opens_it(self):
         data = b"glacier-dmg-content" * 105264
-        manifest = self.signed("0.20.16")
+        manifest = self.signed("0.20.17")
         manifest["sha256"] = hashlib.sha256(data).hexdigest()
         manifest["size"] = len(data)
         manifest["signature"] = base64.b64encode(self.key.sign(u.canonical(
             {k: v for k, v in manifest.items() if k != "signature"}
         ))).decode("ascii")
         with tempfile.TemporaryDirectory() as root:
-            installer = Path(root) / "GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg"
+            installer = Path(root) / "GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg"
             installer.write_bytes(data)
             with patch.object(u, "PUBLIC_KEY", self.pub):
                 self.assertEqual(u.verify_local_dmg(manifest, installer), installer)

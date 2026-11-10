@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QCheckBox, QDialog, QHBoxLayout, QLabel,
                                QMessageBox, QProgressBar, QPushButton, QVBoxLayout)
 from mac_update_core import (CURRENT_VERSION, UpdateError, get_manifest,
                              newer_than, download_dmg, verify_local_dmg)
+from mac_install import writable_installed_app, launch_user_confirmed_install
 
 
 class _UpdateSignals(QObject):
@@ -60,7 +61,7 @@ class MacUpdateUI:
         row=QHBoxLayout()
         check=QPushButton("检查更新")
         download=QPushButton("下载更新")
-        install=QPushButton("打开 DMG 安装")
+        install=QPushButton("一键安装并重启" if writable_installed_app() else "打开 DMG 安装")
         download.setEnabled(False)
         install.setEnabled(False)
         check.clicked.connect(lambda: self.check_mac_updates(True))
@@ -185,6 +186,34 @@ class MacUpdateUI:
             self._set_busy(False)
             QMessageBox.warning(self, "Glacier Browser", "更新包验证失败：" + str(exc))
             return
+        if writable_installed_app() is not None:
+            answer=QMessageBox.question(
+                self, "一键安装 Glacier Browser 更新",
+                "已验证签名更新清单及 DMG SHA256。\n"
+                "确认后将保存会话并退出当前浏览器，在可写的 Applications 目录"
+                "替换应用，随后自动重启。\n"
+                "钥匙串、浏览记录和账户数据保存在应用程序包之外，不会被清除。\n\n"
+                "安装包尚无 Apple Developer ID 公证，macOS 仍可能要求授权。\n\n"
+                "立即安装并重启？",
+                QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                launch_user_confirmed_install(
+                    self._mac_manifest, self._mac_installer, self._mac_update_dir
+                )
+            except UpdateError as exc:
+                QMessageBox.warning(
+                    self, "Glacier Browser", "无法启动一键安装：" + str(exc)
+                    + "\n可改用 Finder 打开 DMG 手动替换。"
+                )
+                return
+            self._mac_status.setText("安装助手已启动，正在保存浏览会话并退出…")
+            QTimer.singleShot(200, self.close)
+            return
+
         answer=QMessageBox.question(
             self,
             "安装 Glacier Browser 更新",
