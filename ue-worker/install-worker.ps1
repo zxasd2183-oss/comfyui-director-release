@@ -13,14 +13,16 @@ if (-not $py) {
     $pythonArgs = "-u"
 }
 $python = $py.Source
-& $python --version
+$pythonCheckArgs = if ($pythonArgs -eq "-3 -u") { @("-3", "-c", "import sys; assert sys.version_info >= (3, 10)") } else { @("-c", "import sys; assert sys.version_info >= (3, 10)") }
+& $python @pythonCheckArgs
+if ($LASTEXITCODE -ne 0) { throw "Python 3.10+ is required" }
 $dest = Join-Path $env:ProgramData "DirectorUEWorker"
 $token = Join-Path $dest "worker.token"
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
 Copy-Item -LiteralPath $src -Destination (Join-Path $dest "agent.py") -Force
 
 # Explicitly restrict token and service files to SYSTEM and local admins.
-& icacls.exe $dest /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
+& icacls.exe $dest /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Failed to set Windows ACL on $dest" }
 
 if (-not (Test-Path -LiteralPath $token)) {
@@ -30,7 +32,7 @@ if (-not (Test-Path -LiteralPath $token)) {
     $value = ([BitConverter]::ToString($bytes)).Replace("-", "").ToLowerInvariant()
     [IO.File]::WriteAllText($token, $value, [Text.Encoding]::ASCII)
 }
-& icacls.exe $token /inheritance:r /grant:r "SYSTEM:F" "Administrators:F" | Out-Null
+& icacls.exe $token /inheritance:r /grant:r "*S-1-5-18:F" "*S-1-5-32-544:F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Failed to restrict token ACL" }
 
 $action = New-ScheduledTaskAction -Execute $python -Argument (
