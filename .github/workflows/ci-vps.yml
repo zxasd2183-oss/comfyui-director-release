@@ -49,3 +49,4 @@ jobs:
           bash -n install-jipite-selftest.sh
           bash -n upgrade-glacier-signed-mirror.sh
           bash -n repair-glacier-v02015-mirror.sh
+          bash -n install-glacier-preview-notify-sudo-compat.sh

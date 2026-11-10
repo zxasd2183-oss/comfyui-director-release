@@ -20,5 +20,35 @@ class NotifyHookTests(unittest.TestCase):
             stdout=subprocess.DEVNULL,stderr=subprocess.PIPE
         )
 
+    def test_receiver_only_dropin_preserves_mirror_sandbox(self):
+        root = Path(__file__).parent
+        override = (root / "glacier-preview-notify.service.d"
+                    / "10-signed-mirror-sudo.conf").read_text()
+        mirror = (root / "glacier-signed-mirror.service").read_text()
+        self.assertIn("[Service]", override)
+        self.assertEqual(
+            [line.strip() for line in override.splitlines()
+             if line.strip().startswith("NoNewPrivileges=")],
+            ["NoNewPrivileges=no"],
+        )
+        self.assertIn("NoNewPrivileges=true", mirror)
+        self.assertNotIn("NoNewPrivileges=no", mirror)
+
+    def test_receiver_override_installer_has_narrow_guards(self):
+        root = Path(__file__).parent
+        script = (root / "install-glacier-preview-notify-sudo-compat.sh").read_text()
+        self.assertIn('unit="glacier-preview-notify.service"', script)
+        self.assertIn('== "glacierpreview"', script)
+        self.assertIn('visudo -cf', script)
+        self.assertIn('sudo cmp -s', script)
+        self.assertIn('sudo systemctl restart "${unit}"', script)
+        self.assertNotIn('sudo systemctl restart glacier-signed-mirror.service', script)
+        sudoers = (root / "glacier-signed-mirror-notify.sudoers").read_text()
+        rules = [line.strip() for line in sudoers.splitlines()
+                 if line.strip() and not line.lstrip().startswith("#")]
+        self.assertEqual(rules, [
+            "glacierpreview ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block glacier-signed-mirror.service"
+        ])
+
 if __name__=="__main__":
     unittest.main()
