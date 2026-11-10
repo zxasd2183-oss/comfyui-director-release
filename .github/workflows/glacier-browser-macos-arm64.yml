@@ -76,10 +76,11 @@ jobs:
           cp ../glacier-windows/test_productivity16.py test_productivity16.py
           for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py; do cp ../glacier-windows/"$file" "$file"; done
           python ../scripts/glacier_prepare_rotated_update.py macos .
-          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_proxy_diagnostics.py test_mac_proxy_diagnostics.py test_mac_core_log_integration.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py glacier_account_center26.py test_account_center26.py glacier_sync23.py glacier_sync_auto24.py test_accounts22.py test_sync23.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
+          python -m py_compile mac_xray_reality.py test_mac_xray_reality.py main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_proxy_diagnostics.py test_mac_proxy_diagnostics.py test_mac_core_log_integration.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py glacier_account_center26.py test_account_center26.py glacier_sync23.py glacier_sync_auto24.py test_accounts22.py test_sync23.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
           python -m unittest -v test_mac_update
           python -m unittest -v test_mac_https_probe
           python -m unittest -v test_mac_proxy_diagnostics
+          QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_xray_reality
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_vless_config
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_gui_start
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_desktop15
@@ -104,6 +105,46 @@ jobs:
           file bin/sing-box
           test "$(lipo -archs bin/sing-box)" = 'arm64'
           bin/sing-box version
+      - name: Download pinned official Xray 26.11.9 Apple Silicon for modern REALITY
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          mkdir -p xray-unpack bin
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 420 \
+            'https://github.com/XTLS/Xray-core/releases/download/v26.11.9/Xray-macos-arm64-v8a.zip' -o xray.zip
+          echo '233f0c66681cd0726f81a6b2b6ed6a5710869e312047b522e46ed53035bebd26  xray.zip' | shasum -a 256 -c -
+          unzip -q xray.zip -d xray-unpack
+          test -f xray-unpack/xray
+          cp xray-unpack/xray bin/xray
+          chmod 755 bin/xray
+          file bin/xray
+          test "$(lipo -archs bin/xray)" = 'arm64'
+          bin/xray version
+      - name: Validate VLESS REALITY Xray configuration with actual Xray 26.11.9
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,json,subprocess,tempfile,uuid
+          from pathlib import Path
+          from main import parse_node
+          from mac_xray_reality import build_xray_reality_config
+          pk=base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+          node=("vless://"+str(uuid.UUID(int=1))+"@example.com:443?"
+                "encryption=none&security=reality&sni=www.example.com&fp=chrome"
+                "&pbk="+pk+"&sid=01ab&flow=xtls-rprx-vision")
+          config=build_xray_reality_config(parse_node(node),19010)
+          with tempfile.TemporaryDirectory() as folder:
+              path=Path(folder)/"config.json"
+              path.write_text(json.dumps(config),encoding="utf-8")
+              result=subprocess.run(["bin/xray","run","-test","-config",str(path)],
+                                    capture_output=True,text=True,timeout=20)
+              if result.returncode:
+                  # Only synthetic test credentials used here, never user's.
+                  raise RuntimeError("Xray REALITY client config rejected: "+result.stderr[:500]+result.stdout[:500])
+          print("Xray-core 26.11.9 accepts REALITY/SNI/shortId/XTLS Vision config")
+          PY
+
       - name: Validate REALITY and modern dial DNS against actual bundled sing-box
         working-directory: glacier-macos
         run: |
@@ -145,6 +186,7 @@ jobs:
             --target-architecture arm64 \
             --osx-bundle-identifier cn.borealos.glacierbrowser \
             --add-binary 'bin/sing-box:bin' \
+            --add-binary 'bin/xray:bin' \
             --collect-all PySide6.QtWebEngineCore \
             --collect-all PySide6.QtWebEngineWidgets \
             --collect-all keyring \
@@ -162,6 +204,7 @@ jobs:
           test -f dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser
           test "$(lipo -archs dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser)" = 'arm64'
           test "$(find dist/GlacierBrowser.app -type f -name sing-box | wc -l | tr -d ' ')" -ge 1
+          test "$(find dist/GlacierBrowser.app -type f -name xray | wc -l | tr -d ' ')" -ge 1
           /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.20.14' dist/GlacierBrowser.app/Contents/Info.plist || \
             /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.20.14' dist/GlacierBrowser.app/Contents/Info.plist
           /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.20.14' dist/GlacierBrowser.app/Contents/Info.plist || \
