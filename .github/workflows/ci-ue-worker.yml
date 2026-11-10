@@ -50,3 +50,32 @@ jobs:
             }
             Write-Host "Syntax OK: $path"
           }
+
+      - name: Verify account identity matching without privileged operations
+        shell: pwsh
+        run: |
+          . ./ue-worker/WindowsBootstrap.ps1
+          $sid = "S-1-5-21-1234-2345-3456-1001"
+          $cases = @(
+            @{ Value = $sid; Ok = $true },
+            @{ Value = "*$sid"; Ok = $true },
+            @{ Value = "DirectorUEWorker"; Ok = $true },
+            @{ Value = "TESTHOST\DirectorUEWorker"; Ok = $true },
+            @{ Value = ".\DirectorUEWorker"; Ok = $true },
+            @{ Value = "OTHERHOST\DirectorUEWorker"; Ok = $false },
+            @{ Value = "Administrator"; Ok = $false },
+            @{ Value = "DirectorUEWorker2"; Ok = $false },
+            @{ Value = "*S-1-5-21-1234-2345-3456-1002"; Ok = $false }
+          )
+          foreach ($item in $cases) {
+            $actual = Test-DirectorUELocalIdentity -Value $item.Value -AccountName "DirectorUEWorker" -Sid $sid -ComputerName "TESTHOST"
+            if ($actual -ne $item.Ok) {
+              throw "Identity matching failed for '$($item.Value)': wanted $($item.Ok), got $actual"
+            }
+          }
+          foreach ($principal in @("DirectorUEWorker", "TESTHOST\DirectorUEWorker", $sid)) {
+            if (-not (Test-DirectorUEPrincipal -Principal $principal -AccountName "DirectorUEWorker" -Sid $sid -ComputerName "TESTHOST")) {
+              throw "Scheduled Task principal mismatch for '$principal'"
+            }
+          }
+          Write-Host "Local-account and resolved-SID cases pass"
