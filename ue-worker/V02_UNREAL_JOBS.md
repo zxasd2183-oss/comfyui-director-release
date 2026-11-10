@@ -119,11 +119,44 @@ Successful job: `34b83082af3f46dcbdd21e1c3c759e2b`.
 
 **CI tests and Windows script syntax pass; the new installer changes have
 not yet been retested on the live machine.** Existing deployed V0.2 works
-with the initial operator-side corrections. Preserve existing episode assets:
+with the operator-side corrections, and reboot recovery has been confirmed. Preserve existing episode assets:
 the current commandlet refuses overwriting an existing master sequence, so
 do **not** re-enqueue EP01 just to check service availability.
 
-Recommended order: review and deploy the committed installer fixes at a safe
-idle point, verify V0.2 endpoint ownership and heartbeat, and then do one
-planned Windows reboot to check auto-start and tunnel reconnection. Do not
-reboot while an Unreal commandlet is rendering or saving assets.
+## Actual reboot and follow-up installer fixes (2026-11-10)
+
+Windows V0.2 was reboot-tested: dedicated task and SSH tunnel recovered,
+the worker reported `worker_version: 0.2.0` and the original 31 shot assets
+and one master survived unchanged. VPS services remained active.
+
+A later deployment identified three additional installer edge cases now
+addressed **in the repository**:
+
+1. Task Scheduler can persist the principal as a bare `DirectorUEWorker`
+   instead of `COMPUTER\\DirectorUEWorker` or its SID. Principal validation
+   accepts only equivalent **local** identities.
+2. `secedit` may resolve `SeBatchLogonRight` members into local account
+   names instead of SIDs. The helper validates equivalent names and qualified
+   local identities; unrelated domain principals do not match.
+3. Editing a password-backed task with `Set-ScheduledTask` can fail with
+   `0x8007052e`. On upgrade, the script checks that this runner does
+   **not** own other tasks, generates a fresh strong local password, rotates
+   only the dedicated service account, and re-registers this task with the
+   new credential. If the upgrade then fails, rollback restores the saved task
+   definition using the **current** rotated credential.
+
+The existing V0.2 production deployment is already operational. **The latest
+installer changes have not yet been retested on the real machine.** Do not
+run the installer merely to perform a redundant test while a UE job is active.
+
+Disable the **legacy V0.1 auto-start task** after confirming V0.2 is healthy,
+to avoid a port 19010 race on future boots:
+
+```powershell
+Disable-ScheduledTask -TaskName "Director-UE-Worker"
+Get-ScheduledTask -TaskName "Director-UE-Worker", "Director-UE-Worker-V02" |
+    Select-Object TaskName, State
+```
+
+Keep the legacy task and backup files available for a controlled rollback,
+but do not delete them or re-enqueue the already-created EP01 timeline.
