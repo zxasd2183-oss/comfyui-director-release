@@ -7,6 +7,8 @@ on:
       - 'glacier-windows/**'
       - '.github/workflows/glacier-browser-windows-v0201-input.yml'
       - 'scripts/glacier_prepare_rotated_update.py'
+      - 'scripts/glacier_patch_windows_update_ui.py'
+      - 'glacier-windows/glacier_signed_install27.py'
       - 'scripts/glacier_allow_vps_download.py'
       - 'vps-control/sync-glacier-preview-releases.py'
       - 'vps-control/test_glacier_preview_mirror.py'
@@ -93,15 +95,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows VPS installer origin policy failed closed' }
           python ../scripts/glacier_prepare_rotated_update.py windows .
           if ($LASTEXITCODE -ne 0) { throw 'New Glacier v0.20 updater public key is missing or invalid' }
+          python ../scripts/glacier_patch_windows_update_ui.py update_ui.py
+          if ($LASTEXITCODE -ne 0) { throw 'Verified updater UI integration changed; refusing package' }
           # Keep the exact historical trust-root rotation guard intact.
           # Only after the public key is safely patched can the preview
           # application's displayed patch version be updated.
           python -c "from pathlib import Path; p=Path('secure_update.py'); s=p.read_text(encoding='utf8'); expected='CURRENT_VERSION = '+chr(39)+'0.20.15'+chr(39); assert s.count(expected)==1, 'Updater version must be 0.20.15'; print('Verified Windows signed-updater version 0.20.15')"
           if ($LASTEXITCODE -ne 0) { throw 'Failed to set preview version after secure key rotation' }
-          python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py glacier_accounts22.py glacier_sync23.py glacier_sync_auto24.py glacier_preview_updates25.py glacier_account_center26.py test_account_center26.py test_accounts22.py test_sync23.py test_preview_updates25.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
+          python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py glacier_accounts22.py glacier_sync23.py glacier_sync_auto24.py glacier_preview_updates25.py glacier_account_center26.py test_account_center26.py test_accounts22.py test_sync23.py test_preview_updates25.py glacier_signed_install27.py test_signed_install27.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python -c "import ui12; assert ui12.normalize_input('example.com') == 'https://example.com'; assert ui12.normalize_input('https://example.com').startswith('https:'); print('New window module import checks passed')"
           python -c "from PySide6.QtWebEngineCore import QWebEnginePage; import tabtools13; QWebEnginePage.FindFlag(0); assert tabtools13.copyable_page_url('https://example.com/a') == 'https://example.com/a'; assert not tabtools13.copyable_page_url('javascript:alert(1)'); assert not tabtools13.copyable_page_url('https://name:pass@example.com'); print('Glacier v0.13 tab API and link safety tests passed')"
+          python -m unittest -v test_signed_install27
+          if ($LASTEXITCODE -ne 0) { throw 'Signed installer safety tests failed' }
+          python ../scripts/test_glacier_patch_windows_update_ui.py
+          if ($LASTEXITCODE -ne 0) { throw 'Decoded updater patch regression failed' }
           python -m unittest -v test_chrome14 test_shell20 test_input21 test_accounts22 test_sync23 test_preview_updates25 test_update_security test_windows_desktop15 test_productivity16 test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19
           $generalCode = $LASTEXITCODE
           Write-Host "Glacier general regression process exit code: $generalCode"
@@ -114,7 +122,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
       - name: Build Windows executable with embedded VLESS core
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets --hidden-import glacier_sync_auto24 --hidden-import glacier_account_center26 --hidden-import socks main.py
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets --hidden-import glacier_sync_auto24 --hidden-import glacier_account_center26 --hidden-import glacier_signed_install27 --hidden-import socks main.py
           if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
           if (-not (Test-Path dist/GlacierBrowser/GlacierBrowser.exe)) { throw 'Browser EXE missing' }
           if (-not (Test-Path dist/GlacierBrowser/_internal/bin/sing-box.exe)) { throw 'Bundled sing-box missing' }
@@ -152,6 +160,7 @@ jobs:
           Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加选项:"
           [Run]
           Filename: "{app}\GlacierBrowser.exe"; Description: "启动冰川浏览器"; Flags: nowait postinstall skipifsilent
+          Filename: "{app}\GlacierBrowser.exe"; Flags: nowait skipifnotsilent
           '@
           Set-Content installer.iss $iss -Encoding utf8
           & $iscc installer.iss
