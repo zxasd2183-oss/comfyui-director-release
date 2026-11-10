@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QDialog, QHBoxLayout, QLabel,
                                QMessageBox, QProgressBar, QPushButton, QVBoxLayout)
 from mac_update_core import (CURRENT_VERSION, UpdateError, get_manifest,
-                             newer_than, download_dmg)
+                             newer_than, download_dmg, verify_local_dmg)
 
 
 class _UpdateSignals(QObject):
@@ -28,7 +28,7 @@ class MacUpdateUI:
             self._mac_update_settings = json.loads(self._mac_settings_path.read_text(encoding="utf-8"))
             if not isinstance(self._mac_update_settings,dict): raise ValueError()
         except (OSError,ValueError):
-            self._mac_update_settings = {"auto_check": True, "auto_download": False}
+            self._mac_update_settings = {"auto_check": True, "auto_download": True}
         self._mac_update_busy = False
         self._mac_manifest = None
         self._mac_installer = None
@@ -71,7 +71,7 @@ class MacUpdateUI:
         auto_check=QCheckBox("启动时自动检查更新")
         auto_download=QCheckBox("检测到新版后自动下载（安装前仍需要确认）")
         auto_check.setChecked(bool(self._mac_update_settings.get("auto_check",True)))
-        auto_download.setChecked(bool(self._mac_update_settings.get("auto_download",False)))
+        auto_download.setChecked(bool(self._mac_update_settings.get("auto_download",True)))
         auto_check.toggled.connect(lambda v:self._save_mac_setting("auto_check",v))
         auto_download.toggled.connect(lambda v:self._save_mac_setting("auto_download",v))
         lay.addWidget(auto_check)
@@ -139,7 +139,7 @@ class MacUpdateUI:
         self._mac_manifest=manifest
         self._mac_status.setText("发现 v"+manifest["version"]+"："+manifest["notes"])
         self._set_busy(False)
-        if self._mac_update_settings.get("auto_download",False):
+        if self._mac_update_settings.get("auto_download",True):
             self.download_mac_update()
 
     def download_mac_update(self):
@@ -175,6 +175,15 @@ class MacUpdateUI:
 
     def open_verified_dmg(self):
         if self._mac_installer is None or not self._mac_installer.is_file():
+            return
+        try:
+            if self._mac_manifest is None:
+                raise UpdateError("没有可验证的更新清单")
+            verify_local_dmg(self._mac_manifest, self._mac_installer)
+        except UpdateError as exc:
+            self._mac_installer = None
+            self._set_busy(False)
+            QMessageBox.warning(self, "Glacier Browser", "更新包验证失败：" + str(exc))
             return
         answer=QMessageBox.question(
             self,
