@@ -4,7 +4,7 @@ import threading
 import time
 from ui08 import GlacierUI08
 from mac_https_probe import check_via_socks
-from mac_proxy_diagnostics import latest_hint
+from mac_proxy_diagnostics import latest_hint, reset_hints
 
 
 class MacGlacierUI08(GlacierUI08):
@@ -14,6 +14,7 @@ class MacGlacierUI08(GlacierUI08):
         if not self.proc or self.proc.poll() is not None:
             self._poll_proxy()
             return
+        reset_hints(self.proc)
         self.check_busy=True
         self.test_btn.setEnabled(False)
         self.proxy_status.setText("● 正在通过 VLESS 验证 HTTPS 证书…")
@@ -22,13 +23,16 @@ class MacGlacierUI08(GlacierUI08):
             try:
                 ok,message=check_via_socks(self.proxy_port)
             except Exception as exc:
-                # Give sing-box's stderr reader a brief chance to receive the
-                # underlying outbound handshake error after SOCKS5 code 1.
-                time.sleep(0.12)
-                hint=latest_hint(self.proc)
+                # Give sing-box's stdout log reader a chance to classify the
+                # corresponding outbound failure after the SOCKS5 reply.
+                hint=None
+                for _ in range(8):
+                    hint=latest_hint(self.proc)
+                    if hint:
+                        break
+                    time.sleep(0.06)
                 message="HTTPS 检测失败："+str(exc)[:140]
-                if hint:
-                    message+="；内核诊断："+hint
+                message+="；内核诊断："+(hint or "未捕获可识别的内核错误")
                 ok=False
             self.check_signals.checked.emit(ok,message)
 
