@@ -128,11 +128,11 @@ def writable_installed_app(executable=None, home=None, platform=None, roots=None
     app = exe.parent.parent.parent
     if (app.name != "GlacierBrowser.app" or app.parent not in allowed or
             exe != app / "Contents" / "MacOS" / "GlacierBrowser" or
-            app.is_symlink() or not app.is_dir() or exe.is_symlink() or
+            app.is_symlink() or app.parent.is_symlink() or not app.is_dir() or exe.is_symlink() or
             not exe.is_file() or not (app / "Contents" / "Info.plist").is_file()):
         return None
     try:
-        if app.resolve(strict=True) != app or not os.access(app.parent, os.W_OK | os.X_OK):
+        if app.resolve(strict=True) != (app.parent.resolve(strict=True) / app.name) or not os.access(app.parent, os.W_OK | os.X_OK):
             return None
     except OSError:
         return None
