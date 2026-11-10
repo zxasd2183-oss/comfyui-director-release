@@ -33,7 +33,7 @@ class XrayRealityConfigTests(unittest.TestCase):
         self.assertEqual(stream["network"],"tcp")
         self.assertEqual(stream["realitySettings"],{
             "serverName":"www.example.org","fingerprint":"chrome",
-            "publicKey":PUB,"shortId":"1a2b"
+            "password":PUB,"shortId":"1a2b"
         })
         self.assertEqual(config["routing"]["domainStrategy"],"AsIs")
         self.assertNotIn("freedom",str(config))
