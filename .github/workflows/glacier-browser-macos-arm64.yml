@@ -1,4 +1,4 @@
-name: Glacier Browser macOS Apple Silicon v0.20.12 unified release
+name: Glacier Browser macOS Apple Silicon v0.20.13 unified release
 on:
   push:
     branches:
@@ -156,10 +156,10 @@ jobs:
           test -f dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser
           test "$(lipo -archs dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser)" = 'arm64'
           test "$(find dist/GlacierBrowser.app -type f -name sing-box | wc -l | tr -d ' ')" -ge 1
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.20.12' dist/GlacierBrowser.app/Contents/Info.plist || \
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.20.12' dist/GlacierBrowser.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.20.12' dist/GlacierBrowser.app/Contents/Info.plist || \
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 0.20.12' dist/GlacierBrowser.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.20.13' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.20.13' dist/GlacierBrowser.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.20.13' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 0.20.13' dist/GlacierBrowser.app/Contents/Info.plist
           # Local ad-hoc signature is for Apple Silicon execution only, NOT Developer ID notarization.
           codesign --force --deep --sign - dist/GlacierBrowser.app
           codesign --verify --deep --verbose=2 dist/GlacierBrowser.app
@@ -171,7 +171,7 @@ jobs:
           ditto dist/GlacierBrowser.app dmg-stage/GlacierBrowser.app
           ln -s /Applications dmg-stage/Applications
           cat > dmg-stage/README-安装说明.txt <<'EOF'
-          Glacier Browser v0.20.12 · macOS Apple Silicon 版本
+          Glacier Browser v0.20.13 · macOS Apple Silicon 版本
           1. 将 GlacierBrowser.app 拖到 Applications 文件夹。
           2. 该版本未经过 Apple Developer ID 签名/公证，macOS 可能拒绝首次打开。
              请核对发布来源，并在 系统设置 > 隐私与安全性 中按系统提示授权。
@@ -182,19 +182,19 @@ jobs:
           5. 工作区、标签分组、下载历史本地加密存储，覆盖安装不会主动清除数据。
           6. 书签、历史及应用设置使用 Mac 本地数据目录；
              Windows 上的线路/历史不会自动迁移到 Mac。
-          版本：0.20.12，架构：Apple Silicon (arm64)
+          版本：0.20.13，架构：Apple Silicon (arm64)
           EOF
           hdiutil create -volname 'Glacier Browser' -srcfolder dmg-stage \
-            -ov -format UDZO 'GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg'
-          test -s 'GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg'
-          hdiutil verify 'GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg'
-          shasum -a 256 'GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg' > 'GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg.sha256'
-          cat 'GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg.sha256'
+            -ov -format UDZO 'GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg'
+          test -s 'GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg'
+          hdiutil verify 'GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg'
+          shasum -a 256 'GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg' > 'GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg.sha256'
+          cat 'GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg.sha256'
       - name: Upload actual DMG for inspection
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierBrowser-v0.20.12-macOS-AppleSilicon-DMG
-          path: glacier-macos/GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg
+          name: GlacierBrowser-v0.20.13-macOS-AppleSilicon-DMG
+          path: glacier-macos/GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -204,15 +204,15 @@ jobs:
         working-directory: glacier-macos
         run: |
           set -euo pipefail
-          tag="glacier-macos-v0.20.12"
-          dmg='GlacierBrowser-v0.20.12-macOS-AppleSilicon.dmg'
+          tag="glacier-macos-v0.20.13"
+          dmg='GlacierBrowser-v0.20.13-macOS-AppleSilicon.dmg'
           for attempt in 1 2 3 4 5; do
             if gh release view "$tag" >/dev/null 2>&1; then
               echo 'Canonical macOS release exists; preserving immutable asset'
               break
             else
               gh release create "$tag" "$dmg" "$dmg.sha256" --target "$GITHUB_SHA" \
-                --title 'Glacier Browser 0.20.12 · macOS Apple Silicon' \
+                --title 'Glacier Browser 0.20.13 · macOS Apple Silicon' \
                 --notes 'Unified accounts, device approvals, E2E encrypted vault sync, VLESS, signed update verification. DMG is not Apple Developer ID signed/notarized.' \
                 && break
             fi
