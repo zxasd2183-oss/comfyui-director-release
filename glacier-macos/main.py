@@ -106,13 +106,16 @@ def proxy_start(link,port):
  fd=os.open(str(configfile),os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
  with os.fdopen(fd,"w",encoding="utf-8") as handle:json.dump(config,handle)
  flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
- result=subprocess.run([str(core),"check","-c",str(configfile)],stdout=subprocess.DEVNULL,
-                       stderr=subprocess.PIPE,timeout=15,creationflags=flags)
+ result=subprocess.run([str(core),"check","-c",str(configfile)],
+                       stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                       timeout=15,creationflags=flags)
  if result.returncode:
-  hint=classify(result.stderr.decode("utf-8",errors="replace")) or "配置与当前 sing-box 内核不兼容"
+  hint=classify(result.stdout.decode("utf-8",errors="replace")) or "配置与当前 sing-box 内核不兼容"
   raise RuntimeError("VLESS 配置校验失败："+hint)
+ # sing-box logs normal runtime errors to STDOUT by default.
+ # Discard raw lines as soon as the in-memory classifier reads them.
  process=subprocess.Popen([str(core),"run","-c",str(configfile)],
-                          stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                          stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
                           creationflags=flags)
  start_capture(process)
  # The process may exit or fail to bind even when config validation succeeds.
