@@ -1,6 +1,34 @@
 # Windows-only bootstrap helpers for Director UE Worker.
 # Administrative use only; no SSH/VPS/network configuration changes.
 
+# secedit may export a local user as SID, bare name or COMPUTER\name.
+# Match only this machine's account (never an unrelated domain principal).
+function Test-DirectorUELocalIdentity {
+    param(
+        [Parameter(Mandatory=$true)][string]$Value,
+        [Parameter(Mandatory=$true)][string]$AccountName,
+        [Parameter(Mandatory=$true)][string]$Sid,
+        [Parameter(Mandatory=$true)][string]$ComputerName
+    )
+    $normalized = $Value.Trim().TrimStart("*")
+    if (-not $normalized) { return $false }
+    return ($normalized -ieq $Sid -or
+            $normalized -ieq $AccountName -or
+            $normalized -ieq "$ComputerName\$AccountName" -or
+            $normalized -ieq ".\$AccountName")
+}
+
+function Test-DirectorUEPrincipal {
+    param(
+        [string]$Principal,
+        [string]$AccountName,
+        [string]$Sid,
+        [string]$ComputerName
+    )
+    if (-not $Principal) { return $false }
+    return Test-DirectorUELocalIdentity -Value $Principal -AccountName $AccountName -Sid $Sid -ComputerName $ComputerName
+}
+
 function Grant-DirectorUEBatchLogon {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$AccountName)
@@ -33,8 +61,10 @@ function Grant-DirectorUEBatchLogon {
         foreach ($line in $lines) {
             if ($line -match '^\s*SeDenyBatchLogonRight\s*=\s*(.*)$') {
                 $denied = @($Matches[1].Split(',') | ForEach-Object { $_.Trim() })
-                if ($denied -contains $required -or $denied -contains $sid) {
-                    throw "Account explicitly denied batch logon by local policy"
+                foreach ($entry in $denied) {
+                    if (Test-DirectorUELocalIdentity -Value $entry -AccountName $AccountName -Sid $sid -ComputerName $env:COMPUTERNAME) {
+                        throw "Account explicitly denied batch logon by local policy"
+                    }
                 }
             }
         }
@@ -46,13 +76,18 @@ function Grant-DirectorUEBatchLogon {
                 $found = $true
                 $entries = @($Matches[1].Split(',') |
                     ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
-                if (($entries -notcontains $required) -and ($entries -notcontains $sid)) {
-                    $entries += $required
-                    $lines[$i] = "SeBatchLogonRight = " + ($entries -join ",")
-                } else {
+                $hasCurrent = $false
+                foreach ($entry in $entries) {
+                    if (Test-DirectorUELocalIdentity -Value $entry -AccountName $AccountName -Sid $sid -ComputerName $env:COMPUTERNAME) {
+                        $hasCurrent = $true
+                    }
+                }
+                if ($hasCurrent) {
                     Write-Host "SeBatchLogonRight already assigned."
                     return
                 }
+                $entries += $required
+                $lines[$i] = "SeBatchLogonRight = " + ($entries -join ",")
                 break
             }
         }
@@ -75,7 +110,13 @@ function Grant-DirectorUEBatchLogon {
         if ($grantLines.Count -ne 1) { throw "Could not verify batch-logon right" }
         $members = @((($grantLines[0] -split '=', 2)[1]).Split(',') |
             ForEach-Object { $_.Trim() })
-        if (($members -notcontains $required) -and ($members -notcontains $sid)) {
+        $grantVerified = $false
+        foreach ($entry in $members) {
+            if (Test-DirectorUELocalIdentity -Value $entry -AccountName $AccountName -Sid $sid -ComputerName $env:COMPUTERNAME) {
+                $grantVerified = $true
+            }
+        }
+        if (-not $grantVerified) {
             throw "Batch-logon grant was not persisted"
         }
         Write-Host "SeBatchLogonRight granted and verified for $AccountName."
