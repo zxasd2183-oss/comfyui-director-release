@@ -1,0 +1,28 @@
+name: Glacier macOS signed auto-download regression
+on:
+  push:
+    branches:
+      - feature/glacier-macos-automatic-download-20261110
+    paths:
+      - 'glacier-macos/mac_update.py'
+      - 'glacier-macos/mac_update_core.py'
+      - 'glacier-macos/test_mac_update.py'
+      - '.github/workflows/glacier-macos-auto-download-regression.yml'
+permissions:
+  contents: read
+jobs:
+  offline-updater-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install offline updater test dependencies
+        run: python -m pip install 'cryptography>=43,<47' 'requests[socks]>=2.32,<3'
+      - name: Compile Mac updater and validate signatures and cached DMG verification
+        working-directory: glacier-macos
+        run: |
+          python -m py_compile mac_update.py mac_update_core.py test_mac_update.py
+          python -m unittest -v test_mac_update
