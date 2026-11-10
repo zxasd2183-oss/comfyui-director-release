@@ -5,14 +5,14 @@ on:
     paths:
       - "ue-worker/**"
       - "vps-control/ue_worker_rpc.py"
-      - "vps-control/tests/test_ue_worker_rpc.py"
+      - "vps-control/tests/test_ue_*.py"
       - "vps-control/hub_app.py"
       - ".github/workflows/ci-ue-worker.yml"
   pull_request:
     paths:
       - "ue-worker/**"
       - "vps-control/ue_worker_rpc.py"
-      - "vps-control/tests/test_ue_worker_rpc.py"
+      - "vps-control/tests/test_ue_*.py"
       - "vps-control/hub_app.py"
       - ".github/workflows/ci-ue-worker.yml"
 
@@ -25,8 +25,8 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile
-        run: python -m py_compile ue-worker/agent.py vps-control/ue_worker_rpc.py
+        run: python -m py_compile ue-worker/agent.py ue-worker/ue_jobs.py ue-worker/unreal_build_episode.py vps-control/ue_worker_rpc.py vps-control/hub_app.py
       - name: Test Windows worker API without GPU
         run: python -m unittest discover -s ue-worker/tests -p "test_*.py" -v
       - name: Test private VPS adapter
-        run: python -m unittest discover -s vps-control/tests -p "test_ue_worker_rpc.py" -v
+        run: python -m unittest discover -s vps-control/tests -p "test_ue_*.py" -v
