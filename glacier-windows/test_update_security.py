@@ -2,7 +2,11 @@
 import base64
 import copy
 import json
+import hashlib
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -71,6 +75,90 @@ class GlacierUpdateSecurityTests(unittest.TestCase):
             with self.assertRaises(update.UpdateError):
                 update.load_remote_manifest(0)
         session.close.assert_called_once()
+
+    def _vps_fixture(self,data=b"V"*1_100_000):
+        return SimpleNamespace(
+            version="0.20.12",
+            url="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.12-Windows-Setup-x64.exe",
+            sha256=hashlib.sha256(data).hexdigest(),size=len(data),
+        )
+
+    def test_vps_signed_installer_download_over_direct_https(self):
+        data=b"V"*1_100_000
+        manifest=self._vps_fixture(data)
+        response=MagicMock()
+        response.status_code=200
+        response.headers={"Content-Length":str(len(data))}
+        response.iter_content.return_value=[data[:400_000],data[400_000:]]
+        response.__enter__.return_value=response
+        session=MagicMock()
+        session.get.return_value=response
+        progress=[]
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(update.requests,"Session",return_value=session), patch.object(
+                    update,"_legacy_download_installer",
+                    side_effect=AssertionError("VPS must not fall back to GitHub redirect validator")):
+                downloaded=update.download_installer(0,temp,manifest,lambda n,total:progress.append((n,total)))
+            self.assertEqual(downloaded.read_bytes(),data)
+            self.assertEqual(progress[-1],(len(data),len(data)))
+            self.assertFalse((Path(temp)/"GlacierBrowser-v0.20.12-Windows-Setup-x64.exe.part").exists())
+        self.assertFalse(session.trust_env)
+        args,kwargs=session.get.call_args
+        self.assertEqual(args[0],manifest.url)
+        self.assertFalse(kwargs["allow_redirects"])
+        self.assertTrue(kwargs["stream"])
+        session.close.assert_called_once()
+
+    def test_vps_signed_download_rejects_redirect_without_fallback(self):
+        manifest=self._vps_fixture()
+        response=MagicMock()
+        response.status_code=302
+        response.__enter__.return_value=response
+        session=MagicMock()
+        session.get.return_value=response
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(update.requests,"Session",return_value=session), patch.object(
+                    update,"_legacy_download_installer",side_effect=AssertionError("legacy")):
+                with self.assertRaisesRegex(update.UpdateError,"HTTP 302"):
+                    update.download_installer(0,temp,manifest)
+            self.assertFalse(list(Path(temp).glob("*.part")))
+
+    def test_vps_signed_download_rejects_tampered_installer(self):
+        data=b"V"*1_100_000
+        manifest=self._vps_fixture(data)
+        response=MagicMock()
+        response.status_code=200
+        response.headers={"Content-Length":str(len(data))}
+        response.iter_content.return_value=[b"A"*len(data)]
+        response.__enter__.return_value=response
+        session=MagicMock()
+        session.get.return_value=response
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(update.requests,"Session",return_value=session):
+                with self.assertRaisesRegex(update.UpdateError,"SHA256"):
+                    update.download_installer(0,temp,manifest)
+            self.assertFalse(list(Path(temp).iterdir()))
+
+    def test_vps_signed_download_rejects_path_mismatch(self):
+        manifest=self._vps_fixture()
+        manifest.url="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.13-Windows-Setup-x64.exe"
+        with patch.object(update.requests,"Session",side_effect=AssertionError("network not allowed")):
+            with self.assertRaisesRegex(update.UpdateError,"不可信"):
+                update.download_installer(0,"unused",manifest)
+
+    def test_vps_signed_download_rejects_unexpected_length(self):
+        manifest=self._vps_fixture()
+        response=MagicMock()
+        response.status_code=200
+        response.headers={"Content-Length":str(manifest.size+1)}
+        response.__enter__.return_value=response
+        session=MagicMock()
+        session.get.return_value=response
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(update.requests,"Session",return_value=session):
+                with self.assertRaisesRegex(update.UpdateError,"大小"):
+                    update.download_installer(0,temp,manifest)
+            self.assertFalse(list(Path(temp).iterdir()))
 
     def test_signed_manifest_accepted(self):
         self.assertEqual(self.parse(self.fixture()).version, "0.18.0")
