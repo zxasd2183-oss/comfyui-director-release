@@ -1,0 +1,32 @@
+name: Director UE Worker offline tests
+
+on:
+  push:
+    paths:
+      - "ue-worker/**"
+      - "vps-control/ue_worker_rpc.py"
+      - "vps-control/tests/test_ue_worker_rpc.py"
+      - "vps-control/hub_app.py"
+      - ".github/workflows/ci-ue-worker.yml"
+  pull_request:
+    paths:
+      - "ue-worker/**"
+      - "vps-control/ue_worker_rpc.py"
+      - "vps-control/tests/test_ue_worker_rpc.py"
+      - "vps-control/hub_app.py"
+      - ".github/workflows/ci-ue-worker.yml"
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: python -m py_compile ue-worker/agent.py vps-control/ue_worker_rpc.py
+      - name: Test Windows worker API without GPU
+        run: python -m unittest discover -s ue-worker/tests -p "test_*.py" -v
+      - name: Test private VPS adapter
+        run: python -m unittest discover -s vps-control/tests -p "test_ue_worker_rpc.py" -v
