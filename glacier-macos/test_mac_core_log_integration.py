@@ -38,6 +38,8 @@ class RealSingBoxLogCaptureTests(unittest.TestCase):
             destination_port=unserved.getsockname()[1]
             listener.bind(("127.0.0.1",0))
             listen_port=listener.getsockname()[1]
+            # Release the reserved inbound port before sing-box binds it.
+            listener.close()
             link=("vless://"+str(uuid.UUID(int=1))+
                   f"@127.0.0.1:{destination_port}?encryption=none&security=none")
             config=build_proxy_config(link,listen_port)
