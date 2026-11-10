@@ -73,7 +73,7 @@ class AdapterTest(unittest.TestCase):
     def test_missing_secret_fails_closed(self):
         self.assertEqual(rpc.call_ue_worker("get_ue_worker_status",
                          token_file=Path(self.tmp.name) / "missing")["reason"],
-                         "ue_worker_unavailable")
+                         "worker_token_unconfigured")
 
 
 if __name__ == "__main__":
