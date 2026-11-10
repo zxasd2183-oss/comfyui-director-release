@@ -24,6 +24,15 @@ def asset(version="0.20.10", channel="macos-arm64", data=b"x" * 100_001):
 
 
 class GlacierStageTests(unittest.TestCase):
+    def test_current_signed_manifest_request_bypasses_intermediary_cache(self):
+        a = mirror.signed_manifest_url("windows-x64")
+        b = mirror.signed_manifest_url("windows-x64")
+        self.assertTrue(a.startswith(mirror.BASE+"windows-x64.json?nonce="))
+        self.assertNotEqual(a, b)
+        mirror.validate_url(a)
+        with self.assertRaises(ValueError):
+            mirror.signed_manifest_url("preview-unsigned")
+
     def test_legacy_signed_urls_are_not_altered(self):
         self.assertTrue(mirror.BASE.startswith("https://raw.githubusercontent.com/"))
         self.assertEqual(mirror.semver("0.20.10"), (0, 20, 10))
