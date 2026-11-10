@@ -18,11 +18,14 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from ue_jobs import JobManager, JobError
+
 HOST = "127.0.0.1"
 PORT = 19010
-MAX_BODY = 2048
+MAX_BODY = 24576
 ACTION_LOCK = threading.Lock()
 NODE_ID = "ue-worker-01"
+JOB_MANAGER = None
 
 
 def utcnow():
@@ -106,6 +109,7 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
+        "worker_version": "0.2.0",
     }
 
 
@@ -113,6 +117,8 @@ def capabilities():
     return {
         "ok": True, "node_id": NODE_ID,
         "actions": ["prepare_workspace"],
+        "jobs": ["build_episode_timeline"],
+        "job_status_route": "/v2/jobs/<job_id>",
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
         "supports_rendering": False,
@@ -133,7 +139,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/0.1"
+    server_version = "DirectorUEWorker/0.2"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -162,6 +168,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, status())
         elif self.path == "/v1/capabilities":
             self.send_json(200, capabilities())
+        elif re.fullmatch(r"/v2/jobs/[a-f0-9]{32}", self.path):
+            try:
+                self.send_json(200, JOB_MANAGER.lookup(self.path.rsplit("/", 1)[-1]))
+            except JobError as exc:
+                self.send_json(404, {"ok": False, "reason": str(exc)})
         else:
             self.send_json(404, {"ok": False, "reason": "not_found"})
 
@@ -169,7 +180,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorize():
             self.send_json(401, {"ok": False, "reason": "unauthorized"})
             return
-        if self.path != "/v1/actions":
+        if self.path not in ("/v1/actions", "/v2/jobs"):
             self.send_json(404, {"ok": False, "reason": "not_found"})
             return
         try:
@@ -177,6 +188,14 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 <= length <= MAX_BODY:
                 raise ValueError("invalid length")
             body = json.loads(self.rfile.read(length))
+            if self.path == "/v2/jobs":
+                try:
+                    self.send_json(202, JOB_MANAGER.submit(body))
+                except JobError as exc:
+                    reason = str(exc)
+                    self.send_json(409 if reason == "ue_worker_busy" else 400,
+                                   {"ok": False, "reason": reason})
+                return
             if type(body) is not dict or set(body) != {"action"}:
                 raise ValueError("invalid fields")
             if body["action"] != "prepare_workspace":
@@ -199,6 +218,8 @@ def main():
     if platform.system() != "Windows":
         raise SystemExit("This UE worker must run on Windows")
     token = read_secret()
+    global JOB_MANAGER
+    JOB_MANAGER = JobManager(workspace_root)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     server.token = token
     print(f"{NODE_ID} listening on {HOST}:{PORT}", flush=True)

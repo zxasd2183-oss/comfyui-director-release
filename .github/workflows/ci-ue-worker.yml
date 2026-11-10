@@ -5,14 +5,14 @@ on:
     paths:
       - "ue-worker/**"
       - "vps-control/ue_worker_rpc.py"
-      - "vps-control/tests/test_ue_worker_rpc.py"
+      - "vps-control/tests/test_ue_*.py"
       - "vps-control/hub_app.py"
       - ".github/workflows/ci-ue-worker.yml"
   pull_request:
     paths:
       - "ue-worker/**"
       - "vps-control/ue_worker_rpc.py"
-      - "vps-control/tests/test_ue_worker_rpc.py"
+      - "vps-control/tests/test_ue_*.py"
       - "vps-control/hub_app.py"
       - ".github/workflows/ci-ue-worker.yml"
 
@@ -25,8 +25,57 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile
-        run: python -m py_compile ue-worker/agent.py vps-control/ue_worker_rpc.py
+        run: python -m py_compile ue-worker/agent.py ue-worker/ue_jobs.py ue-worker/unreal_build_episode.py vps-control/ue_worker_rpc.py vps-control/hub_app.py
       - name: Test Windows worker API without GPU
         run: python -m unittest discover -s ue-worker/tests -p "test_*.py" -v
       - name: Test private VPS adapter
-        run: python -m unittest discover -s vps-control/tests -p "test_ue_worker_rpc.py" -v
+        run: python -m unittest discover -s vps-control/tests -p "test_ue_*.py" -v
+
+  windows-bootstrap-parse:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Windows PowerShell bootstrap syntax
+        shell: pwsh
+        run: |
+          foreach ($path in @("ue-worker/WindowsBootstrap.ps1", "ue-worker/install-v02.ps1")) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path, [ref]$tokens, [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error "$path : $_" }
+              throw "PowerShell syntax verification failed: $path"
+            }
+            Write-Host "Syntax OK: $path"
+          }
+
+      - name: Verify account identity matching without privileged operations
+        shell: pwsh
+        run: |
+          . ./ue-worker/WindowsBootstrap.ps1
+          $sid = "S-1-5-21-1234-2345-3456-1001"
+          $cases = @(
+            @{ Value = $sid; Ok = $true },
+            @{ Value = "*$sid"; Ok = $true },
+            @{ Value = "DirectorUEWorker"; Ok = $true },
+            @{ Value = "TESTHOST\DirectorUEWorker"; Ok = $true },
+            @{ Value = ".\DirectorUEWorker"; Ok = $true },
+            @{ Value = "OTHERHOST\DirectorUEWorker"; Ok = $false },
+            @{ Value = "Administrator"; Ok = $false },
+            @{ Value = "DirectorUEWorker2"; Ok = $false },
+            @{ Value = "*S-1-5-21-1234-2345-3456-1002"; Ok = $false }
+          )
+          foreach ($item in $cases) {
+            $actual = Test-DirectorUELocalIdentity -Value $item.Value -AccountName "DirectorUEWorker" -Sid $sid -ComputerName "TESTHOST"
+            if ($actual -ne $item.Ok) {
+              throw "Identity matching failed for '$($item.Value)': wanted $($item.Ok), got $actual"
+            }
+          }
+          foreach ($principal in @("DirectorUEWorker", "TESTHOST\DirectorUEWorker", $sid)) {
+            if (-not (Test-DirectorUEPrincipal -Principal $principal -AccountName "DirectorUEWorker" -Sid $sid -ComputerName "TESTHOST")) {
+              throw "Scheduled Task principal mismatch for '$principal'"
+            }
+          }
+          Write-Host "Local-account and resolved-SID cases pass"

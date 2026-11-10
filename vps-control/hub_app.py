@@ -9,7 +9,9 @@ from pydantic import BaseModel
 from hub_rpc import call
 from hub_file_sync import sync_chatgpt_visual
 from hub_sync_jobs import JOBS
-from ue_worker_rpc import call_ue_worker
+from ue_worker_rpc import (call_ue_worker,
+                           enqueue_ue_episode_timeline as enqueue_ue_episode_timeline_rpc,
+                           get_ue_episode_job_status as get_ue_episode_job_status_rpc)
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -304,6 +306,24 @@ def prepare_ue_workspace() -> dict:
     No arbitrary shell, script execution, program installation or rendering.
     """
     return call_ue_worker("prepare_ue_workspace")
+
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_episode_timeline(project_id: str, episode_id: str) -> dict:
+    """Start the real Unreal Editor headless build of Studio's episode timeline.
+
+    Loads the registered ordered shots from Director Studio (no caller-supplied
+    scripts or commands). Starts Unreal Editor on the metered Windows GPU;
+    returns a job ID, not an assertion of successful asset production.
+    """
+    return enqueue_ue_episode_timeline_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=READ)
+def get_ue_episode_job_status(job_id: str) -> dict:
+    """Read actual UE Editor timeline job state and result by bounded ID."""
+    return get_ue_episode_job_status_rpc(job_id)
 
 
 if __name__ == "__main__":
