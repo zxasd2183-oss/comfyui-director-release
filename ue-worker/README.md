@@ -59,6 +59,7 @@ A trusted operator with local SSH access can use:
 ```powershell
 $token = Join-Path $env:ProgramData "DirectorUEWorker\worker.token"
 $adminKey = Join-Path $env:USERPROFILE ".ssh\ue_vps_admin"
+ssh -i $adminKey ubuntu@111.230.226.74 "umask 077; touch /home/ubuntu/.director-ue-worker.token.pending; chmod 600 /home/ubuntu/.director-ue-worker.token.pending"
 scp -i $adminKey $token ubuntu@111.230.226.74:/home/ubuntu/.director-ue-worker.token.pending
 ssh -i $adminKey ubuntu@111.230.226.74 "sudo install -o root -g directorpower -m 0640 /home/ubuntu/.director-ue-worker.token.pending /etc/director-ue-worker.token && rm -f /home/ubuntu/.director-ue-worker.token.pending"
 ```
