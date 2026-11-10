@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: glacier-dual-signed-update-feed
@@ -197,3 +198,12 @@ jobs:
           git push origin HEAD:glacier-browser-updates-v2
           echo "Windows: signed GitHub channel is published."
           echo "macOS: signed channel published; owner VPS mirror verifies and syncs it."
+
+      - name: Notify owner VPS immediately after signed channel promotion
+        if: steps.signer.outputs.enabled == 'true' && steps.release-check.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo "Authenticated VPS mirror sync dispatched after signed channel promotion."

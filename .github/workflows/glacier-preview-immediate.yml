@@ -1,3 +1,4 @@
+# Signed channel publication dispatches this workflow to refresh the VPS immediately.
 name: Glacier preview mirror immediate VPS sync
 
 on:
