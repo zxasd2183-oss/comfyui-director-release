@@ -59,8 +59,7 @@ if ($existingUser -and (-not $newTaskBefore)) {
 if ($newTaskBefore) {
     if (-not $existingUser) { throw "V0.2 task exists without expected user" }
     $principalId = [string]$newTaskBefore.Principal.UserId
-    if (($principalId -ine $account) -and
-        ($principalId -ine $existingUser.SID.Value)) {
+    if (-not (Test-DirectorUEPrincipal -Principal $principalId -AccountName $serviceName -Sid $existingUser.SID.Value -ComputerName $env:COMPUTERNAME)) {
         throw "V0.2 task principal differs from expected unprivileged account"
     }
 }
@@ -85,6 +84,9 @@ foreach ($name in $files) {
 $createdAccount = $false
 $createdTask = $false
 $plainPassword = $null
+$passwordReady = $false
+$credentialRotated = $false
+$taskReRegistered = $false
 try {
     if (-not $existingUser) {
         $randomBytes = New-Object byte[] 48
@@ -92,6 +94,7 @@ try {
         try { $rng.GetBytes($randomBytes) } finally { $rng.Dispose() }
         $plainPassword = [Convert]::ToBase64String($randomBytes)
         $securePassword = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+        $passwordReady = $true
         New-LocalUser -Name $serviceName -Password $securePassword -PasswordNeverExpires -Description "Director UE non-admin editor runner" | Out-Null
         $createdAccount = $true
         $existingUser = Get-LocalUser -Name $serviceName -ErrorAction Stop
@@ -122,14 +125,33 @@ try {
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 30 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
     if ($newTaskBefore) {
-        # Retain the existing protected credential rather than requesting,
-        # logging, or resetting the account password on every upgrade.
-        Set-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings | Out-Null
-        Enable-ScheduledTask -TaskName $taskName | Out-Null
-    } else {
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User $account -Password $plainPassword -Force | Out-Null
-        $createdTask = $true
+        # Windows Task Scheduler stores the original password securely, but
+        # Set-ScheduledTask cannot edit such tasks without that password
+        # (0x8007052e). Rotate only the DEDICATED runner's credential and
+        # atomically re-register the same task with a fresh protected password.
+        # This account must not be shared by any other scheduled task.
+        $others = @(Get-ScheduledTask -ErrorAction Stop | Where-Object {
+            $_.TaskName -ne $taskName -and
+            (Test-DirectorUEPrincipal -Principal ([string]$_.Principal.UserId) -AccountName $serviceName -Sid $existingUser.SID.Value -ComputerName $env:COMPUTERNAME)
+        })
+        if ($others.Count -gt 0) {
+            throw "Runner account also owns other scheduled tasks; refusing password rotation"
+        }
+        $randomBytes = New-Object byte[] 48
+        $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $rng.GetBytes($randomBytes) } finally { $rng.Dispose() }
+        $plainPassword = [Convert]::ToBase64String($randomBytes)
+        $securePassword = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+        # If re-registration fails, rollback must use this SAME new credential.
+        Set-LocalUser -Name $serviceName -Password $securePassword -ErrorAction Stop
+        $passwordReady = $true
+        $credentialRotated = $true
     }
+    # Do not expose the password to stdout, logs, GitHub or the Hub response.
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User $account -Password $plainPassword -Force -ErrorAction Stop | Out-Null
+    $taskReRegistered = $true
+    $createdTask = (-not $newTaskBefore)
+    Enable-ScheduledTask -TaskName $taskName | Out-Null
     Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
 
     $healthy = $false
@@ -155,11 +177,17 @@ try {
     Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if ($createdTask) {
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    } elseif ($newTaskBefore) {
+    } elseif ($newTaskBefore -and $passwordReady) {
         try {
-            Set-ScheduledTask -TaskName $taskName -Action $oldAction -Trigger $oldTrigger -Settings $oldSettings | Out-Null
+            # The account password may already have been rotated. Restore
+            # the original task definition with the currently valid password,
+            # not Set-ScheduledTask (which would fail on password tasks).
+            Register-ScheduledTask -TaskName $taskName -Action $oldAction -Trigger $oldTrigger -Settings $oldSettings -User $account -Password $plainPassword -Force -ErrorAction Stop | Out-Null
+            if (-not $newTaskWasEnabled) {
+                Disable-ScheduledTask -TaskName $taskName | Out-Null
+            }
         } catch {
-            Write-Warning "Could not restore previous V0.2 task properties"
+            Write-Warning "Could not re-register previous V0.2 task; manual recovery required"
         }
     }
     try {
@@ -191,4 +219,5 @@ try {
 } finally {
     Remove-Variable plainPassword -ErrorAction SilentlyContinue
     Remove-Variable securePassword -ErrorAction SilentlyContinue
+    Remove-Variable randomBytes -ErrorAction SilentlyContinue
 }
