@@ -109,7 +109,7 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
-        "worker_version": "0.2.0",
+        "worker_version": "0.3.0",
     }
 
 
@@ -117,7 +117,7 @@ def capabilities():
     return {
         "ok": True, "node_id": NODE_ID,
         "actions": ["prepare_workspace"],
-        "jobs": ["build_episode_timeline"],
+        "jobs": ["build_episode_timeline", "build_stage_cameras"],
         "job_status_route": "/v2/jobs/<job_id>",
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
@@ -139,7 +139,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/0.2"
+    server_version = "DirectorUEWorker/0.3"
     sys_version = ""
 
     def log_message(self, fmt, *args):
