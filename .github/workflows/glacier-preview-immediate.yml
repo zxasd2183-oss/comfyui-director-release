@@ -42,7 +42,7 @@ jobs:
         )
       )
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 8
     permissions:
       id-token: write
       contents: read
@@ -168,7 +168,7 @@ jobs:
           base='https://sync.borealos.cn/downloads/'
           win="GlacierBrowser-v${latest}-Windows-Setup-x64.exe"
           mac="GlacierBrowser-v${latest}-macOS-AppleSilicon.dmg"
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 24); do
             w="$(curl --silent --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${win}" || true)"
             m="$(curl --silent --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${mac}" || true)"
             if [[ "$w" == '200' && "$m" == '200' ]]; then
@@ -176,7 +176,8 @@ jobs:
               gh workflow run glacier-browser-signed-updates.yml --ref main --repo "$GITHUB_REPOSITORY"
               exit 0
             fi
-            echo "Awaiting v${latest} mirror $attempt/12: Windows HTTP $w, Mac HTTP $m"
+            echo "Awaiting v${latest} mirror $attempt/24: Windows HTTP $w, Mac HTTP $m"
             sleep 12
           done
-          echo '::warning::Mirror is still syncing; 15-minute signer schedule remains fallback.'
+          echo '::error::Owner VPS did not finish mirroring latest paired installers; signed feed promotion blocked.'
+          exit 1
