@@ -12,6 +12,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Run signed VPS downloader security regressions on the actual bundled core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet 'cryptography>=43,<47' 'requests>=2.32,<3'
+          python3 - <<'PY'
+          import base64,lzma,pathlib
+          directory=pathlib.Path("glacier-windows")
+          encoded=(directory/"update_core.py.xz.b64").read_text(encoding="ascii").strip()
+          (directory/"update_core.py").write_bytes(lzma.decompress(base64.b64decode(encoded,validate=True)))
+          PY
+          cd glacier-windows
+          python3 -m unittest -v test_update_security.py
+
       - name: Inspect bundled updater downloader redirect functions
         shell: bash
         run: |
