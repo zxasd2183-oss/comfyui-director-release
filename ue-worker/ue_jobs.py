@@ -203,7 +203,7 @@ class JobManager:
         for item in sorted(folder.glob("*.json"),
                            key=lambda path: path.stat().st_mtime,
                            reverse=True)[:64]:
-            if not re.fullmatch(r"[a-f0-9]{32}\\.json", item.name):
+            if not re.fullmatch(r"[a-f0-9]{32}\.json", item.name):
                 continue
             try:
                 entry = json.loads(item.read_text(encoding="utf-8"))
