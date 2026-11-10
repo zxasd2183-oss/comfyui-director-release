@@ -1,0 +1,30 @@
+name: Glacier Windows signed download redirect policy audit
+on:
+  push:
+    branches:
+      - fix/glacier-browser-windows-v0201-input
+    paths:
+      - '.github/workflows/glacier-windows-download-policy-audit.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect bundled updater downloader redirect functions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast,base64,lzma,pathlib
+          encoded=pathlib.Path('glacier-windows/update_core.py.xz.b64').read_text(encoding='ascii').strip()
+          source=lzma.decompress(base64.b64decode(encoded,validate=True)).decode('utf-8')
+          lines=source.splitlines()
+          wanted={'validate_release_url','validate_redirect_url','fetch_via_socks','download_installer'}
+          tree=ast.parse(source)
+          for node in tree.body:
+              if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and node.name in wanted:
+                  print(f'----- {node.name} lines {node.lineno}-{node.end_lineno} -----',flush=True)
+                  for i in range(node.lineno-1,node.end_lineno):
+                      print(f'{i+1}: {lines[i]}',flush=True)
+          PY
