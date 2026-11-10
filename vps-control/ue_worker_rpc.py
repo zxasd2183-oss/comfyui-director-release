@@ -85,3 +85,98 @@ def call_ue_worker(name, opener=None, token_file=None):
         return {"ok": False, "reason": str(exc)}
     except (OSError, TypeError, ValueError, urllib.error.URLError):
         return {"ok": False, "reason": "ue_worker_unavailable"}
+
+
+# V0.2: only fixed, Studio-derived timeline jobs. No caller-supplied paths.
+STUDIO_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
+JOB_ID = re.compile(r"^[a-f0-9]{32}$")
+
+
+def _v2_request(path, method="GET", body=None, opener=None, token_file=None):
+    if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
+        return {"ok": False, "reason": "ue_worker_not_enabled"}
+    try:
+        token = load_token(token_file)
+        url = WORKER_ORIGIN + path
+        payload = None if body is None else json.dumps(
+            body, separators=(",", ":")
+        ).encode("utf-8")
+        if payload is not None and len(payload) > 24576:
+            return {"ok": False, "reason": "request_too_large"}
+        request = urllib.request.Request(
+            url, data=payload, method=method,
+            headers={
+                "Authorization": "Bearer " + token,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        )
+        with (opener or OPENER).open(request, timeout=10) as response:
+            if response.geturl() != url:
+                raise WorkerError("redirect_not_allowed")
+            raw = response.read(MAX_RESULT + 1)
+        if len(raw) > MAX_RESULT:
+            raise WorkerError("worker_response_too_large")
+        decoded = json.loads(raw)
+        if not isinstance(decoded, dict) or type(decoded.get("ok")) is not bool:
+            raise WorkerError("invalid_worker_response")
+        return decoded
+    except WorkerError as exc:
+        return {"ok": False, "reason": str(exc)}
+    except (OSError, TypeError, ValueError, urllib.error.URLError):
+        return {"ok": False, "reason": "ue_worker_unavailable"}
+
+
+def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
+                                opener=None, token_file=None):
+    """Obtain immutable ordered shot metadata from Studio, never from the caller."""
+    if not all(isinstance(v, str) and STUDIO_ID.fullmatch(v)
+               for v in (project_id, episode_id)):
+        return {"ok": False, "reason": "invalid_identifiers"}
+    if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
+        return {"ok": False, "reason": "ue_worker_not_enabled"}
+    if studio_getter is None:
+        from hub_brain import call_studio
+        studio_getter = call_studio
+    try:
+        episode = studio_getter(
+            "get_production_episode",
+            {"project_id": project_id, "episode_id": episode_id}
+        )
+        if (type(episode) is not dict or not episode.get("ok") or
+                episode.get("shots_truncated") or
+                not isinstance(episode.get("shots"), list) or
+                not 1 <= len(episode["shots"]) <= 150 or
+                episode.get("shot_count") != len(episode["shots"])):
+            return {"ok": False, "reason": "studio_plan_unavailable"}
+        shots = sorted(episode["shots"], key=lambda item: item["ordinal"])
+        registered = [
+            {
+                "shot_id": item["shot_id"],
+                "ordinal": item["ordinal"],
+                "duration_ms": item["duration_ms"],
+            } for item in shots
+        ]
+        if any(type(s["duration_ms"]) is not int for s in registered):
+            raise ValueError("invalid duration")
+        total = sum(s["duration_ms"] for s in registered)
+        spec = {
+            "task": "build_episode_timeline",
+            "project_id": project_id,
+            "episode_id": episode_id,
+            "fps": 24,  # EP01's locked cinematic plan
+            "shots": registered,
+            "expected_total_ms": total,
+        }
+        response = _v2_request("/v2/jobs", "POST", spec, opener, token_file)
+        if response.get("ok"):
+            response["source"] = "Director Studio registered shots"
+        return response
+    except (KeyError, TypeError, ValueError):
+        return {"ok": False, "reason": "studio_plan_invalid"}
+
+
+def get_ue_episode_job_status(job_id, opener=None, token_file=None):
+    if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
+        return {"ok": False, "reason": "invalid_job_id"}
+    return _v2_request("/v2/jobs/" + job_id, "GET", None, opener, token_file)
