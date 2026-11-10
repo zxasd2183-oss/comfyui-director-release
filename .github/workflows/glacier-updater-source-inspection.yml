@@ -1,24 +1,44 @@
-name: Glacier updater source inspection
+name: Glacier Windows signed installer regression
 on:
   push:
     branches:
       - feature/glacier-clients-upgrade-20261110
     paths:
+      - 'glacier-windows/glacier_signed_install27.py'
+      - 'glacier-windows/test_signed_install27.py'
+      - 'scripts/glacier_patch_windows_update_ui.py'
+      - 'scripts/test_glacier_patch_windows_update_ui.py'
+      - '.github/workflows/glacier-browser-windows-v0201-input.yml'
       - '.github/workflows/glacier-updater-source-inspection.yml'
 permissions:
   contents: read
 jobs:
-  inspect:
+  signed-upgrade-offline-tests:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Show Windows updater UI implementation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and test signed installer launcher
+        working-directory: glacier-windows
+        run: |
+          python -m py_compile glacier_signed_install27.py test_signed_install27.py
+          python -m unittest -v test_signed_install27
+      - name: Compile and inspect actual decoded Qt updater UI
+        working-directory: scripts
+        run: |
+          python -m py_compile glacier_patch_windows_update_ui.py test_glacier_patch_windows_update_ui.py
+          python -m unittest -v test_glacier_patch_windows_update_ui
+      - name: Ensure Inno Setup can relaunch after confirmed silent installation
         run: |
           python - <<'PY'
-          import base64,lzma
           from pathlib import Path
-          p=Path("glacier-windows/update_ui.py.xz.b64")
-          source=lzma.decompress(base64.b64decode(p.read_text(encoding="ascii"))).decode("utf-8")
-          for n,line in enumerate(source.splitlines(),1):
-              print(f"UPDATER_SOURCE {n:03d} {line}")
+          source=Path('.github/workflows/glacier-browser-windows-v0201-input.yml').read_text()
+          assert 'Flags: nowait postinstall skipifsilent' in source
+          assert 'Flags: nowait skipifnotsilent' in source
+          assert 'python ../scripts/glacier_patch_windows_update_ui.py update_ui.py' in source
+          assert '--hidden-import glacier_signed_install27' in source
+          print('Confirmed pinned signed Setup and silent relaunch build configuration')
           PY
