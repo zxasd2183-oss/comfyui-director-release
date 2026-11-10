@@ -98,3 +98,32 @@ MovieSceneCinematicShotTrack.
 
 Next iteration: bind digital actors and cameras to these timed sections,
 then expose a bounded MRQ render job.
+
+## Verified on the real UE 5.8 machine (2026-11-10)
+
+An operator deployed V0.2 on Windows Server 2022 with RTX 4090.
+Successful job: `34b83082af3f46dcbdd21e1c3c759e2b`.
+
+- Unreal `/Game/Director/Episodes/WaitingOffice_EP01_Master`:
+  31 cinematic shot sections, 160 seconds at 24 FPS, playback [0,3840).
+- Confirmed `LevelSequence.add_track` works in actual UE 5.8.
+  The removed `add_master_track` failed the first deployment; source and
+  the fake UE test now use only `add_track`.
+- The dedicated `DirectorUEWorker` account needed `SeBatchLogonRight`
+  before Task Scheduler could start it.
+- The V0.1 worker can leave a stale listener after stopping the task. The
+  installer now checks TCP 19010's process **owner SID and exact expected
+  agent.py command line** before stopping it, and refuses unknown listeners.
+- Subsequent V0.2 installs reuse the existing scheduled-task credential
+  instead of resetting the non-admin account's password.
+
+**CI tests and Windows script syntax pass; the new installer changes have
+not yet been retested on the live machine.** Existing deployed V0.2 works
+with the initial operator-side corrections. Preserve existing episode assets:
+the current commandlet refuses overwriting an existing master sequence, so
+do **not** re-enqueue EP01 just to check service availability.
+
+Recommended order: review and deploy the committed installer fixes at a safe
+idle point, verify V0.2 endpoint ownership and heartbeat, and then do one
+planned Windows reboot to check auto-start and tunnel reconnection. Do not
+reboot while an Unreal commandlet is rendering or saving assets.
