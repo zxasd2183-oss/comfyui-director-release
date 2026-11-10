@@ -1,0 +1,39 @@
+name: Glacier Mac one-click update security regression
+on:
+  push:
+    branches:
+      - feature/glacier-macos-one-click-install-20261110
+    paths:
+      - 'glacier-macos/mac_install.py'
+      - 'glacier-macos/mac_update.py'
+      - 'glacier-macos/mac_update_core.py'
+      - 'glacier-macos/test_mac_install.py'
+      - '.github/workflows/glacier-macos-oneclick-regression.yml'
+permissions:
+  contents: read
+jobs:
+  oneclick-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check macOS-only install security against generated ephemeral signing keys
+        working-directory: glacier-macos
+        run: |
+          python -m pip install 'cryptography>=43,<47' 'requests[socks]>=2.32,<3'
+          python -m py_compile mac_install.py mac_update.py test_mac_install.py
+          python -m unittest -v test_mac_install
+      - name: Confirm historical manual Finder fallback stays in Qt UI
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source=Path("glacier-macos/mac_update.py").read_text()
+          assert 'from mac_install import writable_installed_app, launch_user_confirmed_install' in source
+          assert 'QTimer.singleShot(200, self.close)' in source
+          assert 'subprocess.Popen(["/usr/bin/open",str(self._mac_installer)]' in source
+          assert 'QMessageBox.StandardButton.No' in source
+          print("Signed DMG consent, one-click launch and manual fallback present")
+          PY
