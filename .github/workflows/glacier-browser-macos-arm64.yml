@@ -193,3 +193,10 @@ jobs:
           done
           gh release view "$tag" --json tagName,assets
           echo 'Mac release available. Ed25519 update feed published independently after offline signature.'
+
+      - name: Notify authenticated owner VPS mirror immediately after release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
