@@ -39,6 +39,12 @@ class NotifyHookTests(unittest.TestCase):
         script = (root / "install-glacier-preview-notify-sudo-compat.sh").read_text()
         self.assertIn('unit="glacier-preview-notify.service"', script)
         self.assertIn('== "glacierpreview"', script)
+        self.assertIn('installed_sudoers="/etc/sudoers.d/glacier-signed-mirror-notify"', script)
+        # /etc/sudoers.d may be inaccessible to the normal VPS operator,
+        # even though the policy exists and sudo can read it.
+        self.assertIn('sudo test -f "${installed_sudoers}"', script)
+        self.assertNotIn('[[ -f "${installed_sudoers}" ]]', script)
+        self.assertNotIn('91-glacier-signed-mirror-notify', script)
         self.assertIn('visudo -cf', script)
         self.assertIn('sudo cmp -s', script)
         self.assertIn('sudo systemctl restart "${unit}"', script)
