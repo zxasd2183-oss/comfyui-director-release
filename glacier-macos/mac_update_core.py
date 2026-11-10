@@ -206,3 +206,27 @@ def download_dmg(manifest, port, directory, progress=lambda n:None):
             partial.unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def verify_local_dmg(manifest, filename):
+    """Reject cached DMGs changed since download, before Finder opens them."""
+    verify_manifest(manifest)
+    path = Path(filename)
+    expected_name = "GlacierBrowser-v" + manifest["version"] + "-macOS-AppleSilicon.dmg"
+    if path.name != expected_name or path.is_symlink() or not path.is_file():
+        raise UpdateError("本地更新包路径无效")
+    digest = hashlib.sha256()
+    try:
+        if path.stat().st_size != manifest["size"]:
+            raise UpdateError("本地更新包大小与签名清单不一致")
+        with path.open("rb") as stream:
+            while True:
+                chunk = stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError as exc:
+        raise UpdateError("无法读取本地更新包") from exc
+    if not hmac.compare_digest(digest.hexdigest(), manifest["sha256"]):
+        raise UpdateError("本地更新包 SHA256 验证失败")
+    return path
