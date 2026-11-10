@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import sys
 import tempfile
 import urllib.parse
@@ -82,7 +83,9 @@ OPENER = urllib.request.build_opener(HTTPSRedirect())
 
 def fetch(url):
     validate_url(url)
-    return OPENER.open(urllib.request.Request(url, headers={"User-Agent": "Glacier-Signed-VPS-Mirror/1"}), timeout=90)
+    return OPENER.open(urllib.request.Request(url, headers={"User-Agent": "Glacier-Signed-VPS-Mirror/1",
+                                                        "Cache-Control": "no-cache",
+                                                        "Pragma": "no-cache"}), timeout=90)
 
 def sha256(path):
     h = hashlib.sha256()
@@ -103,8 +106,19 @@ def save_atomic(target, data):
     finally:
         Path(temp).unlink(missing_ok=True)
 
+def signed_manifest_url(channel):
+    """Bypass intermediary cache for a fast signed-channel promotion.
+
+    Trust still comes only from the unchanged Ed25519 signature and pinned
+    public key, never from the nonce or the unsigned HTTP response.
+    """
+    if channel not in PLATFORMS:
+        raise ValueError("unsupported signed update channel")
+    return BASE + channel + ".json?nonce=" + secrets.token_hex(12)
+
+
 def sync_one(directory, channel):
-    with fetch(BASE + channel + ".json") as r:
+    with fetch(signed_manifest_url(channel)) as r:
         raw = r.read(65537)
     if len(raw) > 65536:
         raise ValueError("oversize signed manifest")
