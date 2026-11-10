@@ -6,7 +6,6 @@ the reviewed bundled Unreal script in an unprivileged Windows process identity.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -182,6 +181,46 @@ class JobManager:
         self.lock = threading.Lock()
         self.jobs = {}
         self.active = None
+        self._restore()
+
+    def _state_dir(self):
+        return self.root_factory() / "JobStatus"
+
+    def _save(self, entry):
+        folder = self._state_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        job_id = entry["job_id"]
+        # Job IDs are generated random hex, never caller-selected file paths.
+        tmp = folder / (job_id + ".pending")
+        target = folder / (job_id + ".json")
+        tmp.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(target)
+
+    def _restore(self):
+        folder = self._state_dir()
+        if not folder.is_dir():
+            return
+        for item in sorted(folder.glob("*.json"),
+                           key=lambda path: path.stat().st_mtime,
+                           reverse=True)[:64]:
+            if not re.fullmatch(r"[a-f0-9]{32}\\.json", item.name):
+                continue
+            try:
+                entry = json.loads(item.read_text(encoding="utf-8"))
+                if (type(entry) is not dict or
+                        entry.get("job_id") != item.stem or
+                        entry.get("state") not in {
+                            "queued", "running", "succeeded", "failed"
+                        }):
+                    continue
+                if entry["state"] in {"queued", "running"}:
+                    entry["state"] = "failed"
+                    entry["reason"] = "worker_restarted_job_result_unconfirmed"
+                    entry["finished_at"] = now()
+                    self._save(entry)
+                self.jobs[item.stem] = entry
+            except (OSError, ValueError, TypeError):
+                continue
 
     def submit(self, body):
         spec = sanitized_plan(body)
@@ -198,7 +237,12 @@ class JobManager:
                 "total_frames": spec["total_frames"],
                 "created_at": now(),
             }
+            self._save(entry)
             self.jobs[job_id] = entry
+            if len(self.jobs) > 64:
+                oldest = next(iter(self.jobs))
+                if oldest != job_id:
+                    del self.jobs[oldest]
             self.active = job_id
             thread = threading.Thread(
                 target=self._execute, args=(job_id, spec),
@@ -211,6 +255,7 @@ class JobManager:
         with self.lock:
             self.jobs[job_id]["state"] = "running"
             self.jobs[job_id]["started_at"] = now()
+            self._save(self.jobs[job_id])
         try:
             root = self.root_factory()
             work = root / "Jobs" / job_id
@@ -223,6 +268,7 @@ class JobManager:
         with self.lock:
             self.jobs[job_id].update(outcome)
             self.jobs[job_id]["finished_at"] = now()
+            self._save(self.jobs[job_id])
             self.active = None
 
     def lookup(self, job_id):
