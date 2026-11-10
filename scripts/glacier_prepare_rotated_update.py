@@ -15,7 +15,7 @@ from pathlib import Path
 
 OLD_PUBLIC = "7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab"
 OLD_KEY_ID = "cf9452226375ff7d"
-VERSION = "0.20.15"
+VERSION = "0.20.16"
 
 
 def validate_public(raw):
