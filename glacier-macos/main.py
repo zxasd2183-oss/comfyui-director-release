@@ -12,7 +12,7 @@ from ui08 import GlacierPrefs
 from mac_ui08 import MacGlacierUI08
 from ui09 import GlacierUI09
 from mac_update import MacUpdateUI
-from mac_platform import appdir, dpapi, get_link, core_path
+from mac_platform import appdir, dpapi, get_link, core_path, xray_core_path
 from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
 from mac_chrome_adapter import MacChrome14
@@ -27,6 +27,7 @@ from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
 from glacier_splash import show_glacier_splash
 from mac_proxy_diagnostics import start_capture, latest_hint, classify
+from mac_xray_reality import build_xray_reality_config
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -97,39 +98,52 @@ def build_proxy_config(link,port):
  }
 
 
-def proxy_start(link,port):
- if not link:return None
+def select_proxy_core(link,port):
+ """Always use official Xray for REALITY; sing-box for other VLESS variants."""
+ node=parse_node(link)
+ if (node.get("tls") or {}).get("reality",{}).get("enabled"):
+  core=xray_core_path()
+  if not core:raise RuntimeError("应用包缺少用于 REALITY 的官方 Xray ARM64 内核")
+  config=build_xray_reality_config(node,port)
+  return core, config, "xray"
  core=core_path()
  if not core:raise RuntimeError("应用包内未找到 Apple Silicon sing-box")
- config=build_proxy_config(link,port)
+ return core, build_proxy_config(link,port), "sing-box"
+
+
+def proxy_start(link,port):
+ if not link:return None
+ core,config,engine=select_proxy_core(link,port)
+ # Credential-bearing config remains strictly local in a user-private directory.
  configfile=appdir()/"runtime.json"
  fd=os.open(str(configfile),os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
  with os.fdopen(fd,"w",encoding="utf-8") as handle:json.dump(config,handle)
  flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
- result=subprocess.run([str(core),"check","-c",str(configfile)],
-                       stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+ # Xray and sing-box have different validation command forms.
+ check_args=([str(core),"run","-test","-config",str(configfile)]
+             if engine=="xray" else [str(core),"check","-c",str(configfile)])
+ result=subprocess.run(check_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
                        timeout=15,creationflags=flags)
  if result.returncode:
-  hint=classify(result.stdout.decode("utf-8",errors="replace")) or "配置与当前 sing-box 内核不兼容"
-  raise RuntimeError("VLESS 配置校验失败："+hint)
- # sing-box logs normal runtime errors to STDOUT by default.
- # Discard raw lines as soon as the in-memory classifier reads them.
- process=subprocess.Popen([str(core),"run","-c",str(configfile)],
-                          stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+  hint=classify(result.stdout.decode("utf-8",errors="replace")) or (engine+" 配置不受支持")
+  raise RuntimeError("VLESS 内核配置校验失败："+hint)
+ run_args=([str(core),"run","-config",str(configfile)]
+           if engine=="xray" else [str(core),"run","-c",str(configfile)])
+ process=subprocess.Popen(run_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
                           creationflags=flags)
  start_capture(process)
  # The process may exit or fail to bind even when config validation succeeds.
  # Do not advertise a working core until its local SOCKS5 port accepts traffic.
  for _ in range(30):
   if process.poll() is not None:
-   raise RuntimeError("sing-box 启动后退出："+(latest_hint(process) or "内核初始化失败"))
+   raise RuntimeError(engine+" 启动后退出："+(latest_hint(process) or "内核初始化失败"))
   try:
    with socket.create_connection(("127.0.0.1",port),timeout=0.3):
     return process
   except OSError:
    time.sleep(0.1)
  process.terminate()
- raise RuntimeError("sing-box 未监听本地代理端口，已禁止直连")
+ raise RuntimeError(engine+" 未监听本地代理端口，已禁止直连")
 class Page(QWebEngineView):
  def __init__(self,win):
   super().__init__(win)
