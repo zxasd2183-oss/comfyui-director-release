@@ -81,6 +81,8 @@ class MacOneClickInstallTests(unittest.TestCase):
         self.assertIn("/usr/bin/codesign --verify --deep", i.INSTALL_HELPER)
         self.assertIn("/usr/libexec/PlistBuddy", i.INSTALL_HELPER)
         self.assertIn("/usr/bin/hdiutil attach -readonly", i.INSTALL_HELPER)
+        self.assertIn('"$work/signed.dmg"', i.INSTALL_HELPER)
+        self.assertIn('previous_id', i.INSTALL_HELPER)
         self.assertIn("cn.borealos.glacierbrowser", i.INSTALL_HELPER)
         self.assertNotIn("sudo ", i.INSTALL_HELPER)
         self.assertNotIn("spctl --master-disable", i.INSTALL_HELPER)
@@ -95,7 +97,7 @@ class MacOneClickInstallTests(unittest.TestCase):
                 self.manifest, self.dmg, self.updates))
         args, kwargs = popen.call_args
         self.assertEqual(args[0][0], "/bin/bash")
-        self.assertEqual(args[0][2], str(self.dmg))
+        self.assertEqual(args[0][2], str(self.dmg.resolve(strict=True)))
         self.assertEqual(args[0][3], self.manifest["sha256"])
         self.assertEqual(args[0][4], str(len(self.data)))
         self.assertEqual(args[0][5], "0.20.18")
