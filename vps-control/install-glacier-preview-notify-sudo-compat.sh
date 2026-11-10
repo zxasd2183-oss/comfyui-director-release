@@ -24,7 +24,7 @@ systemctl is-active --quiet "${unit}" || { echo "OIDC receiver is not active" >&
 [[ "$(systemctl show --property=LoadState --value glacier-signed-mirror.service)" == "loaded" ]] || {
   echo "Signed mirror service not installed" >&2; exit 2;
 }
-[[ -f "${installed_sudoers}" ]] || { echo "Exact signed-mirror sudoers policy missing" >&2; exit 2; }
+sudo test -f "${installed_sudoers}" || { echo "Exact signed-mirror sudoers policy missing" >&2; exit 2; }
 sudo visudo -cf "${installed_sudoers}" >/dev/null
 sudo cmp -s "${expected_sudoers}" "${installed_sudoers}" || {
   echo "Installed sudoers differs from the reviewed, one-command allowlist" >&2; exit 2;
