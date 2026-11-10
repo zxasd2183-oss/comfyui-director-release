@@ -95,6 +95,30 @@ class QueueTest(unittest.TestCase):
             self.assertEqual(state["state"], "succeeded")
             self.assertIn("master", state["result"])
 
+    def test_receipts_survive_restart_and_running_jobs_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manager = ue_jobs.JobManager(lambda: root, runner=lambda *args: {
+                "master": "/Game/Director/Episodes/WaitingOffice_EP01_Master"
+            })
+            item = manager.submit(episode())
+            for _ in range(100):
+                if manager.lookup(item["job_id"])["state"] == "succeeded":
+                    break
+                time.sleep(0.01)
+            restored = ue_jobs.JobManager(lambda: root)
+            self.assertEqual(restored.lookup(item["job_id"])["state"], "succeeded")
+            stale = {
+                "ok": True, "job_id": "a" * 32,
+                "state": "running", "task": "build_episode_timeline"
+            }
+            status_dir = root / "JobStatus"
+            (status_dir / (("a" * 32) + ".json")).write_text(json.dumps(stale))
+            recovered = ue_jobs.JobManager(lambda: root)
+            self.assertEqual(recovered.lookup("a"*32)["state"], "failed")
+            self.assertEqual(recovered.lookup("a"*32)["reason"],
+                             "worker_restarted_job_result_unconfirmed")
+
     def test_invalid_job_id_is_not_executable(self):
         manager = ue_jobs.JobManager(lambda: Path("."))
         with self.assertRaises(ue_jobs.JobError):
