@@ -49,7 +49,7 @@ class MacUpdateUI:
         dlg.resize(460,270)
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel(f"❄ Glacier Browser  ·  macOS Apple Silicon v{CURRENT_VERSION}"))
-        lay.addWidget(QLabel("更新通道：GitHub / macos-arm64  ·  Ed25519 验签"))
+        lay.addWidget(QLabel("更新通道：VPS / macos-arm64  ·  Ed25519 验签"))
         status = QLabel("点击「检查更新」获取最新版本。")
         status.setWordWrap(True)
         lay.addWidget(status)
@@ -76,7 +76,7 @@ class MacUpdateUI:
         auto_download.toggled.connect(lambda v:self._save_mac_setting("auto_download",v))
         lay.addWidget(auto_check)
         lay.addWidget(auto_download)
-        lay.addWidget(QLabel("更新流量通过 VLESS 访问 GitHub；无代理时拒绝直连。"))
+        lay.addWidget(QLabel("正式更新由自有 VPS HTTPS 提供；签名及 SHA256 均会校验。"))
         lay.addWidget(QLabel("未进行 Apple Developer ID 签名/公证，安装时需确认。"))
         self._mac_dialog=dlg
         self._mac_status=status
@@ -115,7 +115,7 @@ class MacUpdateUI:
         self._mac_installer=None
         self._mac_manifest=None
         self._set_busy(True)
-        self._mac_status.setText("正在经 VLESS 获取 Mac 签名更新…")
+        self._mac_status.setText("正在从 VPS 获取 Mac 签名更新…")
         if show_ui:self.show_mac_updates()
         port=getattr(self,"proxy_port",0)
         def job():
@@ -146,7 +146,7 @@ class MacUpdateUI:
         if self._mac_update_busy or self._mac_manifest is None:return
         self._mac_progress.setValue(0)
         self._set_busy(True)
-        self._mac_status.setText("正在经 VLESS 下载并验证新版 DMG…")
+        self._mac_status.setText("正在下载并验证新版 DMG…")
         manifest=self._mac_manifest.copy()
         port=getattr(self,"proxy_port",0)
         def job():
