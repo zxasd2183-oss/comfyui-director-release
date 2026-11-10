@@ -150,6 +150,7 @@ jobs:
           ArchitecturesAllowed=x64compatible
           WizardStyle=modern
           CloseApplications=yes
+          RestartApplications=no
           UninstallDisplayIcon={app}\GlacierBrowser.exe
           [Files]
           Source: "dist\GlacierBrowser\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
