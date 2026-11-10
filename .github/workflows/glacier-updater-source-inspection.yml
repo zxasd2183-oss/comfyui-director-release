@@ -1,0 +1,24 @@
+name: Glacier updater source inspection
+on:
+  push:
+    branches:
+      - feature/glacier-clients-upgrade-20261110
+    paths:
+      - '.github/workflows/glacier-updater-source-inspection.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Windows updater UI implementation
+        run: |
+          python - <<'PY'
+          import base64,lzma
+          from pathlib import Path
+          p=Path("glacier-windows/update_ui.py.xz.b64")
+          source=lzma.decompress(base64.b64decode(p.read_text(encoding="ascii"))).decode("utf-8")
+          for n,line in enumerate(source.splitlines(),1):
+              print(f"UPDATER_SOURCE {n:03d} {line}")
+          PY
