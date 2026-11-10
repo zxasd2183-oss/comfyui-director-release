@@ -120,7 +120,10 @@ def ensure_project(root):
     if project.exists():
         if project.is_symlink():
             raise JobError("project_is_symlink")
-        actual = json.loads(project.read_text(encoding="utf-8"))
+        try:
+            actual = json.loads(project.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError):
+            raise JobError("project_exists_not_managed_by_director") from None
         if actual not in (expected, render_expected):
             raise JobError("project_exists_not_managed_by_director")
     else:
