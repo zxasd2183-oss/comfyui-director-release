@@ -24,13 +24,34 @@ sudo install -o root -g root -m 0644 vps-control/glacier-signed-mirror.service /
 sudo install -o root -g root -m 0644 vps-control/glacier-signed-mirror.timer /etc/systemd/system/glacier-signed-mirror.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now glacier-signed-mirror.timer
-echo 'Staging both immutable v0.20.10 installers (signed feed remains 0.20.9 until independently promoted)...'
-sudo systemctl start glacier-signed-mirror.service
+echo 'Refreshing the existing signed mirror from uncached GitHub v2 feeds...'
+if ! sudo systemctl start glacier-signed-mirror.service; then
+  sudo journalctl -u glacier-signed-mirror.service -n 35 --no-pager
+  echo 'Glacier signed mirror failed; existing signed files remain untouched.' >&2
+  exit 2
+fi
 
 dir=/var/lib/glacier-preview-downloads
-echo '8aeb73bcaf1a00e489c512a4c69152efda6141fc402365c7b3165cce02ef8be1  '${dir}'/GlacierBrowser-v0.20.10-Windows-Setup-x64.exe' | sha256sum -c -
-echo '3d3175c051e2cbba4864b0fc17f4b5e5def6fdc57880f8b2294f228f392549b0  '${dir}'/GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg' | sha256sum -c -
+echo '089985713c0f16148d3ce17db00310b837072b8ed69435205a18428874cecfc8  '${dir}'/GlacierBrowser-v0.20.11-Windows-Setup-x64.exe' | sha256sum -c -
+echo 'e681b86246084e813b735229369f2baed950414fe2b4a0c2953ab4a89dd44584  '${dir}'/GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg' | sha256sum -c -
 
-curl --fail --silent --show-error --head --max-time 20   https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.10-Windows-Setup-x64.exe > /dev/null
-curl --fail --silent --show-error --head --max-time 20   https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg > /dev/null
-echo 'SUCCESS: v0.20.10 paired release assets are mirrored and hash-verified. Nginx and signed feed unchanged.'
+python3 - <<'PY'
+import importlib.util
+import json
+from pathlib import Path
+root=Path("vps-control/sync-glacier-signed-releases.py")
+spec=importlib.util.spec_from_file_location("glacier_signed_mirror",root)
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+files=Path("/var/lib/glacier-preview-downloads")
+for channel in ("windows-x64","macos-arm64"):
+    doc=json.loads((files/(channel+".json")).read_text(encoding="utf-8"))
+    module.verify(doc,channel)  # Pinned key verifies unchanged Ed25519 signature
+    if doc["version"]!="0.20.11":
+        raise RuntimeError(channel+" signed feed still at "+doc["version"])
+    print(channel+": v0.20.11 pinned signature verified; "+doc["url"])
+PY
+for file in GlacierBrowser-v0.20.11-Windows-Setup-x64.exe GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg; do
+  curl --fail --silent --show-error --head --max-time 20 "https://sync.borealos.cn/downloads/$file" > /dev/null
+done
+echo 'SUCCESS: v0.20.11 paired installers and signed feeds verified on existing VPS. No Nginx or preview changes.'
