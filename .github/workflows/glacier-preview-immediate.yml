@@ -7,7 +7,10 @@ on:
     paths:
       - '.github/workflows/glacier-preview-immediate.yml'
   workflow_run:
-    workflows: ["Glacier Browser signed Windows + macOS auto updates"]
+    workflows:
+      - "Glacier Browser signed Windows + macOS auto updates"
+      - "Glacier Browser v0.20.11 Windows unified release"
+      - "Glacier Browser macOS Apple Silicon v0.20.11 unified release"
     types: [completed]
 
 permissions:
@@ -29,7 +32,11 @@ jobs:
         (
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.head_branch == 'main' &&
+          (
+            (github.event.workflow_run.name == 'Glacier Browser signed Windows + macOS auto updates' && github.event.workflow_run.head_branch == 'main') ||
+            (github.event.workflow_run.name == 'Glacier Browser v0.20.11 Windows unified release' && github.event.workflow_run.head_branch == 'fix/glacier-browser-windows-v0201-input') ||
+            (github.event.workflow_run.name == 'Glacier Browser macOS Apple Silicon v0.20.11 unified release' && github.event.workflow_run.head_branch == 'build/glacier-browser-v0-20-ui-refresh')
+          ) &&
           github.event.workflow_run.head_repository.full_name == 'zxasd2183-oss/comfyui-director-release'
         )
       )
@@ -38,6 +45,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: write
     steps:
       - name: Notify owner VPS via workflow-bound short-lived OIDC token
         shell: bash
@@ -112,3 +120,30 @@ jobs:
               assert live["key_id"]=="v2-259ea4a7b9da4bea"
               print(channel, "v0.20.10 VPS signed feed matches the canonical Ed25519 release")
           PY
+
+      - name: Promote only after BOTH v0.20.11 installers appear on signed VPS mirror
+        if: >-
+          github.event_name == 'workflow_run' &&
+          (github.event.workflow_run.name == 'Glacier Browser v0.20.11 Windows unified release' ||
+           github.event.workflow_run.name == 'Glacier Browser macOS Apple Silicon v0.20.11 unified release')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://sync.borealos.cn/downloads/'
+          win='GlacierBrowser-v0.20.11-Windows-Setup-x64.exe'
+          mac='GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg'
+          for attempt in $(seq 1 12); do
+            w="$(curl --silent --show-error --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${win}" || true)"
+            m="$(curl --silent --show-error --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${mac}" || true)"
+            if [[ "${w}" == '200' && "${m}" == '200' ]]; then
+              echo 'Both immutable v0.20.11 installers are served by VPS; requesting independent full SHA-256 gate.'
+              gh workflow run glacier-browser-signed-updates.yml --ref main --repo "$GITHUB_REPOSITORY"
+              exit 0
+            fi
+            echo "Attempt $attempt/12: VPS mirrored installers: Windows HTTP $w, Mac HTTP $m"
+            sleep 12
+          done
+          echo '::warning::Both installers not mirrored yet; signed publisher schedule remains fallback.'
+
