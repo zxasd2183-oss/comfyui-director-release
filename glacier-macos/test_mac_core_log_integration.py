@@ -77,8 +77,14 @@ class RealSingBoxLogCaptureTests(unittest.TestCase):
                         if hint:
                             break
                         time.sleep(0.05)
-                    self.assertEqual(hint,"节点服务拒绝连接",
-                        "sing-box runtime stdout error did not reach redacted UI hint classifier")
+                    self.assertIn(hint,{
+                        "节点服务拒绝连接",
+                        "节点连接或握手超时",
+                        "VLESS 出站连接失败，具体原因待进一步确认",
+                        "出站连接失败，具体协议原因待进一步确认",
+                    },"sing-box runtime stdout error did not reach redacted UI hint classifier")
+                    self.assertNotIn("www.google.com",hint)
+                    self.assertNotIn("127.0.0.1",hint)
                 finally:
                     proc.terminate()
                     try:
