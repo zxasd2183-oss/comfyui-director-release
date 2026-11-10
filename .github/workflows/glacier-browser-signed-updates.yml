@@ -1,7 +1,7 @@
 name: Glacier Browser signed Windows + macOS auto updates
-# Preserve v0.20.9 signed compatibility bridge until BOTH v0.20.10 VPS
-# installers have independently passed complete SHA-256 and size verification.
-# v0.20.10 is staged on the existing VPS; run the SHA-256 gate before promotion.
+# Preserve existing signed feeds until BOTH installers of the newest canonical
+# paired release have independently passed full VPS SHA-256 and size verification.
+# Recheck the complete bytes before every promotion; never rewrite an old feed.
 
 on:
   release:
