@@ -40,14 +40,6 @@ done
 if /bin/kill -0 "$oldpid" 2>/dev/null; then
   echo "Browser did not exit; no files changed"; exit 1
 fi
-[[ "$(/usr/bin/stat -f '%z' "$dmg")" == "$size" ]] || {
-  echo "DMG size changed; refusing install"; exit 1;
-}
-actual="$(/usr/bin/shasum -a 256 "$dmg" | /usr/bin/awk '{print $1}')"
-[[ "$actual" == "$digest" ]] || {
-  echo "DMG SHA256 changed; refusing install"; exit 1;
-}
-
 work="$(/usr/bin/mktemp -d "$parent/.glacier-update.XXXXXXXX")"
 mounted=0
 cleanup() {
@@ -68,8 +60,19 @@ cleanup() {
   exit "$result"
 }
 trap cleanup EXIT
+# Copy to a private random directory, then hash *that exact copy* before mount.
+# Do not hash the mutable download and later mount a different byte stream.
+/bin/cp "$dmg" "$work/signed.dmg"
+/bin/chmod 0400 "$work/signed.dmg"
+[[ "$(/usr/bin/stat -f '%z' "$work/signed.dmg")" == "$size" ]] || {
+  echo "Staged DMG size changed; refusing install"; exit 1;
+}
+actual="$(/usr/bin/shasum -a 256 "$work/signed.dmg" | /usr/bin/awk '{print $1}')"
+[[ "$actual" == "$digest" ]] || {
+  echo "Staged DMG SHA256 mismatch; refusing install"; exit 1;
+}
 /bin/mkdir "$work/mount"
-/usr/bin/hdiutil attach -readonly -nobrowse -mountpoint "$work/mount" "$dmg" >/dev/null
+/usr/bin/hdiutil attach -readonly -nobrowse -mountpoint "$work/mount" "$work/signed.dmg" >/dev/null
 mounted=1
 source="$work/mount/GlacierBrowser.app"
 [[ -d "$source" && ! -L "$source" ]] || {
@@ -91,6 +94,15 @@ bundle_ver="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$p
   echo "App bundle integrity check failed"; exit 1;
 }
 [[ -d "$dest" && ! -L "$dest" ]] || exit 1
+# Never overwrite another app merely because it has the same directory name.
+previous_plist="$dest/Contents/Info.plist"
+[[ -f "$previous_plist" && ! -L "$previous_plist" ]] || exit 1
+previous_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$previous_plist")"
+previous_exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$previous_plist")"
+[[ "$previous_id" == "cn.borealos.glacierbrowser" &&
+   "$previous_exe" == "GlacierBrowser" ]] || {
+  echo "Existing app identity mismatch; refusing overwrite"; exit 1;
+}
 /bin/mv "$dest" "$work/previous.app"
 /bin/mv "$work/new.app" "$dest" || {
   /bin/mv "$work/previous.app" "$dest" || true
@@ -116,11 +128,11 @@ def writable_installed_app(executable=None, home=None, platform=None, roots=None
     app = exe.parent.parent.parent
     if (app.name != "GlacierBrowser.app" or app.parent not in allowed or
             exe != app / "Contents" / "MacOS" / "GlacierBrowser" or
-            app.is_symlink() or not app.is_dir() or exe.is_symlink() or
+            app.is_symlink() or app.parent.is_symlink() or not app.is_dir() or exe.is_symlink() or
             not exe.is_file() or not (app / "Contents" / "Info.plist").is_file()):
         return None
     try:
-        if app.resolve(strict=True) != app or not os.access(app.parent, os.W_OK | os.X_OK):
+        if app.resolve(strict=True) != (app.parent.resolve(strict=True) / app.name) or not os.access(app.parent, os.W_OK | os.X_OK):
             return None
     except OSError:
         return None

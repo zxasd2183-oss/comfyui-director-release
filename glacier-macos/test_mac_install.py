@@ -32,14 +32,14 @@ class MacOneClickInstallTests(unittest.TestCase):
         self.updates = self.root / "updates"
         self.updates.mkdir()
         self.data = b"G" * 1_100_000
-        self.dmg = self.updates / "GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg"
+        self.dmg = self.updates / "GlacierBrowser-v0.20.18-macOS-AppleSilicon.dmg"
         self.dmg.write_bytes(self.data)
         self.key = Ed25519PrivateKey.generate()
         self.public = self.key.public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw)
         payload = {
             "channel": "macos-arm64",
-            "version": "0.20.17",
+            "version": "0.20.18",
             "url": "https://sync.borealos.cn/downloads/" + self.dmg.name,
             "size": len(self.data),
             "sha256": hashlib.sha256(self.data).hexdigest(),
@@ -81,6 +81,8 @@ class MacOneClickInstallTests(unittest.TestCase):
         self.assertIn("/usr/bin/codesign --verify --deep", i.INSTALL_HELPER)
         self.assertIn("/usr/libexec/PlistBuddy", i.INSTALL_HELPER)
         self.assertIn("/usr/bin/hdiutil attach -readonly", i.INSTALL_HELPER)
+        self.assertIn('"$work/signed.dmg"', i.INSTALL_HELPER)
+        self.assertIn('previous_id', i.INSTALL_HELPER)
         self.assertIn("cn.borealos.glacierbrowser", i.INSTALL_HELPER)
         self.assertNotIn("sudo ", i.INSTALL_HELPER)
         self.assertNotIn("spctl --master-disable", i.INSTALL_HELPER)
@@ -95,10 +97,10 @@ class MacOneClickInstallTests(unittest.TestCase):
                 self.manifest, self.dmg, self.updates))
         args, kwargs = popen.call_args
         self.assertEqual(args[0][0], "/bin/bash")
-        self.assertEqual(args[0][2], str(self.dmg))
+        self.assertEqual(args[0][2], str(self.dmg.resolve(strict=True)))
         self.assertEqual(args[0][3], self.manifest["sha256"])
         self.assertEqual(args[0][4], str(len(self.data)))
-        self.assertEqual(args[0][5], "0.20.17")
+        self.assertEqual(args[0][5], "0.20.18")
         self.assertEqual(args[0][6], str(self.apps / "GlacierBrowser.app"))
         self.assertTrue(kwargs["start_new_session"])
         self.assertFalse(kwargs.get("shell", False))
