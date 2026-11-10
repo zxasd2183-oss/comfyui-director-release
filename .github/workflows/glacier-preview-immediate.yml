@@ -99,27 +99,33 @@ jobs:
           done
           echo "Mirror probe is informational: HTTP 202 notify only means accepted, not staging complete." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Confirm the authenticated notification served the current signed channels
+      - name: Confirm both VPS channels match their canonical signed metadata
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, urllib.request
+          import json, time, urllib.request
           root="https://sync.borealos.cn/downloads/"
           origin=("https://raw.githubusercontent.com/zxasd2183-oss/"
                   "comfyui-director-release/glacier-browser-updates-v2/channels/")
           for channel, suffix in (("windows-x64","Windows-Setup-x64.exe"),
                                   ("macos-arm64","macOS-AppleSilicon.dmg")):
-              with urllib.request.urlopen(root+channel+".json",timeout=18) as f:
-                  live=json.load(f)
               with urllib.request.urlopen(origin+channel+".json",timeout=18) as f:
-                  signed=json.load(f)
-              assert live==signed, channel+" VPS signed feed differs from canonical release"
-              assert live["version"]=="0.20.10",channel+" current signed version differs"
-              expected=root+"GlacierBrowser-v0.20.10-"+suffix
-              assert live["url"]==expected,channel+" update URL is not VPS"
-              assert live["key_id"]=="v2-259ea4a7b9da4bea"
-              print(channel, "v0.20.10 VPS signed feed matches the canonical Ed25519 release")
+                  canonical=json.load(f)
+              for attempt in range(8):
+                  with urllib.request.urlopen(root+channel+".json",timeout=18) as f:
+                      live=json.load(f)
+                  if live==canonical:
+                      break
+                  if attempt==7:
+                      raise RuntimeError(channel+" VPS has not yet caught up with signed metadata")
+                  time.sleep(5)
+              version=canonical["version"]
+              assert tuple(map(int,version.split("."))) >= (0,20,10)
+              expected=root+"GlacierBrowser-v"+version+"-"+suffix
+              assert canonical["url"]==expected,channel+" signed update URL is not VPS"
+              assert canonical["key_id"]=="v2-259ea4a7b9da4bea"
+              print(channel, "v"+version+" VPS feed matches the canonical Ed25519 signed channel")
           PY
 
       - name: Request signed release only after the newest paired installers are mirrored
