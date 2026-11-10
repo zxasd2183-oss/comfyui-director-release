@@ -12,6 +12,7 @@ from hub_sync_jobs import JOBS
 from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_episode_timeline as enqueue_ue_episode_timeline_rpc,
                            enqueue_ue_stage_cameras as enqueue_ue_stage_cameras_rpc,
+                           enqueue_ue_previs_stills as enqueue_ue_previs_stills_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc)
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
@@ -330,6 +331,16 @@ def enqueue_ue_stage_cameras(project_id: str, episode_id: str) -> dict:
     timeline and approved production assets are never overwritten.
     """
     return enqueue_ue_stage_cameras_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_previs_stills(project_id: str, episode_id: str) -> dict:
+    """Render four 720x1280 PNG proof frames from the approved V03 stage.
+
+    Fixed shots 01, 13, 26, 31; outputs verified PNG receipts (not MP4).
+    Runs Unreal MRQ on a metered Windows GPU. No arbitrary inputs.
+    """
+    return enqueue_ue_previs_stills_rpc(project_id, episode_id)
 
 
 @app.tool(annotations=READ)
