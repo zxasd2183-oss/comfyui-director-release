@@ -78,7 +78,7 @@ def build(spec):
         raise RuntimeError("master sequence already exists; refusing overwrite")
 
     configure_sequence(master, spec["total_frames"], fps)
-    track = master.add_master_track(unreal.MovieSceneCinematicShotTrack)
+    track = master.add_track(unreal.MovieSceneCinematicShotTrack)
     cursor = 0
     for shot, shot_sequence in zip(shots, shot_assets):
         section = track.add_section()
