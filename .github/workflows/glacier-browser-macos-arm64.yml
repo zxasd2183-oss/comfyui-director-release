@@ -76,9 +76,10 @@ jobs:
           cp ../glacier-windows/test_productivity16.py test_productivity16.py
           for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py; do cp ../glacier-windows/"$file" "$file"; done
           python ../scripts/glacier_prepare_rotated_update.py macos .
-          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py glacier_account_center26.py test_account_center26.py glacier_sync23.py glacier_sync_auto24.py test_accounts22.py test_sync23.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
+          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_proxy_diagnostics.py test_mac_proxy_diagnostics.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py glacier_account_center26.py test_account_center26.py glacier_sync23.py glacier_sync_auto24.py test_accounts22.py test_sync23.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
           python -m unittest -v test_mac_update
           python -m unittest -v test_mac_https_probe
+          python -m unittest -v test_mac_proxy_diagnostics
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_vless_config
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_gui_start
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_desktop15
@@ -103,6 +104,33 @@ jobs:
           file bin/sing-box
           test "$(lipo -archs bin/sing-box)" = 'arm64'
           bin/sing-box version
+      - name: Validate REALITY and modern dial DNS against actual bundled sing-box
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,json,subprocess,tempfile,uuid
+          from pathlib import Path
+          from main import build_proxy_config
+          pk=base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+          base="vless://"+str(uuid.UUID(int=1))+"@example.com:443?encryption=none&security=tls"
+          examples={
+              "tls":base,
+              "websocket":base+"&type=ws&path=%2Fws&ed=1024",
+              "httpupgrade":base+"&type=httpupgrade&path=%2Fws",
+              "reality":base.replace("security=tls","security=reality")+"&pbk="+pk+"&sid=01ab&flow=xtls-rprx-vision"
+          }
+          for kind,link in examples.items():
+              config=build_proxy_config(link,19010)
+              with tempfile.TemporaryDirectory() as temp:
+                  cfg=Path(temp)/"config.json"
+                  cfg.write_text(json.dumps(config),encoding="utf-8")
+                  result=subprocess.run(["bin/sing-box","check","-c",str(cfg)],
+                                        capture_output=True,timeout=20,text=True)
+                  if result.returncode:
+                      raise RuntimeError(kind+" sing-box check failed: "+result.stderr[:500])
+                  print("sing-box 1.14.4 validates",kind,"with explicit DNS")
+          PY
       - name: Assemble native .app with Qt WebEngine and bundled sing-box
         working-directory: glacier-macos
         run: |
