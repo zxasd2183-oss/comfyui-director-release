@@ -36,7 +36,8 @@ def build_xray_reality_config(node: dict, port: int) -> dict:
         "realitySettings": {
             "serverName": tls.get("server_name") or node["server"],
             "fingerprint": fp,
-            "publicKey": reality["public_key"],
+            # Xray 26.x calls REALITY's client-held public key "password".
+            "password": reality["public_key"],
             "shortId": sid.lower(),
         },
     }
