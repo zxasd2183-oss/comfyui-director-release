@@ -1,4 +1,4 @@
-name: Glacier VPS v0.20.10 release preflight
+name: Glacier VPS v0.20.11 release preflight
 on:
   workflow_dispatch:
   push:
@@ -28,8 +28,8 @@ jobs:
           from pathlib import PurePosixPath
           root="https://sync.borealos.cn/downloads/"
           entries={
-             "windows-x64": "GlacierBrowser-v0.20.10-Windows-Setup-x64.exe",
-             "macos-arm64": "GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg"
+             "windows-x64": "GlacierBrowser-v0.20.11-Windows-Setup-x64.exe",
+             "macos-arm64": "GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg"
           }
           ready=True
           for channel,filename in entries.items():
@@ -47,8 +47,8 @@ jobs:
                       canonical=json.load(source)
                   if doc != canonical:
                       raise RuntimeError("VPS feed differs from immutable GitHub-signed update")
-                  if doc.get("version")!="0.20.10" or doc.get("url")!=root+filename:
-                      raise RuntimeError("VPS is not yet serving the signed v0.20.10 feed")
+                  if doc.get("version")!="0.20.11" or doc.get("url")!=root+filename:
+                      raise RuntimeError("VPS is not yet serving the signed v0.20.11 feed")
               except Exception as exc:
                   print("::error::"+channel+" VPS feed unavailable: "+str(exc))
                   ready=False
@@ -60,8 +60,8 @@ jobs:
                       size=resp.headers.get("Content-Length")
                   print(channel,"VPS installer ready:",filename,"bytes:",size)
               except Exception as exc:
-                  print("::warning::"+channel+" v0.20.10 installer NOT YET mirrored: "+str(exc))
+                  print("::warning::"+channel+" v0.20.11 installer NOT YET mirrored: "+str(exc))
                   ready=False
           if not ready:
-              raise SystemExit("VPS preflight incomplete: do not promote v0.20.10 signed update feeds")
+              raise SystemExit("VPS preflight incomplete: do not promote v0.20.11 signed update feeds")
           PY
