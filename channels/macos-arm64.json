@@ -1,10 +1,10 @@
 {
   "channel": "macos-arm64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.20.15：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
-  "sha256": "6a080df34b6d8852ed7c2d17a4e6fde913a3475c2675689fd58e43a2d388056d",
-  "signature": "juxsmroxd14CPAzmwWOlSPDYWHiQfq8Zu9xR2yI0+hpgL6lggk6L+ZJRJqpe5dZ2K+XeE4NiMxTGHTcF102UAQ==",
-  "size": 285877568,
-  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.15-macOS-AppleSilicon.dmg",
-  "version": "0.20.15"
+  "notes": "Glacier Browser v0.20.16：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
+  "sha256": "870bf927b1935f06cfe1805b32680f3a57a33eee64b614cefbdfc5cdf48d9d20",
+  "signature": "iNSqSJBE9VzQow7WXFfn3twYq+JqaP4H4l1h62IR3dJzYelAenm2nTFF0gIMnBqEuTVJdXGI9Oz1sINwsRftCA==",
+  "size": 284693421,
+  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg",
+  "version": "0.20.16"
 }
