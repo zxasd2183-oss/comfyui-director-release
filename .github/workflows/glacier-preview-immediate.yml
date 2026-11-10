@@ -124,6 +124,7 @@ jobs:
       - name: Request signed release only after the newest paired installers are mirrored
         if: >-
           github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'push' ||
           (github.event_name == 'workflow_run' &&
            (github.event.workflow_run.name == 'Glacier Browser v0.20.11 Windows unified release' ||
             github.event.workflow_run.name == 'Glacier Browser macOS Apple Silicon v0.20.11 unified release'))
