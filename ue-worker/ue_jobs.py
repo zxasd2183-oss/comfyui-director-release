@@ -37,7 +37,9 @@ def sanitized_plan(body):
         "task", "project_id", "episode_id", "fps", "shots", "expected_total_ms"
     }:
         raise JobError("invalid_fields")
-    if body["task"] not in ("build_episode_timeline", "build_stage_cameras"):
+    if body["task"] not in (
+        "build_episode_timeline", "build_stage_cameras", "render_previs_stills"
+    ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
     if (type(project_id) is not str or not ID.fullmatch(project_id) or
@@ -78,13 +80,20 @@ def sanitized_plan(body):
         raise JobError("timeline_total_mismatch")
     # The V0.3 stage recipe is FIXED to WaitingOffice EP01 and does not
     # modify V0.2 sequences or accept any user-authored scene/code paths.
-    if body["task"] == "build_stage_cameras":
+    if body["task"] in ("build_stage_cameras", "render_previs_stills"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
-            raise JobError("v03_stage_requires_locked_ep01")
-    fmt = ("director_ue_stage_v03" if body["task"] == "build_stage_cameras"
-           else "director_ue_timeline_v1")
+            raise JobError("previs_requires_locked_ep01")
+        if [s["shot_id"] for s in validated] != [
+            str(i).zfill(2) for i in range(1, 32)
+        ]:
+            raise JobError("previs_requires_frozen_shot_ids")
+    fmt = (
+        "director_ue_previs_v04" if body["task"] == "render_previs_stills"
+        else "director_ue_stage_v03" if body["task"] == "build_stage_cameras"
+        else "director_ue_timeline_v1"
+    )
     # This is a source-of-truth manifest built from Studio's registered shots.
     return {
         "format": fmt,
@@ -104,9 +113,15 @@ def ensure_project(root):
         "Description": "Director UE original automated production project",
         "Plugins": [{"Name": name, "Enabled": True} for name in KNOWN_PLUGINS],
     }
+    render_expected = dict(expected)
+    render_expected["Plugins"] = expected["Plugins"] + [
+        {"Name": "MovieRenderPipeline", "Enabled": True}
+    ]
     if project.exists():
-        if project.is_symlink() or project.read_text(encoding="utf-8") != (
-                json.dumps(expected, ensure_ascii=False, indent=2) + "\n"):
+        if project.is_symlink():
+            raise JobError("project_is_symlink")
+        actual = json.loads(project.read_text(encoding="utf-8"))
+        if actual not in (expected, render_expected):
             raise JobError("project_exists_not_managed_by_director")
     else:
         project.write_text(
@@ -286,7 +301,13 @@ class JobManager:
         try:
             root = self.root_factory()
             work = root / "Jobs" / job_id
-            result = self.runner(spec, root, work)
+            if spec["format"] == "director_ue_previs_v04":
+                from ue_previs import run_previs
+                # Preview uses a separate, fixed render pipeline and strict
+                # output receipt, never the legacy commandlet path.
+                result = run_previs(spec, root, work)
+            else:
+                result = self.runner(spec, root, work)
             outcome = {"state": "succeeded", "result": result}
         except JobError as exc:
             outcome = {"state": "failed", "reason": str(exc)}
