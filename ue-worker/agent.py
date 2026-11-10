@@ -122,6 +122,7 @@ def capabilities():
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
         "supports_rendering": False,
+        "supports_previs_stills": True,
     }
 
 
