@@ -31,8 +31,10 @@ class MacGlacierUI08(GlacierUI08):
                     if hint:
                         break
                     time.sleep(0.06)
-                message="HTTPS 检测失败："+str(exc)[:140]
-                message+="；内核诊断："+(hint or "未捕获可识别的内核错误")
+                # Put the classified core cause FIRST so narrow status labels
+                # cannot clip it after the long SOCKS5 error explanation.
+                reason=hint or "未捕获可识别的内核错误"
+                message="内核诊断："+reason+"｜HTTPS 检测失败："+str(exc)[:105]
                 ok=False
             self.check_signals.checked.emit(ok,message)
 
