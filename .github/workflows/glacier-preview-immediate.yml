@@ -41,7 +41,7 @@ jobs:
         )
       )
     runs-on: ubuntu-24.04
-    timeout-minutes: 4
+    timeout-minutes: 6
     permissions:
       id-token: write
       contents: read
@@ -121,29 +121,54 @@ jobs:
               print(channel, "v0.20.10 VPS signed feed matches the canonical Ed25519 release")
           PY
 
-      - name: Promote only after BOTH v0.20.11 installers appear on signed VPS mirror
+      - name: Request signed release only after the newest paired installers are mirrored
         if: >-
-          github.event_name == 'workflow_run' &&
-          (github.event.workflow_run.name == 'Glacier Browser v0.20.11 Windows unified release' ||
-           github.event.workflow_run.name == 'Glacier Browser macOS Apple Silicon v0.20.11 unified release')
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'workflow_run' &&
+           (github.event.workflow_run.name == 'Glacier Browser v0.20.11 Windows unified release' ||
+            github.event.workflow_run.name == 'Glacier Browser macOS Apple Silicon v0.20.11 unified release'))
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          latest="$(python3 - <<'PY'
+          import json, re, urllib.request
+          req=urllib.request.Request(
+            "https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/releases?per_page=100",
+            headers={"Accept":"application/vnd.github+json","User-Agent":"GlacierReleaseMirror/1"})
+          with urllib.request.urlopen(req,timeout=20) as f: items=json.load(f)
+          platforms=(re.compile(r"^glacier-v(\d+\.\d+\.\d+)$"),
+                     re.compile(r"^glacier-macos-v(\d+\.\d+\.\d+)$"))
+          found=[]
+          for regex in platforms:
+              found.append(set(m.group(1) for r in items
+                 if r.get("published_at") and not r.get("draft") and not r.get("prerelease")
+                 for m in [regex.fullmatch(r.get("tag_name",""))] if m))
+          paired=found[0]&found[1]
+          version=max(paired,key=lambda v:tuple(map(int,v.split(".")))) if paired else ""
+          with urllib.request.urlopen("https://sync.borealos.cn/downloads/windows-x64.json",timeout=15) as f:
+              signed=json.load(f).get("version","0.0.0")
+          if version and tuple(map(int,version.split(".")))>tuple(map(int,signed.split("."))):
+              print(version)
+          PY
+          )"
+          if [[ -z "$latest" ]]; then
+            echo 'No newer paired release than current signed VPS channel.'
+            exit 0
+          fi
           base='https://sync.borealos.cn/downloads/'
-          win='GlacierBrowser-v0.20.11-Windows-Setup-x64.exe'
-          mac='GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg'
+          win="GlacierBrowser-v${latest}-Windows-Setup-x64.exe"
+          mac="GlacierBrowser-v${latest}-macOS-AppleSilicon.dmg"
           for attempt in $(seq 1 12); do
-            w="$(curl --silent --show-error --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${win}" || true)"
-            m="$(curl --silent --show-error --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${mac}" || true)"
-            if [[ "${w}" == '200' && "${m}" == '200' ]]; then
-              echo 'Both immutable v0.20.11 installers are served by VPS; requesting independent full SHA-256 gate.'
+            w="$(curl --silent --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${win}" || true)"
+            m="$(curl --silent --head --location --output /dev/null --write-out '%{http_code}' --max-time 15 "${base}${mac}" || true)"
+            if [[ "$w" == '200' && "$m" == '200' ]]; then
+              echo "VPS now mirrors paired v${latest}; requesting independent full SHA-256 signer."
               gh workflow run glacier-browser-signed-updates.yml --ref main --repo "$GITHUB_REPOSITORY"
               exit 0
             fi
-            echo "Attempt $attempt/12: VPS mirrored installers: Windows HTTP $w, Mac HTTP $m"
+            echo "Awaiting v${latest} mirror $attempt/12: Windows HTTP $w, Mac HTTP $m"
             sleep 12
           done
-          echo '::warning::Both installers not mirrored yet; signed publisher schedule remains fallback.'
-
+          echo '::warning::Mirror is still syncing; 15-minute signer schedule remains fallback.'
