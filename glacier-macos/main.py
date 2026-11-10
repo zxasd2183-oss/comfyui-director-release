@@ -142,7 +142,7 @@ class Browser(GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierS
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.13")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.14")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -228,7 +228,7 @@ def main():
   listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("macOS v0.20.13")
+ splash=show_glacier_splash("macOS v0.20.14")
  link=get_link(app,parse_node)
  proc=None
  try:proc=proxy_start(link,port)
