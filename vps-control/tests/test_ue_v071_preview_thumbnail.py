@@ -11,7 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from ue_worker_rpc import (WorkerError, PNG_HEADER,
-                           make_bounded_preview_thumbnail_png)
+                           make_bounded_preview_thumbnail_png,
+                           choose_mcp_preview_png)
 
 def chunk(name, body):
     return (struct.pack(">I",len(body))+name+body+
@@ -82,6 +83,25 @@ class BridgeThumbnailTest(unittest.TestCase):
                 start=y*(1+w*channels)+1+x*channels
                 self.assertEqual(data[start:start+channels],
                                  rows[y][(x*2)*channels:(x*2+1)*channels])
+
+    def test_cached_original_preview_tool_falls_back_for_large_source(self):
+        source,_ = original_png(4)
+        small = b"binary_png_fixture"
+        self.assertIs(choose_mcp_preview_png(small),small)
+        # Two source 720x1280 images may differ sharply in entropy. In
+        # production we only ever transform the original already validated by
+        # get_ue_preview_png (SHA-256 + exact job receipt).
+        source_big = source + b"x" * (512 * 1024)
+        with self.assertRaises(WorkerError):
+            choose_mcp_preview_png(source_big)
+        # The REAL PNG may already be under 512KiB, so force fallback at
+        # the test boundary while preserving original data and CRC.
+        import unittest.mock
+        with unittest.mock.patch("ue_worker_rpc.make_bounded_preview_thumbnail_png",
+                                 return_value=b"thumbnail") as make:
+            self.assertEqual(choose_mcp_preview_png(b"x" * (512 * 1024 + 1)),
+                             b"thumbnail")
+            make.assert_called_once()
 
     def test_rgb_and_corrupted_digest_chunk_are_rejected(self):
         source,_=original_png(3)
