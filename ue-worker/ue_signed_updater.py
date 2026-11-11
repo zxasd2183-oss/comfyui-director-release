@@ -181,9 +181,9 @@ def check_no_running_ue_commandlet():
     """Fail closed before changing any code; static trusted PS query only."""
     script = (
         "$ErrorActionPreference='Stop'; try { "
-        "$p=@(Get-CimInstance Win32_Process -Filter "
-        '\\"Name = \'UnrealEditor-Cmd.exe\'\\"'
-        "); if($p.Count -gt 0){exit 23}; exit 0 "
+        "$p=@(Get-CimInstance -ClassName Win32_Process | Where-Object { "
+        "$_.Name -eq 'UnrealEditor-Cmd.exe' }); "
+        "if($p.Count -gt 0){exit 23}; exit 0 "
         "} catch {exit 24}"
     )
     try:
