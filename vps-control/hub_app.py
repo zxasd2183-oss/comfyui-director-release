@@ -16,7 +16,11 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
                            cancel_ue_job as cancel_ue_job_rpc,
-                           get_ue_preview_png as get_ue_preview_png_rpc)
+                           get_ue_preview_png as get_ue_preview_png_rpc,
+                           get_ue_signed_update_status as get_ue_signed_update_status_rpc,
+                           request_ue_signed_update as request_ue_signed_update_rpc)
+
+UE_HUB_API_VERSION = "0.7.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -387,6 +391,52 @@ def get_ue_preview_image(job_id: str, shot_id: str):
     if not result.get("ok"):
         return {"ok": False, "reason": result.get("reason", "preview_unavailable")}
     return Image(data=result["data"], format="png")
+
+
+@app.tool(annotations=READ)
+def get_ue_signed_update_status() -> dict:
+    """Read latest privileged signed-updater result and pending check request.
+
+    No access to private signing key, bearer token, or arbitrary file paths.
+    """
+    return get_ue_signed_update_status_rpc()
+
+
+@app.tool(annotations=WRITE)
+def request_ue_signed_update() -> dict:
+    """Ask the Windows updater to check for a pinned Ed25519-signed release.
+
+    Creates one durable request for its NEXT 5-minute scheduled poll; never
+    runs PowerShell, changes SSH or installs unverified code. Requires the
+    separately bootstrapped privileged signed updater; the response is
+    queued/not-ready, not proof that a version was installed. Check status
+    and get_ue_worker_status to confirm actual installed Worker version.
+    """
+    return request_ue_signed_update_rpc()
+
+
+@app.tool(annotations=READ)
+def get_ue_hub_signed_update_status() -> dict:
+    """Read sanitized root-owned VPS signed Hub update receipt only.
+
+    Never disclose credentials, local paths or generic daemon status logs.
+    """
+    import json
+    from pathlib import Path
+    file = Path("/opt/comfyui-director-hub/ue_hub_signed_update_status.json")
+    try:
+        if file.is_symlink() or not file.is_file() or file.stat().st_size > 1024:
+            return {"ok": True, "status": "not_configured",
+                    "hub_api_version": UE_HUB_API_VERSION}
+        item = json.loads(file.read_text(encoding="ascii"))
+        if type(item) is not dict:
+            return {"ok": False, "reason": "invalid_update_receipt"}
+        allowed = ("status", "version", "reason")
+        return {"ok": True, "hub_api_version": UE_HUB_API_VERSION,
+                **{k: item[k] for k in allowed if
+                   k in item and type(item[k]) is str and len(item[k]) <= 100}}
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {"ok": False, "reason": "invalid_update_receipt"}
 
 
 if __name__ == "__main__":

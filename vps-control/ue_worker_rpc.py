@@ -123,6 +123,23 @@ def _v2_request(path, method="GET", body=None, opener=None, token_file=None):
         return decoded
     except WorkerError as exc:
         return {"ok": False, "reason": str(exc)}
+    except urllib.error.HTTPError as exc:
+        # Preserve authenticated Worker 4xx reasons, not a misleading
+        # network-down error. Never echo unbounded/unsanitized HTML.
+        try:
+            raw = exc.read(MAX_RESULT + 1)
+            if len(raw) > MAX_RESULT:
+                raise ValueError("large_error_response")
+            decoded = json.loads(raw)
+            if (type(decoded) is dict and decoded.get("ok") is False
+                    and type(decoded.get("reason")) is str
+                    and re.fullmatch(r"[a-z0-9_]{1,80}", decoded["reason"])):
+                return {"ok": False, "reason": decoded["reason"],
+                        "worker_http_status": exc.code}
+        except (OSError, TypeError, ValueError, UnicodeError):
+            pass
+        return {"ok": False, "reason": "ue_worker_rejected_request",
+                "worker_http_status": exc.code}
     except (OSError, TypeError, ValueError, urllib.error.URLError):
         return {"ok": False, "reason": "ue_worker_unavailable"}
 
@@ -308,3 +325,11 @@ def get_ue_preview_png(job_id, shot_id, opener=None, token_file=None):
         return {"ok": False, "reason": str(exc)}
     except (OSError, ValueError, TypeError, urllib.error.URLError):
         return {"ok": False, "reason": "ue_worker_unavailable"}
+# V0.6 signed update controls: caller cannot supply code, version or URL.
+def get_ue_signed_update_status(opener=None, token_file=None):
+    return _v2_request("/v4/update/status", "GET", None, opener, token_file)
+
+
+def request_ue_signed_update(opener=None, token_file=None):
+    """Queue a check on the NEXT privileged signed-updater poll, not an install."""
+    return _v2_request("/v4/update/request", "POST", None, opener, token_file)
