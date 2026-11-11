@@ -69,6 +69,18 @@ class ChromeUI30Tests(unittest.TestCase):
         self.assertTrue(self.win.nav.itemAt(0).widget().isHidden())
         self.assertEqual(self.win.address.objectName(), "GlacierOmnibox14")
 
+    def test_release_notes_are_real_and_accessible(self):
+        from PySide6.QtWidgets import QMenu
+        import unittest.mock
+        self.win._hub_menu20 = QMenu(self.win)
+        with unittest.mock.patch.object(self.win, "open_release_notes30") as open_notes:
+            self.win._build_hub_menu20()
+            matches = [a for a in self.win._hub_menu20.actions()
+                       if a.text() == "本版新增功能与更新说明"]
+            self.assertEqual(len(matches), 1)
+            matches[0].trigger()
+            open_notes.assert_called_once_with()
+
     def test_home_is_visible_and_functional_without_remote_scripts(self):
         html = new_tab_page30()
         for site in ("chatgpt.com", "github.com", "mail.google.com",

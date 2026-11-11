@@ -6,7 +6,8 @@ changes the proxy, autofills credentials or bypasses website verification.
 from __future__ import annotations
 
 from PySide6.QtCore import QUrl
-from PySide6.QtWidgets import QMessageBox, QPushButton, QToolButton
+from PySide6.QtWidgets import (QDialog, QLabel, QMessageBox, QPushButton,
+                               QTextBrowser, QToolButton, QVBoxLayout)
 
 CHROME_QSS30 = """
 QMainWindow { background: #f6f8fb; color: #263240; }
@@ -182,3 +183,64 @@ class GlacierChromeUI30:
                 "当前不是可匹配的 HTTPS 网站，账号卡片已禁用。")
             return
         self.show_accounts22(site)
+
+    def _build_hub_menu20(self):
+        # Keep every original action, then make actual release changes visible.
+        parent = getattr(super(), "_build_hub_menu20", None)
+        if callable(parent):
+            parent()
+        menu = getattr(self, "_hub_menu20", None)
+        if menu is not None:
+            menu.addSeparator()
+            menu.addAction("本版新增功能与更新说明", self.open_release_notes30)
+
+    def open_release_notes30(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Glacier · 本版更新说明")
+        dialog.setObjectName("GlacierReleaseNotes30")
+        dialog.resize(570, 510)
+        dialog.setStyleSheet("""
+          QDialog#GlacierReleaseNotes30 { background:#f6faff; color:#28475c; }
+          QTextBrowser#GlacierNotes30 {
+            background:white; border:1px solid #deebf4;
+            border-radius:14px; padding:16px; color:#344d5c;
+          }
+          QPushButton#GlacierNotesClose30 {
+            background:#337fa8; color:white; border:0;
+            border-radius:10px; padding:10px 18px; font-weight:600;
+          }
+        """)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 22, 24, 22)
+        heading = QLabel("❄ Glacier · 这次实际更新了什么", dialog)
+        heading.setStyleSheet("font-size:20px;font-weight:700;color:#285d79;")
+        layout.addWidget(heading)
+        note = QLabel("统一的轻量浏览体验 · 不重复导入已有的 VLESS 线路", dialog)
+        note.setStyleSheet("color:#758fa0;font-size:12px;")
+        layout.addWidget(note)
+        panel = QTextBrowser(dialog)
+        panel.setObjectName("GlacierNotes30")
+        panel.setOpenExternalLinks(False)
+        panel.setHtml("""
+            <h3>全新桌面布局</h3>
+            <p>更紧凑的 Chrome 风格标签栏、圆角地址栏与轻量新标签页，
+            常用网站快捷入口；多余功能收起到统一工具中心。</p>
+            <h3>网站账号卡片</h3>
+            <p>打开 HTTPS 网站可查看对应账号卡片，手动复制账号密码，
+            或按已配置的接口获取验证码；不自动填表、不跳过安全验证。</p>
+            <h3>工作与私人空间</h3>
+            <p>不同工作区具有独立浏览器 Cookie 和本地存储；支持标签恢复、
+            下载管理、加密账号资料，以及授权的账号同步。</p>
+            <h3>代理与安全</h3>
+            <p>继续使用已保存的本机 VLESS 节点；代理断开禁止自动直连，
+            更新安装包校验签名、大小和 SHA-256。</p>
+            <p style="color:#71899a;font-size:12px">
+              平台功能以实际安装包为准。网站安全验证仍需用户自行完成。
+              此说明不代表你设备上的升级已经完成。</p>
+        """)
+        layout.addWidget(panel, 1)
+        close = QPushButton("知道了", dialog)
+        close.setObjectName("GlacierNotesClose30")
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.exec()
