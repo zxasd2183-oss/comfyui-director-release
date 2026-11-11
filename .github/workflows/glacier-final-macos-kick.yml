@@ -1,0 +1,36 @@
+name: Glacier final macOS v0.20.17 signed feed dispatch after Windows
+# The shared signing concurrency group permits only one pending request.
+# Mac was superseded while two Windows requests were queued; Windows is now signed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-final-macos-kick.yml'
+permissions:
+  contents: read
+  actions: write
+jobs:
+  macos-independent-final:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require Windows signed channel v0.20.20 before Mac signature dispatch
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/channels/windows-x64.json?ref=glacier-browser-updates-v2" \
+            --jq '.content' | base64 --decode > windows.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('windows.json',encoding='utf-8'))
+          if d['channel']!='windows-x64' or d['version']!='0.20.20' or d['sha256']!='05c103895d2ecf5634046b63b928b4857309b7a81c2c5214860a679a8ea68654':
+              raise RuntimeError('Windows v0.20.20 signed channel is not complete')
+          print('Windows signed channel v0.20.20 confirmed before macOS dispatch')
+          PY
+      - name: Invoke preexisting independent Mac Ed25519 signer ONLY
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-macos-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Mac v0.20.17 independent signer was dispatched after Windows finished; original publisher must verify entire DMG SHA256.' >> "$GITHUB_STEP_SUMMARY"
