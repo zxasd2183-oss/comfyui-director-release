@@ -41,7 +41,7 @@ def main():
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
-            path=out/"Glacier-Windows-v0.20.21-live-ui33.png"
+            path=out/"Glacier-Windows-v0.20.22-live-ui33.png"
             if not window.grab().save(str(path),"PNG"):
                 raise RuntimeError("Could not capture live Browser screenshot")
             if path.stat().st_size<12000:
