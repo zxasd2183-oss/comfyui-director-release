@@ -7,6 +7,9 @@ on:
       - 'glacier-windows/glacier_win_resume28.py'
       - 'glacier-windows/secure_update.py'
       - 'glacier-windows/test_win_resume28.py'
+      - 'scripts/glacier_patch_windows_update_ui.py'
+      - 'scripts/test_glacier_patch_windows_update_ui.py'
+      - '.github/workflows/glacier-browser-windows-v0201-input.yml'
       - '.github/workflows/glacier-windows-resume-regression.yml'
   pull_request:
     branches:
@@ -34,6 +37,10 @@ jobs:
       - name: Test real Windows signed updater with mocked HTTPS responses
         run: |
           python -m unittest -v test_win_resume28 test_update_security
+      - name: Verify updated Chromium-style Windows update dialog from frozen source
+        working-directory: scripts
+        run: |
+          python -m unittest -v test_glacier_patch_windows_update_ui
       - name: Assert signed version gate remains mandatory
         run: |
           python -c "import inspect,secure_update; s=inspect.getsource(secure_update); assert 'parse_manifest' in s and 'Ed25519PublicKey' in s; assert 'download_signed_vps' in s; print('Signed manifest verification preserved; HTTP Range resume integrated')"
