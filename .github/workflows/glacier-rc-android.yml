@@ -315,3 +315,141 @@ jobs:
           path: emulator-proxy-mock-evidence/
           if-no-files-found: warn
           retention-days: 30
+
+  signing_preflight:
+    name: Check permanent Glacier Android signing configuration
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        name: Check signing input presence without exposing secrets
+        shell: bash
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          ready=true
+          for name in GLACIER_ANDROID_KEYSTORE_BASE64 GLACIER_ANDROID_SIGNING_STORE_PASSWORD GLACIER_ANDROID_SIGNING_KEY_PASSWORD GLACIER_ANDROID_SIGNING_KEY_ALIAS GLACIER_ANDROID_CERT_SHA256; do
+            if [ -z "${!name:-}" ]; then ready=false; fi
+          done
+          if [[ ! "$GLACIER_ANDROID_CERT_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then ready=false; fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          if [ "$ready" = true ]; then
+            echo 'Permanent signer configured; signed APK may publish after Android gates succeed.'
+          else
+            echo 'Permanent signer not configured; signed release will be skipped without exposing key material.'
+          fi
+
+  signed_release_candidate:
+    name: Build permanent-signature Android RC (artifact ONLY, never publish)
+    needs: [build, signing_preflight, emulator_saved_node, emulator_smoke, emulator_external_websites, emulator_proxy_fail_closed, emulator_proxy_mock_route]
+    if: needs.signing_preflight.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse missing signing material or missing public certificate pin
+        shell: bash
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+          GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          for k in GLACIER_ANDROID_KEYSTORE_BASE64 GLACIER_ANDROID_SIGNING_STORE_PASSWORD \
+                   GLACIER_ANDROID_SIGNING_KEY_ALIAS GLACIER_ANDROID_SIGNING_KEY_PASSWORD \
+                   GLACIER_ANDROID_CERT_SHA256; do
+            if [ -z "${!k:-}" ]; then
+              echo "::error::Required Glacier Android signing secret/variable $k is not configured."
+              exit 2
+            fi
+          done
+          [[ "$GLACIER_ANDROID_CERT_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
+            echo "::error::The public stable signing certificate SHA-256 pin is invalid."
+            exit 2
+          }
+          echo "Glacier independent signing inputs are present; material never goes into release artifacts."
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Use Android SDK
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-37.0' 'build-tools;36.0.0' --channel=3
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ -d "$sdk/platforms/android-37.0" ] && [ ! -e "$sdk/platforms/android-37" ]; then ln -s android-37.0 "$sdk/platforms/android-37"; fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.3-M05-native-cores
+          path: glacier-android-gecko/app/src/main/jniLibs
+      - name: Prepare independently held Glacier APK signing key
+        shell: bash
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/glacier-android-stable.p12"
+          (umask 077; printf '%s' "$GLACIER_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore")
+          test -s "$keystore"
+          echo "GLACIER_ANDROID_SIGNING_STORE_FILE=$keystore" >> "$GITHUB_ENV"
+          # keytool will fail safely on invalid passwords / alias.
+          keytool -list -alias "$GLACIER_ANDROID_SIGNING_KEY_ALIAS" \
+            -keystore "$keystore" -storepass:env GLACIER_ANDROID_SIGNING_STORE_PASSWORD >/dev/null
+      - name: Build full Android release from the same verified source commit
+        env:
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          gradle -p glacier-android-gecko :app:assembleRelease --no-daemon --stacktrace
+      - name: Enforce immutable signing identity and verify signed APK
+        shell: bash
+        env:
+          GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          source='glacier-android-gecko/app/build/outputs/apk/release/app-release.apk'
+          test -s "$source"
+          verifier="${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools/36.0.0/apksigner"
+          "$verifier" verify --verbose "$source"
+          actual="$("$verifier" verify --print-certs "$source" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]+)$/\1/p' | head -1)"
+          test -n "$actual"
+          if [ "${actual,,}" != "${GLACIER_ANDROID_CERT_SHA256,,}" ]; then
+            echo '::error::APK signing certificate does not match Glacier stable public pin; refusing release.'
+            exit 3
+          fi
+          mkdir -p dist
+          cp "$source" 'dist/GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk'
+          sha256sum dist/*.apk >> "$GITHUB_STEP_SUMMARY"
+      - name: Clear signing material from ephemeral runner
+        if: always()
+        shell: bash
+        run: |
+          keystore="$RUNNER_TEMP/glacier-android-stable.p12"
+          if [ -f "$keystore" ]; then shred -u "$keystore" || rm -f "$keystore"; fi
+      - name: Upload signed candidate ONLY after all six gates
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.3-STABLE-SIGNED-RC-NOT-PUBLISHED
+          path: dist/GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk
+          if-no-files-found: error
+          retention-days: 15
