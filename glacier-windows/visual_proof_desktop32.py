@@ -49,6 +49,8 @@ def main():
                 raise RuntimeError("Browser compact + new tab button missing")
             if window._account_button26.text():
                 raise RuntimeError("Browser account icon still has clipped old label")
+            if window.proxy_label.text() or window.proxy_label.icon().isNull():
+                raise RuntimeError("Browser proxy status still uses the broken text glyph")
             if omni.property("focused") is None:
                 raise RuntimeError("Address group focus contract was not installed")
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
