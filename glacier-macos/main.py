@@ -218,7 +218,11 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   v.urlChanged.connect(lambda _url,view=v:self.sync_url() if view is self.current() else None)
   v.loadFinished.connect(lambda ok,view=v:self.on_page_loaded(view,ok))
   self.attach_page_security(v)
-  # Always keep a readable local new-tab page while the fail-closed VLESS\n  # proxy is unavailable. Never navigate to an unreachable remote startup URL.\n  v.setHtml(self.home_markup(),QUrl("about:blank"))\n  if self.proc is not None:self.open_startup_home(v)
+  # Keep a local new-tab page even if the proxy is down.
+  # Only navigate to a remote startup URL if the bundled proxy is running.
+  v.setHtml(self.home_markup(), QUrl("about:blank"))
+  if self.proc is not None:
+   self.open_startup_home(v)
   self.refresh_tabs14()
   self._workspace_register17(v)
   self.register_account_tab22(v)
