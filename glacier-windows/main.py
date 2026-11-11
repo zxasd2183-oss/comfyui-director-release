@@ -1,7 +1,7 @@
 import ctypes, json, os, re, socket, subprocess, sys, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
-from PySide6.QtCore import QUrl, QTimer
+from PySide6.QtCore import QUrl, QTimer, QSize
 from PySide6.QtNetwork import QNetworkProxy
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
@@ -206,7 +206,22 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
    view.setHtml(self.home_markup(),QUrl("about:blank"))
  def refresh_proxy_status29(self):
   status, ready=proxy_status_text(self.proc,self.proxy_port)
-  if getattr(self, "_desktop_ui_ready32", False):
+  if getattr(self, "_chrome_ui33_ready", False):
+   # Render one resolution-independent state LED, not a Unicode symbol whose
+   # fallback glyph can look like a red character on Windows.
+   from glacier_chrome_shell33 import proxy_icon33
+   self.proxy_label.setText("")
+   self.proxy_label.setIcon(proxy_icon33(ready))
+   self.proxy_label.setIconSize(QSize(25, 25))
+   self.proxy_label.setAccessibleName("VLESS 本地代理已连接" if ready else "VLESS 本地代理未连接")
+   self.proxy_label.setToolTip(
+    status+"\n点击重连已保存线路；这里只检测本地代理端口。"
+    "\n远端 Gemini HTTPS 可通过工具中心单独诊断。")
+   self.proxy_label.setStyleSheet(
+    "QPushButton#GlacierProxyHealth29{background:transparent;border:none;"
+    "border-radius:16px;padding:0;min-width:30px;max-width:30px;"
+    "min-height:30px;max-height:30px;}")
+  elif getattr(self, "_desktop_ui_ready32", False):
    # Chrome toolbar: visible 42px connection indicator, long diagnostic in
    # tooltip. This must not masquerade as a remote Gemini HTTPS check.
    badge = "●" if ready else "○"
