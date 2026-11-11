@@ -72,7 +72,7 @@ class ChromeShell33Tests(unittest.TestCase):
 
     def test_styling_is_presentation_only_and_double_setup_is_rejected(self):
         self.assertIn("GlacierOmniboxShell33", CHROME_SHELL_QSS33)
-        self.assertIn("#f1f3f4", CHROME_SHELL_QSS33)
+        self.assertIn("#f0f2f5", CHROME_SHELL_QSS33)
         for forbidden in ("socks5://", "QNetworkProxy", "dpapi", "requests.get"):
             self.assertNotIn(forbidden, CHROME_SHELL_QSS33)
         with self.assertRaisesRegex(RuntimeError, "only be installed once"):
