@@ -46,6 +46,20 @@ class SignedUpdaterTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_signed_updater_status_exposes_no_credentials(self):
+        import agent
+        with patch.object(agent,"__file__",str(self.root/"agent.py")):
+            self.assertEqual(agent.signed_update_status()["status"],"not_configured")
+            status=self.root/"signed-update-status.json"
+            status.write_text(json.dumps({
+                "status":"upgraded","version":"0.6.0",
+                "private_key":"NEVER_LEAK","token":"NEVER_LEAK",
+            }))
+            observed=agent.signed_update_status()
+            self.assertEqual(observed,{"status":"upgraded","version":"0.6.0"})
+            self.assertNotIn("private_key",observed)
+            self.assertNotIn("token",observed)
+
     def test_valid_release_and_signing_key_pair(self):
         self.assertEqual(self.manifest["version"], "0.6.0")
         self.assertEqual(self.manifest["archive_size"], len(self.blob))
