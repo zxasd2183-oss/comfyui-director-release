@@ -382,11 +382,15 @@ def main():
         result = run_once(code, state, public)
         # No secrets or token are present in the status record.
         atomic_write(state / "last-result.json", canonical(result))
+        atomic_write(code / "signed-update-status.json", canonical(result))
     except Exception as exc:
-        atomic_write(state / "last-result.json", canonical({
+        summary = {
             "status": "failed", "reason": type(exc).__name__,
-            "detail": str(exc)[:180],
-        }))
+            "code": str(exc)[:100] if isinstance(exc, UpdateError)
+                    else "unexpected_updater_failure",
+        }
+        atomic_write(state / "last-result.json", canonical(summary))
+        atomic_write(code / "signed-update-status.json", canonical(summary))
         raise SystemExit(1) from None
 
 
