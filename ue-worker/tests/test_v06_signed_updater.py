@@ -72,7 +72,7 @@ class SignedUpdaterTest(unittest.TestCase):
 
     def test_reject_invalid_zip_or_traversal_and_archive_hash(self):
         with self.assertRaisesRegex(updates.UpdateError, "archive_hash"):
-            updates.verified_files(self.blob + b"bad", self.manifest)
+            updates.verified_files(self.blob[:-3] + b"bad", self.manifest)
         # A correctly signed digest cannot authorize an archive with unlisted files.
         out = io.BytesIO()
         with zipfile.ZipFile(out, "w") as z:
