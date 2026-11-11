@@ -1,0 +1,174 @@
+name: Glacier UI32 desktop correction — verified Windows + macOS release
+# Runs only when this one workflow first lands on main. Never replaces old tags.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-ui32-desktop-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: glacier-ui32-desktop-correction-once
+  cancel-in-progress: false
+
+jobs:
+  publish-verified-desktop-ui32:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+      WINDOWS_RUN: '42997346484'
+      MACOS_RUN: '42997346496'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require successful real Windows/macOS builds and unchanged UI32 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          cases=[
+            ('Windows',os.environ['WINDOWS_RUN'],'glacier-windows/'),
+            ('macOS',os.environ['MACOS_RUN'],'glacier-macos/'),
+          ]
+          for platform,run,client in cases:
+              data=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
+              if (data.get('status')!='completed' or data.get('conclusion')!='success'
+                  or data.get('head_branch')!='feature/glacier-desktop-chrome-ui-v021-20261111'
+                  or data.get('repository',{}).get('full_name')!=repo):
+                  raise RuntimeError(platform+' native UI32 installer QA did not succeed')
+              sha=data['head_sha']
+              subprocess.run(['git','merge-base','--is-ancestor',sha,'HEAD'],check=True)
+              if subprocess.run(['git','diff','--quiet',sha,'HEAD','--',client]).returncode!=0:
+                  raise RuntimeError(platform+' app source changed after native QA')
+              if platform=='macOS':
+                  shared=subprocess.check_output(['git','diff','--name-only',sha,'HEAD','--',
+                       'glacier-windows/glacier_desktop_ui32.py',
+                       'glacier-windows/glacier_chrome_ui30.py'],text=True).strip()
+                  if shared:
+                      raise RuntimeError('Shared desktop UI differs from macOS DMG tested sources')
+              print(platform,'native QA succeeded and application source unchanged')
+          proof=json.loads(subprocess.check_output(['gh','api',
+            f'repos/{repo}/actions/runs/{os.environ["WINDOWS_RUN"]}/artifacts?per_page=100']))
+          names={asset['name'] for asset in proof.get('artifacts',[]) if not asset.get('expired')}
+          if 'GlacierBrowser-Windows-v0.20.21-Live-Chrome-UI' not in names:
+              raise RuntimeError('Actual Windows Browser screenshot/geometry evidence missing')
+          print('Actual desktop window screenshot artifact confirmed')
+          PY
+      - name: Reject every existing final version tag or Release
+        run: |
+          set -euo pipefail
+          for tag in glacier-v0.20.21 glacier-macos-v0.20.18; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::Already published $tag; replacement blocked"; exit 3
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::Existing immutable git tag $tag"; exit 3
+            fi
+          done
+      - name: Download only successfully built full desktop installer artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p staged/windows staged/macos
+          gh run download "$WINDOWS_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-RC-Windows-Setup --dir staged/windows
+          gh run download "$MACOS_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-RC-macOS-AppleSilicon-DMG --dir staged/macos
+      - name: Verify both installers are complete and have exact expected package names
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          cases=[
+            ('Windows','staged/windows/GlacierBrowser-v0.20.21-Windows-Setup-x64.exe',100_000_000,850_000_000),
+            ('macOS','staged/macos/GlacierBrowser-v0.20.18-macOS-AppleSilicon.dmg',150_000_000,850_000_000),
+          ]
+          for kind,path,minimum,maximum in cases:
+              p=Path(path)
+              if not p.is_file() or p.is_symlink() or len(list(p.parent.iterdir()))!=1:
+                  raise RuntimeError(kind+' artifact path unexpected')
+              if not minimum<=p.stat().st_size<=maximum:
+                  raise RuntimeError(kind+' installer size unexpected')
+              if kind=='Windows':
+                  with p.open('rb') as file:
+                      if file.read(2)!=b'MZ':raise RuntimeError('Windows PE header missing')
+              else:
+                  with p.open('rb') as file:
+                      file.seek(-512,2)
+                      if file.read(4)!=b'koly':raise RuntimeError('macOS DMG UDIF trailer missing')
+              with p.open('rb') as file:
+                  digest=hashlib.file_digest(file,'sha256').hexdigest()
+              print(kind,'exact installer',p.stat().st_size,'SHA256:',digest)
+          PY
+      - name: Stage both GitHub Releases as private drafts
+        run: |
+          set -euo pipefail
+          gh release create glacier-v0.20.21 staged/windows/GlacierBrowser-v0.20.21-Windows-Setup-x64.exe \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Browser Windows v0.20.21 — 实际 Chrome 风格主窗口重构' \
+            --notes '纠正此前 UI 改动不明显的问题：真正重排标签/导航两层布局、可伸缩 44px 地址栏、自绘导航图标，长状态文字缩为代理状态点，旧功能归入可展开工具区。保留 VLESS、账号、Cookie、书签和原有安全更新。Windows 安装包尚无商业 Authenticode 签名，客户端安全更新使用固定 Ed25519。'
+          gh release create glacier-macos-v0.20.18 staged/macos/GlacierBrowser-v0.20.18-macOS-AppleSilicon.dmg \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Browser macOS v0.20.18 — 原生 Chrome 风格主窗口重构' \
+            --notes '与 Windows 共用真实双层顶部 UI、圆角地址栏、改良标签排列及可展开扩展区；VLESS REALITY 和 Keychain 不变。此 DMG 是 ad-hoc 签名，没有 Apple Developer ID 公证；按 macOS 系统提示单独授权即可，不要全局禁用 Gatekeeper。'
+      - name: Verify GitHub draft asset digest/size matches exact staged binaries
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY']
+          pairs=[
+              ('glacier-v0.20.21','staged/windows/GlacierBrowser-v0.20.21-Windows-Setup-x64.exe'),
+              ('glacier-macos-v0.20.18','staged/macos/GlacierBrowser-v0.20.18-macOS-AppleSilicon.dmg'),
+          ]
+          index=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100']))
+          for tag,filename in pairs:
+              matching=[rel for rel in index if rel.get('tag_name')==tag]
+              if len(matching)!=1:raise RuntimeError('Draft Release missing or duplicated: '+tag)
+              release=matching[0]
+              p=Path(filename)
+              with p.open('rb') as file:
+                  digest=hashlib.file_digest(file,'sha256').hexdigest()
+              items=release.get('assets',[])
+              if (not release.get('draft') or release.get('prerelease') or
+                  release.get('published_at') is not None or len(items)!=1 or
+                  release.get('target_commitish')!=os.environ['GITHUB_SHA']):
+                  raise RuntimeError('Unexpected Release state or source commit')
+              a=items[0]
+              if (a.get('name')!=p.name or a.get('size')!=p.stat().st_size
+                  or a.get('digest')!='sha256:'+digest or a.get('state')!='uploaded'):
+                  raise RuntimeError('GitHub draft asset does not match source bytes')
+              print(tag,release['id'],'exact draft uploaded SHA256',digest)
+          PY
+      - name: Publish only the two just-verified drafts and invoke existing Windows signer
+        run: |
+          set -euo pipefail
+          # The two GitHub transitions aren't atomic; every asset is verified
+          # while still private, and errors remain visible to the repository owner.
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          for tag in ('glacier-macos-v0.20.18','glacier-v0.20.21'):
+              releases=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100']))
+              ids=[x['id'] for x in releases if x.get('tag_name')==tag and x.get('draft')]
+              if len(ids)!=1:raise RuntimeError('Exact unmodified draft no longer available: '+tag)
+              subprocess.run(['gh','api','--method','PATCH',f'repos/{repo}/releases/{ids[0]}',
+                             '-F','draft=false'],check=True,stdout=subprocess.DEVNULL)
+              published=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{ids[0]}']))
+              if published.get('draft') or not published.get('published_at'):
+                  raise RuntimeError('Final GitHub Release publish not confirmed: '+tag)
+              print(tag,'published')
+          PY
+          # GITHUB_TOKEN release events do not trigger downstream workflows.
+          gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Desktop UI32 Releases published. Independent Windows signing dispatched. Mac signer should run after Windows signed feed promotion.' >> "$GITHUB_STEP_SUMMARY"

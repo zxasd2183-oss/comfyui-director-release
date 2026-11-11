@@ -21,6 +21,7 @@ from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
 from glacier_chrome_ui30 import GlacierChromeUI30
+from glacier_desktop_ui32 import GlacierDesktopUI32
 from glacier_site_diagnostic31 import GlacierSiteDiagnostic31
 from glacier_input21 import GlacierInput21
 from glacier_accounts22 import GlacierAccounts22
@@ -142,13 +143,13 @@ class Page(QWebEngineView):
   self.setPage(QWebEnginePage(win.profile,self))
   self.win.prepare_page_input21(self)
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.20")
+  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.21")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -190,13 +191,27 @@ class Browser(GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26
   self.setup_sync23(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
   self.setup_account_center26(bar)
   self.setup_ui30(bar)
+  self.setup_desktop_ui32(lay,bar)
  def refresh_proxy_status29(self):
   status, ready=proxy_status_text(self.proc,self.proxy_port)
-  if self.proxy_label.text()!=status:self.proxy_label.setText(status)
-  self.proxy_label.setStyleSheet(
-   "QPushButton#GlacierProxyHealth29 {border:1px solid #dce6ec;"
-   "border-radius:9px;background:#f5f9fb;padding:6px 9px;"
-   "color:"+("#177956" if ready else "#a04d41")+";}")
+  if getattr(self, "_desktop_ui_ready32", False):
+   # Chrome toolbar: visible 42px connection indicator, long diagnostic in
+   # tooltip. This must not masquerade as a remote Gemini HTTPS check.
+   badge = "●" if ready else "○"
+   if self.proxy_label.text()!=badge:self.proxy_label.setText(badge)
+   self.proxy_label.setToolTip(status+"\n点击重连已保存线路；这里只检测本地代理端口。"
+                              "\n远端 Gemini HTTPS 可通过工具中心单独诊断。")
+   self.proxy_label.setStyleSheet(
+    "QPushButton#GlacierProxyHealth29{background:#f2f7fa;"
+    "border:1px solid #d8e3eb;border-radius:16px;"
+    "padding:3px;color:"+("#188261" if ready else "#b35043")+";"
+    "font-size:17px;min-height:30px;}")
+  else:
+   if self.proxy_label.text()!=status:self.proxy_label.setText(status)
+   self.proxy_label.setStyleSheet(
+    "QPushButton#GlacierProxyHealth29 {border:1px solid #dce6ec;"
+    "border-radius:9px;background:#f5f9fb;padding:6px 9px;"
+    "color:"+("#177956" if ready else "#a04d41")+";}")
 
  def reconnect_saved_proxy29(self):
   # Deliberately reconnect only the stored DPAPI-encrypted VLESS line.
@@ -283,7 +298,7 @@ def main():
   s.bind(("127.0.0.1",0));port=s.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("Windows v0.20.20")
+ splash=show_glacier_splash("Windows v0.20.21")
  link=get_link(app)
  proc=None
  try:proc=proxy_start(link,port)
