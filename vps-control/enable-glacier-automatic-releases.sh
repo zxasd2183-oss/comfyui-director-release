@@ -35,7 +35,7 @@ case "$policy" in
 esac
 
 python3 -m py_compile "$script"
-python3 -m unittest -v "$repo/vps-control/test_glacier_signed_mirror.py"
+(cd "$repo" && python3 -m unittest -v vps-control/test_glacier_signed_mirror.py)
 
 # The existing systemd service is deliberately reused unchanged.
 # This starts one normal cycle; future releases are handled by the existing
