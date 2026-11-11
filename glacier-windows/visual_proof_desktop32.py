@@ -41,7 +41,7 @@ def main():
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
-            path=out/"Glacier-Windows-v0.20.22-live-ui33.png"
+            path=out/"Glacier-Windows-v0.20.23-live-ui33.png"
             # QtWebEngine may paint into a compositor surface that is not
             # included in QWidget.grab() on a headless Windows runner.
             # First verify the actual browser DOM is NOT blank. Screenshot
