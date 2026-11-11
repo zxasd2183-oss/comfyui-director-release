@@ -12,7 +12,7 @@ LOG_NAMES = {
     "render_26": "render_26.log",
     "render_31": "render_31.log",
 }
-MAX_TAIL_BYTES = 12000
+MAX_TAIL_BYTES = 6000
 SECRET_FILTERS = (
     (re.compile(r"(?i)(Authorization\s*[:=]\s*Bearer\s+)\S+"),
      r"\1[REDACTED]"),
@@ -27,7 +27,7 @@ def log_tail(job_manager, job_id, kind):
     from ue_jobs import JobError
     # Entitlement is job-id-based; authenticated Hub never supplies paths.
     job_manager.lookup(job_id)
-    if kind not in LOG_NAMES or not isinstance(kind, str):
+    if not isinstance(kind, str) or kind not in LOG_NAMES:
         raise JobError("invalid_log_kind")
     root = job_manager.root_factory()
     work = root / "Jobs" / job_id
@@ -35,9 +35,7 @@ def log_tail(job_manager, job_id, kind):
     if work.is_symlink() or log.is_symlink() or not log.is_file():
         raise JobError("job_log_not_found")
     size = log.stat().st_size
-    if size > 16 * 1024 * 1024:
-        # Even a very large log may be tailed, but never read entirely.
-        pass
+    # Seek from the end: never read an entire potentially huge UE log.
     with log.open("rb") as stream:
         stream.seek(max(0, size - MAX_TAIL_BYTES))
         raw = stream.read(MAX_TAIL_BYTES)
