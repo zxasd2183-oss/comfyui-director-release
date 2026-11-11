@@ -120,7 +120,19 @@ class Redirect(urllib.request.HTTPRedirectHandler):
             raise UpdateError("untrusted_redirect")
         return super().redirect_request(request,fp,code,msg,headers,newurl)
 
-OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), Redirect())
+# HTTPS release fetches may use ONLY this local CONNECT proxy. Never honor
+# HTTP(S)_PROXY from the root service environment: those may name remote hosts.
+# The Ed25519 signature, HTTPS allowlist, and archive SHA-256 remain enforced.
+LOCAL_RELEASE_PROXY = "http://127.0.0.1:1081"
+
+
+def release_opener():
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({"https": LOCAL_RELEASE_PROXY}), Redirect()
+    )
+
+
+OPENER = release_opener()
 
 def fetch(url, maximum):
     p = urllib.parse.urlparse(url)
