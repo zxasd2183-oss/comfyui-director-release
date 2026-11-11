@@ -186,7 +186,7 @@ def run_commandlet(spec, root, work, timeout=900):
     data = json.loads(result_file.read_text(encoding="utf-8"))
     if type(data) is not dict or type(data.get("ok")) is not bool:
         raise JobError("invalid_unreal_result")
-"    if not data["ok"]:
+    if not data["ok"]:
         raise JobError("unreal_script_failed")
     if (data.get("shot_count") != len(spec["shots"]) or
             data.get("total_frames") != spec["total_frames"]):
