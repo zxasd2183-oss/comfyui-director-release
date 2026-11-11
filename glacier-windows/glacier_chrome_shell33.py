@@ -5,9 +5,9 @@ VLESS routing and signed updater remain owned by their original components.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSize, QPointF, QRectF
+from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton
+from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton
 
 CHROME_SHELL_QSS33 = """
 QMainWindow, QWidget#GlacierBrowserRoot32 {
@@ -161,6 +161,41 @@ class GlacierChromeShell33:
         self.chrome_tab14.setExpanding(False)
         self.chrome_tab14.setUsesScrollButtons(True)
 
+        # Chrome's + belongs immediately beside the last tab, not pinned to
+        # the far right edge by an old expanding layout/spacer.
+        if isinstance(strip_layout, QHBoxLayout):
+            new_tab_button = None
+            for i in range(strip_layout.count()):
+                part = strip_layout.itemAt(i)
+                button = part.widget() if part else None
+                if isinstance(button, QAbstractButton) and (
+                        button.text().strip() in ("+", "＋") or
+                        "新标签" in button.toolTip()):
+                    new_tab_button = button
+                    break
+            if new_tab_button is not None:
+                strip_layout.removeWidget(new_tab_button)
+                for i in range(strip_layout.count()-1, -1, -1):
+                    piece = strip_layout.itemAt(i)
+                    if piece is not None and piece.spacerItem() is not None:
+                        strip_layout.takeAt(i)
+                strip_layout.insertWidget(
+                    strip_layout.indexOf(self.chrome_tab14)+1, new_tab_button)
+                strip_layout.addStretch(1)
+
+        def resize_tabs_to_content():
+            bar = self.chrome_tab14
+            # Fixed-width tab content: keep the + adjacent to the last
+            # actual tab, and allow native scroll buttons when crowded.
+            desired = max(150, bar.sizeHint().width() + 3)
+            available = max(210, self.width()-200)
+            bar.setMaximumWidth(min(desired, available))
+
+        self._resize_tabs_to_content33 = resize_tabs_to_content
+        self.tabs.currentChanged.connect(
+            lambda _index: QTimer.singleShot(0, resize_tabs_to_content))
+        QTimer.singleShot(0, resize_tabs_to_content)
+
         surface.setFixedHeight(54)
         nav.setContentsMargins(12, 5, 12, 5)
         nav.setSpacing(6)
@@ -248,6 +283,13 @@ class GlacierChromeShell33:
                 action.toggled.connect(toggle.setChecked)
 
             menu.aboutToShow.connect(append_utility_action)
+
+        # Chrome has no permanent legacy footer. Temporary application
+        # notifications still become visible as needed.
+        status = self.statusBar()
+        status.hide()
+        status.messageChanged.connect(
+            lambda message: status.setVisible(bool(message.strip())))
 
         self._chrome_ui33_ready = True
         refresh = getattr(self, "refresh_account_center26", None)
