@@ -59,13 +59,26 @@ def main():
             # included in QWidget.grab() on a headless Windows runner.
             # First verify the actual browser DOM is NOT blank. Screenshot
             # rasterization alone cannot prove a WebEngine document loaded.
-            document=[]
-            window.current().page().toHtml(lambda html: document.append(html))
-            for _ in range(60):
-                app.processEvents()
-                if document:break
-                time.sleep(0.05)
-            html=document[0] if document else ""
+            # A WebEngine process can reply with an initial empty DOM BEFORE
+            # setHtml() has committed. Poll until the expected actual local
+            # document appears, not until *any* toHtml callback returns.
+            html = ""
+            deadline = time.monotonic() + 12.0
+            while time.monotonic() < deadline:
+                document = []
+                window.current().page().toHtml(
+                    lambda value, target=document: target.append(value))
+                for _ in range(12):
+                    app.processEvents()
+                    if document:
+                        break
+                    time.sleep(0.05)
+                if document:
+                    html = document[-1]
+                    if ("Glacier" in html and "快捷访问" in html
+                            and 'name="q"' in html):
+                        break
+                time.sleep(0.12)
             if ("Glacier" not in html or "快捷访问" not in html
                     or 'name="q"' not in html):
                 raise RuntimeError(
