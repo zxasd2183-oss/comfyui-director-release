@@ -42,10 +42,25 @@ def main():
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
             path=out/"Glacier-Windows-v0.20.22-live-ui33.png"
-            if not window.grab().save(str(path),"PNG"):
+            screen=window.grab()
+            if not screen.save(str(path),"PNG"):
                 raise RuntimeError("Could not capture live Browser screenshot")
             if path.stat().st_size<12000:
                 raise RuntimeError("Browser visual proof unexpectedly empty")
+            image=screen.toImage()
+            # A white viewport technically passes size/geometry checks but
+            # is NOT a usable Chrome-style new tab. Require real painted text
+            # from the local offline homepage, not only the upper toolbar.
+            painted=0
+            for y in range(nav.y()+nav.height()+40, image.height()-75, 4):
+                for x in range(65, image.width()-65, 4):
+                    rgb=image.pixelColor(x,y)
+                    if rgb.red()<175 and rgb.green()<195 and rgb.blue()<210:
+                        painted+=1
+            if painted<40:
+                raise RuntimeError(
+                    "Browser viewport is blank: offline local new-tab page did not paint")
+            print("Real offline homepage colored pixels",painted,flush=True)
             min_width=max(260, int(window.width()*0.33))
             if omni.width()<min_width or omni.height()<38:
                 raise RuntimeError(
