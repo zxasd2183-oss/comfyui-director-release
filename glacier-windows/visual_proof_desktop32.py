@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QTabBar, QAbstractButton
 
 def main():
     with tempfile.TemporaryDirectory(prefix="glacier-ui33-clean-profile-", ignore_cleanup_errors=True) as temp:
@@ -38,6 +38,19 @@ def main():
             print("tab strip", strip.y(), strip.height(), flush=True)
             print("navigation", nav.y(), nav.height(), flush=True)
             omni=window._chrome_omnibox_shell33
+            close_btn = window.chrome_tab14.tabButton(
+                0, QTabBar.ButtonPosition.RightSide)
+            if close_btn is None or close_btn.objectName() != "GlacierTabClose33":
+                raise RuntimeError("Browser still renders an unpolished native tab close button")
+            if close_btn.icon().isNull() or close_btn.width() != 18:
+                raise RuntimeError("Browser polished tab close icon missing")
+            new_btn = window.findChild(QAbstractButton, "GlacierNewTab33")
+            if new_btn is None or new_btn.icon().isNull() or new_btn.width() != 30:
+                raise RuntimeError("Browser compact + new tab button missing")
+            if window._account_button26.text():
+                raise RuntimeError("Browser account icon still has clipped old label")
+            if omni.property("focused") is None:
+                raise RuntimeError("Address group focus contract was not installed")
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
