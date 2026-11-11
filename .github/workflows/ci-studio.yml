@@ -40,8 +40,14 @@ jobs:
               p=pathlib.Path(path)
               assert p.is_file() and os.access(p,os.X_OK), p.name
               print(subprocess.check_output([str(p), "-version"], text=True).splitlines()[0])
+          # Production code intentionally pins /usr/bin, not PATH. The
+          # test runner installs verified copies ONLY into this ephemeral CI VM.
+          subprocess.run(["sudo", "install", "-o", "root", "-g", "root",
+                          "-m", "0755", str(ffmpeg), "/usr/bin/ffmpeg"],check=True)
+          subprocess.run(["sudo", "install", "-o", "root", "-g", "root",
+                          "-m", "0755", str(ffprobe), "/usr/bin/ffprobe"],check=True)
           with open(os.environ["GITHUB_PATH"],"a",encoding="utf-8") as out:
-              out.write(str(pathlib.Path(ffmpeg).parent)+"\n")
+              out.write("/usr/bin\n")
           PY
       - name: Verify both actual media executables on PATH
         run: |
