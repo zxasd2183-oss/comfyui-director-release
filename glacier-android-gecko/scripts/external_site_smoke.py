@@ -28,6 +28,8 @@ def run():
     smoke.page_event("github",timeout=110)
     smoke.record("github_navigation","Gecko page stop succeeded; site content not verified")
     smoke.shot("02-github")
+    # Both the Chromium/Gecko page-load event and an actual native input
+    # response are required. PAGE_STOP alone cannot pass this test.
     smoke.assert_native_menu_responsive(bounds,timeout=35)
     smoke.shot("03-responsive-menu")
     print("WEB_STRESS_DONE",flush=True)

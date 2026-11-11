@@ -232,6 +232,15 @@ def collect():
     ]:
         try: (OUT/name).write_text(adb(*args,timeout=25),encoding="utf-8")
         except Exception as e: (OUT/(name+".error")).write_text(str(e))
+    # Preserve Android's own ANR diagnostic separately from emulator ADB
+    # timeouts; never infer that a hanging screenshot alone proves a Gecko bug.
+    try:
+        (OUT/"anr.txt").write_text(
+            adb("shell", "dumpsys", "activity", "lastanr", timeout=12),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        (OUT/"anr.error").write_text(type(exc).__name__, encoding="utf-8")
     shot("final")
     (OUT/"result.json").write_text(json.dumps(checks,ensure_ascii=False,indent=2),encoding="utf-8")
 

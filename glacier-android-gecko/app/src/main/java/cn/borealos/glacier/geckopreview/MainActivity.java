@@ -616,36 +616,49 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private boolean thumbnailCapturePending;
+
     private void captureTabThumbnail(Tab tab) {
-        if (tab == null || tab != active || web == null
+        // Only the tab overview explicitly requests a thumbnail. Never sample
+        // pixels automatically on page stop, page navigation or tab switching.
+        if (thumbnailCapturePending || isFinishing()
+                || tab == null || tab != active || web == null
                 || !BrowserTabStore.validUrl(tab.url)
                 || "about:blank".equals(tab.url)) return;
+        thumbnailCapturePending = true;
         try {
             web.capturePixels().accept(bitmap -> {
-                if (bitmap == null || !tabs.contains(tab)) return;
-                try {
-                    int width = 240;
-                    int height = Math.max(1, Math.min(420,
-                            (int)((double)bitmap.getHeight() * width / bitmap.getWidth())));
-                    Bitmap small = Bitmap.createScaledBitmap(bitmap, width, height, true);
-                    ByteArrayOutputStream output = new ByteArrayOutputStream();
-                    small.compress(Bitmap.CompressFormat.JPEG, 55, output);
-                    byte[] bytes = output.toByteArray();
-                    if (bytes.length <= 50 * 1024) {
-                        tab.thumbnail = bytes;
-                        scheduleTabsSave();
-                        if (debugBuild()) android.util.Log.i("GlacierSmoke",
-                                "TAB_THUMBNAIL_CAPTURED=true");
+                thumbnailCapturePending = false;
+                if (bitmap == null || !tabs.contains(tab) || isFinishing()) return;
+                if (bitmap.getByteCount() > 32 * 1024 * 1024) return;
+                // Bitmap scaling and JPEG encoding are CPU-intensive on
+                // complex sites. They MUST NOT run on Android's main thread.
+                tabSaveQueue.execute(() -> {
+                    try {
+                        int width = 240;
+                        int height = Math.max(1, Math.min(420,
+                                (int)((double)bitmap.getHeight() * width / bitmap.getWidth())));
+                        Bitmap small = Bitmap.createScaledBitmap(bitmap, width, height, true);
+                        ByteArrayOutputStream output = new ByteArrayOutputStream();
+                        small.compress(Bitmap.CompressFormat.JPEG, 55, output);
+                        byte[] bytes = output.toByteArray();
+                        if (small != bitmap) small.recycle();
+                        if (bytes.length <= 50 * 1024) {
+                            runOnUiThread(() -> {
+                                if (isFinishing() || !tabs.contains(tab)) return;
+                                tab.thumbnail = bytes;
+                                scheduleTabsSave();
+                                if (debugBuild()) android.util.Log.i("GlacierSmoke",
+                                        "TAB_THUMBNAIL_CAPTURED=true");
+                            });
+                        }
+                    } catch (Exception ignored) {
+                        // A missing tab preview is preferable to a UI freeze.
                     }
-                    if (small != bitmap) small.recycle();
-                } catch (Exception ignored) {
-                    // A thumbnail is optional; never break browser navigation.
-                }
-            }, error -> {
-                // Gecko compositor may not have painted yet; keep prior preview.
-            });
+                });
+            }, error -> thumbnailCapturePending = false);
         } catch (Exception ignored) {
-            // Surface can be unavailable when app is going to background.
+            thumbnailCapturePending = false;
         }
     }
 
@@ -1937,8 +1950,10 @@ public final class MainActivity extends Activity {
                             maybePromptSiteAccount(target);
                             if(cloudState.autoEnabled && !cloudAutoBusy)
                                 scheduleCloudAuto();
-                            tabSaveHandler.postDelayed(
-                                    () -> captureTabThumbnail(target), 950);
+                            // Capturing every large page immediately after PAGE_STOP
+                    // can contend with Gecko's compositor and block input.
+                    // Tab previews are captured lazily when the user opens
+                    // the tab switcher, not during normal page navigation.
                         }
                     }
                 }
@@ -2053,7 +2068,8 @@ public final class MainActivity extends Activity {
     private void switchTo(Tab next) {
         if (next == active) return;
         if (active != null) {
-            captureTabThumbnail(active);
+            // Never request Gecko compositor pixels synchronously while
+            // switching tabs. Keep the last cached preview if available.
             active.session.setActive(false);
         }
         if (web.getSession() != null) web.releaseSession();
