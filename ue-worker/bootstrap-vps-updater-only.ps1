@@ -37,6 +37,14 @@ try {
     Write-Host "SUCCESS: VPS Hub signed pull updater installed using existing Windows-pinned public key."
     Write-Host "No new Worker installation, signing key generation, GitHub OAuth, UE render, or GPU power action."
 } finally {
-    # This is a public updater source. Clean up only the exact fresh temp path.
-    & $ssh $VpsSshTarget ("rm -rf -- " + $folder) 2>$null
+    # Best-effort cleanup must never mask installation success/failure.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $ssh $VpsSshTarget ("rm -rf -- " + $folder) 2>$null | Out-Null
+    } catch {
+        # Temporary source-only path may remain for manual review.
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
 }
