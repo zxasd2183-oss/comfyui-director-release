@@ -1,7 +1,7 @@
 {
-  "archive_sha256": "770e2768e42930b4646742386549456da5716535f7b61f9a2037c36bcd1cbb11",
-  "archive_size": 11417,
+  "archive_sha256": "a9cd5cfce39b55f5003fa8bea1c84e40943004517563ba9ce096ac2c9b8ed5fc",
+  "archive_size": 11970,
   "format": "director-ue-hub-signed-v1",
-  "signature": "1e5465d721945e8f7941ad77f10cdbc8389a24b177adbfde496ef8a299e290ea71b8466bc6328b586a08073d4d53b5b481b3f4976d46e4c805ec0bef9555f30b",
-  "version": "0.7.2"
+  "signature": "674193bb0539e248484a61f5fb7bef0e7d14bf92e38a51e72c186bd435a4584f7be92c2cfd8c7b71db57b13f8daa5add3462efd8c46c005295ffd894e982b60c",
+  "version": "0.7.3"
 }
