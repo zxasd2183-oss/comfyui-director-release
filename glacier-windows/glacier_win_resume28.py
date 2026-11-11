@@ -48,7 +48,7 @@ def _validate(manifest):
     filename = f"GlacierBrowser-v{version}-Windows-Setup-x64.exe"
     expected = "https://sync.borealos.cn/downloads/" + filename
     if url != expected or urlsplit(url).geturl() != expected:
-        raise DownloadError("签名安装包的 HTTPS 地址不受信任")
+        raise DownloadError("签名安装包的 HTTPS 地址不可信")
     if (type(size) is not int or not 1_000_000 <= size <= MAX_SETUP or
             not isinstance(sha, str) or not _SHA256.fullmatch(sha)):
         raise DownloadError("签名安装包大小或 SHA256 不合法")
@@ -149,7 +149,7 @@ def download_signed_vps(manifest, target_dir, progress=None, cancel=None, verify
                 except (TypeError, ValueError) as exc:
                     raise DownloadError("下载响应大小无效") from exc
                 if length != expected_size - start:
-                    raise DownloadError("下载响应长度与签名清单不符")
+                    raise DownloadError("下载响应大小与签名清单不符")
             total = start
             if progress is not None and start:
                 progress(start, expected_size)
