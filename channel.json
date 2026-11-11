@@ -1,0 +1,7 @@
+{
+  "archive_sha256": "583749183883b38321f1029a0d8ad2692fba3cba15faeef6f51f539abd454f5e",
+  "archive_size": 25876,
+  "format": "director-ue-signed-update-v1",
+  "signature": "a9257cf6df16f2a6be79d470802a2a1930af32c7fb2d746c855546fc4a43674c8fa47e9789680f3cefc6a0cedc80019e2c961dd7975fb2305af62fcaa8ef1904",
+  "version": "0.7.0"
+}
