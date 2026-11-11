@@ -128,6 +128,50 @@ jobs:
               print(channel, "v"+version+" VPS feed matches the canonical Ed25519 signed channel")
           PY
 
+      - name: Queue Windows-only signer after the independently mirrored EXE is available
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Windows no longer waits for a Mac DMG with the same version.
+          latest="$(python3 - <<'PY'
+          import json,re,urllib.request
+          api="https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/releases?per_page=100"
+          req=urllib.request.Request(api,headers={"Accept":"application/vnd.github+json","User-Agent":"Glacier-Win-Signer-Notify/1"})
+          with urllib.request.urlopen(req,timeout=20) as f: items=json.load(f)
+          pattern=re.compile(r"^glacier-v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$")
+          versions=[m.group(1) for r in items if isinstance(r,dict)
+                 and r.get("published_at") and not r.get("draft") and not r.get("prerelease")
+                 for m in [pattern.fullmatch(str(r.get("tag_name","")))] if m]
+          latest=max(versions,key=lambda v:tuple(map(int,v.split(".")))) if versions else ""
+          base=("https://raw.githubusercontent.com/zxasd2183-oss/"
+                "comfyui-director-release/glacier-browser-updates-v2/channels/windows-x64.json?nonce="
+                +str(__import__("time").time_ns()))
+          with urllib.request.urlopen(base,timeout=18) as f: signed=json.load(f)["version"]
+          if latest and tuple(map(int,latest.split(".")))>tuple(map(int,signed.split("."))):
+              print(latest)
+          PY
+          )"
+          if [[ -z "$latest" ]]; then
+            echo "No newer Windows installer requires independent signed promotion."
+            exit 0
+          fi
+          url="https://sync.borealos.cn/downloads/GlacierBrowser-v${latest}-Windows-Setup-x64.exe"
+          for attempt in $(seq 1 24); do
+            status="$(curl --silent --head --output /dev/null --write-out '%{http_code}' --max-time 15 "$url" || true)"
+            if [[ "$status" == '200' ]]; then
+              echo "VPS Windows v${latest} staged; requesting independent full-byte SHA256 signer."
+              gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+              exit 0
+            fi
+            echo "Awaiting independent VPS Windows v${latest}: HTTP $status ($attempt/24)"
+            sleep 12
+          done
+          echo "::error::VPS still missing the new Windows EXE. Signed feed remains unchanged; scheduled retry will continue."
+          exit 1
+
       - name: Request signed release only after the newest paired installers are mirrored
         if: >-
           github.event_name == 'workflow_dispatch' ||
