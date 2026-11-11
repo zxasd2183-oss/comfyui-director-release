@@ -199,18 +199,23 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   # empty document still reports about:blank and otherwise looks successful.
   for delay in (0, 350, 950, 1550):
    QTimer.singleShot(delay, self.ensure_initial_local_home33)
+ def _is_glacier_local_start33(self, url):
+  # Qt WebEngine represents setHtml() using a data:text/html URL, not
+  # just about:blank. Treat only Glacier's own local HTML as repairable.
+  return (url in ("", "about:blank") or
+          (url.startswith("data:text/html") and "Glacier" in url))
  def ensure_initial_local_home33(self):
   view=self.current()
   if view is None:return
   try:
-   if view.url().toString() not in ("", "about:blank"):return
+   if not self._is_glacier_local_start33(view.url().toString()):return
    view.page().toHtml(lambda html, target=view:self._repair_initial_home33(target,html))
   except RuntimeError:
    return
  def _repair_initial_home33(self,view,html):
   try:
    if view is not self.current():return
-   if view.url().toString() not in ("", "about:blank"):return
+   if not self._is_glacier_local_start33(view.url().toString()):return
    if 'name="q"' in html and "Glacier" in html:return
    count=getattr(view,"_glacier_home_repairs33",0)
    if count>=3:return
