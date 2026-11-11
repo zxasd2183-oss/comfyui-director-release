@@ -38,13 +38,6 @@ QTabBar#GlacierExternalTabs14::tab:selected {
 QTabBar#GlacierExternalTabs14::tab:hover:!selected {
     background: #e7ebf1;
 }
-QTabBar#GlacierExternalTabs14::close-button {
-    border-radius: 8px;
-    margin-left: 7px; width: 16px; height: 16px;
-}
-QTabBar#GlacierExternalTabs14::close-button:hover {
-    background: #d7dce4;
-}
 QFrame#GlacierNavigation32 {
     background: #ffffff; border: 0;
     border-bottom: 1px solid #e5e8ed;
