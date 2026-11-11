@@ -6,6 +6,7 @@ on:
       - feature/glacier-desktop-chrome-ui-v021-20261111
       - fix/glacier-macos-keychain-startup-20261111
       - feature/glacier-chrome-shell-splash-sequential-20261111
+      - feature/glacier-desktop-pixel-polish-20261111
     paths:
       - 'glacier-macos/**'
       - 'glacier-windows/glacier_productivity16.py'
