@@ -115,8 +115,14 @@ class CharacterBrainTests(unittest.TestCase):
             with self.subTest(tool=tool):
                 with self.assertRaises(hub_rpc.HubError):
                     hub_rpc.check_args(tool,args)
-        self.assertEqual(len(brain.ALL_TOOLS),10)
+        self.assertEqual(len(brain.ALL_TOOLS),13)
         self.assertEqual(len(hub_rpc.BRAIN_TOOLS),10)
+        self.assertTrue(hub_rpc.BRAIN_TOOLS.issubset(brain.ALL_TOOLS))
+        # Three new literal-argument endpoints use the existing HMAC
+        # brain link directly, without changing legacy Hub route dispatch.
+        self.assertTrue({"get_production_scenes",
+                         "get_production_episode_readiness",
+                         "create_production_scene"}.issubset(brain.ALL_TOOLS))
         self.assertTrue(brain.ALL_TOOLS.isdisjoint({"approve_character_master"}))
 
     def test_broken_audit_blocks_brain_catalog_writes(self):
