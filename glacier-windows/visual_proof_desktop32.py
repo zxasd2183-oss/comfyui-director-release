@@ -49,14 +49,13 @@ def main():
                 raise RuntimeError("Browser compact + new tab button missing")
             if window._account_button26.text():
                 raise RuntimeError("Browser account icon still has clipped old label")
-            safe_text = repr(window.proxy_label.text()).encode(
-                "ascii", "backslashreplace").decode("ascii")
-            print("proxy visual", safe_text,
-                  "icon_null", window.proxy_label.icon().isNull(),
-                  "shell_ready", window._chrome_ui33_ready,
-                  flush=True)
-            if window.proxy_label.text() or window.proxy_label.icon().isNull():
-                raise RuntimeError("Browser proxy status still uses the broken text glyph")
+            indicator = getattr(window, "_proxy_visual33", None)
+            if (indicator is None or indicator.icon().isNull()
+                    or not window.proxy_label.isHidden()
+                    or indicator.text()):
+                raise RuntimeError(
+                    "Live Chrome status LED is missing, text-backed, or"
+                    " the old diagnostic control is still visible")
             if omni.property("focused") is None:
                 raise RuntimeError("Address group focus contract was not installed")
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
