@@ -7,7 +7,7 @@ on:
       - "studio/install-studio-signed-updater.sh"
       - "studio/studio_brain.py"
       - "studio/studio_server.py"
-      - "studio/tests/test_studio_signed_updater.py"
+      - "studio/signed_update_tests/test_studio_signed_updater.py"
       - ".github/workflows/director-studio-signed-*.yml"
   pull_request:
     paths:
@@ -16,7 +16,7 @@ on:
       - "studio/install-studio-signed-updater.sh"
       - "studio/studio_brain.py"
       - "studio/studio_server.py"
-      - "studio/tests/test_studio_signed_updater.py"
+      - "studio/signed_update_tests/test_studio_signed_updater.py"
       - ".github/workflows/director-studio-signed-*.yml"
 permissions:
   contents: read
@@ -36,4 +36,4 @@ jobs:
           python -m py_compile studio/studio_signed_updater.py studio/studio_sign_release.py studio/studio_brain.py studio/studio_server.py
           bash -n studio/install-studio-signed-updater.sh
       - name: Test actual archive signature, trusted file list and rollback
-        run: python -m unittest discover -s studio/tests -p 'test_studio_signed_updater.py' -v
+        run: python -m unittest discover -s studio/signed_update_tests -p 'test_studio_signed_updater.py' -v
