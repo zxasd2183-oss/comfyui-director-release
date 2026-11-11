@@ -22,8 +22,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_PROMPT_DISABLED: '1'
-      WINDOWS_QA_RUN: '43035457826'
-      MACOS_QA_RUN: '43035465249'
+      WINDOWS_QA_RUN: '43038141192'
+      MACOS_QA_RUN: '43038100393'
       WINDOWS_TAG: 'glacier-v0.20.22'
       MACOS_TAG: 'glacier-macos-v0.20.20'
       WINDOWS_ASSET: 'GlacierBrowser-v0.20.22-Windows-Setup-x64.exe'
