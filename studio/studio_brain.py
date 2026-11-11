@@ -23,6 +23,8 @@ from production_core import (
 )
 
 from visual_library import list_visuals
+from scene_library import SceneError, list_scenes, create_scene
+from production_workflows import WorkflowError, get_episode_readiness
 from character_library import (
     CharacterError, list_characters, create_character,
     update_character, link_visual as link_character_visual,
@@ -30,12 +32,14 @@ from character_library import (
 
 BRAIN_PATH="/api/v1/brain"
 READ_TOOLS=frozenset({"get_production_dashboard","get_production_episode",
-                      "get_project_characters"})
+                      "get_project_characters","get_production_scenes",
+                      "get_production_episode_readiness"})
 WRITE_TOOLS=frozenset({
     "create_production_project","create_production_episode",
     "add_production_shot","save_production_outline",
     "create_project_character","update_project_character",
     "link_project_character_visual",
+    "create_production_scene",
 })
 ALL_TOOLS=READ_TOOLS | WRITE_TOOLS
 KEY_NAME="brain_link"
@@ -187,6 +191,35 @@ def execute(db_path,tool,args):
             _exact(args,("project_id","character_id","visual_id",
                          "reference_type"))
             return link_character_visual(db_path,args,actor="studio_brain")
+        # Existing Studio scene/workflow catalogs own their independent
+        # audited database and approval boundaries; the brain only exposes
+        # bounded read summaries and draft creation through signed localhost.
+        if tool=="get_production_scenes":
+            _exact(args,("project_id",))
+            catalog=list_scenes(db_path,args["project_id"])
+            return {"ok":True,"project_id":catalog["project_id"],
+                    "scenes":[{
+                        "scene_id":item["scene_id"],
+                        "display_name":item["display_name"],
+                        "scene_type":item["scene_type"],
+                        "revision":item["revision"],
+                        "status":item["status"],
+                        "approved_revision":item["approved_revision"],
+                        "approved_visual_id":(item["canonical"] or {}).get("visual_id"),
+                        "candidate_visual_count":len(item["visuals"]),
+                    } for item in catalog["scenes"]],
+                    "unassigned_scene_visual_count":len(catalog["available_visuals"]),
+                    "truncated":catalog["truncated"],"gpu_action":False}
+        if tool=="get_production_episode_readiness":
+            _exact(args,("project_id","episode_id"))
+            report=get_episode_readiness(db_path,args["project_id"],args["episode_id"])
+            # Preserve each real blocker; do not infer that a plan equals media.
+            return report
+        if tool=="create_production_scene":
+            _exact(args,("project_id","scene_id","display_name","scene_type",
+                         "layout_notes","lighting_notes","camera_rules",
+                         "continuity_rules","scene_notes"))
+            return create_scene(db_path,args,actor="studio_brain")
         with closing(open_db(db_path)) as db:
             if tool=="get_production_dashboard":
                 _exact(args,())
@@ -234,6 +267,8 @@ def execute(db_path,tool,args):
                 return _save_outline(db,pid,eid,args["body"],args["expected_revision"])
         raise BrainError("brain_tool_not_allowed",403)
     except CharacterError as exc:
+        raise BrainError(exc.reason,exc.status) from None
+    except (SceneError,WorkflowError) as exc:
         raise BrainError(exc.reason,exc.status) from None
     except ProductionError as exc:
         raise BrainError(str(exc),400) from None
