@@ -34,14 +34,49 @@ class FakeConfig:
         return self.settings[klass]
 
 
+class FakeCut:
+    def __init__(self):
+        self.range = None
+        self.camera_binding_id = None
+    def set_range(self, start, stop):
+        self.range = (start, stop)
+    def set_camera_binding_id(self, binding_id):
+        self.camera_binding_id = binding_id
+
+
+class FakeTrack:
+    def __init__(self):
+        self.cut = FakeCut()
+    def add_section(self):
+        return self.cut
+
+
+class FakeSequence:
+    def __init__(self):
+        self.track = None
+        self.camera = None
+        self.display_rate = None
+        self.playback = {}
+    def set_display_rate(self, rate):
+        self.display_rate = rate
+    def set_playback_start(self, frame):
+        self.playback["start"] = frame
+    def set_playback_end(self, frame):
+        self.playback["end"] = frame
+    def add_track(self, cls):
+        self.track = FakeTrack()
+        return self.track
+
+
 class PreviewPresetTest(unittest.TestCase):
     def test_mrq_preset_has_png_deferred_single_frame_and_720x1280(self):
         assets={}
         created=[]
+        sequence_class = type("LevelSequence", (), {})
         def create_asset(*,asset_name,package_path,asset_class,factory):
             name=package_path+"/"+asset_name
             self.assertNotIn(name,assets)
-            result=FakeConfig()
+            result = FakeSequence() if asset_class is sequence_class else FakeConfig()
             assets[name]=result
             created.append(name)
             return result
@@ -70,11 +105,12 @@ class PreviewPresetTest(unittest.TestCase):
             def __init__(self,x,y,z):
                 self.x,self.y,self.z=x,y,z
         class FakeCameraActor:
-            def __init__(self):
-                self.location=FakeVector(-420.0,345.0,225.0)
+            def __init__(self,shot):
+                self.shot = shot
+                self.location=FakeVector(-420.0,345.0,225.0) if shot == "13" else FakeVector(-630,250,180)
                 self.rotation=None
             def get_actor_label(self):
-                return "V03_CAM_SH13"
+                return "V03_CAM_SH" + self.shot
             def get_component_by_class(self,kind):
                 return self if kind is fake.CineCameraComponent else None
             def get_actor_location(self):
@@ -83,12 +119,13 @@ class PreviewPresetTest(unittest.TestCase):
                 assert not sweep and teleport
                 self.location=new_location
                 self.rotation=new_rotation
-        camera13=FakeCameraActor()
+        cameras = {shot: FakeCameraActor(shot) for shot in ("01", "13", "26", "31")}
+        camera13 = cameras["13"]
         original_map="/Game/Director/V03/Maps/WaitingOffice_EP01_Stage"
         stage_actors=[
             FakeLightActor("V03_Key_Light",18000.0),
             FakeLightActor("V03_Fill_Light",9000.0),
-            camera13,
+            *cameras.values(),
         ]
         class FakeLevel:
             cloned_from=None
@@ -124,6 +161,14 @@ class PreviewPresetTest(unittest.TestCase):
             MoviePipelineDeferredPassBase=deferred_class,
             MoviePipelineImageSequenceOutput_PNG=png_class,
             MoviePipelineOutputSetting=output_class,
+            LevelSequence=sequence_class,
+            LevelSequenceFactoryNew=lambda: object(),
+            FrameRate=lambda numerator,denominator: (numerator,denominator),
+            MovieSceneCameraCutTrack=type("MovieSceneCameraCutTrack",(),{}),
+            MovieSceneSequenceExtensions=types.SimpleNamespace(
+                add_possessable=lambda sequence,actor: setattr(sequence,"camera",actor) or ("binding",actor.shot),
+                get_binding_id=lambda sequence,binding: ("camera_binding",binding[1]),
+            ),
             LevelEditorSubsystem=type("LevelEditorSubsystem",(),{}),
             EditorActorSubsystem=type("EditorActorSubsystem",(),{}),
             PointLightComponent=type("PointLightComponent",(),{}),
@@ -178,7 +223,21 @@ class PreviewPresetTest(unittest.TestCase):
                              [-860.0,345.0,225.0])
             self.assertEqual(original_file.read_bytes(), b"original-v03-map")
             self.assertEqual(result["height"],1280)
-            self.assertEqual(len(created),1)
+            self.assertEqual(len(created),5)
+            expected = {
+                shot: "/Game/Director/V071/ShotBindings/" + jobid +
+                      "/WaitingOffice_EP01_SH" + shot + "_V03.WaitingOffice_EP01_SH" + shot + "_V03"
+                for shot in ("01","13","26","31")
+            }
+            self.assertEqual(result["bound_preview_sequences"], expected)
+            for shot, path in expected.items():
+                sequence = assets[path.rsplit(".",1)[0]]
+                self.assertIs(sequence.camera, cameras[shot])
+                self.assertEqual(sequence.display_rate,(24,1))
+                self.assertEqual(sequence.playback,{"start":0,"end":3})
+                self.assertEqual(sequence.track.cut.range,(0,3))
+                self.assertEqual(sequence.track.cut.camera_binding_id,
+                                 ("camera_binding",shot))
             config=assets[created[0]]
             self.assertIn(deferred_class,config.settings)
             self.assertIn(png_class,config.settings)
