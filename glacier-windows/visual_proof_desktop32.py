@@ -55,27 +55,9 @@ def main():
             html=document[0] if document else ""
             if ("Glacier" not in html or "快捷访问" not in html
                     or 'name="q"' not in html):
-                from PySide6.QtCore import QUrl
-                current=window.current()
-                print("DIAGNOSTIC current tab:", window.tabs.count(),
-                      "url:", current.url().toString(),
-                      "dom_len:",len(html), "dom_snippet:",repr(html[:450]), flush=True)
-                print("DIAGNOSTIC local template size",len(window.home_markup()),flush=True)
-                # Check a newly created page to distinguish session restoration
-                # from failure of the QtWebEngine renderer itself.
-                fresh=window.new_tab()
-                fresh.setHtml(window.home_markup(),QUrl("about:blank"))
-                newdoc=[]
-                for attempt in range(90):
-                    if attempt in (5,25,65):
-                        fresh.page().toHtml(lambda source: newdoc.append(source))
-                    app.processEvents()
-                    time.sleep(.05)
-                    if any('快捷访问' in h for h in newdoc): break
-                print("DIAGNOSTIC fresh-tab url:",fresh.url().toString(),
-                      "newdom_len:",[len(h) for h in newdoc],
-                      "snippet:",repr((newdoc[-1] if newdoc else '')[:350]),flush=True)
-                raise RuntimeError("Offline local new-tab HTML did not load into QWebEngine")
+                raise RuntimeError(
+                    "Startup tab did not contain real local new-tab DOM; "+
+                    "length="+str(len(html))+" url="+window.current().url().toString())
             print("SUCCESS: actual local homepage DOM loaded",len(html),"bytes")
             screen=window.grab()
             if not screen.save(str(path),"PNG"):
