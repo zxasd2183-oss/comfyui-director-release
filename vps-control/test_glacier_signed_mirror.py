@@ -81,6 +81,100 @@ class GlacierStageTests(unittest.TestCase):
                                                  {"assets": [asset(version,data=data)]})
             self.assertEqual(list(folder.iterdir()), [])
 
+    def test_windows_stages_newer_unpaired_release_but_not_signed_feed(self):
+        """Windows can download v0.20.18 even when macOS latest is 0.20.16."""
+        version = "0.20.18"
+        data = b"W" * 1_100_000
+        releases = [
+            {
+                "tag_name": "glacier-v0.20.18",
+                "published_at": "2026-11-11T01:56:53Z",
+                "draft": False, "prerelease": False,
+                "assets": [asset(version, "windows-x64", data)],
+            },
+            {
+                "tag_name": "glacier-macos-v0.20.16",
+                "published_at": "2026-11-10T15:06:03Z",
+                "draft": False, "prerelease": False,
+                "assets": [asset("0.20.16", "macos-arm64", data)],
+            },
+        ]
+        requested = []
+        def fake_fetch(url):
+            requested.append(url)
+            if url.endswith("/releases?per_page=100"):
+                return io.BytesIO(json.dumps(releases).encode())
+            if url.endswith("/GlacierBrowser-v0.20.18-Windows-Setup-x64.exe"):
+                return io.BytesIO(data)
+            raise AssertionError("Unexpected fetch URL: " + url)
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            signed_windows = folder / "windows-x64.json"
+            signed_mac = folder / "macos-arm64.json"
+            signed_windows.write_bytes(b"previous-signed-windows")
+            signed_mac.write_bytes(b"previous-signed-mac")
+            with patch.object(mirror, "fetch", side_effect=fake_fetch):
+                self.assertEqual(mirror.stage_latest_windows(folder), version)
+                self.assertEqual(mirror.stage_latest_windows(folder, version), version)
+            target = folder / asset(version, "windows-x64", data)["name"]
+            self.assertEqual(target.stat().st_size, len(data))
+            self.assertEqual(mirror.sha256(target), hashlib.sha256(data).hexdigest())
+            self.assertEqual(signed_windows.read_bytes(), b"previous-signed-windows")
+            self.assertEqual(signed_mac.read_bytes(), b"previous-signed-mac")
+            self.assertEqual(len([x for x in requested if x.endswith(".exe")]), 1)
+
+    def test_windows_pin_fails_closed_without_requested_canonical_version(self):
+        data = b"W" * 1_100_000
+        releases = [{
+            "tag_name": "glacier-v0.20.18",
+            "published_at": "2026-11-11T01:56:53Z",
+            "draft": False, "prerelease": False,
+            "assets": [asset("0.20.18", "windows-x64", data)],
+        }]
+        with patch.object(mirror, "fetch",
+                          return_value=io.BytesIO(json.dumps(releases).encode())):
+            with tempfile.TemporaryDirectory() as temp:
+                folder = Path(temp)
+                with self.assertRaisesRegex(ValueError, "requested canonical release"):
+                    mirror.stage_latest_windows(folder, "0.20.19")
+                self.assertEqual(list(folder.iterdir()), [])
+
+    def test_standalone_windows_rejects_corrupt_release_digest(self):
+        version = "0.20.18"
+        bad = asset(version, "windows-x64", b"W" * 1_100_000)
+        bad["digest"] = "sha256:" + "x" * 64
+        releases = [{
+            "tag_name": "glacier-v0.20.18",
+            "published_at": "2026-11-11T01:56:53Z",
+            "draft": False, "prerelease": False, "assets": [bad],
+        }]
+        with patch.object(mirror, "fetch",
+                          return_value=io.BytesIO(json.dumps(releases).encode())):
+            with tempfile.TemporaryDirectory() as temp:
+                folder = Path(temp)
+                with self.assertRaisesRegex(ValueError, "SHA-256"):
+                    mirror.stage_latest_windows(folder, version)
+                self.assertEqual(list(folder.iterdir()), [])
+
+    def test_standalone_windows_does_not_accept_prerelease_or_duplicate(self):
+        version = "0.20.18"
+        release = {
+            "tag_name": "glacier-v0.20.18",
+            "published_at": "2026-11-11T01:56:53Z",
+            "draft": False, "prerelease": False,
+            "assets": [asset(version, "windows-x64", b"W" * 1_100_000)],
+        }
+        for sample, expected in [
+            ([dict(release, prerelease=True)], "no independently"),
+            ([release, release], "duplicate canonical"),
+        ]:
+            with patch.object(mirror, "fetch",
+                              return_value=io.BytesIO(json.dumps(sample).encode())):
+                with tempfile.TemporaryDirectory() as temp:
+                    with self.assertRaisesRegex(ValueError, expected):
+                        mirror.stage_latest_windows(Path(temp))
+                    self.assertEqual(list(Path(temp).iterdir()), [])
+
     def test_untrusted_release_digest_and_replaced_versions_fail(self):
         item = asset()
         item["digest"] = "sha256:" + "bad"
