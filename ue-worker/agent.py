@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from ue_jobs import JobManager, JobError
+from ue_jobs import JobManager, JobError, inspect_episode_inputs
 from ue_logs import log_tail
 from ue_preview_images import get_preview_png
 
@@ -216,6 +216,7 @@ def capabilities():
         "job_cancel_route": "/v3/jobs/<job_id>/cancel",
         "preview_image_route": "/v5/jobs/<job_id>/previews/<shot_id>",
         "supports_preview_image_read": True,
+        "supports_episode_assembly_inventory": True,
         "signed_update_status_route": "/v4/update/status",
         "signed_update_request_route": "/v4/update/request",
         "supports_signed_update_request": True,
@@ -272,6 +273,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, capabilities())
         elif self.path == "/v4/update/status":
             self.send_json(200, update_status())
+        elif self.path == "/v6/episode/assembly-readiness":
+            try:
+                self.send_json(200, inspect_episode_inputs(workspace_root()))
+            except (OSError, ValueError):
+                self.send_json(503, {"ok": False, "reason": "episode_readiness_unavailable"})
         elif re.fullmatch(r"/v5/jobs/[a-f0-9]{32}/previews/(?:01|13|26|31)", self.path):
             parts = self.path.split("/")
             try:

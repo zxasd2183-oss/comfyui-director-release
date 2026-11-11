@@ -349,3 +349,94 @@ class JobManager:
             if entry is None:
                 raise JobError("job_not_found")
             return dict(entry)
+
+
+# EP01 final-assembly inventory is inside the signed-owned Worker module.
+# This avoids adding an untracked import to the pinned nine-file release.
+# It never probes media, starts ffmpeg, writes files or approves a visual.
+def inspect_episode_inputs(workspace: Path) -> dict:
+    import wave
+
+    workspace = Path(workspace).absolute()
+    if (not workspace.is_dir() or workspace.is_symlink() or
+            getattr(workspace, "is_junction", lambda: False)()):
+        return {"ok": False, "reason": "workspace_unavailable"}
+
+    def owned(path: Path) -> bool:
+        path = path.absolute()
+        try:
+            path.relative_to(workspace)
+        except ValueError:
+            return False
+        # Do not follow links, including dangling links in a parent.
+        current = path
+        while True:
+            if (current.is_symlink() or
+                    getattr(current, "is_junction", lambda: False)()):
+                return False
+            if current == workspace:
+                break
+            parent = current.parent
+            if parent == current:
+                return False
+            current = parent
+        return True
+
+    missing, invalid, candidates = [], [], 0
+    for number in range(1, 32):
+        shot = f"{number:02d}"
+        clip = workspace / "Outputs" / "EP01" / "Clips" / ("SH" + shot + ".mp4")
+        try:
+            if not owned(clip):
+                invalid.append(shot)
+            elif not clip.exists():
+                missing.append(shot)
+            elif not clip.is_file() or not 1024 <= clip.stat().st_size <= 8 * 1024 ** 3:
+                invalid.append(shot)
+            else:
+                candidates += 1
+        except (OSError, ValueError):
+            invalid.append(shot)
+
+    audio = workspace / "Outputs" / "EP01" / "Audio" / "MixedAudio.wav"
+    mixdown_status = "missing"
+    try:
+        if not owned(audio):
+            mixdown_status = "invalid"
+        elif audio.exists():
+            if not audio.is_file() or not 0 < audio.stat().st_size <= (160 * 48000 * 2 * 4 + 100000):
+                mixdown_status = "invalid"
+            else:
+                with wave.open(str(audio), "rb") as wav:
+                    if (wav.getnchannels() == 2 and wav.getframerate() == 48000 and
+                            wav.getsampwidth() in (2, 3, 4) and
+                            wav.getcomptype() == "NONE" and
+                            wav.getnframes() == 160 * 48000):
+                        mixdown_status = "pcm_metadata_valid"
+                    else:
+                        mixdown_status = "invalid"
+    except (OSError, ValueError, EOFError, wave.Error):
+        mixdown_status = "invalid"
+
+    output = workspace / "Outputs" / "EP01" / "Final" / "WaitingOffice_EP01_v001.mp4"
+    output_status = "absent"
+    try:
+        if not owned(output):
+            output_status = "invalid"
+        elif output.exists():
+            output_status = "existing_file" if output.is_file() else "invalid"
+    except (OSError, ValueError):
+        output_status = "invalid"
+
+    complete = (candidates == 31 and not missing and not invalid and
+                mixdown_status == "pcm_metadata_valid" and output_status == "absent")
+    return {
+        "ok": True, "project_id": "WaitingOffice", "episode_id": "EP01",
+        "fixed_shots": 31, "fixed_duration_seconds": 160,
+        "clip_candidate_count": candidates, "missing_shot_ids": missing,
+        "invalid_shot_ids": invalid, "mixdown_status": mixdown_status,
+        "output_status": output_status, "input_inventory_complete": complete,
+        "clips_codec_and_timing_verified": False,
+        "artistic_approval_verified": False, "render_submitted": False,
+        "note": "Inventory only; encoded media and artistic approvals require independent validation.",
+    }

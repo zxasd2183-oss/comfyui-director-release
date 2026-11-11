@@ -310,6 +310,16 @@ def get_ue_worker_capabilities() -> dict:
     return call_ue_worker("get_ue_worker_capabilities")
 
 
+@app.tool(annotations=READ)
+def get_ue_episode_assembly_readiness() -> dict:
+    """Inspect only EP01 final-assembly input filenames and WAV metadata.
+
+    Read-only inventory; no shell, no ffprobe, no rendering, no Studio asset
+    approval. Presence of inputs never asserts that clips or masters are valid.
+    """
+    return call_ue_worker("get_ue_episode_assembly_readiness")
+
+
 @app.tool(annotations=WRITE)
 def prepare_ue_workspace() -> dict:
     """Create only the predefined UE project folders on the Windows worker.

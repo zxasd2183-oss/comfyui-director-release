@@ -17,6 +17,7 @@ WORKER_ORIGIN = "http://127.0.0.1:18910"
 READ_ROUTES = {
     "get_ue_worker_status": "/v1/status",
     "get_ue_worker_capabilities": "/v1/capabilities",
+    "get_ue_episode_assembly_readiness": "/v6/episode/assembly-readiness",
 }
 WRITE_ACTIONS = {"prepare_ue_workspace": "prepare_workspace"}
 MAX_RESULT = 16384
