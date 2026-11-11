@@ -31,10 +31,21 @@ class ChromeShell33Tests(unittest.TestCase):
                          [w._site_button30, w.address, w.bookmark_button])
         self.assertEqual(w._navigation_surface32.height(), 54)
         self.assertEqual(w.chrome_tab14.parentWidget().height(), 44)
-        self.assertEqual(shell.height(), 39)
+        self.assertEqual(shell.height(), 40)
         self.assertLessEqual(w.address.maximumHeight(), 35)
-        self.assertEqual(w.address.placeholderText(), "在 Google 中搜索或输入网址")
+        self.assertEqual(w.address.placeholderText(), "搜索或输入网址")
         self.assertFalse(w.tabs.tabBar().isVisible())
+
+    def test_focus_and_menu_visual_state_are_functional(self):
+        w = self.window
+        from PySide6.QtCore import QEvent
+        shell = w._chrome_omnibox_shell33
+        w._omnibox_focus_guard33.eventFilter(w.address, QEvent(QEvent.Type.FocusIn))
+        self.assertTrue(shell.property("glacierFocus"))
+        w._omnibox_focus_guard33.eventFilter(w.address, QEvent(QEvent.Type.FocusOut))
+        self.assertFalse(shell.property("glacierFocus"))
+        self.assertIn("QMenu::item:selected", CHROME_SHELL_QSS33)
+        self.assertNotIn(":focus-within", CHROME_SHELL_QSS33)
 
     def test_previous_handlers_keep_their_original_connections(self):
         w = self.window
