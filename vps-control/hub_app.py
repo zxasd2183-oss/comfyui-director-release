@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from hub_rpc import call
 from hub_file_sync import sync_chatgpt_visual
 from hub_sync_jobs import JOBS
+from ue_worker_rpc import call_ue_worker
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -280,6 +281,29 @@ def list_recent_chatgpt_visual_syncs(project_id: str, episode_id: str) -> dict:
     check Studio's persisted episode visual list for final confirmation.
     """
     return JOBS.recent(project_id,episode_id)
+
+
+# Windows UE node control is independent of the retired H3 GPU.
+# This adapter is disabled until the private shared secret and tunnel are installed.
+@app.tool(annotations=READ)
+def get_ue_worker_status() -> dict:
+    """Read authenticated Windows UE node/GPU/engine health over the private tunnel."""
+    return call_ue_worker("get_ue_worker_status")
+
+
+@app.tool(annotations=READ)
+def get_ue_worker_capabilities() -> dict:
+    """Read the UE worker's explicit allowlist of supported operations."""
+    return call_ue_worker("get_ue_worker_capabilities")
+
+
+@app.tool(annotations=WRITE)
+def prepare_ue_workspace() -> dict:
+    """Create only the predefined UE project folders on the Windows worker.
+
+    No arbitrary shell, script execution, program installation or rendering.
+    """
+    return call_ue_worker("prepare_ue_workspace")
 
 
 if __name__ == "__main__":
