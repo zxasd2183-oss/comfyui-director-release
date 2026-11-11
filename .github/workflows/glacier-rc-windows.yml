@@ -82,7 +82,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python -c "from pathlib import Path; p=Path('update_ui.py'); s=p.read_text(encoding='utf8'); assert 'from update_core import (' in s; s=s.replace('from update_core import (','from secure_update import ('); s=s.replace('每次更新都会校验下载的文件大小与 SHA256。','更新清单使用独立 Ed25519 数字签名，下载包使用 SHA256 校验。'); s=s.replace('公开发布源（经内置 VLESS 代理联网）','自有 VPS HTTPS（Ed25519 签名清单）'); p.write_text(s,encoding='utf8')"
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
-          python -c "from pathlib import Path; p=Path('update_core.py'); t=p.read_text(encoding='utf8'); old=next((line for line in t.splitlines() if line.strip().startswith('CURRENT_VERSION = ')),None); assert old is not None, 'Missing version constant'; updated=t.replace(old, 'CURRENT_VERSION = '+chr(39)+'0.20.22'+chr(39),1); p.write_text(updated,encoding='utf8'); print('Updated Windows core local version to 0.20.22')"
+          python -c "from pathlib import Path; p=Path('update_core.py'); t=p.read_text(encoding='utf8'); old=next((line for line in t.splitlines() if line.strip().startswith('CURRENT_VERSION = ')),None); assert old is not None, 'Missing version constant'; updated=t.replace(old, 'CURRENT_VERSION = '+chr(39)+'0.20.23'+chr(39),1); p.write_text(updated,encoding='utf8'); print('Updated Windows core local version to 0.20.23')"
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python ../scripts/glacier_allow_vps_download.py update_core.py
           if ($LASTEXITCODE -ne 0) { throw 'Windows VPS installer origin policy failed closed' }
@@ -93,7 +93,7 @@ jobs:
           # Keep the exact historical trust-root rotation guard intact.
           # Only after the public key is safely patched can the preview
           # application's displayed patch version be updated.
-          python -c "from pathlib import Path; p=Path('secure_update.py'); s=p.read_text(encoding='utf8'); expected='CURRENT_VERSION = '+chr(39)+'0.20.22'+chr(39); assert s.count(expected)==1, 'Updater version must be 0.20.22'; print('Verified Windows signed-updater version 0.20.22')"
+          python -c "from pathlib import Path; p=Path('secure_update.py'); s=p.read_text(encoding='utf8'); expected='CURRENT_VERSION = '+chr(39)+'0.20.23'+chr(39); assert s.count(expected)==1, 'Updater version must be 0.20.23'; print('Verified Windows signed-updater version 0.20.23')"
           if ($LASTEXITCODE -ne 0) { throw 'Failed to set preview version after secure key rotation' }
           python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py glacier_accounts22.py glacier_sync23.py glacier_sync_auto24.py glacier_preview_updates25.py glacier_account_center26.py test_account_center26.py test_accounts22.py test_sync23.py test_preview_updates25.py glacier_signed_install27.py test_signed_install27.py glacier_win_resume28.py test_win_resume28.py glacier_proxy_health29.py test_proxy_health29.py glacier_site_diagnostic31.py test_site_diagnostic31.py glacier_desktop_ui32.py test_desktop_ui32.py glacier_chrome_shell33.py test_chrome_shell33.py glacier_splash.py test_glacier_startup_sequence.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
@@ -111,7 +111,7 @@ jobs:
           $accountCode = $LASTEXITCODE
           Write-Host "Glacier account GUI regression process exit code: $accountCode"
           if ($accountCode -ne 0) { throw "Glacier account GUI regression process failed: $accountCode" }
-          python -c "import update_core; assert update_core.newer_than('0.9.0','0.20.22'); assert not update_core.newer_than('0.20.22','0.9.0'); import update_ui; print('Updater imports and semver checks passed')"
+          python -c "import update_core; assert update_core.newer_than('0.9.0','0.20.23'); assert not update_core.newer_than('0.20.23','0.9.0'); import update_ui; print('Updater imports and semver checks passed')"
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
       - name: Capture REAL Windows browser UI33 screenshot and assert geometry
         run: |
@@ -135,12 +135,12 @@ jobs:
           [Setup]
           AppId={{A1DDACCC-09D1-41AF-B0B3-B48300D0AD0D}
           AppName=Glacier Browser
-          AppVersion=0.20.22
+          AppVersion=0.20.23
           AppPublisher=Glacier Browser
           DefaultDirName={localappdata}\Programs\GlacierBrowser
           DefaultGroupName=Glacier Browser
           OutputDir=dist
-          OutputBaseFilename=GlacierBrowser-v0.20.22-Windows-Setup-x64
+          OutputBaseFilename=GlacierBrowser-v0.20.23-Windows-Setup-x64
           Compression=lzma
           SolidCompression=yes
           PrivilegesRequired=lowest
@@ -163,19 +163,19 @@ jobs:
           Set-Content installer.iss $iss -Encoding utf8
           & $iscc installer.iss
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
-          if (-not (Test-Path dist/GlacierBrowser-v0.20.22-Windows-Setup-x64.exe)) { throw 'Setup EXE missing' }
+          if (-not (Test-Path dist/GlacierBrowser-v0.20.23-Windows-Setup-x64.exe)) { throw 'Setup EXE missing' }
       - name: Upload installable Windows artifact for backup
         uses: actions/upload-artifact@v4
         with:
           name: GlacierBrowser-RC-Windows-Setup
-          path: glacier-windows/dist/GlacierBrowser-v0.20.22-Windows-Setup-x64.exe
+          path: glacier-windows/dist/GlacierBrowser-v0.20.23-Windows-Setup-x64.exe
           if-no-files-found: error
           retention-days: 30
       - name: Upload UI33 screenshot even if visual assertions fail
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierBrowser-Windows-v0.20.22-Live-Chrome-UI
-          path: glacier-windows/ui-proof/Glacier-Windows-v0.20.22-live-ui33.png
+          name: GlacierBrowser-Windows-v0.20.23-Live-Chrome-UI
+          path: glacier-windows/ui-proof/Glacier-Windows-v0.20.23-live-ui33.png
           if-no-files-found: warn
           retention-days: 20
