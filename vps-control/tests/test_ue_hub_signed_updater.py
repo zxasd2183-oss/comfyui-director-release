@@ -41,6 +41,9 @@ class SignedHubTest(unittest.TestCase):
         self.manifest_raw = (self.out / "channel.json").read_bytes()
         self.manifest = updater.verify_manifest(self.manifest_raw, self.public)
         self.archive = (self.out / "ue-hub-v0.7.0.zip").read_bytes()
+        # Hold the real implementation before patching the I/O-heavy helper.
+        # The targeted version-gate test must exercise real validation logic.
+        self.real_get_worker_state = updater.get_worker_state
         self.patches = [
             patch.object(updater, "HUB_DIR", self.code),
             patch.object(updater, "STATE", self.state),
@@ -140,7 +143,7 @@ class SignedHubTest(unittest.TestCase):
             with patch.object(updater, "WORKER_TOKEN", token), patch.object(
                 updater.urllib.request, "build_opener", return_value=Opener(state)
             ), self.assertRaisesRegex(updater.UpdateError, expected):
-                updater.get_worker_state("0.7.0")
+                self.real_get_worker_state("0.7.0")
         with patch.object(updater, "WORKER_TOKEN", token), patch.object(
             updater.urllib.request, "build_opener",
             return_value=Opener({
@@ -148,7 +151,7 @@ class SignedHubTest(unittest.TestCase):
             })
         ):
             self.assertEqual(
-                updater.get_worker_state("0.7.0")["worker_version"], "0.7.0"
+                self.real_get_worker_state("0.7.0")["worker_version"], "0.7.0"
             )
 
     def test_refuse_symlink_before_modification(self):
