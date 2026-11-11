@@ -361,7 +361,9 @@ def get_ue_job_logs(job_id: str, kind: str) -> dict:
     return get_ue_job_logs_rpc(job_id, kind)
 
 
-@app.tool(annotations=WRITE)
+@app.tool(annotations=ToolAnnotations(readOnlyHint=False,
+                                      destructiveHint=True, idempotentHint=True,
+                                      openWorldHint=False))
 def cancel_ue_job(job_id: str) -> dict:
     """Stop only the active job-owned Unreal process tree by job ID.
 
