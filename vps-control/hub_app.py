@@ -3,7 +3,7 @@
 The Hub has no cloud provider credentials. Its authenticated private bridge
 can call protected VPS immediate GPU power tools without per-action approval.
 """
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 from hub_rpc import call
@@ -15,7 +15,8 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_previs_stills as enqueue_ue_previs_stills_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
-                           cancel_ue_job as cancel_ue_job_rpc)
+                           cancel_ue_job as cancel_ue_job_rpc,
+                           get_ue_preview_png as get_ue_preview_png_rpc)
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -371,6 +372,21 @@ def cancel_ue_job(job_id: str) -> dict:
     After requesting cancellation, poll get_ue_episode_job_status.
     """
     return cancel_ue_job_rpc(job_id)
+
+
+@app.tool(annotations=READ)
+def get_ue_preview_image(job_id: str, shot_id: str):
+    """View exactly one original 720x1280 PNG from a finished UE preview.
+
+    shot_id must be 01, 13, 26, or 31. The private Windows Worker checks
+    the job's succeeded receipt, exact filename, image length and SHA256.
+    This returns an MCP image content block, NOT an arbitrary file path,
+    public URL, screenshot substitute, or a new render request.
+    """
+    result = get_ue_preview_png_rpc(job_id, shot_id)
+    if not result.get("ok"):
+        return {"ok": False, "reason": result.get("reason", "preview_unavailable")}
+    return Image(data=result["data"], format="png")
 
 
 if __name__ == "__main__":
