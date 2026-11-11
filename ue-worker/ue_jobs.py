@@ -251,7 +251,7 @@ class JobManager:
                 if (type(entry) is not dict or
                         entry.get("job_id") != item.stem or
                         entry.get("state") not in {
-                            "queued", "running", "succeeded", "failed"
+                            "queued", "running", "succeeded", "failed", "cancelled"
                         }):
                     continue
                 if entry["state"] in {"queued", "running"}:
