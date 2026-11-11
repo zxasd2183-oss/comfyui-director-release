@@ -12,12 +12,13 @@ import re
 import subprocess
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 MAX_SHOTS = 150
 MAX_DURATION_MS = 30 * 60 * 1000
 FPS_ALLOWED = frozenset({24, 25, 30})
+PREVIEW_MAX_DAILY_ATTEMPTS = 2
 ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
 SHOT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 PROJECT_NAME = "DirectorVirtualStudio"
@@ -267,12 +268,54 @@ class JobManager:
             except (OSError, ValueError, TypeError):
                 continue
 
+    def _reserve_previs_attempt(self, job_id):
+        """Durable rate cap: at most 2 V04 previews in any rolling 24 hours.
+
+        Reservation is written before a new GPU task can start, and a failed
+        task still counts against the budget (no retry storms). Budget file
+        survives process restart independently of the 64-job status cache.
+        """
+        root = self._state_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        budget = root / "preview_budget_v04.json"
+        if budget.is_symlink():
+            raise JobError("preview_budget_store_invalid")
+        stamp = datetime.now(timezone.utc)
+        attempts = []
+        if budget.exists():
+            try:
+                blob = json.loads(budget.read_text(encoding="utf-8"))
+                if not isinstance(blob, dict) or type(blob.get("attempts")) is not list:
+                    raise ValueError("malformed preview budget")
+                for entry in blob["attempts"]:
+                    if (type(entry) is not dict or
+                            not re.fullmatch("[a-f0-9]{32}", entry["job_id"])):
+                        raise ValueError("malformed preview budget record")
+                    instant = datetime.fromisoformat(entry["at"])
+                    if instant.tzinfo is None:
+                        raise ValueError("naive preview timestamp")
+                    if instant > stamp + timedelta(minutes=2):
+                        raise ValueError("future preview timestamp")
+                    if stamp - instant < timedelta(hours=24):
+                        attempts.append(entry)
+            except (KeyError, TypeError, ValueError, OSError):
+                raise JobError("preview_budget_store_invalid") from None
+        if len(attempts) >= PREVIEW_MAX_DAILY_ATTEMPTS:
+            raise JobError("preview_daily_limit_reached")
+        attempts.append({"job_id": job_id, "at": stamp.isoformat()})
+        temp = root / ("preview_budget_" + job_id + ".pending")
+        temp.write_text(json.dumps({"attempts": attempts}, ensure_ascii=False),
+                        encoding="utf-8")
+        temp.replace(budget)
+
     def submit(self, body):
         spec = sanitized_plan(body)
         with self.lock:
             if self.active is not None:
                 raise JobError("ue_worker_busy")
             job_id = uuid.uuid4().hex
+            if spec["format"] == "director_ue_previs_v04":
+                self._reserve_previs_attempt(job_id)
             entry = {
                 "ok": True, "job_id": job_id,
                 "state": "queued", "task": body["task"],
