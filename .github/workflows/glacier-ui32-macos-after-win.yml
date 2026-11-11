@@ -1,0 +1,46 @@
+name: Glacier UI32 macOS signer after Windows v0.20.21
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/glacier-ui32-macos-after-win.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch-macos-when-windows-is-signed:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Wait for Windows v0.20.21 canonical pinned Ed25519 signed source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,json,os,subprocess,time
+          repo=os.environ['GITHUB_REPOSITORY']
+          for attempt in range(58):
+              r=json.loads(subprocess.check_output(
+                  ['gh','api',f'repos/{repo}/contents/channels/windows-x64.json?ref=glacier-browser-updates-v2']))
+              obj=json.loads(base64.b64decode(r['content']).decode('utf-8'))
+              if obj.get('version')=='0.20.21':
+                  if (obj.get('channel')!='windows-x64' or
+                      obj.get('sha256')!='f6f4c1126e82f83b9490c1f7dcc7d3b205fa0f0e6e6bb5a1b30136485a859a7f' or
+                      obj.get('key_id')!='v2-259ea4a7b9da4bea'):
+                      raise RuntimeError('Unexpected Windows signed update identity')
+                  print('Windows 0.20.21 independent v2 signed channel is ready')
+                  break
+              if tuple(map(int,obj['version'].split('.')))>(0,20,21):
+                  raise RuntimeError('Windows signed channel jumped past expected UI32 version')
+              if attempt==57:
+                  raise RuntimeError('Windows 0.20.21 signed feed not ready')
+              print('Windows signed feed is still on',obj.get('version'),'retry',attempt+1,flush=True)
+              time.sleep(15)
+          PY
+      - name: Dispatch macOS v0.20.18 independent signer exactly after Windows
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-macos-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Glacier macOS 0.20.18 verifier dispatched after Windows 0.20.21 v2 signer; mac publisher validates entire DMG before promoting its own channel.' >> "$GITHUB_STEP_SUMMARY"
