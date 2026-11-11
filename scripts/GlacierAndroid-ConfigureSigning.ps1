@@ -87,49 +87,7 @@ try {
       [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr2)
     }
     if($password.Length -lt 24 -or $password -cne $confirm -or
-        $password -cnotmatch '^[!-~]+
-    & $keytool -genkeypair -noprompt -storetype PKCS12 -keystore $store -alias $alias -keyalg RSA -keysize 3072 -sigalg SHA256withRSA -validity 7300 -dname 'CN=Glacier Browser Android, O=Glacier Browser' -storepass:env GLACIER_ANDROID_LOCAL_PASS -keypass:env GLACIER_ANDROID_LOCAL_PASS
-    if($LASTEXITCODE -ne 0){throw 'Creating the independent signing key failed.'}
-    $secure=ConvertTo-SecureString $password -AsPlainText -Force
-    ConvertFrom-SecureString $secure | Set-Content $passwordFile -Encoding ASCII
-    foreach($p in @($store,$passwordFile)){
-      & icacls.exe $p /inheritance:r /grant:r ($principal+':F') | Out-Null
-      if($LASTEXITCODE -ne 0){throw 'Cannot restrict signing-file ACL.'}
-    }
-  } else {
-    $secure=Get-Content $passwordFile -Raw | ConvertTo-SecureString
-    $pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-    try{$password=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}
-    finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)}
-    $env:GLACIER_ANDROID_LOCAL_PASS=$password
-  }
-  & $keytool -exportcert -storetype PKCS12 -keystore $store -alias $alias -file $public -storepass:env GLACIER_ANDROID_LOCAL_PASS
-  if($LASTEXITCODE -ne 0){throw 'Exporting public certificate failed.'}
-  $sha=(Get-FileHash $public -Algorithm SHA256).Hash.ToLowerInvariant()
-  if($sha -notmatch '^[0-9a-f]{64}$'){throw 'Invalid certificate fingerprint.'}
-  $encoded=[Convert]::ToBase64String([IO.File]::ReadAllBytes($store))
-  $encoded | & $gh secret set GLACIER_ANDROID_KEYSTORE_BASE64 --repo $repository
-  if($LASTEXITCODE -ne 0){throw 'Unable to upload keystore Secret.'}
-  $password | & $gh secret set GLACIER_ANDROID_SIGNING_STORE_PASSWORD --repo $repository
-  if($LASTEXITCODE -ne 0){throw 'Unable to upload store-password Secret.'}
-  $password | & $gh secret set GLACIER_ANDROID_SIGNING_KEY_PASSWORD --repo $repository
-  if($LASTEXITCODE -ne 0){throw 'Unable to upload key-password Secret.'}
-  & $gh variable set GLACIER_ANDROID_SIGNING_KEY_ALIAS --repo $repository --body $alias
-  if($LASTEXITCODE -ne 0){throw 'Unable to set signing alias variable.'}
-  & $gh variable set GLACIER_ANDROID_CERT_SHA256 --repo $repository --body $sha
-  if($LASTEXITCODE -ne 0){throw 'Unable to set public certificate SHA256 variable.'}
-  Write-Host 'SUCCESS: dedicated Android signing configured with GitHub Actions Secrets.'
-  Write-Host ('Public cert SHA256: '+$sha)
-  Write-Host ('Protected local signing folder: '+$directory)
-  Write-Warning 'Keep your chosen password in your password manager AND an encrypted offline backup of the P12.'
-  Write-Warning 'The DPAPI password file cannot be recovered from another Windows account or after reinstall.'
-  Write-Host 'No APK or Release was published.'
-} finally {
-  Remove-Item Env:\GLACIER_ANDROID_LOCAL_PASS -ErrorAction SilentlyContinue
-  $password=$null
-  $encoded=$null
-}
-){
+        $password -cnotmatch '^[!-~]+$'){
       throw 'Password must match, have 24+ printable ASCII characters, and be safely backed up.'
     }
     $confirm=$null
@@ -167,7 +125,7 @@ try {
   Write-Host 'SUCCESS: dedicated Android signing configured with GitHub Actions Secrets.'
   Write-Host ('Public cert SHA256: '+$sha)
   Write-Host ('Protected local signing folder: '+$directory)
-  Write-Warning 'Back up the P12 AND its password separately in an encrypted offline vault.'
+  Write-Warning 'Keep your chosen password in a password manager and the P12 in an encrypted offline backup.'
   Write-Warning 'The DPAPI password file cannot be recovered from another Windows account or after reinstall.'
   Write-Host 'No APK or Release was published.'
 } finally {
