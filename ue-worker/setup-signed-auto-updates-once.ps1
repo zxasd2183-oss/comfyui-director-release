@@ -4,7 +4,7 @@
 param([string]$VpsSshTarget = "")
 $ErrorActionPreference = "Stop"
 $repo = "zxasd2183-oss/comfyui-director-release"
-$pinnedV052 = "0f5f9ed5e66d0fd2e9f4f1be226db9a822e98a3b"
+$pinnedV052 = "3f0416d38d3f760f28e9b3e66325f0cc403bf937"
 $updaterTask = "Director-UE-Signed-Updater"
 $tokenFile = Join-Path $env:ProgramData "DirectorUEWorker\worker.token"
 $tmp = $null
