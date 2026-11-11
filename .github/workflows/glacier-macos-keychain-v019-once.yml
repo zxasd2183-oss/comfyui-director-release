@@ -1,0 +1,145 @@
+name: Glacier macOS v0.20.19 keychain fix — immutable release once
+# Only starts when this NEW workflow is first merged into main.
+# Never touches the Windows release, Windows signed feed or pre-existing assets.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/glacier-macos-keychain-v019-once.yml']
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: glacier-macos-v019-once
+  cancel-in-progress: false
+
+jobs:
+  publish-verified-macos:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+      RELEASE_TAG: 'glacier-macos-v0.20.19'
+      RELEASE_NAME: 'GlacierBrowser-v0.20.19-macOS-AppleSilicon.dmg'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify macOS source version and immutable tag is not used
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pathlib
+          source=pathlib.Path('glacier-macos/mac_update_core.py').read_text()
+          if 'CURRENT_VERSION = "0.20.19"' not in source:
+              raise RuntimeError('macOS app is not at verified v0.20.19')
+          source=pathlib.Path('scripts/glacier_prepare_rotated_update.py').read_text()
+          if '"windows": "0.20.21", "macos": "0.20.19"' not in source:
+              raise RuntimeError('Separate Windows/macOS version contract changed')
+          PY
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Immutable macOS v0.20.19 release already exists"; exit 4
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Immutable macOS v0.20.19 git tag already exists"; exit 4
+          fi
+      - name: Require final successful Apple Silicon QA on exact application source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          endpoint=f'repos/{repo}/actions/workflows/glacier-rc-macos.yml/runs?branch=fix/glacier-macos-keychain-startup-20261111&per_page=30'
+          data=json.loads(subprocess.check_output(['gh','api',endpoint]))
+          eligible=[]
+          for run in data.get('workflow_runs',[]):
+              if (run.get('status')!='completed' or run.get('conclusion')!='success'
+                      or run.get('head_branch')!='fix/glacier-macos-keychain-startup-20261111'):
+                  continue
+              sha=run['head_sha']
+              if subprocess.run(['git','merge-base','--is-ancestor',sha,'HEAD']).returncode:
+                  continue
+              # Prevent a release from QA of older code, even if subsequent
+              # commits only changed UI, Keychain, or updater internals.
+              if subprocess.run(['git','diff','--quiet',sha,'HEAD','--',
+                                 'glacier-macos/','scripts/glacier_prepare_rotated_update.py']).returncode:
+                  continue
+              eligible.append((run['id'],sha))
+          if len(eligible)!=1:
+              raise RuntimeError('Require exactly one successful Apple Silicon QA of unchanged macOS client, found '+str(eligible))
+          runid,sha=eligible[0]
+          print('Reusing exact native QA:',runid,sha)
+          with open(os.environ['GITHUB_ENV'],'a') as out:
+              out.write(f'RELEASE_RC_RUN={runid}\nRELEASE_RC_SHA={sha}\n')
+          PY
+      - name: Download exact previously validated macOS DMG artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staged
+          gh run download "$RELEASE_RC_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-RC-macOS-AppleSilicon-DMG --dir staged
+          python3 - <<'PY'
+          import hashlib,os
+          from pathlib import Path
+          folder=Path('staged')
+          files=list(folder.iterdir())
+          p=folder/os.environ['RELEASE_NAME']
+          if len(files)!=1 or p not in files or not p.is_file() or p.is_symlink():
+              raise RuntimeError('Unexpected native QA DMG artifact name or count')
+          if not 150_000_000 <= p.stat().st_size <= 850_000_000:
+              raise RuntimeError('Native DMG size outside expected bounds')
+          with p.open('rb') as f:
+              f.seek(-512,2)
+              if f.read(4)!=b'koly':
+                  raise RuntimeError('DMG UDIF trailer missing')
+          with p.open('rb') as f:
+              digest=hashlib.file_digest(f,'sha256').hexdigest()
+          print('Full native DMG verified:',p.stat().st_size,digest)
+          with open(os.environ['GITHUB_ENV'],'a') as out:
+              out.write('RELEASE_DMG_SHA256='+digest+'\n')
+              out.write('RELEASE_DMG_SIZE='+str(p.stat().st_size)+'\n')
+          PY
+      - name: Stage only the new macOS release as draft
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" "staged/$RELEASE_NAME" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Browser macOS v0.20.19 — 免重复钥匙串权限弹窗' \
+            --notes '启动不再自动读取 Keychain。旧 VLESS 与账户密文只在用户主动选择迁移时读取，迁移后保留旧钥匙串和旧加密资料。新本机密钥文件设为当前用户 0600 权限；此方案的安全性弱于系统 Keychain：同一 macOS 用户运行的其他程序仍可能读取本地密钥，建议使用 FileVault。未取得 Apple Developer ID 公证，客户端更新仍依赖既有固定公钥 Ed25519 验证。Windows 与 Android 不变。'
+      - name: Verify canonical draft asset SHA256 and publish only exact Mac version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          tag=os.environ['RELEASE_TAG']
+          doc=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          assets=doc.get('assets',[])
+          if (not doc.get('draft') or doc.get('published_at') is not None
+                  or doc.get('target_commitish')!=os.environ['GITHUB_SHA'] or len(assets)!=1):
+              raise RuntimeError('Unexpected draft release state')
+          asset=assets[0]
+          if (asset.get('name')!=os.environ['RELEASE_NAME'] or
+              asset.get('size')!=int(os.environ['RELEASE_DMG_SIZE']) or
+              asset.get('digest')!='sha256:'+os.environ['RELEASE_DMG_SHA256'] or
+              asset.get('state')!='uploaded'):
+              raise RuntimeError('GitHub draft asset bytes differ from native QA')
+          subprocess.run(['gh','api','--method','PATCH',
+                          f'repos/{repo}/releases/{doc["id"]}',
+                          '-F','draft=false'],check=True,stdout=subprocess.DEVNULL)
+          final=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{doc["id"]}']))
+          if final.get('draft') or not final.get('published_at'):
+              raise RuntimeError('GitHub release not confirmed published')
+          print('Only',tag,'published with verified DMG bytes')
+          PY
+      - name: Dispatch existing independent macOS Ed25519 signer and VPS mirror
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-macos-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'macOS v0.20.19 immutable release published. Dedicated existing macOS signer dispatched; it verifies full SHA256 before feed promotion. Windows untouched.' >> "$GITHUB_STEP_SUMMARY"
