@@ -158,19 +158,11 @@ jobs:
             echo "No newer Windows installer requires independent signed promotion."
             exit 0
           fi
-          url="https://sync.borealos.cn/downloads/GlacierBrowser-v${latest}-Windows-Setup-x64.exe"
-          for attempt in $(seq 1 24); do
-            status="$(curl --silent --head --output /dev/null --write-out '%{http_code}' --max-time 15 "$url" || true)"
-            if [[ "$status" == '200' ]]; then
-              echo "VPS Windows v${latest} staged; requesting independent full-byte SHA256 signer."
-              gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
-              exit 0
-            fi
-            echo "Awaiting independent VPS Windows v${latest}: HTTP $status ($attempt/24)"
-            sleep 12
-          done
-          echo "::error::VPS still missing the new Windows EXE. Signed feed remains unchanged; scheduled retry will continue."
-          exit 1
+          # The signer now owns a bounded readiness wait and full-byte hash
+          # verification. Dispatch it IMMEDIATELY; polling here duplicates
+          # runners and causes stale failures before mirror upload completes.
+          gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo "Windows v${latest}: signer queued immediately; it waits for VPS and verifies complete SHA256."
 
       - name: Request signed release only after the newest paired installers are mirrored
         if: >-
