@@ -110,6 +110,7 @@ class PreviewPresetTest(unittest.TestCase):
         fake=types.SimpleNamespace(
             EditorAssetLibrary=types.SimpleNamespace(
                 make_directory=lambda path: True,
+                does_directory_exist=lambda path: False,
                 does_asset_exist=lambda path: path in assets,
                 save_loaded_asset=lambda config: True,
             ),
@@ -143,8 +144,11 @@ class PreviewPresetTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             jobid="a"*32
-            output=root/jobid/"Previews"
+            output=root/"Outputs"/"V04"/jobid/"Previews"
             output.mkdir(parents=True)
+            original_file=root/"Content"/"Director"/"V03"/"Maps"/"WaitingOffice_EP01_Stage.umap"
+            original_file.parent.mkdir(parents=True)
+            original_file.write_bytes(b"original-v03-map")
             result_path=root/"result.json"
             with patch.dict(
                 sys.modules,{"unreal":fake}
@@ -172,6 +176,7 @@ class PreviewPresetTest(unittest.TestCase):
                              [-420.0,345.0,225.0])
             self.assertEqual(result["camera13_reframe"]["preview"],
                              [-860.0,345.0,225.0])
+            self.assertEqual(original_file.read_bytes(), b"original-v03-map")
             self.assertEqual(result["height"],1280)
             self.assertEqual(len(created),1)
             config=assets[created[0]]
