@@ -107,11 +107,11 @@ class SignedUpdaterTest(unittest.TestCase):
         state.mkdir()
         old_files = {}
         for name in updates.FILES:
-            data = (self.src/name).read_bytes().replace(b"0.7.0", b"0.5.0")
+            data = (self.src/name).read_bytes().replace(b"0.7.0", b"0.5.2")
             old_files[name] = data
             (code_dir/name).write_bytes(data)
-        (state/"installed-version.txt").write_text("0.5.0")
-        with patch.object(updates, "worker_status", return_value={"worker_version":"0.5.0"}),patch.object(
+        (state/"installed-version.txt").write_text("0.5.2")
+        with patch.object(updates, "worker_status", return_value={"worker_version":"0.5.2","active_job_id":None}),patch.object(
             updates, "check_no_running_ue_commandlet"
         ),patch.object(updates, "invoke_task") as task,patch.object(
             updates, "worker_reaches_version", return_value=True
@@ -141,9 +141,9 @@ class SignedUpdaterTest(unittest.TestCase):
         state.mkdir()
         for name in updates.FILES:
             (code/name).write_bytes((self.src/name).read_bytes())
-        (state/"installed-version.txt").write_text("0.5.0")
+        (state/"installed-version.txt").write_text("0.5.2")
         with patch.object(updates,"worker_status",return_value={
-            "worker_version":"0.5.0","active_job_id":"a"*32,
+            "worker_version":"0.5.2","active_job_id":"a"*32,
         }),patch.object(updates,"invoke_task") as task:
             with self.assertRaisesRegex(updates.UpdateError,"job_in_progress"):
                 updates.apply_update(
@@ -159,15 +159,15 @@ class SignedUpdaterTest(unittest.TestCase):
         state.mkdir()
         original = {}
         for name in updates.FILES:
-            data = (self.src/name).read_bytes().replace(b"0.7.0", b"0.5.0")
+            data = (self.src/name).read_bytes().replace(b"0.7.0", b"0.5.2")
             original[name] = data
             (code/name).write_bytes(data)
-        (state/"installed-version.txt").write_text("0.5.0")
-        with patch.object(updates, "worker_status", return_value={"worker_version":"0.5.0"}),patch.object(
+        (state/"installed-version.txt").write_text("0.5.2")
+        with patch.object(updates, "worker_status", return_value={"worker_version":"0.5.2","active_job_id":None}),patch.object(
             updates, "check_no_running_ue_commandlet"
         ),patch.object(updates, "invoke_task"),patch.object(
             updates, "worker_reaches_version",
-            side_effect=lambda _root,version,**_: version == "0.5.0"
+            side_effect=lambda _root,version,**_: version == "0.5.2"
         ):
             with self.assertRaisesRegex(updates.UpdateError,"new_worker_health_failed"):
                 updates.apply_update(
@@ -175,7 +175,7 @@ class SignedUpdaterTest(unittest.TestCase):
                     updates.verified_files(self.blob, self.manifest),
                 )
         self.assertFalse((state/"pending.json").exists())
-        self.assertEqual((state/"installed-version.txt").read_text(), "0.5.0")
+        self.assertEqual((state/"installed-version.txt").read_text(), "0.5.2")
         for name in updates.FILES:
             self.assertEqual((code/name).read_bytes(), original[name])
 
