@@ -165,6 +165,19 @@ def shell_icon33(kind):
     return QIcon(pic)
 
 
+def proxy_icon33(ready):
+    """Draw a crisp status dot, not a fallback-font circle or red glyph."""
+    pix = QPixmap(32, 32)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#188038" if ready else "#b75b4b"))
+    p.drawEllipse(QRectF(10, 10, 12, 12))
+    p.end()
+    return QIcon(pix)
+
+
 class _AddressFocus33(QObject):
     """Qt style sheets have no reliable CSS :focus-within selector.
 
@@ -353,9 +366,17 @@ class GlacierChromeShell33:
 
         proxy = getattr(self, "proxy_label", None)
         if isinstance(proxy, QLabel):
-            proxy.setMaximumWidth(24)
-            proxy.setMinimumWidth(19)
-            proxy.setToolTip(proxy.toolTip() or proxy.text())
+            # macOS uses a QLabel, unlike the clickable Windows status button.
+            prior = proxy.toolTip() or proxy.text()
+            proxy.setToolTip(prior)
+            proxy.setAccessibleName(prior)
+            ready = getattr(self, "proc", None) is not None
+            proxy.setText("●")
+            proxy.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            proxy.setStyleSheet("QLabel#GlacierProxyMac32{background:transparent;"
+                                "color:" + ("#188038" if ready else "#b75b4b") +
+                                ";font-size:18px;border:none;}")
+            proxy.setFixedWidth(25)
         elif proxy is not None:
             proxy.setMinimumWidth(30)
             proxy.setMaximumWidth(30)
@@ -398,3 +419,8 @@ class GlacierChromeShell33:
         site_update = getattr(self, "update_site_info30", None)
         if callable(site_update):
             site_update()
+        # The live Windows connectivity indicator must be repainted now, not
+        # only at its next periodic refresh after the screenshot is taken.
+        refresh_proxy = getattr(self, "refresh_proxy_status29", None)
+        if callable(refresh_proxy):
+            refresh_proxy()
