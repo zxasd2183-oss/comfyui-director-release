@@ -12,6 +12,7 @@ import os
 import re
 import struct
 import subprocess
+import zipfile
 from pathlib import Path
 
 FRAME_SHOTS = ("01", "13", "26", "31")
@@ -190,6 +191,38 @@ def run_previs(spec,root,work):
         # arbitrary file paths are returned to Hub clients.
         receipt["relative_path"]=str(path.relative_to(root)).replace("\\","/")
         screenshots.append(receipt)
+    # One portable, operator-retrievable package. No endpoint publishes this.
+    # Atomic rename makes incomplete archives impossible to claim as success.
+    manifest = {
+        "format": "director_ue_previs_package_v1",
+        "project_id": "WaitingOffice", "episode_id": "EP01",
+        "job_id": work.name, "mode": "V03 geometry proxy camera proof",
+        "not_final_film": True,
+        "not_metahuman": True,
+        "images": screenshots,
+    }
+    package_name = "WaitingOffice_EP01_V04_" + work.name + ".zip"
+    pending_archive = output.parent / (package_name + ".pending")
+    package = output.parent / package_name
+    if package.exists() or pending_archive.exists():
+        raise JobError("previs_package_collision")
+    with zipfile.ZipFile(pending_archive, mode="x",
+                         compression=zipfile.ZIP_DEFLATED, compresslevel=4) as archive:
+        archive.writestr("manifest.json",
+                         json.dumps(manifest, ensure_ascii=False, indent=2))
+        for shot in screenshots:
+            relative = shot["relative_path"]
+            local = root / Path(relative)
+            # ZIP member names are fixed by the trusted worker, not callers.
+            archive.write(local, arcname="Previews/" + shot["shot_id"] + ".png")
+    pending_archive.replace(package)
+    with zipfile.ZipFile(package, "r") as archive:
+        expected_members = {"manifest.json"} | {
+            "Previews/" + shot + ".png" for shot in FRAME_SHOTS
+        }
+        if (set(archive.namelist()) != expected_members or
+                archive.testzip() is not None):
+            raise JobError("previs_package_integrity_failed")
     return {
         "preview_kind":"stage_proxy_only",
         "render_ready":False,
@@ -199,5 +232,11 @@ def run_previs(spec,root,work):
         "format":"png",
         "output_dir":str(output.relative_to(root)).replace("\\","/"),
         "screenshots":screenshots,
+        "package": {
+            "relative_path":str(package.relative_to(root)).replace("\\\\","/"),
+            "bytes":package.stat().st_size,
+            "sha256":hashlib.sha256(package.read_bytes()).hexdigest(),
+            "member_count":len(screenshots)+1,
+        },
         "note":"Only V03 blockout cubes + fixed cameras. Not a finished film.",
     }
