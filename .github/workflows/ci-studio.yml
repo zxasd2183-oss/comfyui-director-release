@@ -25,13 +25,31 @@ jobs:
           python-version: '3.12'
       - name: Install Microsoft identity test dependencies
         run: python -m pip install --disable-pip-version-check 'msal==1.39.0' 'PyJWT[crypto]>=2.10,<3'
-      - name: Verify actual MP4 tools preinstalled on GitHub Ubuntu runner
+      - name: Install pinned FFmpeg and FFprobe from verified wheel
         run: |
           set -euo pipefail
-          command -v ffprobe
+          # Ubuntu hosted runners do not guarantee system ffmpeg and apt DNS
+          # is currently unavailable. The pinned platform wheel includes
+          # BOTH executables and requires no apt or post-install download.
+          python -m pip install --disable-pip-version-check 'portable-ffmpeg-full==0.5.0'
+          python - <<'PY'
+          import os, pathlib, subprocess
+          from portable_ffmpeg import get_ffmpeg
+          ffmpeg, ffprobe = get_ffmpeg()
+          for path in (ffmpeg, ffprobe):
+              p=pathlib.Path(path)
+              assert p.is_file() and os.access(p,os.X_OK), p.name
+              print(subprocess.check_output([str(p), "-version"], text=True).splitlines()[0])
+          with open(os.environ["GITHUB_PATH"],"a",encoding="utf-8") as out:
+              out.write(str(pathlib.Path(ffmpeg).parent)+"\n")
+          PY
+      - name: Verify both actual media executables on PATH
+        run: |
+          set -euo pipefail
           command -v ffmpeg
-          ffprobe -version | head -n 1
+          command -v ffprobe
           ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
       - name: Compile isolated workbench backend
         run: python -m compileall -q studio
       - name: JavaScript syntax check
