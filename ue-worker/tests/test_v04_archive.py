@@ -83,6 +83,19 @@ class V04ArchiveTest(unittest.TestCase):
                                   "/WaitingOffice_EP01_SH" + shot + "_V03.WaitingOffice_EP01_SH" + shot + "_V03"
                             for shot in ue_previs.FRAME_SHOTS
                         },
+                        "portrait_preview_cameras": {
+                            shot: {
+                                "location": location, "look_at": focus, "focal_mm": focal,
+                                "sensor_mm": [13.5, 24.0],
+                                "crop_aspect_ratio": 0.0, "constrain_aspect_ratio": True,
+                            }
+                            for shot, (location, focus, focal) in {
+                                "01": ([-480.0,-335.0,235.0],[140.0,-45.0,115.0],20.0),
+                                "13": ([-860.0,345.0,225.0],[-245.0,380.0,103.0],27.0),
+                                "26": ([-250.0,80.0,230.0],[425.0,225.0,145.0],32.0),
+                                "31": ([-735.0,250.0,235.0],[-245.0,380.0,103.0],28.0),
+                            }.items()
+                        },
                     }
                     Path(env["DIRECTOR_UE_RESULT_FILE"]).write_text(json.dumps(result))
                 else:
@@ -108,6 +121,8 @@ class V04ArchiveTest(unittest.TestCase):
                 result=ue_previs.run_previs(spec,root,work)
             self.assertEqual(result["preview_count"],4)
             self.assertEqual(set(result["bound_preview_sequences"]),set(ue_previs.FRAME_SHOTS))
+            self.assertEqual(set(result["portrait_preview_cameras"]),set(ue_previs.FRAME_SHOTS))
+            self.assertEqual(result["portrait_preview_cameras"]["13"]["sensor_mm"],[13.5,24.0])
             self.assertTrue(result["source_stage_unchanged"])
             self.assertEqual(result["light_intensities"]["V03_Key_Light"],800.0)
             self.assertEqual(result["camera13_reframe"]["preview"],
