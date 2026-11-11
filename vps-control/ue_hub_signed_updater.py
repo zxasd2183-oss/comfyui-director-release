@@ -136,7 +136,7 @@ def fetch(url, maximum):
     if len(data) > maximum: raise UpdateError("download_too_large")
     return data
 
-def get_worker_state():
+def get_worker_state(required_version=None):
     if (WORKER_TOKEN.is_symlink() or not WORKER_TOKEN.is_file()
             or WORKER_TOKEN.stat().st_size > 128):
         raise UpdateError("worker_token_missing")
@@ -152,6 +152,12 @@ def get_worker_state():
     if (type(info) is not dict or info.get("ok") is not True
             or "active_job_id" not in info or info["active_job_id"] is not None):
         raise UpdateError("worker_busy_or_activity_unknown")
+    if required_version is not None:
+        try:
+            if version(info.get("worker_version")) < version(required_version):
+                raise UpdateError("worker_version_not_ready_for_hub")
+        except (TypeError, ValueError) as exc:
+            raise UpdateError("worker_version_unverifiable") from exc
     return info
 
 def systemctl(*args):
@@ -196,7 +202,9 @@ def apply_update(manifest, files):
     old = current.read_text("ascii").strip()
     if version(manifest["version"]) <= version(old):
         return {"status":"already_current", "version":old}
-    get_worker_state()
+    # A new Hub API must never arrive before its matching signed Worker:
+    # installing Hub 0.7 with a 0.5.x Worker would expose unsupported tools.
+    get_worker_state(manifest["version"])
     check_hub()
     # Existing Hub files are root owned; never blindly follow symlinks.
     original = {}
