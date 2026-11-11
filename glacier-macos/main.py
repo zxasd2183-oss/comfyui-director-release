@@ -24,6 +24,7 @@ from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
 from glacier_chrome_ui30 import GlacierChromeUI30
 from glacier_desktop_ui32 import GlacierDesktopUI32
+from glacier_chrome_shell33 import GlacierChromeShell33
 from glacier_site_diagnostic31 import GlacierSiteDiagnostic31
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
@@ -156,7 +157,7 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -197,6 +198,7 @@ class Browser(GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, Gl
   self.setup_account_center26(bar)
   self.setup_ui30(bar)
   self.setup_desktop_ui32(lay,bar)
+  self.setup_chrome_shell33()
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
