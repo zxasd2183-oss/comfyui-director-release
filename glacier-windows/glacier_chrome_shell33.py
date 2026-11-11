@@ -5,16 +5,16 @@ VLESS routing and signed updater remain owned by their original components.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer, QObject, QEvent
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton
+from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QTabBar
 
 CHROME_SHELL_QSS33 = """
 QMainWindow, QWidget#GlacierBrowserRoot32 {
     background: #ffffff; color: #202124;
 }
 QWidget#GlacierTabStrip14 {
-    background: #dee1e6; border: none;
+    background: #dfe3eb; border: none;
     border-bottom: 0;
 }
 QTabBar#GlacierExternalTabs14 {
@@ -22,11 +22,11 @@ QTabBar#GlacierExternalTabs14 {
     font-size: 12px; color: #3c4043;
 }
 QTabBar#GlacierExternalTabs14::tab {
-    background: #d0d4da; color: #3c4043;
-    border: 0; border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-    min-width: 128px; max-width: 230px; min-height: 32px;
-    padding: 4px 13px 1px; margin-right: 6px; margin-top: 6px;
+    background: #d5d9e0; color: #3c4043;
+    border: 0; border-top-left-radius: 13px;
+    border-top-right-radius: 13px;
+    min-width: 125px; max-width: 225px; min-height: 32px;
+    padding: 4px 12px 1px; margin-right: 3px; margin-top: 6px;
     font-weight: normal;
 }
 QTabBar#GlacierExternalTabs14::tab:selected {
@@ -34,7 +34,7 @@ QTabBar#GlacierExternalTabs14::tab:selected {
     border: 0; font-weight: 500;
 }
 QTabBar#GlacierExternalTabs14::tab:hover:!selected {
-    background: #e9ebef;
+    background: #e8ebf0;
 }
 QFrame#GlacierNavigation32 {
     background: #ffffff; border: 0;
@@ -44,8 +44,24 @@ QFrame#GlacierOmniboxShell33 {
     background: #f1f3f4; border: 1px solid #f1f3f4;
     border-radius: 19px;
 }
-QFrame#GlacierOmniboxShell33:focus-within {
-    background: #ffffff; border: 1px solid #93baf3;
+QFrame#GlacierOmniboxShell33[focused="true"] {
+    background: #ffffff; border: 1px solid #8ab4f8;
+}
+QToolButton#GlacierTabClose33 {
+    background: transparent; border: none; border-radius: 9px;
+    padding: 0; min-width: 18px; max-width: 18px;
+    min-height: 18px; max-height: 18px;
+}
+QToolButton#GlacierTabClose33:hover { background: #bdc1c6; }
+QAbstractButton#GlacierNewTab33 {
+    background: transparent; border: none; border-radius: 15px;
+    padding: 0; min-width: 30px; max-width: 30px;
+    min-height: 30px; max-height: 30px;
+}
+QAbstractButton#GlacierNewTab33:hover { background: #c5cbd4; }
+QToolButton#GlacierMore14::menu-indicator,
+QToolButton#GlacierHub20::menu-indicator {
+    image: none; width: 0px; height: 0px;
 }
 QLineEdit#GlacierOmnibox14 {
     background: transparent; border: none; color: #202124;
@@ -75,7 +91,7 @@ QToolButton#GlacierUtilityToggle32:hover, QPushButton#GlacierAccount26:hover {
     background: #e8eaed;
 }
 QPushButton#GlacierAccount26 {
-    background: #e8f0fe; border-radius: 18px;
+    background: #e8f0fe; border: 1px solid #d2e3fc; border-radius: 18px;
 }
 QPushButton#GlacierProxyHealth29 {
     background: transparent; border: none; color: #5f6368;
@@ -89,6 +105,10 @@ QLabel#GlacierProxyMac32 {
 QFrame#GlacierUtility32 {
     background: #f8f9fa; border-bottom: 1px solid #e8eaed;
 }
+QMenu { background: #ffffff; color: #202124;
+    border: 1px solid #dadce0; padding: 5px; }
+QMenu::item { padding: 7px 22px; border-radius: 4px; }
+QMenu::item:selected { background: #e8f0fe; color: #202124; }
 QTabWidget::pane { background: #ffffff; border: 0; }
 """
 
@@ -122,6 +142,17 @@ def shell_icon33(kind):
     elif kind == "profile":
         p.drawEllipse(QRectF(17, 11, 10, 10))
         p.drawArc(QRectF(11, 21, 22, 15), 0, 180*16)
+    elif kind == "close":
+        p.setPen(QPen(QColor("#5f6368"), 2.7, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.drawLine(QPointF(15, 15), QPointF(29, 29))
+        p.drawLine(QPointF(29, 15), QPointF(15, 29))
+    elif kind == "newtab":
+        p.drawLine(QPointF(22, 12), QPointF(22, 32))
+        p.drawLine(QPointF(12, 22), QPointF(32, 22))
+    elif kind == "secure":
+        p.drawRoundedRect(QRectF(13, 19, 18, 16), 3, 3)
+        p.drawArc(QRectF(16, 11, 12, 16), 0, 180*16)
     elif kind == "menu":
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor("#5f6368"))
@@ -132,6 +163,54 @@ def shell_icon33(kind):
         raise ValueError("Unsupported shell icon: " + kind)
     p.end()
     return QIcon(pic)
+
+
+class _AddressFocus33(QObject):
+    """Qt style sheets have no reliable CSS :focus-within selector.
+
+    Follow actual focus events, then repolish only the address shell. Neither
+    focus changes nor visuals may modify browser URLs or proxy settings.
+    """
+    def __init__(self, frame):
+        super().__init__(frame)
+        self.frame = frame
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            focused = event.type() == QEvent.Type.FocusIn
+            if self.frame.property("focused") != focused:
+                self.frame.setProperty("focused", focused)
+                self.frame.style().unpolish(self.frame)
+                self.frame.style().polish(self.frame)
+                self.frame.update()
+        return False
+
+
+def _install_tab_closers33(bar):
+    """Replace native platform-specific tab X glyphs (including red squares).
+
+    Compute the tab index on click, not at creation: tabs can be reordered.
+    """
+    if not bar.tabsClosable():
+        return
+    for index in range(bar.count()):
+        previous = bar.tabButton(index, QTabBar.ButtonPosition.RightSide)
+        if previous is not None and previous.objectName() == "GlacierTabClose33":
+            continue
+        button = QToolButton(bar)
+        button.setObjectName("GlacierTabClose33")
+        button.setAutoRaise(True)
+        button.setFixedSize(18, 18)
+        button.setIcon(shell_icon33("close"))
+        button.setIconSize(QSize(13, 13))
+        button.setToolTip("关闭标签页")
+        def close_this_tab(_checked=False, owned_button=button):
+            point = owned_button.mapTo(bar, owned_button.rect().center())
+            current_index = bar.tabAt(point)
+            if current_index >= 0:
+                bar.tabCloseRequested.emit(current_index)
+        button.clicked.connect(close_this_tab)
+        bar.setTabButton(index, QTabBar.ButtonPosition.RightSide, button)
 
 
 class GlacierChromeShell33:
@@ -160,6 +239,8 @@ class GlacierChromeShell33:
         self.chrome_tab14.setElideMode(Qt.TextElideMode.ElideRight)
         self.chrome_tab14.setExpanding(False)
         self.chrome_tab14.setUsesScrollButtons(True)
+        _install_tab_closers33(self.chrome_tab14)
+        self._polish_tab_closers33 = lambda: _install_tab_closers33(self.chrome_tab14)
 
         # Chrome's + belongs immediately beside the last tab, not pinned to
         # the far right edge by an old expanding layout/spacer.
@@ -174,6 +255,12 @@ class GlacierChromeShell33:
                     new_tab_button = button
                     break
             if new_tab_button is not None:
+                new_tab_button.setObjectName("GlacierNewTab33")
+                new_tab_button.setText("")
+                new_tab_button.setIcon(shell_icon33("newtab"))
+                new_tab_button.setIconSize(QSize(18, 18))
+                new_tab_button.setFixedSize(30, 30)
+                new_tab_button.setToolTip("打开新标签页 (Ctrl+T)")
                 strip_layout.removeWidget(new_tab_button)
                 for i in range(strip_layout.count()-1, -1, -1):
                     piece = strip_layout.itemAt(i)
@@ -192,9 +279,12 @@ class GlacierChromeShell33:
             bar.setMaximumWidth(min(desired, available))
 
         self._resize_tabs_to_content33 = resize_tabs_to_content
+        def refresh_tabs():
+            _install_tab_closers33(self.chrome_tab14)
+            resize_tabs_to_content()
         self.tabs.currentChanged.connect(
-            lambda _index: QTimer.singleShot(0, resize_tabs_to_content))
-        QTimer.singleShot(0, resize_tabs_to_content)
+            lambda _index: QTimer.singleShot(0, refresh_tabs))
+        QTimer.singleShot(0, refresh_tabs)
 
         surface.setFixedHeight(54)
         nav.setContentsMargins(12, 5, 12, 5)
@@ -205,6 +295,7 @@ class GlacierChromeShell33:
         bookmark = self.bookmark_button
         shell = QFrame(surface)
         shell.setObjectName("GlacierOmniboxShell33")
+        shell.setProperty("focused", False)
         shell.setMinimumWidth(220)
         shell.setFixedHeight(39)
         shell.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -220,6 +311,8 @@ class GlacierChromeShell33:
         address.setMinimumHeight(32)
         address.setMaximumHeight(35)
         address.setFrame(False)
+        self._address_focus33 = _AddressFocus33(shell)
+        address.installEventFilter(self._address_focus33)
         address.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         address.setPlaceholderText("在 Google 中搜索或输入网址")
         bookmark.setMinimumWidth(32)
@@ -242,6 +335,8 @@ class GlacierChromeShell33:
                 btn.setIconSize(QSize(21, 21))
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                if btn.menu() is not None and name in ("GlacierHub20", "GlacierMore14"):
+                    btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
                 btn.setFixedSize(36, 36)
 
         account = getattr(self, "_account_button26", None)
@@ -251,6 +346,8 @@ class GlacierChromeShell33:
             account.setMinimumWidth(36)
             account.setMaximumWidth(36)
             account.setFixedSize(36, 36)
+            account.setText("")
+            account.setAccessibleName("Glacier 账号中心")
 
         proxy = getattr(self, "proxy_label", None)
         if isinstance(proxy, QLabel):
