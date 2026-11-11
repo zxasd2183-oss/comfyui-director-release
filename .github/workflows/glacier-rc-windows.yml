@@ -170,10 +170,11 @@ jobs:
           path: glacier-windows/dist/GlacierBrowser-v0.20.22-Windows-Setup-x64.exe
           if-no-files-found: error
           retention-days: 30
-      - name: Upload actual UI32 live desktop screenshot
+      - name: Upload UI33 screenshot even if visual assertions fail
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: GlacierBrowser-Windows-v0.20.22-Live-Chrome-UI
           path: glacier-windows/ui-proof/Glacier-Windows-v0.20.22-live-ui33.png
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 20
