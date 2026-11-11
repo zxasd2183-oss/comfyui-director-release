@@ -192,6 +192,9 @@ class GlacierChromeUI30:
         menu = getattr(self, "_hub_menu20", None)
         if menu is not None:
             menu.addSeparator()
+            diagnostic = getattr(self, "start_gemini_diagnostic31", None)
+            if callable(diagnostic):
+                menu.addAction("Gemini 连接诊断（VLESS HTTPS）", diagnostic)
             menu.addAction("本版新增功能与更新说明", self.open_release_notes30)
 
     def open_release_notes30(self):

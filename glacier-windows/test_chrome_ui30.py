@@ -81,6 +81,18 @@ class ChromeUI30Tests(unittest.TestCase):
             matches[0].trigger()
             open_notes.assert_called_once_with()
 
+    def test_gemini_diagnostic_action_is_in_hub(self):
+        from PySide6.QtWidgets import QMenu
+        from unittest.mock import Mock
+        self.win._hub_menu20 = QMenu(self.win)
+        self.win.start_gemini_diagnostic31 = Mock()
+        self.win._build_hub_menu20()
+        actions = [a for a in self.win._hub_menu20.actions()
+                   if a.text() == "Gemini 连接诊断（VLESS HTTPS）"]
+        self.assertEqual(len(actions), 1)
+        actions[0].trigger()
+        self.win.start_gemini_diagnostic31.assert_called_once_with()
+
     def test_home_is_visible_and_functional_without_remote_scripts(self):
         html = new_tab_page30()
         for site in ("chatgpt.com", "github.com", "mail.google.com",

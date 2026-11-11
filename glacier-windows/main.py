@@ -21,6 +21,7 @@ from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
 from glacier_chrome_ui30 import GlacierChromeUI30
+from glacier_site_diagnostic31 import GlacierSiteDiagnostic31
 from glacier_input21 import GlacierInput21
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
@@ -141,7 +142,7 @@ class Page(QWebEngineView):
   self.setPage(QWebEnginePage(win.profile,self))
   self.win.prepare_page_input21(self)
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -164,7 +165,7 @@ class Browser(GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierA
   self.setup_tabtools13(lay,bar)
   self.proxy_label=QPushButton("● 正在检查代理状态",self)
   self.proxy_label.setObjectName("GlacierProxyHealth29")
-  self.proxy_label.setToolTip("仅检测本地代理端口，不进行公网直连；断开时点击重连已保存线路")
+  self.proxy_label.setToolTip("这里只检测本地 VLESS 端口。检测 Gemini HTTPS：打开 ▦ 工具中心 → Gemini 连接诊断")
   self.proxy_label.clicked.connect(self.reconnect_saved_proxy29)
   bar.addWidget(self.proxy_label)
   self._proxy_health_timer29=QTimer(self)
@@ -276,16 +277,18 @@ class Browser(GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierA
   except OSError:pass
   super().closeEvent(event)
 def main():
+ # Chromium must read the locked SOCKS5 proxy BEFORE QApplication initializes.
+ # QtWebEngine must not have an opportunity to start a DIRECT renderer.
+ with socket.socket() as s:
+  s.bind(("127.0.0.1",0));port=s.getsockname()[1]
+ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
  splash=show_glacier_splash("Windows v0.20.20")
  link=get_link(app)
- with socket.socket() as s:
-  s.bind(("127.0.0.1",0));port=s.getsockname()[1]
  proc=None
  try:proc=proxy_start(link,port)
  except Exception as e:QMessageBox.warning(None,APP,"代理未启动，禁止直连："+str(e))
  # The proxy remains configured even when the core is unavailable: fail closed.
- os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
  try:
   win=Browser(proc,port)
