@@ -7,6 +7,9 @@ on:
       - "studio/tests/test_episode_scene_brain.py"
       - "studio/tests/test_character_brain_bridge.py"
       - "vps-control/hub_app.py"
+      - "vps-control/install-hub-v06.sh"
+      - "studio/install-brain-link.sh"
+      - "vps-control/tests/test_hub_port_contract.py"
       - ".github/workflows/director-brain-scene-ci.yml"
   pull_request:
     paths:
@@ -14,6 +17,9 @@ on:
       - "studio/tests/test_episode_scene_brain.py"
       - "studio/tests/test_character_brain_bridge.py"
       - "vps-control/hub_app.py"
+      - "vps-control/install-hub-v06.sh"
+      - "studio/install-brain-link.sh"
+      - "vps-control/tests/test_hub_port_contract.py"
       - ".github/workflows/director-brain-scene-ci.yml"
 
 permissions:
@@ -30,6 +36,10 @@ jobs:
           python-version: "3.11"
       - name: Compile signed Studio brain and Hub extension
         run: python -m py_compile studio/studio_brain.py vps-control/hub_app.py
+      - name: Guarded deployment script syntax and exact tool registry
+        run: |
+          bash -n vps-control/install-hub-v06.sh studio/install-brain-link.sh
+          python -m unittest discover -s vps-control/tests -p 'test_hub_port_contract.py' -v
       - name: Exercise scene draft and live-readiness guards
         run: python -m unittest discover -s studio/tests -p 'test_episode_scene_brain.py' -v
       - name: Preserve legacy character brain isolation

@@ -211,24 +211,22 @@ for attempt in range(8):
             body=json.load(response)
         names={t["name"] for t in body["result"]["tools"]}
         expected={
-            "get_studio_status","get_queue_summary","list_h3_nodes",
-            "list_h3_workflows","get_h3_workflow_structure",
-            "audit_h3_workflow","get_h3_node_inputs","get_upgrade_readiness",
-            "get_control_center_status","get_gpu_power_status",
-            "request_gpu_start","request_gpu_stop","get_power_request_status",
-            "get_production_dashboard","get_production_episode",
-            "create_production_project","create_production_episode",
-            "add_production_shot","save_production_outline",
-            "sync_chatgpt_visual_to_studio",
-            "enqueue_chatgpt_visual_to_studio",
-            "get_chatgpt_visual_sync_status",
-            "list_recent_chatgpt_visual_syncs",
-            "get_project_characters","create_project_character",
-            "update_project_character","link_project_character_visual",
+            "get_studio_status","get_queue_summary","list_h3_nodes","list_h3_workflows",
+            "get_h3_workflow_structure","audit_h3_workflow","get_h3_node_inputs","get_upgrade_readiness",
+            "get_control_center_status","get_gpu_power_status","start_gpu_now","stop_gpu_now",
+            "request_gpu_start","request_gpu_stop","get_power_request_status","get_production_dashboard",
+            "get_production_episode","get_production_scenes","get_production_episode_readiness","create_production_scene",
+            "create_production_project","create_production_episode","add_production_shot","save_production_outline",
+            "get_project_characters","create_project_character","update_project_character","link_project_character_visual",
+            "sync_chatgpt_visual_to_studio","enqueue_chatgpt_visual_to_studio","get_chatgpt_visual_sync_status","list_recent_chatgpt_visual_syncs",
+            "get_ue_worker_status","get_ue_worker_capabilities","get_ue_episode_assembly_readiness","prepare_ue_workspace",
+            "enqueue_ue_episode_timeline","enqueue_ue_stage_cameras","enqueue_ue_previs_stills","get_ue_episode_job_status",
+            "get_ue_job_logs","cancel_ue_job","get_ue_preview_image","get_ue_preview_thumbnail",
+            "get_ue_signed_update_status","request_ue_signed_update","get_ue_hub_signed_update_status"
         }
         if names!=expected:
             raise RuntimeError("Hub MCP registry mismatch")
-        print("PASS: Hub 27 tools registered; existing GPU/power tools preserved")
+        print("PASS: Hub 47 tools registered; existing GPU/power tools preserved")
         break
     except Exception:
         if attempt==7: raise
