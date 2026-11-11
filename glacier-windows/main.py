@@ -27,7 +27,7 @@ from glacier_input21 import GlacierInput21
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
-from glacier_splash import show_glacier_splash
+from glacier_splash import show_glacier_splash, reveal_browser_after_splash
 from glacier_proxy_health29 import (ephemeral_proxy_config, await_proxy_ready,
                                     proxy_status_text)
 
@@ -321,10 +321,8 @@ def main():
   QMessageBox.critical(None,APP,"Windows 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- win.show()
- # Keep branded startup visible briefly, including on fast cold starts.
- # The Qt event loop stays responsive; this is not a blocking sleep.
- QTimer.singleShot(1100, lambda: splash.finish(win))
+ # Main window was built hidden; show it only after splash is gone.
+ reveal_browser_after_splash(splash, win)
  code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
