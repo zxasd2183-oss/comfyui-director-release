@@ -17,6 +17,8 @@ on:
       - 'glacier-windows/test_downloads19.py'
       - 'glacier-windows/test_workspaces19.py'
       - 'glacier-windows/glacier_shell20.py'
+      - 'glacier-windows/glacier_chrome_ui30.py'
+      - 'glacier-windows/test_chrome_ui30.py'
       - 'glacier-windows/test_shell20.py'
       - '.github/workflows/glacier-rc-macos.yml'
   workflow_dispatch:
