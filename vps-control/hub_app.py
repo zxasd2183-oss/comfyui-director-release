@@ -20,6 +20,8 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
+UE_HUB_API_VERSION = "0.7.0"
+
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
 
@@ -411,6 +413,30 @@ def request_ue_signed_update() -> dict:
     and get_ue_worker_status to confirm actual installed Worker version.
     """
     return request_ue_signed_update_rpc()
+
+
+@app.tool(annotations=READ)
+def get_ue_hub_signed_update_status() -> dict:
+    """Read sanitized root-owned VPS signed Hub update receipt only.
+
+    Never disclose credentials, local paths or generic daemon status logs.
+    """
+    import json
+    from pathlib import Path
+    file = Path("/opt/comfyui-director-hub/ue_hub_signed_update_status.json")
+    try:
+        if file.is_symlink() or not file.is_file() or file.stat().st_size > 1024:
+            return {"ok": True, "status": "not_configured",
+                    "hub_api_version": UE_HUB_API_VERSION}
+        item = json.loads(file.read_text(encoding="ascii"))
+        if type(item) is not dict:
+            return {"ok": False, "reason": "invalid_update_receipt"}
+        allowed = ("status", "version", "reason")
+        return {"ok": True, "hub_api_version": UE_HUB_API_VERSION,
+                **{k: item[k] for k in allowed if
+                   k in item and type(item[k]) is str and len(item[k]) <= 100}}
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {"ok": False, "reason": "invalid_update_receipt"}
 
 
 if __name__ == "__main__":
