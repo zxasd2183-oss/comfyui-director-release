@@ -261,6 +261,64 @@ def _stage_verified_asset(directory, channel, version, release):
         Path(tmp).unlink(missing_ok=True)
 
 
+def _latest_release_for(channel, expected_version=None):
+    """Find latest (or exactly requested) independently published release.
+
+    A standalone Windows VPS installer is a SHA256-verified file, *not*
+    automatically an Ed25519-signed browser update. The existing signed
+    manifests remain untouched by this discovery.
+    """
+    if channel not in PLATFORMS:
+        raise ValueError("unsupported release platform")
+    if expected_version is not None:
+        semver(expected_version)
+    url = f"https://api.github.com/repos/{REPO}/releases?per_page=100"
+    with fetch(url) as source:
+        raw = source.read(2_000_001)
+    if len(raw) > 2_000_000:
+        raise ValueError("oversized GitHub Releases index")
+    releases = json.loads(raw.decode("utf-8"), object_pairs_hook=unique)
+    if not isinstance(releases, list):
+        raise ValueError("invalid GitHub Releases index")
+    prefix, _ = PLATFORMS[channel]
+    pattern = re.compile(
+        r"^" + re.escape(prefix) +
+        r"((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))$"
+    )
+    versions = {}
+    for release in releases:
+        if (not isinstance(release, dict) or release.get("draft")
+                or release.get("prerelease") or not release.get("published_at")):
+            continue
+        tag = release.get("tag_name")
+        match = pattern.fullmatch(tag) if isinstance(tag, str) else None
+        if match is None:
+            continue
+        version = match.group(1)
+        if version in versions:
+            raise ValueError("duplicate canonical platform release version")
+        versions[version] = release
+    if not versions:
+        raise ValueError("no independently published release for " + channel)
+    version = expected_version or max(versions, key=semver)
+    if version not in versions:
+        raise ValueError("requested canonical release version is absent")
+    return version, versions[version]
+
+
+def stage_latest_windows(directory, expected_version=None):
+    """Stage a verified Windows EXE without waiting for a matching Mac DMG.
+
+    Reuse the exact canonical upstream SHA256/size and atomically promote the
+    immutable installer. Never create or edit windows-x64.json, or any feed.
+    """
+    version, release = _latest_release_for("windows-x64", expected_version)
+    if semver(version) < (0, 20, 10):
+        raise ValueError("Windows standalone mirror requires VPS-era release")
+    _stage_verified_asset(directory, "windows-x64", version, release)
+    return version
+
+
 def stage_latest_pair(directory):
     """Pre-download BOTH installers while keeping existing signed manifests intact."""
     pair = _canonical_release_pair()
@@ -282,16 +340,37 @@ def main():
     parser.add_argument("--directory", type=Path, default=Path("/var/lib/glacier-preview-downloads"))
     parser.add_argument("--stage-only", action="store_true",
                         help="Stage the latest paired releases without changing signed metadata")
+    parser.add_argument("--stage-windows-only", action="store_true",
+                        help="Stage the canonical Windows installer, never modify signed feeds")
+    parser.add_argument("--windows-version", default=None,
+                        help="Optional exact version pin for --stage-windows-only")
     args = parser.parse_args()
     directory = args.directory
     if not directory.is_dir() or directory.is_symlink():
         raise ValueError("missing or symlinked distribution directory")
+    if args.windows_version is not None and not args.stage_windows_only:
+        raise ValueError("--windows-version requires --stage-windows-only")
+    if args.stage_only and args.stage_windows_only:
+        raise ValueError("choose exactly one staging-only mode")
+    if args.stage_windows_only:
+        version = stage_latest_windows(directory, args.windows_version)
+        print(f"Windows-only HTTPS mirror ready: v{version}", flush=True)
+        return
+    # Mirror Windows latest independently, even if the matching macOS release
+    # does not yet exist. The timer and verified OIDC receiver both execute
+    # this existing unit, so no new privilege or service is necessary.
+    try:
+        stage_latest_windows(directory)
+    except Exception as exc:
+        if args.stage_only:
+            raise
+        print("Glacier Windows pre-stage deferred: " + str(exc), file=sys.stderr)
     try:
         stage_latest_pair(directory)
     except Exception as exc:
         if args.stage_only:
             raise
-        print("Glacier pre-stage deferred: " + str(exc), file=sys.stderr)
+        print("Glacier paired pre-stage deferred: " + str(exc), file=sys.stderr)
     if not args.stage_only:
         for channel in PLATFORMS:
             sync_one(directory, channel)
