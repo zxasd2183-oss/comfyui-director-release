@@ -27,28 +27,8 @@ class ActualReleaseSmoke(unittest.TestCase):
             h=folder/"hub"
             worker_source=(ROOT/"ue-worker"/"agent.py").read_text("utf-8")
             hub_source=(ROOT/"vps-control"/"hub_app.py").read_text("utf-8")
-            worker_versions=re.findall(r'"worker_version": "(\\d+\\.\\d+\\.\\d+)"',worker_source)
-            hub_versions=re.findall(r'^UE_HUB_API_VERSION = "(\\d+\\.\\d+\\.\\d+)"
-            wdoc=worker_updater.verify_manifest(
-                (w/"channel.json").read_bytes(),pub)
-            hdoc=hub_updater.verify_manifest(
-                (h/"channel.json").read_bytes(),pub)
-            self.assertEqual(set(worker_updater.verified_files(
-                (w/("ue-worker-v"+worker_version+".zip")).read_bytes(),wdoc)),
-                set(worker_updater.FILES))
-            self.assertEqual(set(hub_updater.files_from_archive(
-                (h/("ue-hub-v"+hub_version+".zip")).read_bytes(),hdoc)),
-                set(hub_updater.FILES))
-            self.assertEqual(len(worker_updater.FILES),9)
-            self.assertEqual(len(hub_updater.FILES),2)
-            with self.assertRaises(hub_updater.UpdateError):
-                hub_updater.verify_manifest((w/"channel.json").read_bytes(),pub)
-            with self.assertRaises(worker_updater.UpdateError):
-                worker_updater.verify_manifest((h/"channel.json").read_bytes(),pub)
-
-if __name__=="__main__":
-    unittest.main()
-,hub_source,re.M)
+            worker_versions=re.findall(r'"worker_version": "(\d+\.\d+\.\d+)"',worker_source)
+            hub_versions=re.findall(r'^UE_HUB_API_VERSION = "(\d+\.\d+\.\d+)"$',hub_source,re.M)
             self.assertEqual(len(worker_versions),1)
             self.assertEqual(len(hub_versions),1)
             worker_version=worker_versions[0]
@@ -60,10 +40,10 @@ if __name__=="__main__":
             hdoc=hub_updater.verify_manifest(
                 (h/"channel.json").read_bytes(),pub)
             self.assertEqual(set(worker_updater.verified_files(
-                (w/"ue-worker-v0.7.2.zip").read_bytes(),wdoc)),
+                (w/("ue-worker-v"+worker_version+".zip")).read_bytes(),wdoc)),
                 set(worker_updater.FILES))
             self.assertEqual(set(hub_updater.files_from_archive(
-                (h/"ue-hub-v0.7.2.zip").read_bytes(),hdoc)),
+                (h/("ue-hub-v"+hub_version+".zip")).read_bytes(),hdoc)),
                 set(hub_updater.FILES))
             self.assertEqual(len(worker_updater.FILES),9)
             self.assertEqual(len(hub_updater.FILES),2)
