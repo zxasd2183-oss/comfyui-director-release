@@ -62,64 +62,66 @@ QMenu::item:selected { background: #e9f4fa; color: #274c65; }
 """
 
 def new_tab_page30():
-    """Offline, script-free homepage with working HTTPS links and search."""
+    """Offline Chrome-style new tab: centered search and simple round shortcuts.
+
+    No network assets, scripts, remote fonts or automatic credentials.
+    The existing user-owned search/quick-link behavior remains unchanged.
+    """
     return """<!doctype html><html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Glacier · 新标签页</title>
 <style>
 :root{color-scheme:light}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;color:#253747;
-font:15px -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
-background:radial-gradient(ellipse 42% 30% at 92% 2%,#e1effa 0%,transparent 100%),
-radial-gradient(ellipse 44% 40% at 4% 90%,#eff7f9 0%,transparent 100%),#f9fbfd}
-header{max-width:1120px;margin:auto;display:flex;align-items:center;
-justify-content:space-between;padding:30px 32px}
-.brand{font-size:13px;letter-spacing:.16em;font-weight:800;color:#367fa6}
-.privacy{font-size:12px;color:#849bad;display:flex;gap:9px;align-items:center}
-.dot{width:8px;height:8px;border-radius:50%;background:#75bca5}
-main{max-width:760px;margin:clamp(75px,13vh,158px) auto 0;padding:0 26px}
-.logo{text-align:center;font-size:42px;margin:0 0 12px;color:#3183ae;letter-spacing:-2px;font-weight:700}
-h1{font-size:23px;font-weight:500;text-align:center;color:#51697a;margin:0 0 36px}
-.search{display:flex;align-items:center;min-height:62px;background:#fff;
-border:1px solid #dee8f0;border-radius:32px;padding:0 23px;
-box-shadow:0 9px 29px #315a7c10}
-.search:focus-within{border-color:#96c0d9;box-shadow:0 12px 30px #3e88b21b}
-.search span{font-size:25px;color:#8da6b6;margin-right:16px}
-.search input{border:0;outline:0;background:transparent;flex:1;min-width:0;
-font:15px inherit;color:#284457}
-.section{display:flex;align-items:center;justify-content:space-between;
-margin:44px 4px 17px}
-.section b{font-size:14px;font-weight:600;color:#567184}
-.section small{font-size:12px;color:#9badba}
-.grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}
-a{text-decoration:none;color:inherit}
-.tile{border-radius:17px;background:#fff;min-height:108px;
-border:1px solid #e8edf2;display:flex;align-items:center;
-justify-content:center;flex-direction:column;gap:12px;font-size:12px;
-color:#627688;transition:transform .15s,background .15s}
-.tile:hover{background:#eef7fc;transform:translateY(-2px);border-color:#c9e1ed}
-.icon{width:43px;height:43px;border-radius:14px;background:#eaf3fa;
-display:grid;place-items:center;font-size:17px;font-weight:700;color:#357da4}
-.note{margin:28px 0;text-align:center;font-size:12px;color:#a3b2bd}
-@media(max-width:660px){.grid{grid-template-columns:repeat(3,1fr)}
-header{padding:23px}.privacy{display:none}main{margin-top:11vh}}
+body{margin:0;background:#fff;color:#202124;min-height:100vh;
+font:14px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+header{position:absolute;top:0;left:0;width:100%;padding:20px 28px;
+display:flex;justify-content:flex-end;align-items:center;gap:18px;
+font-size:12px;color:#5f6368}
+header strong{font-weight:500;color:#3c4043}
+main{max-width:750px;margin:clamp(120px,19vh,210px) auto 0;padding:0 25px}
+h1{font-size:54px;font-weight:550;letter-spacing:-2.5px;color:#447da0;
+text-align:center;line-height:1.15;margin:0 0 32px}
+.search{height:49px;border-radius:26px;border:1px solid #dfe1e5;
+box-shadow:0 1px 5px rgba(32,33,36,.18);display:flex;
+align-items:center;padding:0 17px;gap:14px}
+.search:hover,.search:focus-within{box-shadow:0 2px 8px rgba(32,33,36,.22)}
+.search .glass{width:15px;height:15px;border-radius:50%;border:2px solid #80868b;
+position:relative;flex-shrink:0}
+.search .glass:after{content:"";width:7px;height:2px;background:#80868b;
+position:absolute;transform:rotate(45deg);left:10px;top:11px;border-radius:3px}
+.search input{min-width:0;width:100%;height:100%;outline:none;border:none;
+background:transparent;color:#202124;font-size:14px}
+.search input::placeholder{color:#70757a}
+.heading{margin:36px auto 14px;font-size:12px;color:#70757a;
+text-align:center;font-weight:500}
+.shortcuts{display:flex;justify-content:center;gap:11px;flex-wrap:wrap}
+.shortcut{width:94px;min-height:102px;border-radius:8px;text-decoration:none;
+color:#3c4043;text-align:center;display:flex;align-items:center;
+flex-direction:column;justify-content:center;gap:10px;font-size:12px}
+.shortcut:hover{background:#f1f3f4}
+.favicon{width:47px;height:47px;border-radius:50%;background:#f1f3f4;
+display:grid;place-items:center;font-weight:650;font-size:17px;
+color:#447da0}
+footer{margin:28px 0;text-align:center;color:#9aa0a6;font-size:11px}
+@media(max-width:620px){h1{font-size:44px}.shortcut{width:79px}}
 </style></head>
-<body><header><div class="brand">❄ GLACIER BROWSER</div>
-<div class="privacy"><i class="dot"></i>本地浏览 · 自有线路 · 不自动填充账号</div></header>
-<main><p class="logo">Glacier</p><h1>探索，从此刻开始</h1>
+<body>
+<header><span>安全连接由本机线路提供</span><strong>Glacier Browser</strong></header>
+<main><h1>Glacier</h1>
 <form class="search" action="https://www.google.com/search" method="get">
-<span aria-hidden="true">⌕</span><input type="search" name="q" autofocus
-autocomplete="off" placeholder="使用 Google 搜索网络" aria-label="搜索网络"></form>
-<div class="section"><b>快捷访问</b><small>常用网站 · 使用浏览器当前网络连接</small></div>
-<nav class="grid" aria-label="快捷网站">
-<a class="tile" href="https://www.google.com"><span class="icon">G</span>Google</a>
-<a class="tile" href="https://chatgpt.com"><span class="icon">AI</span>ChatGPT</a>
-<a class="tile" href="https://www.youtube.com"><span class="icon">▶</span>YouTube</a>
-<a class="tile" href="https://github.com"><span class="icon">GH</span>GitHub</a>
-<a class="tile" href="https://mail.google.com"><span class="icon">✉</span>Gmail</a>
-<a class="tile" href="https://www.wikipedia.org"><span class="icon">W</span>Wikipedia</a>
-</nav><div class="note">网站账号卡片可在地址栏旁的连接信息按钮中查看</div>
+<span class="glass" aria-hidden="true"></span>
+<input type="search" name="q" autofocus autocomplete="off"
+aria-label="搜索网络" placeholder="在 Google 中搜索或输入网址"></form>
+<p class="heading">快捷访问</p>
+<nav class="shortcuts" aria-label="常用网站">
+<a class="shortcut" href="https://www.google.com"><span class="favicon">G</span>Google</a>
+<a class="shortcut" href="https://chatgpt.com"><span class="favicon">AI</span>ChatGPT</a>
+<a class="shortcut" href="https://www.youtube.com"><span class="favicon">▶</span>YouTube</a>
+<a class="shortcut" href="https://github.com"><span class="favicon">GH</span>GitHub</a>
+<a class="shortcut" href="https://mail.google.com"><span class="favicon">✉</span>Gmail</a>
+<a class="shortcut" href="https://www.wikipedia.org"><span class="favicon">W</span>Wikipedia</a>
+</nav><footer>网站账号卡片可从地址栏左侧的连接信息按钮打开</footer>
 </main></body></html>"""
 
 class GlacierChromeUI30:
