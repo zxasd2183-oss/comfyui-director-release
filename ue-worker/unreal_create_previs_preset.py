@@ -30,6 +30,18 @@ CAMERA13_LABEL = "V03_CAM_SH13"
 CAMERA13_ORIGINAL = (-420.0, 345.0, 225.0)
 CAMERA13_PREVIEW = (-860.0, 345.0, 225.0)
 CAMERA13_FOCUS = (-245.0, 380.0, 103.0)
+# MRQ is 720x1280, but CineCamera defaults to a 16:9 sensor. With
+# bConstrainAspectRatio enabled that renders a 405px-high centre strip and
+# massive black bars. Use a REAL 9:16 sensor and disable extra plate crop
+# on four cloned-stage cameras only; original 31 V03 shots stay immutable.
+PORTRAIT_SENSOR = (13.5, 24.0)
+PORTRAIT_CAMERA_SHOTS = {
+    "01": ((-480.0, -335.0, 235.0), (140.0, -45.0, 115.0), 20.0),
+    "13": (CAMERA13_PREVIEW, CAMERA13_FOCUS, 27.0),
+    "26": ((-250.0, 80.0, 230.0), (425.0, 225.0, 145.0), 32.0),
+    "31": ((-735.0, 250.0, 235.0), (-245.0, 380.0, 103.0), 28.0),
+}
+assert set(PORTRAIT_CAMERA_SHOTS) == set(PROOF_SHOTS)
 
 
 def _coords(vector):
@@ -57,6 +69,59 @@ def fix_private_sh13_camera(actors):
         raise RuntimeError("exposure_camera13_write_failed")
     return {"label": CAMERA13_LABEL, "original": list(original),
             "preview": list(final), "look_at": list(CAMERA13_FOCUS)}
+
+
+def configure_private_portrait_cameras(actors):
+    """Physically reframe only four cloned-map cameras for vertical MRQ.
+
+    Verify every read-back before saving, fail closed rather than produce a
+    render with stale 16:9 sensor black letterboxes or wrong camera actors.
+    """
+    receipts = {}
+    used = set()
+    for shot in PROOF_SHOTS:
+        location, focus, focal_mm = PORTRAIT_CAMERA_SHOTS[shot]
+        matches = [a for a in actors if a.get_actor_label() == "V03_CAM_SH" + shot]
+        if len(matches) != 1 or id(matches[0]) in used:
+            raise RuntimeError("portrait_camera_missing_or_duplicate_" + shot)
+        camera = matches[0]
+        used.add(id(camera))
+        component = camera.get_component_by_class(unreal.CineCameraComponent)
+        if not component:
+            raise RuntimeError("portrait_camera_component_missing_" + shot)
+        where = unreal.Vector(*location)
+        target = unreal.Vector(*focus)
+        rotation = unreal.MathLibrary.find_look_at_rotation(where, target)
+        camera.set_actor_location_and_rotation(where, rotation, False, True)
+        if any(abs(a - b) > 1.0 for a, b in zip(_coords(camera.get_actor_location()), location)):
+            raise RuntimeError("portrait_camera_pose_not_applied_" + shot)
+        component.set_editor_property("filmback", unreal.CameraFilmbackSettings(
+            sensor_width=PORTRAIT_SENSOR[0], sensor_height=PORTRAIT_SENSOR[1]
+        ))
+        component.set_editor_property("crop_settings", unreal.PlateCropSettings(
+            aspect_ratio=0.0
+        ))
+        component.set_editor_property("constrain_aspect_ratio", True)
+        component.set_editor_property("current_focal_length", focal_mm)
+        filmback = component.get_editor_property("filmback")
+        crop = component.get_editor_property("crop_settings")
+        if (abs(float(filmback.sensor_width) - PORTRAIT_SENSOR[0]) > 0.01 or
+                abs(float(filmback.sensor_height) - PORTRAIT_SENSOR[1]) > 0.01 or
+                abs(float(crop.aspect_ratio)) > 0.001 or
+                component.get_editor_property("constrain_aspect_ratio") is not True or
+                abs(float(component.get_editor_property("current_focal_length")) - focal_mm) > 0.1):
+            raise RuntimeError("portrait_camera_settings_not_applied_" + shot)
+        receipts[shot] = {
+            "location": list(location),
+            "look_at": list(focus),
+            "focal_mm": focal_mm,
+            "sensor_mm": list(PORTRAIT_SENSOR),
+            "crop_aspect_ratio": 0.0,
+            "constrain_aspect_ratio": True,
+        }
+    if set(receipts) != set(PROOF_SHOTS):
+        raise RuntimeError("portrait_preview_camera_count_invalid")
+    return receipts
 
 
 def create_private_exposure_stage(job_id):
@@ -101,10 +166,11 @@ def create_private_exposure_stage(job_id):
             raise RuntimeError("exposure_light_write_failed_" + label)
         changed[label] = measured
     camera13 = fix_private_sh13_camera(actors)
+    portrait_cameras = configure_private_portrait_cameras(actors)
     # Saving the current level persists ONLY the newly created map.
     if not editor.save_current_level():
         raise RuntimeError("exposure_stage_save_failed")
-    return stage, changed, camera13
+    return stage, changed, camera13, portrait_cameras
 
 
 def create_private_bound_sequences(job_id, actors):
@@ -214,7 +280,7 @@ def main():
         if not unreal.EditorAssetLibrary.save_loaded_asset(config):
             raise RuntimeError("preview_preset_save_failed")
         # Source V03.umap remains immutable; never apply light changes in place.
-        map_path, light_levels, camera13 = create_private_exposure_stage(job_id)
+        map_path, light_levels, camera13, portrait_cameras = create_private_exposure_stage(job_id)
         # Only after cloned map has been saved, create NEW cut tracks pointing
         # to the actor instances that live in the cloned map.
         preview_actors = unreal.get_editor_subsystem(
@@ -226,7 +292,8 @@ def main():
                   "stage_map":map_path, "source_map":V03_SOURCE_STAGE,
                   "light_intensities":light_levels,
                   "camera13_reframe":camera13,
-                  "bound_preview_sequences":bound_sequences}
+                  "bound_preview_sequences":bound_sequences,
+                  "portrait_preview_cameras":portrait_cameras}
     except Exception as exc:
         result = {"ok":False, "reason":str(exc)[:400],
                   "traceback":traceback.format_exc(limit=5)[-2000:]}

@@ -24,14 +24,14 @@ class ActualReleaseSmoke(unittest.TestCase):
             folder=Path(td)
             w=folder/"worker"
             h=folder/"hub"
-            worker_signer.build_release("0.7.1", ROOT/"ue-worker", w, prv, pub)
+            worker_signer.build_release("0.7.2", ROOT/"ue-worker", w, prv, pub)
             hub_signer.sign("0.7.0", ROOT/"vps-control", h, prv, pub)
             wdoc=worker_updater.verify_manifest(
                 (w/"channel.json").read_bytes(),pub)
             hdoc=hub_updater.verify_manifest(
                 (h/"channel.json").read_bytes(),pub)
             self.assertEqual(set(worker_updater.verified_files(
-                (w/"ue-worker-v0.7.1.zip").read_bytes(),wdoc)),
+                (w/"ue-worker-v0.7.2.zip").read_bytes(),wdoc)),
                 set(worker_updater.FILES))
             self.assertEqual(set(hub_updater.files_from_archive(
                 (h/"ue-hub-v0.7.0.zip").read_bytes(),hdoc)),

@@ -174,13 +174,30 @@ def run_previs(spec,root,work):
         expected_sequences[shot] = (
             PRIVATE_SHOTS_ROOT + "/" + work.name + "/" + name + "." + name
         )
+    # Independent worker contract: reject stale 16:9 filmbacks and any
+    # mismatched four-camera composition before an expensive MRQ invocation.
+    poses = {
+        "01": ([-480.0, -335.0, 235.0], [140.0, -45.0, 115.0], 20.0),
+        "13": ([-860.0, 345.0, 225.0], [-245.0, 380.0, 103.0], 27.0),
+        "26": ([-250.0, 80.0, 230.0], [425.0, 225.0, 145.0], 32.0),
+        "31": ([-735.0, 250.0, 235.0], [-245.0, 380.0, 103.0], 28.0),
+    }
+    portrait_cameras = {
+        shot: {
+            "location": location, "look_at": target, "focal_mm": focal,
+            "sensor_mm": [13.5, 24.0], "crop_aspect_ratio": 0.0,
+            "constrain_aspect_ratio": True,
+        }
+        for shot, (location, target, focal) in poses.items()
+    }
     if (data.get("stage_map") != expected_map or
             data.get("source_map") != MAP_PATH or
             data.get("light_intensities") !=
             {"V03_Key_Light": 800.0, "V03_Fill_Light": 400.0} or
             data.get("camera13_reframe") != expected_camera13 or
-            data.get("bound_preview_sequences") != expected_sequences):
-        raise JobError("preview_stage_or_camera_binding_unverified")
+            data.get("bound_preview_sequences") != expected_sequences or
+            data.get("portrait_preview_cameras") != portrait_cameras):
+        raise JobError("preview_stage_or_portrait_camera_unverified")
     if hashlib.sha256(source_map_file.read_bytes()).hexdigest() != source_sha256_before:
         raise JobError("source_v03_stage_was_modified")
     screenshots = []
@@ -252,6 +269,7 @@ def run_previs(spec,root,work):
         "light_intensities": data["light_intensities"],
         "camera13_reframe": data["camera13_reframe"],
         "bound_preview_sequences": expected_sequences,
+        "portrait_preview_cameras": portrait_cameras,
         "render_ready":False,
         "metahuman_bound":False,
         "preview_count":len(screenshots),
