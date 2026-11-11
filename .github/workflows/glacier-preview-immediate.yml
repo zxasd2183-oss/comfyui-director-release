@@ -95,10 +95,19 @@ jobs:
                   "comfyui-director-release/glacier-browser-updates-v2/channels/")
           for channel, suffix in (("windows-x64","Windows-Setup-x64.exe"),
                                   ("macos-arm64","macOS-AppleSilicon.dmg")):
-              with urllib.request.urlopen(origin+channel+".json",timeout=18) as f:
+              # Cache bust BOTH sides. A stale GitHub raw CDN response must
+              # not turn a v0.20.19 sync into a false-success v0.20.18 check.
+              q="?nonce="+str(time.time_ns())
+              canonical_req=urllib.request.Request(
+                  origin+channel+".json"+q,
+                  headers={"Cache-Control":"no-cache","Pragma":"no-cache"})
+              with urllib.request.urlopen(canonical_req,timeout=18) as f:
                   canonical=json.load(f)
               for attempt in range(8):
-                  with urllib.request.urlopen(root+channel+".json",timeout=18) as f:
+                  live_req=urllib.request.Request(
+                      root+channel+".json?nonce="+str(time.time_ns()),
+                      headers={"Cache-Control":"no-cache","Pragma":"no-cache"})
+                  with urllib.request.urlopen(live_req,timeout=18) as f:
                       live=json.load(f)
                   if live==canonical:
                       break
