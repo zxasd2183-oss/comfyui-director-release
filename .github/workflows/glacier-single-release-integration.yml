@@ -9,6 +9,9 @@ on:
       - 'glacier-android-gecko/**'
       - 'scripts/glacier_prepare_rotated_update.py'
       - 'scripts/test_glacier_platform_versions.py'
+      - 'scripts/glacier_publish_macos_signed.py'
+      - 'scripts/test_glacier_macos_signed.py'
+      - '.github/workflows/glacier-macos-signed-auto.yml'
       - '.github/workflows/glacier-single-release-integration.yml'
   workflow_dispatch:
 permissions:
@@ -29,6 +32,8 @@ jobs:
         run: python -m pip install 'PySide6>=6.8,<7' 'cryptography>=43,<47' 'requests[socks]>=2.32,<3'
       - name: Guard independent Windows/macOS signing version gates
         run: python -m unittest -v scripts/test_glacier_platform_versions.py
+      - name: Verify macOS independent signing cannot downgrade or mutate Windows
+        run: python -m unittest -v scripts/test_glacier_macos_signed.py
       - name: Compile desktop additions without publishing any build
         run: |
           python -m py_compile glacier-windows/glacier_chrome_ui30.py glacier-windows/glacier_site_diagnostic31.py glacier-windows/main.py glacier-macos/main.py

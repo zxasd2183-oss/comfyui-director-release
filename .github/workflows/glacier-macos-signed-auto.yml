@@ -1,0 +1,142 @@
+name: Glacier macOS independent Ed25519 signed VPS updates
+# macOS v0.20.17 may ship independently from Windows v0.20.20.
+# Never change Windows feed, reuse/rotate key, or sign without FULL GitHub DMG hash.
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-macos-signed-auto.yml'
+      - 'scripts/glacier_publish_macos_signed.py'
+      - 'scripts/test_glacier_macos_signed.py'
+      - 'scripts/glacier_publish_signed_updates.py'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: glacier-dual-signed-update-feed
+  cancel-in-progress: false
+
+jobs:
+  signed-macos-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    steps:
+      - name: Checkout pinned publisher from main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          path: source
+          persist-credentials: false
+      - name: Checkout previously signed immutable channels
+        uses: actions/checkout@v5
+        with:
+          ref: glacier-browser-updates-v2
+          path: feed
+          persist-credentials: true
+      - name: Run isolated macOS signed-feed regression tests
+        run: |
+          set -euo pipefail
+          python -m pip install 'cryptography>=43,<47'
+          python -m unittest -v source/scripts/test_glacier_macos_signed.py
+      - name: Read immutable release index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          test -s releases.json
+      - name: Confirm newer macOS-only version and exact GitHub asset
+        id: pending
+        env:
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          from source.scripts.glacier_publish_macos_signed import newest_macos,pending_macos,make_macos_payload
+          releases=json.loads(Path('releases.json').read_text(encoding='utf-8'))
+          pending=pending_macos(releases,'feed/channels')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as out:
+              out.write('pending='+str(pending).lower()+'\n')
+          print('Independent macOS release pending:',pending)
+          if pending:
+              version,release=newest_macos(releases)
+              payload=make_macos_payload(version,release)
+              asset=f"GlacierBrowser-v{version}-macOS-AppleSilicon.dmg"
+              doc=dict(tag='glacier-macos-v'+version,name=asset,size=payload['size'],sha256=payload['sha256'])
+              Path('expected-dmg.json').write_text(json.dumps(doc),encoding='utf-8')
+          PY
+      - name: Download and verify FULL canonical GitHub DMG bytes
+        id: verified
+        if: steps.pending.outputs.pending == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Digest and size come from the authenticated canonical GitHub Release.
+          # The signed URL later uses owner VPS, whose mirror independently
+          # validates these same bytes BEFORE exposing the signed feed.
+          tag="$(python -c 'import json;print(json.load(open("expected-dmg.json"))["tag"])')"
+          asset="$(python -c 'import json;print(json.load(open("expected-dmg.json"))["name"])')"
+          mkdir -p release-dmg
+          gh release download "$tag" --pattern "$asset" --dir release-dmg --repo "$GITHUB_REPOSITORY"
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          expected=json.loads(Path('expected-dmg.json').read_text(encoding='utf-8'))
+          file=Path('release-dmg')/expected['name']
+          if not file.is_file() or file.is_symlink():
+              raise ValueError('Canonical macOS DMG is unavailable/unsafe')
+          if file.stat().st_size!=expected['size']:
+              raise ValueError('Canonical macOS DMG size mismatch')
+          digest=hashlib.sha256()
+          with file.open('rb') as stream:
+              for chunk in iter(lambda:stream.read(8*1024*1024),b''):
+                  digest.update(chunk)
+          if digest.hexdigest()!=expected['sha256']:
+              raise ValueError('Canonical macOS DMG full SHA256 mismatch')
+          print('PASS: entire canonical macOS DMG SHA256 and size verified')
+          PY
+          echo 'ready=1' >> "$GITHUB_OUTPUT"
+      - name: Sign only the new macOS channel using existing pinned v2 private key
+        if: steps.pending.outputs.pending == 'true' && steps.verified.outputs.ready == '1'
+        env:
+          GLACIER_MACOS_RELEASE_VERIFIED: '1'
+          GLACIER_UPDATE_SIGNING_PRIVATE_HEX: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python -m source.scripts.glacier_publish_macos_signed releases.json feed/channels
+      - name: Publish only macOS signed channel, never replace Windows
+        if: steps.pending.outputs.pending == 'true' && steps.verified.outputs.ready == '1'
+        run: |
+          set -euo pipefail
+          cd feed
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff --quiet -- channels/windows-x64.json || {
+            echo '::error::Windows signed feed unexpectedly changed'; exit 3;
+          }
+          git add channels/macos-arm64.json
+          if git diff --cached --quiet; then
+            echo 'macOS signed feed is already current; no new publish'
+            exit 0
+          fi
+          git commit -m 'Publish Ed25519 signed Glacier macOS VPS-only update'
+          git push origin HEAD:glacier-browser-updates-v2
+      - name: OIDC notify VPS mirror after signed macOS feed promotion
+        if: steps.pending.outputs.pending == 'true' && steps.verified.outputs.ready == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'VPS will independently fetch + SHA256-verify DMG before public channel is visible.'
