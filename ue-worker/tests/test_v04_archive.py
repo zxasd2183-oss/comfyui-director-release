@@ -69,6 +69,9 @@ class V04ArchiveTest(unittest.TestCase):
                         "ok":True,
                         "preset":"/Game/Director/V04/Presets/"+asset+"."+asset,
                         "width":720,"height":1280,"frames_per_shot":1,
+                        "stage_map":"/Game/Director/V051/Maps/WO_EP01_ExposurePreview_"+jobid,
+                        "source_map":ue_previs.MAP_PATH,
+                        "light_intensities":{"V03_Key_Light":800.0,"V03_Fill_Light":400.0},
                     }
                     Path(env["DIRECTOR_UE_RESULT_FILE"]).write_text(json.dumps(result))
                 else:
@@ -92,6 +95,10 @@ class V04ArchiveTest(unittest.TestCase):
             ):
                 result=ue_previs.run_previs(spec,root,work)
             self.assertEqual(result["preview_count"],4)
+            self.assertTrue(result["source_stage_unchanged"])
+            self.assertEqual(result["light_intensities"]["V03_Key_Light"],800.0)
+            self.assertTrue(result["preview_stage_map"].startswith("/Game/Director/V051/Maps/"))
+            self.assertEqual((stage/"Maps"/"WaitingOffice_EP01_Stage.umap").read_bytes(),b"map")
             self.assertFalse(result["render_ready"])
             self.assertFalse(result["metahuman_bound"])
             self.assertEqual(result["resolution"],"720x1280")
