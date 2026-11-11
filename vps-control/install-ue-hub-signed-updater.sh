@@ -47,6 +47,10 @@ Type=oneshot
 User=root
 Group=root
 UMask=0077
+# The Python downloader pins this same loopback proxy explicitly: ambient
+# proxy variables cannot redirect privileged release verification elsewhere.
+Environment=HTTPS_PROXY=http://127.0.0.1:1081
+Environment=NO_PROXY=127.0.0.1,localhost
 ExecStart=/opt/comfyui-director-control/.venv/bin/python /opt/director-ue-hub-signed-updater/ue_hub_signed_updater.py
 NoNewPrivileges=true
 PrivateTmp=true
