@@ -13,7 +13,9 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_episode_timeline as enqueue_ue_episode_timeline_rpc,
                            enqueue_ue_stage_cameras as enqueue_ue_stage_cameras_rpc,
                            enqueue_ue_previs_stills as enqueue_ue_previs_stills_rpc,
-                           get_ue_episode_job_status as get_ue_episode_job_status_rpc)
+                           get_ue_episode_job_status as get_ue_episode_job_status_rpc,
+                           get_ue_job_logs as get_ue_job_logs_rpc,
+                           cancel_ue_job as cancel_ue_job_rpc)
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -347,6 +349,26 @@ def enqueue_ue_previs_stills(project_id: str, episode_id: str) -> dict:
 def get_ue_episode_job_status(job_id: str) -> dict:
     """Read actual UE Editor timeline job state and result by bounded ID."""
     return get_ue_episode_job_status_rpc(job_id)
+
+
+@app.tool(annotations=READ)
+def get_ue_job_logs(job_id: str, kind: str) -> dict:
+    """Read a small sanitized tail of one allowlisted log for a known UE job.
+
+    kind: unreal, preset, render_01, render_13, render_26 or render_31.
+    Does not accept file paths or serve arbitrary files.
+    """
+    return get_ue_job_logs_rpc(job_id, kind)
+
+
+@app.tool(annotations=WRITE)
+def cancel_ue_job(job_id: str) -> dict:
+    """Stop only the active job-owned Unreal process tree by job ID.
+
+    Does not stop another user's process, choose a PID, or run shell commands.
+    After requesting cancellation, poll get_ue_episode_job_status.
+    """
+    return cancel_ue_job_rpc(job_id)
 
 
 if __name__ == "__main__":
