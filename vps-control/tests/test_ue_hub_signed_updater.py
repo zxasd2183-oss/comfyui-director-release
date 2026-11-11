@@ -1,6 +1,7 @@
 """Domain separated signed VPS Hub updates, no real service restart or network."""
 from __future__ import annotations
 import json
+import io
 import os
 import stat
 import sys
@@ -116,6 +117,39 @@ class SignedHubTest(unittest.TestCase):
         self.assertEqual((self.state/"installed-version.txt").read_text(),"0.5.1")
         for name in updater.FILES:
             self.assertEqual((self.code/name).read_bytes(),original[name])
+
+    def test_real_private_worker_gate_requires_matching_version_and_idle(self):
+        token = self.root / "ue-worker.token"
+        token.write_text("a" * 64)
+        class Opener:
+            def __init__(self, state):
+                self.state = state
+            def open(self, request, timeout=0):
+                self_requested = request.full_url
+                if self_requested != "http://127.0.0.1:18910/v1/status":
+                    raise AssertionError("private_worker_url_changed")
+                return io.BytesIO(json.dumps(self.state).encode("utf-8"))
+        for state, expected in (
+            ({"ok": True, "active_job_id": None, "worker_version": "0.5.2"},
+             "worker_version_not_ready_for_hub"),
+            ({"ok": True, "active_job_id": "b"*32, "worker_version": "0.7.0"},
+             "worker_busy_or_activity_unknown"),
+            ({"ok": True, "worker_version": "0.7.0"},
+             "worker_busy_or_activity_unknown"),
+        ):
+            with patch.object(updater, "WORKER_TOKEN", token), patch.object(
+                updater.urllib.request, "build_opener", return_value=Opener(state)
+            ), self.assertRaisesRegex(updater.UpdateError, expected):
+                updater.get_worker_state("0.7.0")
+        with patch.object(updater, "WORKER_TOKEN", token), patch.object(
+            updater.urllib.request, "build_opener",
+            return_value=Opener({
+                "ok": True, "active_job_id": None, "worker_version": "0.7.0"
+            })
+        ):
+            self.assertEqual(
+                updater.get_worker_state("0.7.0")["worker_version"], "0.7.0"
+            )
 
     def test_refuse_symlink_before_modification(self):
         (self.code/"hub_app.py").unlink()
