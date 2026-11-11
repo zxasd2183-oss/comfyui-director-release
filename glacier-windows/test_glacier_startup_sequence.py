@@ -1,6 +1,8 @@
 """Qt regression for exclusive standalone splash to browser handoff."""
 import os
 import unittest
+import ast
+from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QTimer
@@ -26,6 +28,21 @@ class StartupSequenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication(["Glacier-Startup-QA", "-platform", "offscreen"])
+
+    def test_new_tab_home_is_executable_code_not_an_escaped_comment(self):
+        # Regression for an escaped \\n literal that swallowed the old setHtml.
+        tree = ast.parse(Path(__file__).with_name("main.py").read_text(encoding="utf-8"))
+        browser = next(node for node in tree.body
+                       if isinstance(node, ast.ClassDef) and node.name == "Browser")
+        method = next(node for node in browser.body
+                      if isinstance(node, ast.FunctionDef) and node.name == "new_tab")
+        calls = [node for node in ast.walk(method)
+                 if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute)
+                 and node.func.attr == "setHtml"]
+        self.assertTrue(calls, "Browser.new_tab must call QWebEngineView.setHtml")
+        self.assertTrue(any("home_markup" in ast.unparse(call)
+                            for call in calls))
 
     def test_splash_is_alone_then_fully_closes_before_main_window(self):
         splash = show_glacier_splash("QA")
