@@ -19,7 +19,7 @@ from glacier_productivity16 import GlacierProductivity16
 from glacier_workspaces17 import GlacierWorkspaces17
 from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
-from glacier_shell20 import GlacierShell20
+from glacier_shell20 import GlacierShell20, ensure_offline_home_file
 from glacier_chrome_ui30 import GlacierChromeUI30
 from glacier_desktop_ui32 import GlacierDesktopUI32
 from glacier_chrome_shell33 import GlacierChromeShell33
@@ -203,7 +203,8 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   # Qt WebEngine represents setHtml() using a data:text/html URL, not
   # just about:blank. Treat only Glacier's own local HTML as repairable.
   return (url in ("", "about:blank") or
-          (url.startswith("data:text/html") and "Glacier" in url))
+          (url.startswith("data:text/html") and "Glacier" in url) or
+          (url.startswith("file:") and "glacier-offline-home-v34.html" in url))
  def ensure_initial_local_home33(self):
   view=self.current()
   if view is None:return
@@ -220,8 +221,14 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
    count=getattr(view,"_glacier_home_repairs33",0)
    if count>=3:return
    view._glacier_home_repairs33=count+1
-   view.setHtml(self.home_markup(),QUrl("about:blank"))
-  except RuntimeError:
+   if count==0:
+    # Qt may report a populated data URL even though its renderer is blank.
+    # A local file bypasses data: loading without ever using the network.
+    offline=ensure_offline_home_file(appdir(),self.home_markup())
+    view.setUrl(QUrl.fromLocalFile(str(offline)))
+   else:
+    view.reload()
+  except (RuntimeError,OSError,ValueError):
    return
  def refresh_proxy_status29(self):
   status, ready=proxy_status_text(self.proc,self.proxy_port)
