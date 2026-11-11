@@ -95,7 +95,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_gui_start
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_desktop15
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_productivity16
-          QT_QPA_PLATFORM=offscreen python -m unittest -v test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19 test_shell20 test_chrome_ui30 test_site_diagnostic31 test_desktop_ui32 test_account_center26 test_accounts22 test_sync23
+          QT_QPA_PLATFORM=offscreen python -m unittest -v test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19 test_shell20 test_chrome_ui30 test_chrome_shell33 test_site_diagnostic31 test_desktop_ui32 test_account_center26 test_accounts22 test_sync23
           python -c "from mac_update_core import FEED_URL,signed_update_session; assert FEED_URL == 'https://sync.borealos.cn/downloads/macos-arm64.json'; s=signed_update_session(1080); assert not s.trust_env and s.proxies['https']=='socks5h://127.0.0.1:1080'; s.close(); print('VLESS HTTPS signed updater checks passed')"
           python -c "from PySide6.QtWebEngineWidgets import QWebEngineView; import keyring.backends.macOS; import mac_update; print('Qt WebEngine / optional Keychain migration / updater imports passed')"
       - name: Download and SHA256-verify official sing-box 1.14.4 darwin arm64
