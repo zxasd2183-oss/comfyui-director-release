@@ -111,6 +111,10 @@ jobs:
           if ($accountCode -ne 0) { throw "Glacier account GUI regression process failed: $accountCode" }
           python -c "import update_core; assert update_core.newer_than('0.9.0','0.20.21'); assert not update_core.newer_than('0.20.21','0.9.0'); import update_ui; print('Updater imports and semver checks passed')"
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
+      - name: Capture REAL Windows browser UI32 screenshot and assert geometry
+        run: |
+          python visual_proof_desktop32.py
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Browser UI32 did not render correctly' }
       - name: Build Windows executable with embedded VLESS core
         run: |
           python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets --hidden-import glacier_sync_auto24 --hidden-import glacier_account_center26 --hidden-import glacier_signed_install27 --hidden-import glacier_win_resume28 --hidden-import glacier_proxy_health29 --hidden-import socks main.py
@@ -165,3 +169,10 @@ jobs:
           path: glacier-windows/dist/GlacierBrowser-v0.20.21-Windows-Setup-x64.exe
           if-no-files-found: error
           retention-days: 30
+      - name: Upload actual UI32 live desktop screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierBrowser-Windows-v0.20.21-Live-Chrome-UI
+          path: glacier-windows/ui-proof/Glacier-Windows-v0.20.21-live-ui32.png
+          if-no-files-found: error
+          retention-days: 20
