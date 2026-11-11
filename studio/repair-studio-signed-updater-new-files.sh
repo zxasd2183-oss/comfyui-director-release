@@ -15,7 +15,7 @@ STATE=/var/lib/director-studio-signed-updater
 PY=/opt/comfyui-director-control/.venv/bin/python
 TIMER=director-studio-signed-update.timer
 SERVICE=director-studio-signed-update.service
-# Exact reviewed source blob from Studio PR #51, not the user-editable directory.
+# Exact reviewed source blob from Studio PR #52, not the user-editable directory.
 EXPECTED_NEW_BLOB=baffc5a0e6b37ac6022a6997ddb9058fb3a58e7d
 # Confirm this exact old root script came from the audited health-contract fix.
 OLD_COMMIT=615b3aeebfe16ff152e9ecf133ea8426842f1527
