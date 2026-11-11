@@ -245,11 +245,16 @@ class GlacierDesktopUI32:
         if proxy is not None:
             if isinstance(proxy, QLabel):
                 proxy.setObjectName("GlacierProxyMac32")
-            proxy.setMaximumWidth(143)
+                proxy.setToolTip(proxy.text())
+                proxy.setMaximumWidth(90)
+            else:
+                # The Windows status refresh renders a 40px status dot and
+                # puts the full offline/online text in the tooltip.
+                proxy.setFixedWidth(42)
             nav.addWidget(proxy)
             proxy.show()
         if account is not None:
-            account.setMaximumWidth(165)
+            account.setMaximumWidth(125)
             nav.addWidget(account)
             account.show()
         if more is not None:
@@ -265,3 +270,6 @@ class GlacierDesktopUI32:
         self._utility_legacy32 = tuple(utility_visible)
         self._desktop_ui_ready32 = True
         self.setStyleSheet(self.styleSheet() + "\n" + CHROME_DESKTOP_QSS32)
+        refresher = getattr(self, "refresh_proxy_status29", None)
+        if callable(refresher):
+            refresher()

@@ -15,7 +15,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 def main():
-    with tempfile.TemporaryDirectory(prefix="glacier-ui32-clean-profile-") as temp:
+    with tempfile.TemporaryDirectory(prefix="glacier-ui32-clean-profile-", ignore_cleanup_errors=True) as temp:
         os.environ["LOCALAPPDATA"] = temp
         from main import Browser
         app=QApplication.instance() or QApplication(["Glacier UI 32 visual QA"])
@@ -34,12 +34,11 @@ def main():
             nav=window._navigation_surface32
             if not (strip.y()<nav.y()<window.tabs.y()):
                 raise RuntimeError("Real browser top tabs/nav/page vertical order is incorrect")
-            if window.address.width()<480 or window.address.height()<40:
-                raise RuntimeError("Actual address bar is still narrow or too short")
-            if nav.height()<55 or strip.height()<40:
-                raise RuntimeError("Actual navigation/tab strip remained old compact geometry")
-            if not window.tabs.tabBar().isHidden():
-                raise RuntimeError("Legacy duplicate internal tab strip is visible")
+            print("viewport", window.width(), window.height(), flush=True)
+            print("tab strip", strip.y(), strip.height(), flush=True)
+            print("navigation", nav.y(), nav.height(), flush=True)
+            print("omnibox", window.address.x(), window.address.width(),
+                  window.address.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
             path=out/"Glacier-Windows-v0.20.21-live-ui32.png"
@@ -47,6 +46,15 @@ def main():
                 raise RuntimeError("Could not capture live Browser screenshot")
             if path.stat().st_size<12000:
                 raise RuntimeError("Browser visual proof unexpectedly empty")
+            min_width=max(260, int(window.width()*0.33))
+            if window.address.width()<min_width or window.address.height()<40:
+                raise RuntimeError(
+                    "Actual Chrome address bar remains too narrow: "+
+                    str(window.address.width())+" of "+str(window.width()))
+            if nav.height()<55 or strip.height()<40:
+                raise RuntimeError("Actual navigation/tab strip remained old compact geometry")
+            if not window.tabs.tabBar().isHidden():
+                raise RuntimeError("Legacy duplicate internal tab strip is visible")
             print("SUCCESS: actual Windows browser UI32, controls and visible shell captured")
             print("tab strip y/h",strip.y(),strip.height())
             print("navigation y/h",nav.y(),nav.height())

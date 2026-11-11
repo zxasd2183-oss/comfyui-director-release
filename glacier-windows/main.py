@@ -194,11 +194,24 @@ class Browser(GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, Gl
   self.setup_desktop_ui32(lay,bar)
  def refresh_proxy_status29(self):
   status, ready=proxy_status_text(self.proc,self.proxy_port)
-  if self.proxy_label.text()!=status:self.proxy_label.setText(status)
-  self.proxy_label.setStyleSheet(
-   "QPushButton#GlacierProxyHealth29 {border:1px solid #dce6ec;"
-   "border-radius:9px;background:#f5f9fb;padding:6px 9px;"
-   "color:"+("#177956" if ready else "#a04d41")+";}")
+  if getattr(self, "_desktop_ui_ready32", False):
+   # Chrome toolbar: visible 42px connection indicator, long diagnostic in
+   # tooltip. This must not masquerade as a remote Gemini HTTPS check.
+   badge = "●" if ready else "○"
+   if self.proxy_label.text()!=badge:self.proxy_label.setText(badge)
+   self.proxy_label.setToolTip(status+"\n点击重连已保存线路；这里只检测本地代理端口。"
+                              "\n远端 Gemini HTTPS 可通过工具中心单独诊断。")
+   self.proxy_label.setStyleSheet(
+    "QPushButton#GlacierProxyHealth29{background:#f2f7fa;"
+    "border:1px solid #d8e3eb;border-radius:16px;"
+    "padding:3px;color:"+("#188261" if ready else "#b35043")+";"
+    "font-size:17px;min-height:30px;}")
+  else:
+   if self.proxy_label.text()!=status:self.proxy_label.setText(status)
+   self.proxy_label.setStyleSheet(
+    "QPushButton#GlacierProxyHealth29 {border:1px solid #dce6ec;"
+    "border-radius:9px;background:#f5f9fb;padding:6px 9px;"
+    "color:"+("#177956" if ready else "#a04d41")+";}")
 
  def reconnect_saved_proxy29(self):
   # Deliberately reconnect only the stored DPAPI-encrypted VLESS line.
