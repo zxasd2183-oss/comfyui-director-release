@@ -1,0 +1,115 @@
+name: Publish signed Director UE Worker release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Reviewed Worker version already declared in agent.py (x.y.z)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: director-ue-worker-signed-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout TRUSTED reviewed code from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: trusted
+          persist-credentials: false
+      - name: Checkout signed update channel for monotonicity check
+        uses: actions/checkout@v4
+        with:
+          ref: ue-worker-updates
+          path: feed
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install fixed signer dependency
+        run: python -m pip install 'cryptography>=43,<47'
+      - name: Fail-closed preflight, keys and previous channel signature
+        env:
+          VERSION: ${{ inputs.version }}
+          SIGNING_PRIVATE: ${{ secrets.DIRECTOR_UE_SIGNING_PRIVATE_HEX }}
+          SIGNING_PUBLIC: ${{ vars.DIRECTOR_UE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, re, sys
+          from pathlib import Path
+          sys.path.insert(0, "trusted/ue-worker")
+          from ue_signed_updater import verify_manifest, version_tuple
+          v=os.environ["VERSION"]
+          version_tuple(v)
+          key=os.environ.get("SIGNING_PRIVATE","")
+          public=os.environ.get("SIGNING_PUBLIC","")
+          if not re.fullmatch("[0-9a-f]{64}", key) or not re.fullmatch("[0-9a-f]{64}",public):
+              raise SystemExit("Dedicated UE Ed25519 private secret/public variable not set")
+          if not ('"worker_version": "'+v+'"') in Path("trusted/ue-worker/agent.py").read_text():
+              raise SystemExit("Requested release version differs from reviewed agent.py")
+          old=Path("feed/channel.json")
+          if old.exists():
+              previous=verify_manifest(old.read_bytes(), public)
+              if version_tuple(v) <= version_tuple(previous["version"]):
+                  raise SystemExit("Refusing duplicate, stale or downgrading signed channel")
+          PY
+      - name: Sign immutable allowlisted Worker scripts
+        env:
+          DIRECTOR_UE_SIGNING_PRIVATE_HEX: ${{ secrets.DIRECTOR_UE_SIGNING_PRIVATE_HEX }}
+          DIRECTOR_UE_SIGNING_PUBLIC_HEX: ${{ vars.DIRECTOR_UE_SIGNING_PUBLIC_HEX }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          python trusted/ue-worker/ue_sign_release.py "$VERSION" trusted/ue-worker dist
+          python - <<'PY'
+          import os, sys
+          from pathlib import Path
+          sys.path.insert(0, "trusted/ue-worker")
+          from ue_signed_updater import verify_manifest, verified_files
+          d=verify_manifest(Path("dist/channel.json").read_bytes(),
+                            os.environ["DIRECTOR_UE_SIGNING_PUBLIC_HEX"])
+          name="ue-worker-v"+d["version"]+".zip"
+          files=verified_files(Path("dist",name).read_bytes(),d)
+          assert len(files)==8
+          print("Signed release hash, Ed25519 signature and exact file allowlist verified")
+          PY
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tag="ue-worker-v$VERSION"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release tag already published; never overwrite signed archives."
+            exit 1
+          fi
+          gh release create "$tag" "dist/ue-worker-v$VERSION.zip" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Director UE Worker v$VERSION" \
+            --notes "Ed25519-signed, allowlisted Windows UE Worker upgrade; no administrator commands exposed."
+      - name: Publish signed monotonic update channel
+        run: |
+          set -euo pipefail
+          cp dist/channel.json feed/channel.json
+          cd feed
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add channel.json
+          if git diff --cached --quiet; then
+            echo "::error::Signed channel has no new version."
+            exit 1
+          fi
+          git commit -m "Publish verified Director UE Worker signed release ${{ inputs.version }}"
+          git push origin HEAD:ue-worker-updates
