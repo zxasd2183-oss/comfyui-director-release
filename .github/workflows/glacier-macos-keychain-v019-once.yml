@@ -119,7 +119,11 @@ jobs:
           import json,os,subprocess
           repo=os.environ['GITHUB_REPOSITORY']
           tag=os.environ['RELEASE_TAG']
-          doc=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          releases=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100']))
+          matches=[item for item in releases if item.get('tag_name')==tag]
+          if len(matches)!=1:
+              raise RuntimeError('Expected exactly one private staged Mac draft release')
+          doc=matches[0]
           assets=doc.get('assets',[])
           if (not doc.get('draft') or doc.get('published_at') is not None
                   or doc.get('target_commitish')!=os.environ['GITHUB_SHA'] or len(assets)!=1):
