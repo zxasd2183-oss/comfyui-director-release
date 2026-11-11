@@ -60,6 +60,33 @@ class SignedHubTest(unittest.TestCase):
         for p in reversed(self.patches): p.stop()
         self.temp.cleanup()
 
+    def test_signed_release_fetch_only_uses_fixed_loopback_proxy(self):
+        # The VPS cannot reach GitHub directly. The privileged poller may
+        # forward HTTPS CONNECT only through a fixed local trusted listener.
+        # Host and redirect checks, Ed25519 and archive digest remain separate.
+        opener = updater.release_opener()
+        handlers = [h for h in opener.handlers if isinstance(
+            h, updater.urllib.request.ProxyHandler)]
+        self.assertEqual(len(handlers), 1)
+        self.assertEqual(handlers[0].proxies,
+                         {"https": "http://127.0.0.1:1081"})
+        with patch.dict(os.environ, {
+            "HTTPS_PROXY": "https://attacker.example:9999",
+            "HTTP_PROXY": "http://attacker.example:8888",
+            "ALL_PROXY": "socks5://attacker.example:1080",
+        }):
+            still_safe = updater.release_opener()
+        safe_handler = next(h for h in still_safe.handlers if isinstance(
+            h, updater.urllib.request.ProxyHandler))
+        self.assertEqual(safe_handler.proxies, handlers[0].proxies)
+        redirect = updater.Redirect()
+        req = updater.urllib.request.Request(updater.CHANNEL_URL)
+        for target in ("http://raw.githubusercontent.com/foo",
+                       "https://attacker.example/foo",
+                       "https://127.0.0.1:1081/foo"):
+            with self.assertRaises(updater.UpdateError):
+                redirect.redirect_request(req, None, 302, "Found", {}, target)
+
     def test_signature_version_and_only_two_files(self):
         self.assertEqual(self.manifest["format"], updater.FORMAT)
         self.assertEqual(set(updater.files_from_archive(self.archive, self.manifest)),
