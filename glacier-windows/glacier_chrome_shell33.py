@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer, QEvent, QObject
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton
+from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QTabBar, QToolButton
 
 CHROME_SHELL_QSS33 = """
 /* Glacier's browser chrome uses neutral surfaces; site content is untouched. */
@@ -156,6 +156,10 @@ def shell_icon33(kind):
     elif kind == "profile":
         p.drawEllipse(QRectF(17, 11, 10, 10))
         p.drawArc(QRectF(11, 21, 22, 15), 0, 180*16)
+    elif kind == "close":
+        p.setPen(QPen(QColor("#5f6368"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(15, 15), QPointF(29, 29))
+        p.drawLine(QPointF(29, 15), QPointF(15, 29))
     elif kind == "menu":
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor("#5f6368"))
@@ -244,9 +248,32 @@ class GlacierChromeShell33:
             bar.setMaximumWidth(min(desired, available))
 
         self._resize_tabs_to_content33 = resize_tabs_to_content
+
+        def polish_close_buttons():
+            """Replace native platform-red X tiles without changing close signals."""
+            bar = self.chrome_tab14
+            for i in range(bar.count()):
+                for side in (QTabBar.ButtonPosition.RightSide, QTabBar.ButtonPosition.LeftSide):
+                    button = bar.tabButton(i, side)
+                    if not isinstance(button, QAbstractButton):
+                        continue
+                    button.setIcon(shell_icon33("close"))
+                    button.setIconSize(QSize(15, 15))
+                    button.setFixedSize(20, 20)
+                    button.setToolTip("关闭标签")
+                    button.setStyleSheet(
+                        "QAbstractButton{background:transparent;border:0;"
+                        "border-radius:10px;padding:0;}"
+                        "QAbstractButton:hover{background:#d8dde5;}"
+                        "QAbstractButton:pressed{background:#c8d0da;}")
+                    break
+
+        self._polish_close_buttons33 = polish_close_buttons
         self.tabs.currentChanged.connect(
-            lambda _index: QTimer.singleShot(0, resize_tabs_to_content))
+            lambda _index: QTimer.singleShot(0, lambda: (
+                resize_tabs_to_content(), polish_close_buttons())))
         QTimer.singleShot(0, resize_tabs_to_content)
+        QTimer.singleShot(0, polish_close_buttons)
 
         surface.setFixedHeight(54)
         nav.setContentsMargins(12, 5, 12, 5)
@@ -297,6 +324,10 @@ class GlacierChromeShell33:
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 btn.setFixedSize(36, 36)
+                # Chromium has one menu glyph; Qt's MenuButtonPopup adds an
+                # unattractive second arrow alongside the three-dot icon.
+                if name in ("GlacierHub20", "GlacierMore14") and btn.menu() is not None:
+                    btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
 
         account = getattr(self, "_account_button26", None)
         if account is not None:
