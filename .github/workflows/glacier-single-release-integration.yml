@@ -45,6 +45,25 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Check Android stable-signing readiness without using private keys
+        env:
+          GLACIER_ANDROID_KEYSTORE_BASE64: ${{ secrets.GLACIER_ANDROID_KEYSTORE_BASE64 }}
+          GLACIER_ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_STORE_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.GLACIER_ANDROID_SIGNING_KEY_PASSWORD }}
+          GLACIER_ANDROID_SIGNING_KEY_ALIAS: ${{ vars.GLACIER_ANDROID_SIGNING_KEY_ALIAS }}
+          GLACIER_ANDROID_CERT_SHA256: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          ready=1
+          for name in GLACIER_ANDROID_KEYSTORE_BASE64 GLACIER_ANDROID_SIGNING_STORE_PASSWORD GLACIER_ANDROID_SIGNING_KEY_PASSWORD GLACIER_ANDROID_SIGNING_KEY_ALIAS GLACIER_ANDROID_CERT_SHA256; do
+            test -n "${!name:-}" || ready=0
+          done
+          [[ "${GLACIER_ANDROID_CERT_SHA256:-}" =~ ^[0-9a-fA-F]{64}$ ]] || ready=0
+          if [ "$ready" = 1 ]; then
+            echo 'Android stable-signing configuration present; no keys printed or used.'
+          else
+            echo '::warning::Android stable release blocked: separate signing identity or certificate pin not provisioned.'
+          fi
       - name: Verify Android source is present without publishing APK
         run: |
           test -s glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/MainActivity.java
