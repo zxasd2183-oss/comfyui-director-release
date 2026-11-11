@@ -102,6 +102,23 @@ def gpu_summary():
         return {"available": False}
 
 
+def signed_update_status():
+    """Read only the SYSTEM updater's small non-secret status receipt."""
+    source = Path(__file__).resolve().parent / "signed-update-status.json"
+    try:
+        if source.is_symlink() or not source.is_file() or source.stat().st_size > 2048:
+            return {"status": "not_configured"}
+        item = json.loads(source.read_text(encoding="utf-8"))
+        if type(item) is not dict:
+            return {"status": "invalid_receipt"}
+        # Never forward arbitrary strings or raw updater logs through MCP.
+        allowed = ("status", "version", "reason", "recovered")
+        return {name: item[name] for name in allowed
+                if name in item and type(item[name]) in (str, bool)}
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {"status": "invalid_receipt"}
+
+
 def status():
     active_job_id = None
     if JOB_MANAGER is not None:
@@ -109,6 +126,7 @@ def status():
             active_job_id = JOB_MANAGER.active
     return {
         "active_job_id": active_job_id,
+        "signed_update": signed_update_status(),
         "ok": True, "node_id": NODE_ID, "platform": platform.system(),
         "hostname": platform.node()[:128], "timestamp": utcnow(),
         "python": platform.python_version(),
