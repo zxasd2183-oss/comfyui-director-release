@@ -63,7 +63,7 @@ class HubPortContractTests(unittest.TestCase):
         self.assertEqual(len(hub),47)
         # Guard against omitted or invented tool names at deployment.
         registered=set(re.findall(
-            r'@app\\.tool\\([\\s\\S]*?\\)\\n(?:\\#[^\\n]*\\n)*def\\s+(\\w+)\\s*\\(',
+            r'@app\.tool\([\s\S]*?\)\n(?:\#[^\n]*\n)*def\s+(\w+)\s*\(',
             content(VPS/"hub_app.py")))
         self.assertEqual(hub,registered)
         self.assertTrue(core<=hub|{"get_power_service_health"})
