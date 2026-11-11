@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from ue_jobs import JobManager, JobError
+from ue_logs import log_tail
 
 HOST = "127.0.0.1"
 PORT = 19010
@@ -109,7 +110,7 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
-        "worker_version": "0.4.0",
+        "worker_version": "0.5.0",
     }
 
 
@@ -119,6 +120,9 @@ def capabilities():
         "actions": ["prepare_workspace"],
         "jobs": ["build_episode_timeline", "build_stage_cameras", "render_previs_stills"],
         "job_status_route": "/v2/jobs/<job_id>",
+        "job_logs_route": "/v3/jobs/<job_id>/logs/<kind>",
+        "job_cancel_route": "/v3/jobs/<job_id>/cancel",
+        "supports_job_cancel": True,
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
         "supports_rendering": False,
@@ -140,7 +144,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/0.4"
+    server_version = "DirectorUEWorker/0.5"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -174,12 +178,32 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, JOB_MANAGER.lookup(self.path.rsplit("/", 1)[-1]))
             except JobError as exc:
                 self.send_json(404, {"ok": False, "reason": str(exc)})
+        elif re.fullmatch(r"/v3/jobs/[a-f0-9]{32}/logs/[a-z0-9_]{1,20}", self.path):
+            parts = self.path.split("/")
+            try:
+                self.send_json(200, log_tail(JOB_MANAGER, parts[3], parts[5]))
+            except JobError as exc:
+                self.send_json(404, {"ok": False, "reason": str(exc)})
+            except OSError:
+                self.send_json(500, {"ok": False, "reason": "job_log_unavailable"})
         else:
             self.send_json(404, {"ok": False, "reason": "not_found"})
 
     def do_POST(self):
         if not self.authorize():
             self.send_json(401, {"ok": False, "reason": "unauthorized"})
+            return
+        cancel_match = re.fullmatch(r"/v3/jobs/([a-f0-9]{32})/cancel", self.path)
+        if cancel_match:
+            # Cancellation is ID-bound and intentionally accepts NO body.
+            if (self.headers.get("Content-Length", "0") != "0" or
+                    self.headers.get("Transfer-Encoding")):
+                self.send_json(400, {"ok": False, "reason": "invalid_request"})
+                return
+            try:
+                self.send_json(202, JOB_MANAGER.cancel(cancel_match.group(1)))
+            except JobError as exc:
+                self.send_json(404, {"ok": False, "reason": str(exc)})
             return
         if self.path not in ("/v1/actions", "/v2/jobs"):
             self.send_json(404, {"ok": False, "reason": "not_found"})

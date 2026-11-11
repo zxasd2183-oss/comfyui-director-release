@@ -101,19 +101,11 @@ def validate_existing_stage(root):
 
 
 def _run_unreal(command,root,logfile,timeout,env):
-    from ue_jobs import JobError
-    try:
-        with logfile.open("wb") as log:
-            process = subprocess.run(
-                command, cwd=str(root), env=env,
-                stdout=log, stderr=subprocess.STDOUT,
-                timeout=timeout, check=False,
-                creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),
-            )
-    except subprocess.TimeoutExpired:
-        raise JobError("previs_render_timeout") from None
-    if process.returncode != 0:
-        raise JobError("previs_unreal_process_failed")
+    from ue_process import run_fixed
+    run_fixed(
+        command, root, logfile, timeout, env,
+        "previs_render_timeout", "previs_unreal_process_failed",
+    )
 
 
 def run_previs(spec,root,work):

@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import threading
+from ue_process import JobCancelled, ProcessController, job_scope, run_fixed
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -176,22 +177,15 @@ def run_commandlet(spec, root, work, timeout=900):
         "-script=" + str(script), "-unattended", "-nop4", "-nosplash",
         "-NoSound", "-log",
     ]
-    try:
-        with (work / "unreal.log").open("wb") as logfile:
-            result = subprocess.run(
-                command, env=env, cwd=str(root),
-                stdout=logfile, stderr=subprocess.STDOUT, timeout=timeout,
-                check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-    except subprocess.TimeoutExpired:
-        raise JobError("unreal_commandlet_timeout") from None
+    run_fixed(
+        command, root, work / "unreal.log", timeout, env,
+        "unreal_commandlet_timeout", "unreal_commandlet_failed",
+    )
     if not result_file.exists():
         raise JobError("unreal_missing_result")
     data = json.loads(result_file.read_text(encoding="utf-8"))
     if type(data) is not dict or type(data.get("ok")) is not bool:
         raise JobError("invalid_unreal_result")
-    if result.returncode != 0:
-        raise JobError("unreal_commandlet_failed")
     if not data["ok"]:
         raise JobError("unreal_script_failed")
     if (data.get("shot_count") != len(spec["shots"]) or
@@ -227,6 +221,7 @@ class JobManager:
         self.lock = threading.Lock()
         self.jobs = {}
         self.active = None
+        self.controller = None
         self._restore()
 
     def _state_dir(self):
@@ -256,7 +251,7 @@ class JobManager:
                 if (type(entry) is not dict or
                         entry.get("job_id") != item.stem or
                         entry.get("state") not in {
-                            "queued", "running", "succeeded", "failed"
+                            "queued", "running", "succeeded", "failed", "cancelled"
                         }):
                     continue
                 if entry["state"] in {"queued", "running"}:
@@ -332,6 +327,7 @@ class JobManager:
                 if oldest != job_id:
                     del self.jobs[oldest]
             self.active = job_id
+            self.controller = ProcessController()
             thread = threading.Thread(
                 target=self._execute, args=(job_id, spec),
                 name="DirectorUEJob-" + job_id[:8], daemon=True,
@@ -345,16 +341,21 @@ class JobManager:
             self.jobs[job_id]["started_at"] = now()
             self._save(self.jobs[job_id])
         try:
-            root = self.root_factory()
-            work = root / "Jobs" / job_id
-            if spec["format"] == "director_ue_previs_v04":
-                from ue_previs import run_previs
-                # Preview uses a separate, fixed render pipeline and strict
-                # output receipt, never the legacy commandlet path.
-                result = run_previs(spec, root, work)
-            else:
-                result = self.runner(spec, root, work)
+            with job_scope(self.controller):
+                if self.controller.cancel_requested.is_set():
+                    raise JobCancelled("job_cancelled")
+                root = self.root_factory()
+                work = root / "Jobs" / job_id
+                if spec["format"] == "director_ue_previs_v04":
+                    from ue_previs import run_previs
+                    result = run_previs(spec, root, work)
+                else:
+                    result = self.runner(spec, root, work)
+                if self.controller.cancel_requested.is_set():
+                    raise JobCancelled("job_cancelled")
             outcome = {"state": "succeeded", "result": result}
+        except JobCancelled:
+            outcome = {"state": "cancelled", "reason": "job_cancelled"}
         except JobError as exc:
             outcome = {"state": "failed", "reason": str(exc)}
         except (OSError, ValueError, RuntimeError):
@@ -364,6 +365,24 @@ class JobManager:
             self.jobs[job_id]["finished_at"] = now()
             self._save(self.jobs[job_id])
             self.active = None
+            self.controller = None
+
+    def cancel(self, job_id):
+        if not isinstance(job_id, str) or not re.fullmatch(r"[a-f0-9]{32}", job_id):
+            raise JobError("invalid_job_id")
+        with self.lock:
+            entry = self.jobs.get(job_id)
+            if entry is None:
+                raise JobError("job_not_found")
+            if entry["state"] in {"succeeded", "failed", "cancelled"}:
+                return {"ok": True, "job_id": job_id, "state": entry["state"],
+                        "cancel_requested": False, "already_terminal": True}
+            if self.active != job_id or self.controller is None:
+                raise JobError("job_not_active")
+            controller = self.controller
+        # Never block the job-status lock while terminating a child process.
+        controller.cancel()
+        return {"ok": True, "job_id": job_id, "cancel_requested": True}
 
     def lookup(self, job_id):
         if not re.fullmatch(r"[a-f0-9]{32}", job_id or ""):

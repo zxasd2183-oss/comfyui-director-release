@@ -210,3 +210,32 @@ def enqueue_ue_previs_stills(project_id, episode_id, studio_getter=None,
         project_id, episode_id, studio_getter=studio_getter,
         opener=opener, token_file=token_file, task="render_previs_stills",
     )
+
+
+# V0.5 operator workflow: job-bound log tails and task cancellation only.
+# No caller-supplied filenames, PIDs, shell commands, or arbitrary URLs.
+LOG_KIND = frozenset({
+    "unreal", "preset", "render_01", "render_13",
+    "render_26", "render_31",
+})
+
+
+def get_ue_job_logs(job_id, kind, opener=None, token_file=None):
+    if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
+        return {"ok": False, "reason": "invalid_job_id"}
+    if not isinstance(kind, str) or kind not in LOG_KIND:
+        return {"ok": False, "reason": "invalid_log_kind"}
+    return _v2_request(
+        "/v3/jobs/" + job_id + "/logs/" + kind,
+        "GET", None, opener, token_file,
+    )
+
+
+def cancel_ue_job(job_id, opener=None, token_file=None):
+    if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
+        return {"ok": False, "reason": "invalid_job_id"}
+    # Empty POST: Worker rejects any request payload on this route.
+    return _v2_request(
+        "/v3/jobs/" + job_id + "/cancel",
+        "POST", None, opener, token_file,
+    )
