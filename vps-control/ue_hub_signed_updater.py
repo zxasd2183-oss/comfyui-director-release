@@ -168,8 +168,18 @@ def check_hub():
 
 def atomic(path, content):
     if path.is_symlink(): raise UpdateError("unsafe_path")
+    # Code is non-secret and must remain readable by the unprivileged
+    # directorpower systemd service after a root-owned atomic replace.
+    # State files remain root-only, even under a 0077 service umask.
+    public_app_file = path.parent == HUB_DIR
+    mode = (stat.S_IMODE(path.stat().st_mode) if path.exists()
+            else (0o644 if public_app_file else 0o600))
+    if public_app_file:
+        mode |= 0o444
     temp = path.with_name(path.name + "." + uuid.uuid4().hex + ".pending")
-    with temp.open("xb") as f: f.write(content)
+    with temp.open("xb") as f:
+        os.fchmod(f.fileno(), mode)
+        f.write(content)
     os.replace(temp, path)
 
 def ensure_safe_directory(folder):
