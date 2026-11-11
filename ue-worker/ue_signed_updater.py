@@ -168,6 +168,8 @@ def verified_files(blob, manifest):
                     raise UpdateError("release_member_size_mismatch")
                 compile(data, entry.filename, "exec", dont_inherit=True)
                 result[entry.filename] = data
+    except UpdateError:
+        raise
     except (zipfile.BadZipFile, RuntimeError, SyntaxError, UnicodeError, OSError) as exc:
         raise UpdateError("release_archive_invalid") from exc
     agent = result["agent.py"].decode("utf-8")
