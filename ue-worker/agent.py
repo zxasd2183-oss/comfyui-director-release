@@ -19,10 +19,9 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from ue_jobs import JobManager, JobError
+from ue_jobs import JobManager, JobError, inspect_episode_inputs
 from ue_logs import log_tail
 from ue_preview_images import get_preview_png
-from episode_asset_readiness import inspect_episode_inputs
 
 HOST = "127.0.0.1"
 PORT = 19010
