@@ -18,10 +18,11 @@ from ue_worker_rpc import (call_ue_worker,
                            cancel_ue_job as cancel_ue_job_rpc,
                            get_ue_preview_png as get_ue_preview_png_rpc,
                            make_bounded_preview_thumbnail_png,
+                           choose_mcp_preview_png,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "0.7.1"
+UE_HUB_API_VERSION = "0.7.2"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -381,17 +382,24 @@ def cancel_ue_job(job_id: str) -> dict:
 
 @app.tool(annotations=READ)
 def get_ue_preview_image(job_id: str, shot_id: str):
-    """View exactly one original 720x1280 PNG from a finished UE preview.
+    """View an original PNG or a clearly declared size-limited derivative.
 
-    shot_id must be 01, 13, 26, or 31. The private Windows Worker checks
-    the job's succeeded receipt, exact filename, image length and SHA256.
-    This returns an MCP image content block, NOT an arbitrary file path,
-    public URL, screenshot substitute, or a new render request.
+    The original 720x1280 PNG is always SHA-256-verified by the authenticated
+    Windows Worker. For source PNGs <=512 KiB, returns original bytes.
+    For larger sources, downscales IN MEMORY to a 360x640 (or 180x320)
+    bridge-safe thumbnail; the real original PNG and receipt remain unchanged.
+    This compatibility fallback also works in ChatGPT clients with an older
+    cached tool list which cannot yet discover get_ue_preview_thumbnail.
+    Only shots 01,13,26,31 are allowed. No new render or arbitrary path.
     """
     result = get_ue_preview_png_rpc(job_id, shot_id)
     if not result.get("ok"):
         return {"ok": False, "reason": result.get("reason", "preview_unavailable")}
-    return Image(data=result["data"], format="png")
+    try:
+        data = choose_mcp_preview_png(result["data"])
+    except (RuntimeError, ValueError, TypeError, OSError):
+        return {"ok": False, "reason": "preview_image_transport_unavailable"}
+    return Image(data=data, format="png")
 
 
 @app.tool(annotations=READ)
