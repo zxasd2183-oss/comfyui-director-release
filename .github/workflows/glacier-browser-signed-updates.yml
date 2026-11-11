@@ -134,9 +134,11 @@ jobs:
               pair=release_index(json.load(source))
           previous=[verify_signed_doc(read_unique("feed/channels/"+channel+".json"))["version"]
                     for channel in ("windows-x64","macos-arm64")]
-          if previous[0]!=previous[1]:
-              raise RuntimeError("Signed channels disagree on their version")
-          pending=bool(pair and version_tuple(pair[0]) > version_tuple(previous[0]))
+          # Signed platform channels may intentionally have different
+          # versions; never publish a paired release older than either one.
+          pending=bool(pair and
+              all(version_tuple(pair[0]) >= version_tuple(v) for v in previous) and
+              any(version_tuple(pair[0]) > version_tuple(v) for v in previous))
           with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as output:
               output.write("pending="+str(pending).lower()+"\n")
           print("Glacier paired signed release pending:",pending)
