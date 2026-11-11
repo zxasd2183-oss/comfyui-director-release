@@ -437,6 +437,31 @@ jobs:
             echo '::error::APK signing certificate does not match Glacier stable public pin; refusing release.'
             exit 3
           fi
+          # Certificate check alone is insufficient. Refuse wrong app ID,
+          # versionCode, versionName, or missing full native dual-ABI engines.
+          aapt="${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools/36.0.0/aapt"
+          badge="$("$aapt" dump badging "$source")"
+          package_line="$(printf '%s\n' "$badge" | sed -n '1p')"
+          [[ "$package_line" == *"name='cn.borealos.glacier.geckopreview'"* ]] || {
+            echo '::error::Unexpected Android package name'; exit 3;
+          }
+          [[ "$package_line" == *"versionCode='12'"* ]] || {
+            echo '::error::Unexpected Android versionCode'; exit 3;
+          }
+          [[ "$package_line" == *"versionName='0.2.3'"* ]] || {
+            echo '::error::Unexpected Android versionName'; exit 3;
+          }
+          python3 - "$source" <<'PY'
+          import sys
+          from zipfile import ZipFile
+          with ZipFile(sys.argv[1]) as archive:
+              names = set(archive.namelist())
+              for abi in ('arm64-v8a','x86_64'):
+                  for name in ('libxul.so', 'libsingbox.so'):
+                      if f'lib/{abi}/{name}' not in names:
+                          raise ValueError(f'Missing required {abi}/{name} in signed APK')
+          print('PASS: signed APK package, version and GeckoView/sing-box ABIs verified')
+          PY
           mkdir -p dist
           cp "$source" 'dist/GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk'
           sha256sum dist/*.apk >> "$GITHUB_STEP_SUMMARY"

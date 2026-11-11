@@ -76,6 +76,8 @@ jobs:
         run: |
           python3 glacier-android-gecko/scripts/check_rc_version_consistency.py
           python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_rc_version_consistency.py' -v
+      - name: Block invalid Android stable-signature candidate configuration
+        run: python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_rc_signed_release_guard.py' -v
       - name: Verify Android source is present without publishing APK
         run: |
           test -s glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/MainActivity.java
