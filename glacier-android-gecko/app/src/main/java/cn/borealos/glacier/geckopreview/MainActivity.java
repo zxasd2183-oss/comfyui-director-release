@@ -1765,6 +1765,9 @@ public final class MainActivity extends Activity {
     }
 
     private void showBrowserMenu() {
+        // CI-only native click receipt: proves the toolbar responds even when
+        // a heavy Gecko page makes emulator UIAutomator traversal unreliable.
+        if (debugBuild()) android.util.Log.i("GlacierSmoke", "NATIVE_MENU_OPENED");
         final List<String> actions = new ArrayList<>();
         actions.add("新建标签页");
         actions.add("刷新");

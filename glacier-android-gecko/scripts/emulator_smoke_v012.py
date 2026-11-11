@@ -113,6 +113,30 @@ def urlbar(prefix,timeout=75):
         time.sleep(3)
     raise RuntimeError("URL_BAR_NOT_CONFIRMED: "+prefix)
 
+def assert_native_menu_responsive(menu_bounds, timeout=30):
+    """Verify one real native click after heavy websites, without relying on
+    flaky accessibility-tree traversal of the Gecko compositor. This never
+    treats a load event alone as evidence the browser chrome is responsive.
+    """
+    match=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",menu_bounds)
+    if match is None:
+        raise RuntimeError("MISSING_NATIVE_MENU_BOUNDS")
+    x1,y1,x2,y2=map(int,match.groups())
+    top=adb("shell","dumpsys","activity","activities",timeout=22)
+    if "cn.borealos.glacier.geckopreview/.MainActivity" not in top:
+        raise RuntimeError("GLACIER_NOT_FOREGROUND_AFTER_WEB")
+    adb("logcat","-c",timeout=15)
+    # Exactly one Android tap. Do not automatically retry click side effects.
+    adb("shell","input","tap",str((x1+x2)//2),str((y1+y2)//2),timeout=15)
+    end=time.monotonic()+timeout
+    while time.monotonic()<end:
+        logs=adb("logcat","-d","-s","GlacierSmoke:I",timeout=20)
+        if "NATIVE_MENU_OPENED" in logs:
+            record("native_menu_after_web","Android native menu accepted a real tap after both sites; content accessibility may differ")
+            return
+        time.sleep(2)
+    raise RuntimeError("NATIVE_MENU_NOT_RESPONDING_AFTER_WEB")
+
 def page_event(site, timeout=100):
     """Gecko page-stop result, not an HTTP status or visible content check."""
     end=time.monotonic()+timeout
@@ -407,7 +431,7 @@ def main():
     tap(text="关闭")
     adb("shell","input","keyevent","KEYCODE_HOME",timeout=12)
     adb("shell","am","start","-W","-n",PKG+"/.MainActivity",timeout=65)
-    await_ui(desc="更多选项")
+    menu_bounds=await_ui(desc="更多选项")["bounds"]
     record("background_restore","browser UI available")
     shot("03-restored")
     tap(desc="更多选项")
@@ -416,14 +440,18 @@ def main():
     page_event("chatgpt")
     record("chatgpt_navigation","Gecko PAGE_STOP true; login and site rendering not verified")
     shot("04-chatgpt")
-    # GitHub last: in the earlier Google APIs emulator, accessibility and
-    # screenshots stopped responding after this heavier page completed.
+    # GitHub last: its Gecko/graphics workload sometimes prevents
+    # UIAutomator from enumerating native controls on an Android emulator.
+    # Prove real Android native UI click responsiveness independently rather
+    # than silently skipping the check or mistaking inaccessible nodes for a
+    # web-engine crash. This is still a blocking smoke test on any failure.
     tap(desc="更多选项")
     tap_menu_item("打开 GitHub")
-    await_ui(desc="Glacier 地址栏",timeout=35)
     page_event("github")
     record("github_navigation","Gecko PAGE_STOP true; HTTP content not verified")
     shot("05-github")
+    assert_native_menu_responsive(menu_bounds)
+    shot("06-native-menu-after-web")
     print("UI_SMOKE_DONE; Cookie/localStorage and transfer callbacks verified; login and VLESS real exit NOT VERIFIED",flush=True)
 
 if __name__=="__main__":
