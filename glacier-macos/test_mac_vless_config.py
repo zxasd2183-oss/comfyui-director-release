@@ -1,12 +1,19 @@
 """Regression checks for VLESS link transport options omitted by old Mac builds."""
 import unittest
 import uuid
+from pathlib import Path
 
 from main import parse_node, build_proxy_config
 
 BASE = "vless://" + str(uuid.UUID(int=1)) + "@example.com:443?encryption=none&security=tls"
 
 class MacVlessTransportTests(unittest.TestCase):
+    def test_mac_proxy_config_is_ephemeral_after_startup(self):
+        source=(Path(__file__).parent / "main.py").read_text(encoding="utf-8")
+        self.assertIn("with ephemeral_proxy_config(appdir(),config)",source)
+        self.assertIn("runtime.json",source)
+        self.assertNotIn('os.O_WRONLY|os.O_CREAT|os.O_TRUNC',source)
+
     def test_reality_without_explicit_fp_uses_chrome_clienthello(self):
         link=BASE.replace("security=tls","security=reality")
         link+="&pbk="+("A"*43)+"&sid=01ab"

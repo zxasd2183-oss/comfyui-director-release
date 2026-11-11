@@ -31,7 +31,7 @@ jobs:
           python -m py_compile glacier-windows/glacier_accounts22.py glacier-windows/glacier_sync23.py glacier-windows/glacier_account_center26.py
       - name: Compile macOS native sources (without publishing DMG)
         run: |
-          python -m py_compile glacier-macos/main.py glacier-macos/mac_platform.py glacier-macos/mac_xray_reality.py glacier-macos/mac_update_core.py glacier-macos/mac_proxy_diagnostics.py glacier-macos/mac_install.py
+          python -m py_compile glacier-macos/main.py glacier-macos/mac_platform.py glacier-macos/mac_xray_reality.py glacier-macos/mac_update_core.py glacier-macos/mac_proxy_diagnostics.py glacier-macos/mac_install.py glacier-windows/glacier_proxy_health29.py
       - name: Verify Chrome UI and original desktop shell
         working-directory: glacier-windows
         env:

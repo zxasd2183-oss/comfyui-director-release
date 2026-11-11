@@ -28,6 +28,7 @@ from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
 from glacier_splash import show_glacier_splash
 from mac_proxy_diagnostics import start_capture, latest_hint, classify
+from glacier_proxy_health29 import ephemeral_proxy_config
 from mac_xray_reality import build_xray_reality_config
 
 APP = "Glacier Browser"
@@ -115,36 +116,38 @@ def select_proxy_core(link,port):
 def proxy_start(link,port):
  if not link:return None
  core,config,engine=select_proxy_core(link,port)
- # Credential-bearing config remains strictly local in a user-private directory.
- configfile=appdir()/"runtime.json"
- fd=os.open(str(configfile),os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
- with os.fdopen(fd,"w",encoding="utf-8") as handle:json.dump(config,handle)
+ # Credentials must not remain in runtime.json for the entire session.
+ # Both engines parse their configuration at launch. Remove the temporary
+ # file immediately after the local SOCKS listener is proven to be ready.
  flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
- # Xray and sing-box have different validation command forms.
- check_args=([str(core),"run","-test","-config",str(configfile)]
-             if engine=="xray" else [str(core),"check","-c",str(configfile)])
- result=subprocess.run(check_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
-                       timeout=15,creationflags=flags)
- if result.returncode:
-  hint=classify(result.stdout.decode("utf-8",errors="replace")) or (engine+" 配置不受支持")
-  raise RuntimeError("VLESS 内核配置校验失败："+hint)
- run_args=([str(core),"run","-config",str(configfile)]
-           if engine=="xray" else [str(core),"run","-c",str(configfile)])
- process=subprocess.Popen(run_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
-                          creationflags=flags)
- start_capture(process)
- # The process may exit or fail to bind even when config validation succeeds.
- # Do not advertise a working core until its local SOCKS5 port accepts traffic.
- for _ in range(30):
-  if process.poll() is not None:
-   raise RuntimeError(engine+" 启动后退出："+(latest_hint(process) or "内核初始化失败"))
-  try:
-   with socket.create_connection(("127.0.0.1",port),timeout=0.3):
-    return process
-  except OSError:
-   time.sleep(0.1)
- process.terminate()
- raise RuntimeError(engine+" 未监听本地代理端口，已禁止直连")
+ with ephemeral_proxy_config(appdir(),config) as configfile:
+  check_args=([str(core),"run","-test","-config",str(configfile)]
+              if engine=="xray" else [str(core),"check","-c",str(configfile)])
+  result=subprocess.run(check_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                        timeout=15,creationflags=flags)
+  if result.returncode:
+   hint=classify(result.stdout.decode("utf-8",errors="replace")) or (engine+" 配置不受支持")
+   raise RuntimeError("VLESS 内核配置校验失败："+hint)
+  run_args=([str(core),"run","-config",str(configfile)]
+            if engine=="xray" else [str(core),"run","-c",str(configfile)])
+  process=subprocess.Popen(run_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                           creationflags=flags)
+  start_capture(process)
+  for _ in range(30):
+   if process.poll() is not None:
+    raise RuntimeError(engine+" 启动后退出："+(latest_hint(process) or "内核初始化失败"))
+   try:
+    with socket.create_connection(("127.0.0.1",port),timeout=0.3):
+     break
+   except OSError:
+    time.sleep(0.1)
+  else:
+   process.terminate()
+   raise RuntimeError(engine+" 未监听本地代理端口，已禁止直连")
+ # Clean up stale plaintext config created by older macOS builds.
+ try:(appdir()/"runtime.json").unlink(missing_ok=True)
+ except OSError:pass
+ return process
 class Page(QWebEngineView):
  def __init__(self,win):
   super().__init__(win)
