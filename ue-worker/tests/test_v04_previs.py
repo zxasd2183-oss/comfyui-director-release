@@ -88,28 +88,27 @@ class PrevisContracts(unittest.TestCase):
                 ue_previs.ensure_mrq_plugin(project,root/"Jobs"/("c"*32))
             self.assertEqual(project.read_text(),original)
 
-    def test_preview_budget_is_durable_across_restart(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td)
-            # Do not start any actual threads or GPU work: reserve directly.
-            manager=ue_jobs.JobManager(lambda:root)
-            manager._reserve_previs_attempt("1"*32)
-            manager._reserve_previs_attempt("2"*32)
-            restarted=ue_jobs.JobManager(lambda:root)
-            with self.assertRaisesRegex(ue_jobs.JobError,"preview_daily_limit_reached"):
-                restarted._reserve_previs_attempt("3"*32)
-            store=json.loads((root/"JobStatus"/"preview_budget_v04.json").read_text())
-            self.assertEqual(len(store["attempts"]),2)
-
-    def test_corrupt_preview_budget_denies_new_jobs(self):
+    def test_debug_preview_has_no_daily_hard_quota_even_after_restart(self):
+        from unittest.mock import patch
+        import time
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
             folder=root/"JobStatus"
             folder.mkdir()
+            # Old quota state is ignored, even if corrupt.
             (folder/"preview_budget_v04.json").write_text("{broken")
-            manager=ue_jobs.JobManager(lambda:root)
-            with self.assertRaisesRegex(ue_jobs.JobError,"preview_budget_store_invalid"):
-                manager._reserve_previs_attempt("a"*32)
+            with patch.object(ue_previs,"run_previs",return_value={
+                "preview_count":4,"format":"png",
+            }):
+                for _ in range(5):
+                    manager=ue_jobs.JobManager(lambda:root)
+                    submission=manager.submit(frozen_previs())
+                    for _ in range(100):
+                        item=manager.lookup(submission["job_id"])
+                        if item["state"] == "succeeded":
+                            break
+                        time.sleep(.01)
+                    self.assertEqual(item["state"],"succeeded")
 
     def test_missing_real_v03_map_causes_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:

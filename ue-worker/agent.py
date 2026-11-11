@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -102,15 +103,105 @@ def gpu_summary():
         return {"available": False}
 
 
+def signed_update_status():
+    """Read only the SYSTEM updater's small non-secret status receipt."""
+    source = Path(__file__).resolve().parent / "signed-update-status.json"
+    try:
+        if source.is_symlink() or not source.is_file() or source.stat().st_size > 2048:
+            return {"status": "not_configured"}
+        item = json.loads(source.read_text(encoding="utf-8"))
+        if type(item) is not dict:
+            return {"status": "invalid_receipt"}
+        # Never forward arbitrary strings or raw updater logs through MCP.
+        allowed = ("status", "version", "reason", "code", "recovered",
+                   "request_id", "checked_at")
+        return {name: item[name] for name in allowed
+                if name in item and type(item[name]) in (str, bool)}
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {"status": "invalid_receipt"}
+
+
+# Only a poll trigger for the separately installed SYSTEM signed updater.
+# This code never executes scripts or elevates its own access.
+UPDATE_REQUEST_NAME = "signed_update_check_requested.json"
+
+
+def update_request_path():
+    root = workspace_root()
+    folder = root / "JobStatus"
+    if folder.is_symlink() or getattr(folder, "is_junction", lambda:False)():
+        raise RuntimeError("update_queue_invalid")
+    return folder / UPDATE_REQUEST_NAME
+
+
+def pending_update_request():
+    file = update_request_path()
+    if not file.exists():
+        return None
+    if (file.is_symlink() or getattr(file, "is_junction", lambda:False)()
+            or not file.is_file() or file.stat().st_size > 512):
+        raise RuntimeError("update_request_invalid")
+    try:
+        item = json.loads(file.read_text(encoding="ascii"))
+        if (type(item) is not dict or set(item) != {"request_id", "requested_at"}
+                or type(item["request_id"]) is not str
+                or not re.fullmatch(r"[a-f0-9]{32}", item["request_id"])
+                or type(item["requested_at"]) is not str
+                or len(item["requested_at"]) > 50):
+            raise ValueError("invalid update request")
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise RuntimeError("update_request_invalid") from exc
+    return item
+
+
+def update_status():
+    status = signed_update_status()
+    try:
+        pending = pending_update_request()
+    except (OSError, RuntimeError):
+        return {"ok": False, "reason": "update_request_unavailable",
+                "signed_update": status}
+    return {"ok": True, "signed_update": status,
+            "pending_request": pending,
+            "poll_interval_seconds": 300}
+
+
+def request_signed_update_check():
+    # No request can start an elevated command or supply an executable.
+    status = signed_update_status()
+    if status.get("status") in ("not_configured", "invalid_receipt"):
+        return {"ok": False, "reason": "signed_updater_not_ready"}
+    folder = update_request_path().parent
+    folder.mkdir(parents=True, exist_ok=True)
+    # A single durable request per node, including after Worker restarts.
+    with ACTION_LOCK:
+        previous = pending_update_request()
+        if previous is not None:
+            return {"ok": True, "request_id": previous["request_id"],
+                    "state": "pending_next_signed_poll", "duplicate": True}
+        request = {"request_id": uuid.uuid4().hex, "requested_at": utcnow()}
+        file = folder / UPDATE_REQUEST_NAME
+        with file.open("x", encoding="ascii") as handle:
+            json.dump(request, handle, separators=(",", ":"))
+        return {"ok": True, "request_id": request["request_id"],
+                "state": "pending_next_signed_poll", "duplicate": False}
+
+
 def status():
+    active_job_id = None
+    if JOB_MANAGER is not None:
+        with JOB_MANAGER.lock:
+            active_job_id = JOB_MANAGER.active
     return {
+        "active_job_id": active_job_id,
+        "signed_update": signed_update_status(),
         "ok": True, "node_id": NODE_ID, "platform": platform.system(),
         "hostname": platform.node()[:128], "timestamp": utcnow(),
         "python": platform.python_version(),
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
-        "worker_version": "0.5.0",
+        "worker_version": "0.6.0",
     }
 
 
@@ -122,6 +213,9 @@ def capabilities():
         "job_status_route": "/v2/jobs/<job_id>",
         "job_logs_route": "/v3/jobs/<job_id>/logs/<kind>",
         "job_cancel_route": "/v3/jobs/<job_id>/cancel",
+        "signed_update_status_route": "/v4/update/status",
+        "signed_update_request_route": "/v4/update/request",
+        "supports_signed_update_request": True,
         "supports_job_cancel": True,
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
@@ -144,7 +238,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/0.5"
+    server_version = "DirectorUEWorker/0.6"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -173,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, status())
         elif self.path == "/v1/capabilities":
             self.send_json(200, capabilities())
+        elif self.path == "/v4/update/status":
+            self.send_json(200, update_status())
         elif re.fullmatch(r"/v2/jobs/[a-f0-9]{32}", self.path):
             try:
                 self.send_json(200, JOB_MANAGER.lookup(self.path.rsplit("/", 1)[-1]))
@@ -192,6 +288,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.authorize():
             self.send_json(401, {"ok": False, "reason": "unauthorized"})
+            return
+        if self.path == "/v4/update/request":
+            if (self.headers.get("Content-Length", "0") != "0" or
+                    self.headers.get("Transfer-Encoding")):
+                self.send_json(400, {"ok": False, "reason": "invalid_request"})
+                return
+            try:
+                result = request_signed_update_check()
+                self.send_json(202 if result["ok"] else 409, result)
+            except (OSError, ValueError, RuntimeError):
+                self.send_json(409, {"ok": False, "reason": "update_request_unavailable"})
             return
         cancel_match = re.fullmatch(r"/v3/jobs/([a-f0-9]{32})/cancel", self.path)
         if cancel_match:
