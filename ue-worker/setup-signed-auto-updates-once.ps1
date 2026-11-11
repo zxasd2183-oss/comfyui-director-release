@@ -111,7 +111,28 @@ print(json.dumps({"private":prv,"public":pub}))
     if (-not (Get-ScheduledTask -TaskName $updaterTask -ErrorAction SilentlyContinue)) {
         throw "Windows pinned updater task did not register"
     }
-    Write-Host "SUCCESS: Windows signed Worker updater installed; 5-minute checks."
+    # Prove the SYSTEM task really starts. Merely registering it does not
+    # prove Python dependencies, GitHub connectivity or signed-channel trust.
+    $receipt = Join-Path $env:ProgramData "DirectorUEWorker\signed-update-status.json"
+    Start-ScheduledTask -TaskName $updaterTask -ErrorAction Stop
+    $verified = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Seconds 2
+        if (Test-Path -LiteralPath $receipt -PathType Leaf) {
+            $check = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+            if ($check.status -in @("no_signed_channel","already_current","upgraded")) {
+                $verified = $true
+                break
+            }
+            if ($check.status -eq "failed") {
+                throw "Signed updater initial check failed: $($check.code)"
+            }
+        }
+    }
+    if (-not $verified) {
+        throw "SYSTEM updater task registered but did not produce a healthy signed-channel receipt"
+    }
+    Write-Host "SUCCESS: Windows updater executed as SYSTEM and reported $($check.status)"
     if ($VpsSshTarget) {
         if ($VpsSshTarget -notmatch "^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+$") {
             throw "VpsSshTarget must be an exact user@host; no command flags"
