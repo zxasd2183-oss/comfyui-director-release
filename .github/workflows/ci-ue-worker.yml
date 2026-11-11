@@ -28,7 +28,9 @@ jobs:
         run: python -m py_compile ue-worker/agent.py ue-worker/ue_jobs.py ue-worker/unreal_build_episode.py ue-worker/unreal_build_stage.py ue-worker/ue_previs.py ue-worker/ue_process.py ue-worker/ue_logs.py ue-worker/ue_preview_images.py ue-worker/unreal_create_previs_preset.py vps-control/ue_worker_rpc.py vps-control/hub_app.py
       - name: Test Windows worker API without GPU
         run: python -m unittest discover -s ue-worker/tests -p "test_*.py" -v
-      - name: Test private VPS adapter
+      - name: Verify deployed MCP v1 image transport dependency
+        run: python -m pip install 'mcp>=1.29,<2'
+      - name: Test private VPS adapter and MCP image content
         run: python -m unittest discover -s vps-control/tests -p "test_ue_*.py" -v
 
   windows-bootstrap-parse:
