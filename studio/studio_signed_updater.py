@@ -188,7 +188,7 @@ def fetch(url, maximum):
     if len(data) > maximum: raise UpdateError("download_too_large")
     return data
 
-def check_studio():
+def check_studio(expected_version=None):
     """Check the local Studio process and audit-verified project counts."""
     systemctl("is-active", "--quiet", "director-studio.service")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), Redirect())
@@ -209,6 +209,8 @@ def check_studio():
             not all(type(v) is int and v>=0 for v in counts.values()) or
             "production_shots" not in counts or "projects" not in counts):
         raise UpdateError("studio_audit_or_health_invalid")
+    if expected_version is not None and info.get("studio_code_version") != expected_version:
+        raise UpdateError("studio_running_version_mismatch")
     return counts
 
 def systemctl(*args):
@@ -217,8 +219,8 @@ def systemctl(*args):
     if proc.returncode != 0:
         raise UpdateError("studio_service_operation_failed")
 
-def check_studio_health():
-    return check_studio()
+def check_studio_health(expected_version=None):
+    return check_studio(expected_version)
 
 def atomic(path, content):
     if path.is_symlink(): raise UpdateError("unsafe_path")
@@ -251,7 +253,7 @@ def apply_update(manifest, files):
     if version(manifest["version"]) <= version(old):
         return {"status":"already_current", "version":old}
     baseline = check_studio_health()
-    # Existing Hub files are root owned; never blindly follow symlinks.
+    # Existing Studio application files are pinned; never follow symlinks.
     original = {}
     for name in FILES:
         file = STUDIO_DIR / name
@@ -269,7 +271,7 @@ def apply_update(manifest, files):
             atomic(STUDIO_DIR / name, files[name])
         systemctl("restart", "director-studio.service")
         time.sleep(2)
-        if check_studio_health()!=baseline:
+        if check_studio_health(manifest["version"])!=baseline:
             raise UpdateError("studio_ledger_changed_during_upgrade")
         atomic(current, manifest["version"].encode("ascii"))
         journal.unlink()
