@@ -6,6 +6,9 @@ NOT the live ComfyUI queue or GPU power.
 """
 from __future__ import annotations
 
+# Monotonic, separately signed Studio application release version.
+STUDIO_CODE_VERSION = "0.10.0"
+
 import json
 import os
 import sqlite3
