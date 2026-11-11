@@ -75,7 +75,7 @@ class HubPortContractTests(unittest.TestCase):
     def test_installer_accepts_only_exact_retired_gpu_readonly_state(self):
         script=content(VPS/"install-hub-v06.sh")
         # Verify the embedded, actual post-deployment Python probe compiles.
-        probe=re.search(r'"\\$PYTHON" - <<\\'PY\\'\\n(.*?)\\nPY',script,re.S)
+        probe=re.search(r"""(?s)"\$PYTHON" - <<'PY'\n(.*?)\nPY""",script)
         self.assertIsNotNone(probe,"read-only deployment probe missing")
         compile(probe.group(1),"<director-hub-deploy-probe>","exec")
         self.assertIn('controller.get("configured")',probe.group(1))
