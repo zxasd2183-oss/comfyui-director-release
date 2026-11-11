@@ -94,9 +94,10 @@ jobs:
 
       - name: Wait for VPS staging and independently verify entire Windows EXE
         id: vps_verified
-        # Pushing changes to CI tests must not hold a runner for the full
-        # readiness window. A real Release, dispatch or scheduled retry does.
-        if: steps.pending.outputs.pending == 'true' && github.event_name != 'push'
+        # A main-branch publisher fix must also be allowed to complete
+        # signing after the VPS mirror is ready. Never report green while
+        # silently skipping the release gate solely because event=push.
+        if: steps.pending.outputs.pending == 'true'
         env:
           GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
         run: |
