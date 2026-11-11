@@ -256,11 +256,17 @@ def apply_update(manifest, files):
     if version(manifest["version"]) <= version(old):
         return {"status":"already_current", "version":old}
     baseline = check_studio_health()
-    # Existing Studio application files are pinned; never follow symlinks.
-    original = {}
+    # Existing files must be safe ordinary files. A missing target is a
+    # legitimate file ADDED by this signed release; dangling symlinks are not.
+    original, created = {}, []
     for name in FILES:
         file = STUDIO_DIR / name
-        if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_FILE:
+        if file.is_symlink():
+            raise UpdateError("unsafe_existing_studio_file")
+        if not file.exists():
+            created.append(name)
+            continue
+        if not file.is_file() or file.stat().st_size > MAX_FILE:
             raise UpdateError("unsafe_existing_studio_file")
         original[name] = file.read_bytes()
     backup = STATE / ("backup-" + uuid.uuid4().hex)
@@ -268,10 +274,14 @@ def apply_update(manifest, files):
     for name, data in original.items():
         (backup / name).write_bytes(data)
     journal = STATE / "pending.json"
-    atomic(journal, canon({"backup":backup.name, "from_version":old}))
+    atomic(journal, canon({"backup":backup.name, "from_version":old,
+                           "created_files":created}))
     try:
         for name in FILES:
-            atomic(STUDIO_DIR / name, files[name])
+            target = STUDIO_DIR / name
+            if name in created and (target.is_symlink() or target.exists()):
+                raise UpdateError("unsafe_new_studio_file")
+            atomic(target, files[name])
         systemctl("restart", "director-studio.service")
         time.sleep(2)
         if check_studio_health(manifest["version"])!=baseline:
@@ -280,8 +290,9 @@ def apply_update(manifest, files):
         journal.unlink()
         return {"status":"upgraded", "version": manifest["version"]}
     except BaseException:
-        # Restore before allowing future updates. Retain journal if recovery fails.
-        for name in FILES: atomic(STUDIO_DIR / name, original[name])
+        # Roll back BOTH replaced files and newly introduced files. Retain
+        # the journal if recovery fails so the next poll can retry recovery.
+        _restore_files(original, created)
         systemctl("restart", "director-studio.service")
         check_studio_health()
         journal.unlink()
@@ -290,22 +301,53 @@ def apply_update(manifest, files):
         # Backups retained for operator audit and recovery; no recursive deletion.
         pass
 
+def _restore_files(original, created):
+    """Restore original application bytes and delete only signed newly added paths."""
+    for name in FILES:
+        file = STUDIO_DIR / name
+        if name in created:
+            if file.is_symlink() or (file.exists() and not file.is_file()):
+                raise UpdateError("unsafe_created_studio_file")
+            if file.exists():
+                file.unlink()
+        else:
+            atomic(file, original[name])
+
+
 def recover():
     journal = STATE / "pending.json"
     if not journal.exists(): return False
     if journal.is_symlink() or journal.stat().st_size > 1024:
         raise UpdateError("bad_recovery_journal")
-    info = json.loads(journal.read_text("ascii"))
-    if (type(info) is not dict or set(info) != {"backup", "from_version"}
+    try:
+        info = json.loads(journal.read_text("ascii"), object_pairs_hook=unique)
+    except (ValueError,UnicodeError,OSError) as exc:
+        raise UpdateError("bad_recovery_journal") from exc
+    if (type(info) is not dict or set(info) != {
+            "backup", "from_version", "created_files"}
             or type(info["backup"]) is not str
-            or not re.fullmatch(r"backup-[a-f0-9]{32}", info["backup"])):
+            or not re.fullmatch(r"backup-[a-f0-9]{32}", info["backup"])
+            or type(info["created_files"]) is not list
+            or len(info["created_files"]) > len(FILES)
+            or any(type(name) is not str or name not in FILES
+                   for name in info["created_files"])
+            or len(set(info["created_files"])) != len(info["created_files"])):
         raise UpdateError("bad_recovery_journal")
+    version(info["from_version"])
     backup = ensure_safe_directory(STATE / info["backup"])
+    created = set(info["created_files"])
+    originals = {}
     for name in FILES:
+        if name in created:
+            # A newly added file has no backup; it must be removed on rollback.
+            if (backup / name).exists() or (backup / name).is_symlink():
+                raise UpdateError("bad_recovery_backup")
+            continue
         file = backup / name
         if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_FILE:
             raise UpdateError("bad_recovery_backup")
-        atomic(STUDIO_DIR / name, file.read_bytes())
+        originals[name] = file.read_bytes()
+    _restore_files(originals, created)
     systemctl("restart", "director-studio.service")
     check_studio_health()
     atomic(STATE / "installed-version.txt", info["from_version"].encode("ascii"))
