@@ -66,11 +66,9 @@ class ProcessController:
                 self.process = None
 
     def cancel(self):
-        with self.lock:
-            self.cancel_requested.set()
-            process = self.process
-        if process is not None:
-            _kill_tree(process)
+        # Fast acknowledgement: the runner checks this flag every 500ms,
+        # then terminates its own process tree. No network timeout.
+        self.cancel_requested.set()
 
 
 @contextmanager
