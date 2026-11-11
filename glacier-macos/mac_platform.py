@@ -90,6 +90,8 @@ def get_link(app, validate):
             "检测到旧版 Glacier 本机资料。\n"
             "只有你选择“迁移旧资料”后才会读取 macOS 钥匙串；"
             "此操作可能需要一次系统授权。之后普通启动不再读取钥匙串。\n"
+            "迁移会将加密主密钥保存到仅当前 Mac 用户可访问的本地文件；"
+            "同一系统用户运行的其他程序仍可能读取该文件，保护强度低于系统钥匙串。\n"
             "旧钥匙串项目和已有加密文件会保留。")
         restore_button = msg.addButton("迁移旧资料", QMessageBox.ButtonRole.AcceptRole)
         skip_button = msg.addButton("暂不迁移", QMessageBox.ButtonRole.RejectRole)
