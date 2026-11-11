@@ -194,16 +194,30 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.setup_ui30(bar)
   self.setup_desktop_ui32(lay,bar)
   self.setup_chrome_shell33()
-  # The first WebEngine page is created while a dozen UI modules initialize.
-  # On some native systems that cancels its initial about:blank setHtml load.
-  # Repair ONLY a still-empty first tab once Qt finishes initialization.
-  QTimer.singleShot(0, self.ensure_initial_local_home33)
+  # WebEngine can cancel setHtml when UI extensions configure the first tab.
+  # Check the actual DOM after initialization, not just the URL: a completely
+  # empty document still reports about:blank and otherwise looks successful.
+  for delay in (0, 350, 950, 1550):
+   QTimer.singleShot(delay, self.ensure_initial_local_home33)
  def ensure_initial_local_home33(self):
   view=self.current()
   if view is None:return
-  url=view.url()
-  if url.isEmpty() or url.toString()=="":
+  try:
+   if view.url().toString() not in ("", "about:blank"):return
+   view.page().toHtml(lambda html, target=view:self._repair_initial_home33(target,html))
+  except RuntimeError:
+   return
+ def _repair_initial_home33(self,view,html):
+  try:
+   if view is not self.current():return
+   if view.url().toString() not in ("", "about:blank"):return
+   if 'name="q"' in html and "Glacier" in html:return
+   count=getattr(view,"_glacier_home_repairs33",0)
+   if count>=3:return
+   view._glacier_home_repairs33=count+1
    view.setHtml(self.home_markup(),QUrl("about:blank"))
+  except RuntimeError:
+   return
  def refresh_proxy_status29(self):
   status, ready=proxy_status_text(self.proc,self.proxy_port)
   if getattr(self, "_desktop_ui_ready32", False):
