@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - integration/glacier-browser-release-candidate-20261111
+      - feature/glacier-desktop-chrome-ui-v021-20261111
     paths:
       - 'glacier-macos/**'
       - 'glacier-windows/glacier_productivity16.py'
