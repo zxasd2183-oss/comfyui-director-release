@@ -13,6 +13,8 @@ $workerDir = Join-Path $env:ProgramData 'DirectorUEWorker'
 $updaterDir = Join-Path $env:ProgramData 'DirectorUEUpdater'
 $source = Join-Path $PSScriptRoot 'ue_signed_updater.py'
 $token = Join-Path $workerDir 'worker.token'
+$oldScheduled = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($oldScheduled) { throw 'Updater task already installed; refusing to replace it.' }
 
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     throw 'Updater source missing from reviewed checkout.'
@@ -86,12 +88,8 @@ if (Test-Path -LiteralPath $installedPath) {
 }
 Copy-Item -LiteralPath $source -Destination (Join-Path $updaterDir 'ue_signed_updater.py') -ErrorAction Stop
 
-$oldScheduled = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-if ($oldScheduled) {
-    throw 'A task with this name already exists; refusing to replace privileged task.'
-}
 $actionText = '"{0}" "{1}"' -f $python, (Join-Path $updaterDir 'ue_signed_updater.py')
-& schtasks.exe /Create /SC MINUTE /MO 5 /TN $taskName /TR $actionText /RU SYSTEM /RL HIGHEST /F | Out-Null
+& schtasks.exe /Create /SC MINUTE /MO 5 /TN $taskName /TR $actionText /RU SYSTEM /RL HIGHEST | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to register privileged updater task.'
 }
@@ -101,7 +99,11 @@ if ([string]$registered.Principal.UserId -notmatch '(?i)SYSTEM|S-1-5-18') {
 }
 Write-Host 'Signed UE updater installed. Poll interval: 5 minutes.'
 Write-Host 'Pinned Ed25519 public key SHA256 fingerprint:'
-$pubBytes = [Convert]::FromHexString($PinnedPublicKeyHex)
-$hash = [Security.Cryptography.SHA256]::HashData($pubBytes)
-Write-Host ([Convert]::ToHexString($hash).ToLowerInvariant())
+$pubBytes = New-Object byte[] 32
+for ($i = 0; $i -lt 32; $i++) {
+    $pubBytes[$i] = [Convert]::ToByte($PinnedPublicKeyHex.Substring($i * 2, 2), 16)
+}
+$hasher = [Security.Cryptography.SHA256]::Create()
+try { $digest = $hasher.ComputeHash($pubBytes) } finally { $hasher.Dispose() }
+Write-Host ([BitConverter]::ToString($digest).Replace('-', '').ToLowerInvariant())
 Write-Host 'Worker/SSH/token unchanged. No update runs until a valid signed channel is published.'
