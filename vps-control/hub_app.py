@@ -3,12 +3,24 @@
 The Hub has no cloud provider credentials. Its authenticated private bridge
 can call protected VPS immediate GPU power tools without per-action approval.
 """
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 from hub_rpc import call
 from hub_file_sync import sync_chatgpt_visual
 from hub_sync_jobs import JOBS
+from ue_worker_rpc import (call_ue_worker,
+                           enqueue_ue_episode_timeline as enqueue_ue_episode_timeline_rpc,
+                           enqueue_ue_stage_cameras as enqueue_ue_stage_cameras_rpc,
+                           enqueue_ue_previs_stills as enqueue_ue_previs_stills_rpc,
+                           get_ue_episode_job_status as get_ue_episode_job_status_rpc,
+                           get_ue_job_logs as get_ue_job_logs_rpc,
+                           cancel_ue_job as cancel_ue_job_rpc,
+                           get_ue_preview_png as get_ue_preview_png_rpc,
+                           get_ue_signed_update_status as get_ue_signed_update_status_rpc,
+                           request_ue_signed_update as request_ue_signed_update_rpc)
+
+UE_HUB_API_VERSION = "0.7.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -280,6 +292,151 @@ def list_recent_chatgpt_visual_syncs(project_id: str, episode_id: str) -> dict:
     check Studio's persisted episode visual list for final confirmation.
     """
     return JOBS.recent(project_id,episode_id)
+
+
+# Windows UE node control is independent of the retired H3 GPU.
+# This adapter is disabled until the private shared secret and tunnel are installed.
+@app.tool(annotations=READ)
+def get_ue_worker_status() -> dict:
+    """Read authenticated Windows UE node/GPU/engine health over the private tunnel."""
+    return call_ue_worker("get_ue_worker_status")
+
+
+@app.tool(annotations=READ)
+def get_ue_worker_capabilities() -> dict:
+    """Read the UE worker's explicit allowlist of supported operations."""
+    return call_ue_worker("get_ue_worker_capabilities")
+
+
+@app.tool(annotations=WRITE)
+def prepare_ue_workspace() -> dict:
+    """Create only the predefined UE project folders on the Windows worker.
+
+    No arbitrary shell, script execution, program installation or rendering.
+    """
+    return call_ue_worker("prepare_ue_workspace")
+
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_episode_timeline(project_id: str, episode_id: str) -> dict:
+    """Start the real Unreal Editor headless build of Studio's episode timeline.
+
+    Loads the registered ordered shots from Director Studio (no caller-supplied
+    scripts or commands). Starts Unreal Editor on the metered Windows GPU;
+    returns a job ID, not an assertion of successful asset production.
+    """
+    return enqueue_ue_episode_timeline_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_stage_cameras(project_id: str, episode_id: str) -> dict:
+    """Create a V03 non-destructive stage, 5 visibly marked proxy characters
+    and 31 CineCameraActor shots based on Studio's frozen EP01 plan.
+
+    Runs a fixed Unreal 5.8 script on the metered GPU. Existing V02
+    timeline and approved production assets are never overwritten.
+    """
+    return enqueue_ue_stage_cameras_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_previs_stills(project_id: str, episode_id: str) -> dict:
+    """Render four 720x1280 PNG proof frames from the approved V03 stage.
+
+    Fixed shots 01, 13, 26, 31; outputs verified PNG receipts (not MP4).
+    Runs Unreal MRQ on a metered Windows GPU. No arbitrary inputs.
+    """
+    return enqueue_ue_previs_stills_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=READ)
+def get_ue_episode_job_status(job_id: str) -> dict:
+    """Read actual UE Editor timeline job state and result by bounded ID."""
+    return get_ue_episode_job_status_rpc(job_id)
+
+
+@app.tool(annotations=READ)
+def get_ue_job_logs(job_id: str, kind: str) -> dict:
+    """Read a small sanitized tail of one allowlisted log for a known UE job.
+
+    kind: unreal, preset, render_01, render_13, render_26 or render_31.
+    Does not accept file paths or serve arbitrary files.
+    """
+    return get_ue_job_logs_rpc(job_id, kind)
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=False,
+                                      destructiveHint=True, idempotentHint=True,
+                                      openWorldHint=False))
+def cancel_ue_job(job_id: str) -> dict:
+    """Stop only the active job-owned Unreal process tree by job ID.
+
+    Does not stop another user's process, choose a PID, or run shell commands.
+    After requesting cancellation, poll get_ue_episode_job_status.
+    """
+    return cancel_ue_job_rpc(job_id)
+
+
+@app.tool(annotations=READ)
+def get_ue_preview_image(job_id: str, shot_id: str):
+    """View exactly one original 720x1280 PNG from a finished UE preview.
+
+    shot_id must be 01, 13, 26, or 31. The private Windows Worker checks
+    the job's succeeded receipt, exact filename, image length and SHA256.
+    This returns an MCP image content block, NOT an arbitrary file path,
+    public URL, screenshot substitute, or a new render request.
+    """
+    result = get_ue_preview_png_rpc(job_id, shot_id)
+    if not result.get("ok"):
+        return {"ok": False, "reason": result.get("reason", "preview_unavailable")}
+    return Image(data=result["data"], format="png")
+
+
+@app.tool(annotations=READ)
+def get_ue_signed_update_status() -> dict:
+    """Read latest privileged signed-updater result and pending check request.
+
+    No access to private signing key, bearer token, or arbitrary file paths.
+    """
+    return get_ue_signed_update_status_rpc()
+
+
+@app.tool(annotations=WRITE)
+def request_ue_signed_update() -> dict:
+    """Ask the Windows updater to check for a pinned Ed25519-signed release.
+
+    Creates one durable request for its NEXT 5-minute scheduled poll; never
+    runs PowerShell, changes SSH or installs unverified code. Requires the
+    separately bootstrapped privileged signed updater; the response is
+    queued/not-ready, not proof that a version was installed. Check status
+    and get_ue_worker_status to confirm actual installed Worker version.
+    """
+    return request_ue_signed_update_rpc()
+
+
+@app.tool(annotations=READ)
+def get_ue_hub_signed_update_status() -> dict:
+    """Read sanitized root-owned VPS signed Hub update receipt only.
+
+    Never disclose credentials, local paths or generic daemon status logs.
+    """
+    import json
+    from pathlib import Path
+    file = Path("/opt/comfyui-director-hub/ue_hub_signed_update_status.json")
+    try:
+        if file.is_symlink() or not file.is_file() or file.stat().st_size > 1024:
+            return {"ok": True, "status": "not_configured",
+                    "hub_api_version": UE_HUB_API_VERSION}
+        item = json.loads(file.read_text(encoding="ascii"))
+        if type(item) is not dict:
+            return {"ok": False, "reason": "invalid_update_receipt"}
+        allowed = ("status", "version", "reason")
+        return {"ok": True, "hub_api_version": UE_HUB_API_VERSION,
+                **{k: item[k] for k in allowed if
+                   k in item and type(item[k]) is str and len(item[k]) <= 100}}
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {"ok": False, "reason": "invalid_update_receipt"}
 
 
 if __name__ == "__main__":
