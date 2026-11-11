@@ -1,5 +1,6 @@
 name: Glacier macOS independent Ed25519 signed VPS updates
-# macOS v0.20.17 may ship independently from Windows v0.20.20.
+# macOS releases are signed independently after a competing Windows signer releases
+# the shared signing slot. Re-run after an earlier pending macOS job was superseded.
 # Never change Windows feed, reuse/rotate key, or sign without FULL GitHub DMG hash.
 on:
   release:
