@@ -461,6 +461,20 @@ def make_bounded_preview_thumbnail_png(original):
     raise WorkerError("preview_thumbnail_bridge_budget_exceeded")
 
 
+def choose_mcp_preview_png(original):
+    """Preserve small original PNGs; resize large ones within 1MiB MCP JSON.
+
+    The caller has already SHA256-validated the original via the private
+    Worker. Any derived PNG is for visual inspection only, never a
+    replacement for the source image or authoritative receipt.
+    """
+    if type(original) is not bytes:
+        raise WorkerError("preview_image_invalid_bytes")
+    if len(original) <= 512 * 1024:
+        return original
+    return make_bounded_preview_thumbnail_png(original)
+
+
 # V0.6 signed update controls: caller cannot supply code, version or URL.
 def get_ue_signed_update_status(opener=None, token_file=None):
     return _v2_request("/v4/update/status", "GET", None, opener, token_file)
