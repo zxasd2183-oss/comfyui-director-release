@@ -120,6 +120,24 @@ class SignedUpdaterTest(unittest.TestCase):
         )
         self.assertEqual(second["status"], "already_current")
 
+    def test_live_job_blocks_update_before_any_task_or_backup(self):
+        code=self.root/"code"
+        state=self.root/"state"
+        code.mkdir()
+        state.mkdir()
+        for name in updates.FILES:
+            (code/name).write_bytes((self.src/name).read_bytes())
+        (state/"installed-version.txt").write_text("0.5.0")
+        with patch.object(updates,"worker_status",return_value={
+            "worker_version":"0.5.0","active_job_id":"a"*32,
+        }),patch.object(updates,"invoke_task") as task:
+            with self.assertRaisesRegex(updates.UpdateError,"job_in_progress"):
+                updates.apply_update(
+                    code,state,self.manifest,updates.verified_files(self.blob,self.manifest),
+                )
+            task.assert_not_called()
+        self.assertFalse((state/"pending.json").exists())
+
     def test_unhealthy_worker_rolls_back_and_persists_previous_version(self):
         code = self.root / "code"
         state = self.root / "state"
