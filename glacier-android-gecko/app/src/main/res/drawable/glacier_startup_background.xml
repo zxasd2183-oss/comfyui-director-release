@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:angle="270"
+                android:startColor="#F9FDFF"
+                android:centerColor="#EDF7FE"
+                android:endColor="#D9EDF9"/>
+        </shape>
+    </item>
+    <item android:drawable="@drawable/glacier_mark"
+        android:gravity="center"
+        android:width="120dp" android:height="120dp"/>
+</layer-list>

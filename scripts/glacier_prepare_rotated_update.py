@@ -15,7 +15,7 @@ from pathlib import Path
 
 OLD_PUBLIC = "7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab"
 OLD_KEY_ID = "cf9452226375ff7d"
-VERSION = "0.18.0"
+PLATFORM_VERSIONS = {"windows": "0.20.19", "macos": "0.20.16"}
 
 
 def validate_public(raw):
@@ -47,13 +47,15 @@ def rewrite_source(source, platform, public):
 
 
 def prepare(base, platform, public):
+    if platform not in PLATFORM_VERSIONS:
+        raise ValueError("Unsupported release platform")
     root = Path(base)
     path = root / ("secure_update.py" if platform == "windows"
                    else "mac_update_core.py")
     source = path.read_text(encoding="utf-8")
     quote = "'" if platform == "windows" else '"'
-    if f"CURRENT_VERSION = {quote}{VERSION}{quote}" not in source:
-        raise ValueError("Not a Glacier v0.18.0 release source")
+    if f"CURRENT_VERSION = {quote}{PLATFORM_VERSIONS[platform]}{quote}" not in source:
+        raise ValueError("Unexpected Glacier client version; refusing key preparation")
     transformed = rewrite_source(source, platform, public)
     if platform == "windows":
         # Keep older Windows installations on the LEGACY channel. Only the
@@ -82,4 +84,4 @@ if __name__ == "__main__":
         prepare(sys.argv[2], sys.argv[1],
                 os.environ.get("GLACIER_UPDATE_SIGNING_PUBLIC_HEX", ""))
     except (ValueError, OSError) as exc:
-        raise SystemExit("Glacier v0.18 build safely blocked: " + str(exc))
+        raise SystemExit("Glacier v0.20 build safely blocked: " + str(exc))

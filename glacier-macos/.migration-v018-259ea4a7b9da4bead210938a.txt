@@ -1,0 +1,1 @@
+Glacier v0.18 signing public key fingerprint: 259ea4a7b9da4bead210938a

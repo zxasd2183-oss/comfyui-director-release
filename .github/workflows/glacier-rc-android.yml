@@ -1,0 +1,274 @@
+name: Glacier Android RC APK + emulator QA (never publish)
+
+on:
+  push:
+    branches:
+      - integration/glacier-browser-release-candidate-20261111
+    paths:
+      - 'glacier-android-gecko/**'
+      - '.github/workflows/glacier-rc-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glacier-android-rc
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build GeckoView + embedded sing-box dual-ABI APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Use runner Android SDK and install required platform
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-37.0' 'build-tools;36.0.0' --channel=3
+          # API 37 currently ships as android-37.0; some AGP paths still use android-37.
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ -d "$sdk/platforms/android-37.0" ] && [ ! -e "$sdk/platforms/android-37" ]; then
+            ln -s android-37.0 "$sdk/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Download and SHA256 verify official sing-box 1.14.4 Android cores
+        run: |
+          set -euo pipefail
+          for spec in \
+            'arm64:arm64-v8a:fb3a6c5197f4044f82c8fd75e01ce14c28b6abdd4c3df84bb987d41a962a320f' \
+            'amd64:x86_64:e72a8eead1ace9ce84a4ed07dfbf364e87562b736463fc00967b845cf9b3b8ac'; do
+            IFS=: read -r upstream abi digest <<< "$spec"
+            name="sing-box-1.14.4-android-$upstream"
+            curl --fail --location --retry 3 --silent --show-error \
+              "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/$name.tar.gz" \
+              --output "$name.tar.gz"
+            echo "$digest  $name.tar.gz" | sha256sum --check --status
+            mkdir -p "tmp-core-$abi" "glacier-android-gecko/app/src/main/jniLibs/$abi"
+            tar xzf "$name.tar.gz" -C "tmp-core-$abi"
+            binary=$(find "tmp-core-$abi" -type f -name sing-box | head -1)
+            test -n "$binary"
+            cp "$binary" "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so"
+            chmod 755 "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so"
+            file "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so"
+            case "$abi" in
+              arm64-v8a) readelf -h "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so" | grep -q 'AArch64' ;;
+              x86_64) readelf -h "glacier-android-gecko/app/src/main/jniLibs/$abi/libsingbox.so" | grep -q 'X86-64' ;;
+            esac
+            echo "Verified and bundled sing-box $upstream core"
+          done
+      - name: Upload verified sing-box native cores for optional stable signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-native-cores
+          path: |
+            glacier-android-gecko/app/src/main/jniLibs/arm64-v8a/libsingbox.so
+            glacier-android-gecko/app/src/main/jniLibs/x86_64/libsingbox.so
+          if-no-files-found: error
+          retention-days: 5
+      - name: Build GeckoView and embedded native VLESS bridge APK
+        run: |
+          gradle -p glacier-android-gecko :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Verify APK and embedded GeckoView native engine
+        run: |
+          set -euo pipefail
+          apk='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$apk"
+          python - <<'PY'
+          from zipfile import ZipFile
+          path='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          with ZipFile(path) as z:
+              names=z.namelist()
+              for abi in ('arm64-v8a', 'x86_64'):
+                  native=[n for n in names if n.startswith('lib/'+abi+'/') and n.endswith('.so')]
+                  assert native, 'Missing GeckoView native libraries for '+abi
+                  assert 'lib/'+abi+'/libxul.so' in names, 'Missing Gecko engine for '+abi
+                  assert 'lib/'+abi+'/libsingbox.so' in names, 'Missing embedded sing-box for '+abi
+                  print('PASS: GeckoView real native '+abi+' engine:',len(native),'native .so files')
+              assert 'classes.dex' in names, 'Missing app bytecode'
+              assert not any(n.startswith('lib/armeabi-v7a') for n in names), 'Unexpected 32-bit library'
+          PY
+          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk"
+          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk'
+      - name: Upload real installable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
+          path: glacier-android-gecko/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Android instrumentation test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-instrumentation
+          path: glacier-android-gecko/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  emulator_saved_node:
+    name: Android 15 Keystore saved-node persistence M01
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-instrumentation
+          path: .glacier-test-app
+      - name: Configure KVM
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Verify Android Keystore encrypted save / restore / delete
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_saved_vless_test.sh"
+      - name: Save M01 result evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-storage-evidence
+          path: emulator-storage-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  emulator_smoke:
+    name: Android 15 x86_64 real-APK UI smoke (bounded ADB + evidence)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the exact APK built by this run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Configure KVM access for emulator
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Test original APK on Android API 35 (no GPU, no VLESS secrets)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk" bash "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/run_emulator_smoke.sh"
+      - name: Preserve screenshots and ADB/logcat evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-emulator-evidence
+          path: emulator-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+  emulator_proxy_fail_closed:
+    name: Android 15 SOCKS offline fail-closed regression (no VLESS secrets)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download built APK from this exact run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Configure emulator KVM
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Assert no DIRECT fallback with missing SOCKS service
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_failclosed_smoke.py"
+      - name: Preserve proxy-failure evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-failclosed-evidence
+          path: emulator-proxy-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  emulator_proxy_mock_route:
+    name: Android 15 SOCKS5 remote-DNS route via synthetic host (no secrets)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact APK from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Configure emulator KVM
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Assert SOCKS5 CONNECT uses remote DNS and renders synthetic response
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-proxy-mock-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/proxy_mockroute_smoke.py"
+      - name: Preserve synthetic proxy evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-mock-route-evidence
+          path: emulator-proxy-mock-evidence/
+          if-no-files-found: warn
+          retention-days: 30
