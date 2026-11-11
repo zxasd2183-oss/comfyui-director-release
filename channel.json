@@ -1,0 +1,7 @@
+{
+  "archive_sha256": "8eb8482170d2cb2d8dfd6532747a2a9ecbdbce3dd74657ddff882fa5710a10fc",
+  "archive_size": 211961,
+  "format": "director-studio-code-signed-v1",
+  "signature": "c39d1fb8e9081480f930eee412a3e7b221997e37fef006f683547c99f466e2e6e6bbd6d322a2457a337a1910003fafcf4a7936a04f75924cf8ab8f6e28bec808",
+  "version": "0.10.0"
+}
