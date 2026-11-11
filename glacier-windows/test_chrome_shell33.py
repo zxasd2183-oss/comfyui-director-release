@@ -18,6 +18,9 @@ class ChromeShell33Tests(unittest.TestCase):
         self.window = BrowserShellStub()
         self.window.more.setMenu(QMenu(self.window.more))
         strip = self.window.chrome_tab14.parentWidget()
+        self.window.proxy_clicked33 = 0
+        self.window.proxy_label.clicked.connect(
+            lambda: setattr(self.window, "proxy_clicked33", self.window.proxy_clicked33 + 1))
         self.window.new_button33 = QPushButton("+", strip)
         self.window.new_clicks33 = 0
         self.window.new_button33.clicked.connect(
@@ -59,6 +62,11 @@ class ChromeShell33Tests(unittest.TestCase):
         self.assertEqual(w.new_button33.width(), 30)
         w.new_button33.click()
         self.assertEqual(w.new_clicks33, 1)
+        self.assertTrue(w.proxy_label.isHidden())
+        self.assertFalse(w._proxy_visual33.icon().isNull())
+        self.assertEqual(w._proxy_visual33.text(), "")
+        w._proxy_visual33.click()
+        self.assertEqual(w.proxy_clicked33, 1)
         self.assertIsNotNone(w._utility_shelf32)
         # Original utility button remains wired to the shelf.
         w.more.menu().aboutToShow.emit()
