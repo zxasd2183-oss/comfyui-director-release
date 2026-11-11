@@ -4,7 +4,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMenu, QToolButton
+from PySide6.QtWidgets import QApplication, QMenu, QTabBar, QToolButton
 from glacier_chrome_shell33 import GlacierChromeShell33, CHROME_SHELL_QSS33
 from test_desktop_ui32 import BrowserShellStub
 
@@ -46,6 +46,20 @@ class ChromeShell33Tests(unittest.TestCase):
         self.assertFalse(shell.property("glacierFocus"))
         self.assertIn("QMenu::item:selected", CHROME_SHELL_QSS33)
         self.assertNotIn(":focus-within", CHROME_SHELL_QSS33)
+
+    def test_tab_close_icon_is_neutral_not_native_red_tile(self):
+        bar = self.window.chrome_tab14
+        bar.setTabsClosable(True)
+        bar.addTab("A real new tab")
+        self.window._polish_close_buttons33()
+        button = bar.tabButton(0, QTabBar.ButtonPosition.RightSide)
+        self.assertIsNotNone(button)
+        self.assertFalse(button.icon().isNull())
+        self.assertEqual(button.width(), 20)
+        self.assertEqual(button.toolTip(), "关闭标签")
+        self.assertEqual(
+            self.window.more.popupMode(),
+            QToolButton.ToolButtonPopupMode.InstantPopup)
 
     def test_previous_handlers_keep_their_original_connections(self):
         w = self.window
