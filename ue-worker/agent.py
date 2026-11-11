@@ -103,7 +103,12 @@ def gpu_summary():
 
 
 def status():
+    active_job_id = None
+    if JOB_MANAGER is not None:
+        with JOB_MANAGER.lock:
+            active_job_id = JOB_MANAGER.active
     return {
+        "active_job_id": active_job_id,
         "ok": True, "node_id": NODE_ID, "platform": platform.system(),
         "hostname": platform.node()[:128], "timestamp": utcnow(),
         "python": platform.python_version(),
