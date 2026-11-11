@@ -49,6 +49,45 @@ class PreviewPresetTest(unittest.TestCase):
         deferred_class=object()
         png_class=object()
         output_class=object()
+        class FakeLightComponent:
+            def __init__(self,value):
+                self.props={"intensity":value}
+            def get_editor_property(self,name):
+                return self.props[name]
+            def set_editor_property(self,name,value):
+                self.props[name]=value
+
+        class FakeLightActor:
+            def __init__(self,label,intensity):
+                self.label=label
+                self.light=FakeLightComponent(intensity)
+            def get_actor_label(self):
+                return self.label
+            def get_component_by_class(self,_type):
+                return self.light
+
+        original_map="/Game/Director/V03/Maps/WaitingOffice_EP01_Stage"
+        stage_actors=[
+            FakeLightActor("V03_Key_Light",18000.0),
+            FakeLightActor("V03_Fill_Light",9000.0),
+        ]
+        class FakeLevel:
+            cloned_from=None
+            stage_path=None
+            def new_level_from_template(self,dest,source):
+                self.stage_path=dest
+                self.cloned_from=source
+                assets[dest]=object()
+                return True
+            def save_current_level(self):
+                return True
+        level=FakeLevel()
+        editor_actor_subsystem=types.SimpleNamespace(
+            get_all_level_actors=lambda:stage_actors
+        )
+        subsystems={}
+        def get_subsystem(cls):
+            return subsystems[cls]
         fake=types.SimpleNamespace(
             EditorAssetLibrary=types.SimpleNamespace(
                 make_directory=lambda path: True,
@@ -65,11 +104,18 @@ class PreviewPresetTest(unittest.TestCase):
             MoviePipelineDeferredPassBase=deferred_class,
             MoviePipelineImageSequenceOutput_PNG=png_class,
             MoviePipelineOutputSetting=output_class,
+            LevelEditorSubsystem=type("LevelEditorSubsystem",(),{}),
+            EditorActorSubsystem=type("EditorActorSubsystem",(),{}),
+            PointLightComponent=type("PointLightComponent",(),{}),
+            get_editor_subsystem=get_subsystem,
             DirectoryPath=lambda path: ("DirectoryPath",path),
             IntPoint=lambda x,y: (x,y),
             log=lambda message: None,
             log_error=lambda message: None,
         )
+        subsystems[fake.LevelEditorSubsystem]=level
+        subsystems[fake.EditorActorSubsystem]=editor_actor_subsystem
+        assets[original_map]=object()
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             jobid="a"*32
@@ -90,6 +136,11 @@ class PreviewPresetTest(unittest.TestCase):
             result=json.loads(result_path.read_text())
             self.assertTrue(result["ok"],result.get("reason"))
             self.assertEqual(result["frames_per_shot"],1)
+            self.assertEqual(level.cloned_from, original_map)
+            self.assertEqual(result["stage_map"], level.stage_path)
+            self.assertIn("/Game/Director/V051/Maps/",level.stage_path)
+            self.assertEqual(stage_actors[0].light.props["intensity"],800.0)
+            self.assertEqual(stage_actors[1].light.props["intensity"],400.0)
             self.assertEqual(result["height"],1280)
             self.assertEqual(len(created),1)
             config=assets[created[0]]
