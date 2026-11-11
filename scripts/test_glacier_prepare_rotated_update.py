@@ -46,14 +46,14 @@ class ClientKeyMigrationTests(unittest.TestCase):
                 f"PUBLIC_KEY = bytes.fromhex('{migrate.OLD_PUBLIC}')\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "Not a Glacier v0.18"):
+            with self.assertRaisesRegex(ValueError, "Unexpected Glacier client version"):
                 migrate.prepare(root, "windows", self.PUB)
 
     def test_prepare_macos_writes_new_key(self):
         with tempfile.TemporaryDirectory() as root:
             file = Path(root) / "mac_update_core.py"
             file.write_text(
-                'CURRENT_VERSION = "0.18.0"\n'
+                'CURRENT_VERSION = "0.20.17"\n'
                 f'KEY_ID = "{migrate.OLD_KEY_ID}"\n'
                 f'PUBLIC_KEY = bytes.fromhex("{migrate.OLD_PUBLIC}")\n',
                 encoding="utf-8",
