@@ -16,6 +16,53 @@ import unreal
 
 ROOT = "/Game/Director/V04"
 PRESET_DIR = ROOT + "/Presets"
+V03_SOURCE_STAGE = "/Game/Director/V03/Maps/WaitingOffice_EP01_Stage"
+PREVIEW_MAP_DIR = "/Game/Director/V051/Maps"
+LIGHT_TARGETS = {
+    "V03_Key_Light": (18000.0, 800.0),
+    "V03_Fill_Light": (9000.0, 400.0),
+}
+
+
+def create_private_exposure_stage(job_id):
+    """Copy the original V03 map, then change only the two named point lights.
+
+    UE 5.8 LevelEditorSubsystem.new_level_from_template saves a *new*
+    map. Original stage, 31 camera actors, and sequences remain untouched.
+    """
+    asset = "WO_EP01_ExposurePreview_" + job_id
+    stage = PREVIEW_MAP_DIR + "/" + asset
+    if not unreal.EditorAssetLibrary.does_asset_exist(V03_SOURCE_STAGE):
+        raise RuntimeError("v03_source_map_missing")
+    if unreal.EditorAssetLibrary.does_asset_exist(stage):
+        raise RuntimeError("exposure_stage_collision")
+    if not unreal.EditorAssetLibrary.make_directory(PREVIEW_MAP_DIR):
+        raise RuntimeError("exposure_stage_directory_failed")
+    editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+    if not editor or not editor.new_level_from_template(stage, V03_SOURCE_STAGE):
+        raise RuntimeError("exposure_stage_clone_failed")
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actors = actor_subsystem.get_all_level_actors()
+    changed = {}
+    for label, (expected, target) in LIGHT_TARGETS.items():
+        matching = [a for a in actors if a.get_actor_label() == label]
+        if len(matching) != 1:
+            raise RuntimeError("exposure_light_label_mismatch_" + label)
+        component = matching[0].get_component_by_class(unreal.PointLightComponent)
+        if not component:
+            raise RuntimeError("exposure_light_component_missing_" + label)
+        previous = float(component.get_editor_property("intensity"))
+        if abs(previous - expected) > 0.5:
+            raise RuntimeError("exposure_source_light_drift_" + label)
+        component.set_editor_property("intensity", target)
+        measured = float(component.get_editor_property("intensity"))
+        if abs(measured - target) > 0.5:
+            raise RuntimeError("exposure_light_write_failed_" + label)
+        changed[label] = measured
+    # Saving the current level persists ONLY the newly created map.
+    if not editor.save_current_level():
+        raise RuntimeError("exposure_stage_save_failed")
+    return stage, changed
 
 
 def main():
@@ -61,8 +108,12 @@ def main():
         setting.set_editor_property("override_existing_output", False)
         if not unreal.EditorAssetLibrary.save_loaded_asset(config):
             raise RuntimeError("preview_preset_save_failed")
+        # Source V03.umap remains immutable; never apply light changes in place.
+        map_path, light_levels = create_private_exposure_stage(job_id)
         result = {"ok":True, "preset":asset_path + "." + asset_name,
-                  "width":720,"height":1280,"frames_per_shot":1}
+                  "width":720,"height":1280,"frames_per_shot":1,
+                  "stage_map":map_path, "source_map":V03_SOURCE_STAGE,
+                  "light_intensities":light_levels}
     except Exception as exc:
         result = {"ok":False, "reason":str(exc)[:400],
                   "traceback":traceback.format_exc(limit=5)[-2000:]}
