@@ -18,6 +18,7 @@ from pathlib import Path
 FRAME_SHOTS = ("01", "13", "26", "31")
 MAP_PATH = "/Game/Director/V03/Maps/WaitingOffice_EP01_Stage"
 SHOTS_PATH = "/Game/Director/V03/Shots/WaitingOffice_EP01_SH"
+PRIVATE_SHOTS_ROOT = "/Game/Director/V071/ShotBindings"
 ASSET_PRESET_PREFIX = "/Game/Director/V04/Presets/WO_EP01_PrevisPNG_"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 MAX_PNG_BYTES = 25 * 1024 * 1024
@@ -165,18 +166,26 @@ def run_previs(spec,root,work):
         "preview": [-860.0, 345.0, 225.0],
         "look_at": [-245.0, 380.0, 103.0],
     }
+    # Every preview MUST have its own sequence bound to a camera actor
+    # in the copied level, never to source V03 map possessables.
+    expected_sequences = {}
+    for shot in FRAME_SHOTS:
+        name = "WaitingOffice_EP01_SH" + shot + "_V03"
+        expected_sequences[shot] = (
+            PRIVATE_SHOTS_ROOT + "/" + work.name + "/" + name + "." + name
+        )
     if (data.get("stage_map") != expected_map or
             data.get("source_map") != MAP_PATH or
             data.get("light_intensities") !=
             {"V03_Key_Light": 800.0, "V03_Fill_Light": 400.0} or
-            data.get("camera13_reframe") != expected_camera13):
-        raise JobError("preview_stage_unverified")
+            data.get("camera13_reframe") != expected_camera13 or
+            data.get("bound_preview_sequences") != expected_sequences):
+        raise JobError("preview_stage_or_camera_binding_unverified")
     if hashlib.sha256(source_map_file.read_bytes()).hexdigest() != source_sha256_before:
         raise JobError("source_v03_stage_was_modified")
     screenshots = []
     for shot in FRAME_SHOTS:
-        sequence_name = "WaitingOffice_EP01_SH"+shot+"_V03"
-        sequence = SHOTS_PATH + shot + "_V03." + sequence_name
+        sequence = expected_sequences[shot]
         before = set(output.rglob("*.png"))
         command = [
             str(editor),str(project),expected_map,
@@ -242,6 +251,7 @@ def run_previs(spec,root,work):
         "source_stage_unchanged": True,
         "light_intensities": data["light_intensities"],
         "camera13_reframe": data["camera13_reframe"],
+        "bound_preview_sequences": expected_sequences,
         "render_ready":False,
         "metahuman_bound":False,
         "preview_count":len(screenshots),
