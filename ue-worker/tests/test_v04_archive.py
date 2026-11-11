@@ -78,10 +78,16 @@ class V04ArchiveTest(unittest.TestCase):
                             "preview":[-860.0,345.0,225.0],
                             "look_at":[-245.0,380.0,103.0],
                         },
+                        "bound_preview_sequences": {
+                            shot: "/Game/Director/V071/ShotBindings/" + jobid +
+                                  "/WaitingOffice_EP01_SH" + shot + "_V03.WaitingOffice_EP01_SH" + shot + "_V03"
+                            for shot in ue_previs.FRAME_SHOTS
+                        },
                     }
                     Path(env["DIRECTOR_UE_RESULT_FILE"]).write_text(json.dumps(result))
                 else:
                     sequence=next(str(arg) for arg in command if str(arg).startswith("-LevelSequence="))
+                    self.assertIn("/Game/Director/V071/ShotBindings/" + jobid + "/",sequence)
                     match=re.search(r"_SH(\d{2})_V03",sequence)
                     if not match:
                         raise AssertionError("missing expected shot")
@@ -101,6 +107,7 @@ class V04ArchiveTest(unittest.TestCase):
             ):
                 result=ue_previs.run_previs(spec,root,work)
             self.assertEqual(result["preview_count"],4)
+            self.assertEqual(set(result["bound_preview_sequences"]),set(ue_previs.FRAME_SHOTS))
             self.assertTrue(result["source_stage_unchanged"])
             self.assertEqual(result["light_intensities"]["V03_Key_Light"],800.0)
             self.assertEqual(result["camera13_reframe"]["preview"],
