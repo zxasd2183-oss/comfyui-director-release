@@ -1,0 +1,47 @@
+name: Glacier Android M05 read-only upgrade checker validation
+
+on:
+  push:
+    branches:
+      - feature/glacier-android-m05-updates
+    paths:
+      - 'glacier-android-gecko/scripts/check_installed_apk_upgrade.ps1'
+      - 'glacier-android-gecko/scripts/tests/**'
+      - '.github/workflows/glacier-android-m05-upgrade-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse checker with native PowerShell AST (no phone or secrets)
+        shell: pwsh
+        run: |
+          $path = 'glacier-android-gecko/scripts/check_installed_apk_upgrade.ps1'
+          $tokens = $null
+          $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'PowerShell parse failed'
+          }
+          $source = Get-Content $path -Raw
+          foreach ($required in @('apksigner', 'aapt', 'pm', 'base.apk', 'VersionCode', 'Certificate', 'BLOCK')) {
+            if (-not $source.Contains($required)) { throw "Missing upgrade gate: $required" }
+          }
+          $commands = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)
+          foreach ($cmd in $commands) {
+            $name = $cmd.GetCommandName()
+            if ($name -in @('Remove-AppxPackage', 'Clear-Content', 'Remove-ItemProperty')) {
+              throw "Destructive command is not permitted in read-only checker: $name"
+            }
+          }
+          Write-Host 'PASS: read-only checker parses and contains required signature/version checks'
+      - name: Exercise seven safe/unsafe APK upgrade scenarios using mocked tools
+        shell: pwsh
+        run: ./glacier-android-gecko/scripts/tests/test_upgrade_checker.ps1

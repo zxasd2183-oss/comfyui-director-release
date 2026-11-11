@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="GlacierStartupTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/glacier_startup_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F1F9FE</item>
+        <item name="android:navigationBarColor">#F6FAFD</item>
+    </style>
+</resources>

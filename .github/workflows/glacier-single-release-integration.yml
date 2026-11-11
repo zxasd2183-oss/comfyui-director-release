@@ -1,0 +1,41 @@
+name: Glacier single-release integration checks (no publication)
+on:
+  push:
+    branches:
+      - feature/glacier-one-release-complete-ui-20261111
+    paths:
+      - 'glacier-windows/**'
+      - 'glacier-macos/**'
+      - 'glacier-android-gecko/**'
+      - '.github/workflows/glacier-single-release-integration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop-source-and-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install UI test dependencies
+        run: python -m pip install 'PySide6>=6.8,<7' 'cryptography>=43,<47' 'requests[socks]>=2.32,<3'
+      - name: Compile desktop additions without publishing any build
+        run: |
+          python -m py_compile glacier-windows/glacier_chrome_ui30.py glacier-windows/main.py glacier-macos/main.py
+          python -m py_compile glacier-windows/glacier_accounts22.py glacier-windows/glacier_sync23.py glacier-windows/glacier_account_center26.py
+      - name: Verify Chrome UI and original desktop shell
+        working-directory: glacier-windows
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest -v test_chrome_ui30 test_shell20 test_accounts22 test_account_center26 test_sync23
+  android-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Android source is present without publishing APK
+        run: |
+          test -s glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/MainActivity.java
+          test -s glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/BrowserUpdater.java
+          test -s glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/GlacierCloudSync.java

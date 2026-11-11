@@ -22,6 +22,10 @@ from glacier_workspaces17 import GlacierWorkspaces17
 from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
+from glacier_accounts22 import GlacierAccounts22
+from glacier_sync23 import GlacierSync23
+from glacier_account_center26 import GlacierAccountCenter26
+from glacier_chrome_ui30 import GlacierChromeUI30
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -71,7 +75,7 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
@@ -83,6 +87,7 @@ class Browser(GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloa
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
   self.profile.setCachePath(str(appdir()/"cache"))
   self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+  self.initialize_workspace_profiles17(appdir(),dpapi)
   root=QWidget();lay=QVBoxLayout(root);self.setCentralWidget(root)
   bar=QHBoxLayout();lay.addLayout(bar)
   for label,cb in [("←",lambda:self.current().back()),("→",lambda:self.current().forward()),("↻",lambda:self.current().reload()),("＋",self.new_tab)]:
@@ -106,6 +111,10 @@ class Browser(GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloa
   self.setup_downloads17(bar,appdir(),dpapi)
   self.setup_tabs19()
   self.setup_shell20(bar)
+  self.setup_accounts22(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
+  self.setup_sync23(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
+  self.setup_account_center26(bar)
+  self.setup_ui30(bar)
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -118,11 +127,13 @@ class Browser(GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloa
   v.setHtml(self.home_markup(),QUrl("about:blank"));self.open_startup_home(v)
   self.refresh_tabs14()
   self._workspace_register17(v)
+  self.register_account_tab22(v)
   return v
  def close_tab(self,i):
   v=self.tabs.widget(i)
   if v is None:return
   self._workspace_forget17(v)
+  self.unregister_account_tab22(v)
   self.remember_recent15(v.url().toString())
   self.remember_closed_tab(v.url().toString())
   self.cleanup_closed13(v)

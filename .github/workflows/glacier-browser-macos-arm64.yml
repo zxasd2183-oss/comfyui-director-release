@@ -64,15 +64,15 @@ jobs:
           PY
           cp ../glacier-windows/glacier_productivity16.py glacier_productivity16.py
           cp ../glacier-windows/test_productivity16.py test_productivity16.py
-          for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py; do cp ../glacier-windows/"$file" "$file"; done
+          for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py test_accounts22.py glacier_sync23.py test_sync23.py glacier_account_center26.py test_account_center26.py glacier_chrome_ui30.py test_chrome_ui30.py; do cp ../glacier-windows/"$file" "$file"; done
           python ../scripts/glacier_prepare_rotated_update.py macos .
-          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
+          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py test_accounts22.py glacier_sync23.py test_sync23.py glacier_account_center26.py test_account_center26.py glacier_chrome_ui30.py test_chrome_ui30.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
           python -m unittest -v test_mac_update
           python -m unittest -v test_mac_https_probe
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_gui_start
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_desktop15
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_productivity16
-          QT_QPA_PLATFORM=offscreen python -m unittest -v test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19 test_shell20
+          QT_QPA_PLATFORM=offscreen python -m unittest -v test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19 test_shell20 test_chrome_ui30 test_accounts22 test_account_center26 test_sync23
           python -c "from mac_update_core import FEED_URL,signed_update_session; assert FEED_URL.startswith('https://raw.githubusercontent.com/'); s=signed_update_session(1080); assert not s.trust_env and s.proxies['https']=='socks5h://127.0.0.1:1080'; s.close(); print('VLESS HTTPS signed updater checks passed')"
           python -c "from PySide6.QtWebEngineWidgets import QWebEngineView; import keyring.backends.macOS; import mac_update; print('Qt WebEngine / Keychain / updater imports passed')"
       - name: Download and SHA256-verify official sing-box 1.14.4 darwin arm64

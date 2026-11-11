@@ -1,0 +1,90 @@
+name: Glacier Android v0.1.1 GeckoView emulator + phone APK
+
+on:
+  push:
+    branches:
+      - experiment/glacier-android-geckoview-v01
+    paths:
+      - 'glacier-android-gecko/**'
+      - '.github/workflows/glacier-android-geckoview-v01.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: glacier-android-geckoview-v01
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build dual-ABI GeckoView test APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Use runner Android SDK and install required platform
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-37.0' 'build-tools;36.0.0' --channel=3
+          # API 37 currently ships as android-37.0; some AGP paths still use android-37.
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ -d "$sdk/platforms/android-37.0" ] && [ ! -e "$sdk/platforms/android-37" ]; then
+            ln -s android-37.0 "$sdk/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Build REAL GeckoView ARM64 + x86_64 Android APK
+        run: |
+          gradle -p glacier-android-gecko :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK and embedded GeckoView native engine
+        run: |
+          set -euo pipefail
+          apk='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$apk"
+          python - <<'PY'
+          from zipfile import ZipFile
+          path='glacier-android-gecko/app/build/outputs/apk/debug/app-debug.apk'
+          with ZipFile(path) as z:
+              names=z.namelist()
+              for abi in ('arm64-v8a', 'x86_64'):
+                  native=[n for n in names if n.startswith('lib/'+abi+'/') and n.endswith('.so')]
+                  assert native, 'Missing GeckoView native libraries for '+abi
+                  assert 'lib/'+abi+'/libxul.so' in names, 'Missing Gecko engine for '+abi
+                  print('PASS: GeckoView real native '+abi+' engine:',len(native),'native .so files')
+              assert 'classes.dex' in names, 'Missing app bytecode'
+              assert not any(n.startswith('lib/armeabi-v7a') for n in names), 'Unexpected 32-bit library'
+          PY
+          cp "$apk" "glacier-android-gecko/GlacierAndroid-v0.1.1-GeckoView-ARM64-x86_64-debug.apk"
+          sha256sum 'glacier-android-gecko/GlacierAndroid-v0.1.1-GeckoView-ARM64-x86_64-debug.apk'
+      - name: Upload real installable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.1.1-GeckoView-ARM64-x86_64-debug
+          path: glacier-android-gecko/GlacierAndroid-v0.1.1-GeckoView-ARM64-x86_64-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish GeckoView engine-test preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='glacier-android-gecko-v0.1.1'
+          apk='glacier-android-gecko/GlacierAndroid-v0.1.1-GeckoView-ARM64-x86_64-debug.apk'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+          else
+            gh release create "$tag" "$apk" \
+              --target experiment/glacier-android-geckoview-v01 \
+              --title 'Glacier Android v0.1.1 · GeckoView 真内核模拟器/真机双架构测试版' \
+              --notes 'ARM64/x86_64 双架构 Android 原生测试 APK，支持 Android Studio x86_64 模拟器与 ARM64 真机。实际内置 GeckoView 159 stable，支持网址搜索、前进后退刷新、标签页、私人/工作独立 Session Context。用于安卓模拟器和小米真机的内核兼容性对照实验。尚无 VLESS、账号保险箱、云同步或正式安全审计，当前默认联网；请勿用关键账号测试。使用临时 Debug 签名，不是正式版；不同 CI 运行生成的调试签名可能变化。' \
+              --prerelease
+          fi
+          gh release view "$tag" --json tagName,assets
