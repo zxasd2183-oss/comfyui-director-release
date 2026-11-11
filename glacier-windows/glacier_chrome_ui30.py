@@ -235,7 +235,7 @@ class GlacierChromeUI30:
         panel.setObjectName("GlacierNotes30")
         panel.setOpenExternalLinks(False)
         panel.setHtml("""
-            <h3>本次真正重做桌面顶部布局（Windows 0.20.21 / macOS 0.20.18）</h3>
+            <h3>本次真正重做桌面顶部布局（Windows 0.20.22 / macOS 0.20.20）</h3>
             <p>旧版仅追加颜色样式，现已替换为两层 Chrome 式布局：
             上方完整标签栏、下方独立导航栏、44px 圆角可伸缩地址框；
             返回/前进/刷新使用统一轮廓图标。代理状态改成不挤占地址栏的
