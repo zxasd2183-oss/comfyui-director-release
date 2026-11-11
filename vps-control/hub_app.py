@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP, Image
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 from hub_rpc import call
+from hub_brain import call_studio
 from hub_file_sync import sync_chatgpt_visual
 from hub_sync_jobs import JOBS
 from ue_worker_rpc import (call_ue_worker,
@@ -150,6 +151,40 @@ def get_production_episode(project_id: str, episode_id: str) -> dict:
     """Read one private Studio episode with registered shots, assets and outline draft."""
     return call("get_production_episode", {
         "project_id":project_id,"episode_id":episode_id,
+    })
+
+
+# Studio already exposes scene, review and per-shot readiness data behind its
+# own signed brain-link. These narrow, literal-argument methods go directly
+# to the same HMAC-authenticated localhost endpoint. They never approve assets
+# or dispatch any GPU job; legacy Hub routes and signed release allowlists stay
+# unchanged.
+@app.tool(annotations=READ)
+def get_production_scenes(project_id: str) -> dict:
+    """Read registered scene draft/approval status without copying private images."""
+    return call_studio("get_production_scenes", {"project_id": project_id})
+
+
+@app.tool(annotations=READ)
+def get_production_episode_readiness(project_id: str, episode_id: str) -> dict:
+    """Read per-shot real production blockers; never treat a plan as a rendered film."""
+    return call_studio("get_production_episode_readiness",
+                       {"project_id": project_id, "episode_id": episode_id})
+
+
+@app.tool(annotations=WRITE)
+def create_production_scene(
+    project_id: str, scene_id: str, display_name: str, scene_type: str,
+    layout_notes: str, lighting_notes: str, camera_rules: str,
+    continuity_rules: str, scene_notes: str,
+) -> dict:
+    """Create one audited scene DRAFT; images and approval remain owner-reviewed."""
+    return call_studio("create_production_scene", {
+        "project_id": project_id, "scene_id": scene_id,
+        "display_name": display_name, "scene_type": scene_type,
+        "layout_notes": layout_notes, "lighting_notes": lighting_notes,
+        "camera_rules": camera_rules, "continuity_rules": continuity_rules,
+        "scene_notes": scene_notes,
     })
 
 
