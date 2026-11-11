@@ -135,6 +135,33 @@ class WindowsSignedUpdates(unittest.TestCase):
             self.path / "windows-x64.json"))["version"], "0.20.18")
         self.assertFalse(win.pending_windows([newer, mac], self.path))
 
+    def test_mac_can_later_catch_up_without_rewriting_newer_windows(self):
+        from source.scripts.test_glacier_signed_updates import fixture
+        old_win, old_mac = fixture("0.20.16")
+        mac_payload = shared.make_payloads("0.20.16", old_win, old_mac)["macos-arm64"]
+        mac_doc = dict(mac_payload)
+        mac_doc["signature"] = base64.b64encode(
+            self.key.sign(shared.canonical(mac_payload))
+        ).decode("ascii")
+        self.mac_file.write_text(json.dumps(mac_doc))
+        new_win = release("0.20.18", "9" * 64)
+        with patch.dict(os.environ, {"GLACIER_VPS_MIGRATION_READY": "1"}):
+            win.render_windows([new_win], self.path, self.key)
+            windows_bytes = (self.path / "windows-x64.json").read_bytes()
+            # Latest common release is only v0.20.16: not allowed to
+            # overwrite the newer Windows v0.20.18 manifest.
+            self.assertFalse(shared.needs_new_signed_release(
+                [old_win, old_mac, new_win], self.path))
+            latest_mac = fixture("0.20.18")[1]
+            self.assertTrue(shared.needs_new_signed_release(
+                [old_win, old_mac, new_win, latest_mac], self.path))
+            self.assertTrue(shared.render_manifests(
+                [old_win, old_mac, new_win, latest_mac], self.path, self.key))
+        self.assertEqual(windows_bytes,
+                         (self.path / "windows-x64.json").read_bytes())
+        updated_mac = shared.read_unique(self.mac_file)
+        self.assertEqual(shared.verify_signed_doc(updated_mac)["version"], "0.20.18")
+
     def test_existing_feed_is_required_for_safe_rollout(self):
         (self.path / "windows-x64.json").unlink()
         with self.assertRaisesRegex(ValueError, "missing"):
