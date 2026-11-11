@@ -1,0 +1,150 @@
+name: Glacier FINAL recover verified three draft Releases
+# One-time recovery after GitHub's "get draft release by tag" returned HTTP 404.
+# Never creates/replaces assets. Checks all three exact existing release IDs.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-final-recover-drafts.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: glacier-three-platform-one-time-release
+  cancel-in-progress: false
+
+jobs:
+  recover-the-verified-drafts:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+      EXPECTED_ANDROID_PIN: '6d8fb8a4b3dd90427ff2f7959394df4b73f37c117a7d1d2e983bde0f10a1ff4e'
+      REPO_ANDROID_PIN: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate 3 permanently DRAFT releases and original tested CI source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          branch='integration/glacier-browser-release-candidate-20261111'
+          expected=[
+             ('windows',42978496121,'glacier-windows/',441442325,'glacier-v0.20.20',
+              'GlacierBrowser-v0.20.20-Windows-Setup-x64.exe',175947525,
+              '05c103895d2ecf5634046b63b928b4857309b7a81c2c5214860a679a8ea68654'),
+             ('macos',42978270136,'glacier-macos/',441442444,'glacier-macos-v0.20.17',
+              'GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg',287169487,
+              '3ab7a17518f84bdf36230530d8be77cfaaa4c1802e12de7c24f76f58d26e7810'),
+             ('android',42989730306,'glacier-android-gecko/',441442639,'glacier-android-browser-v0.2.3',
+              'GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk',229107761,
+              '0408635edaf5bdad5c7bb4145609253959d2e99825fe4fd7af1291f36588070e'),
+          ]
+          if os.environ['REPO_ANDROID_PIN'].lower()!=os.environ['EXPECTED_ANDROID_PIN']:
+              raise RuntimeError('Signer pin differs from owner-created permanent certificate')
+          for platform,run,path,rid,tag,asset,size,digest in expected:
+              info=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
+              if info.get('status')!='completed' or info.get('conclusion')!='success' or info.get('head_branch')!=branch:
+                  raise RuntimeError(platform+' CI run not successful')
+              commit=info['head_sha']
+              subprocess.run(['git','merge-base','--is-ancestor',commit,'HEAD'],check=True)
+              if subprocess.run(['git','diff','--quiet',commit,'HEAD','--',path]).returncode!=0:
+                  raise RuntimeError(platform+' code changed since QA artifact')
+              if platform=='macos':
+                  common=subprocess.check_output(['git','diff','--name-only',commit,'HEAD','--',
+                      'glacier-windows/'],text=True).splitlines()
+                  if any(not x.rsplit('/',1)[-1].startswith('test_') for x in common):
+                      raise RuntimeError('Shared macOS client sources changed after last DMG build')
+              release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{rid}']))
+              assets=release.get('assets',[])
+              if (release.get('id')!=rid or release.get('tag_name')!=tag or
+                    release.get('target_commitish')!='affc3a050a342c90d48d4aa4c33cf0faee06edce' or
+                    not release.get('draft') or release.get('prerelease') or
+                    release.get('published_at') is not None or len(assets)!=1):
+                  raise RuntimeError('Unexpected or previously published draft '+tag)
+              item=assets[0]
+              if (item.get('name')!=asset or item.get('size')!=size or
+                    item.get('digest')!='sha256:'+digest or item.get('state')!='uploaded'):
+                  raise RuntimeError('GitHub draft asset metadata differs from known audited bytes')
+              print(platform,tag,'exact safe draft and upstream build verified')
+          PY
+      - name: Download the THREE exact pre-approved successful CI packages again
+        run: |
+          set -euo pipefail
+          mkdir -p staged/windows staged/macos staged/android
+          gh run download 42978496121 --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-RC-Windows-Setup --dir staged/windows
+          gh run download 42978270136 --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-RC-macOS-AppleSilicon-DMG --dir staged/macos
+          gh run download 42989730306 --repo "$GITHUB_REPOSITORY" \
+            --name GlacierAndroid-v0.2.3-STABLE-SIGNED-RC-NOT-PUBLISHED --dir staged/android
+      - name: Compare all three uncompressed binary SHA256 digests to GitHub DRAFT assets
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          sources=[
+              ('staged/windows/GlacierBrowser-v0.20.20-Windows-Setup-x64.exe',
+               175947525,'05c103895d2ecf5634046b63b928b4857309b7a81c2c5214860a679a8ea68654'),
+              ('staged/macos/GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg',
+               287169487,'3ab7a17518f84bdf36230530d8be77cfaaa4c1802e12de7c24f76f58d26e7810'),
+              ('staged/android/GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk',
+               229107761,'0408635edaf5bdad5c7bb4145609253959d2e99825fe4fd7af1291f36588070e')
+          ]
+          for filename,size,expected in sources:
+              path=Path(filename)
+              if not path.is_file() or path.is_symlink() or path.stat().st_size!=size:
+                  raise RuntimeError('Source installer filename/size differs from draft: '+filename)
+              with path.open('rb') as data:
+                  digest=hashlib.file_digest(data,'sha256').hexdigest()
+              if digest!=expected:
+                  raise RuntimeError('Source installer digest differs from draft: '+filename)
+              print(filename,'matches published draft checksum byte-for-byte')
+          PY
+      - name: Verify permanent Android APK certificate and both native engine ABIs again
+        run: |
+          set -euo pipefail
+          sdk="$ANDROID_HOME"
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" --install 'build-tools;36.0.0'
+          export APKSIGNER="$sdk/build-tools/36.0.0/apksigner"
+          export AAPT="$sdk/build-tools/36.0.0/aapt"
+          python3 - <<'PY'
+          import os,re,subprocess
+          from zipfile import ZipFile
+          apk='staged/android/GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk'
+          subprocess.run([os.environ['APKSIGNER'],'verify','--verbose',apk],check=True)
+          cert=subprocess.check_output([os.environ['APKSIGNER'],'verify','--print-certs',apk],text=True)
+          m=re.search(r'Signer #1 certificate SHA-256 digest:\s*([0-9A-Fa-f]{64})',cert)
+          if not m or m.group(1).lower()!=os.environ['EXPECTED_ANDROID_PIN']:
+              raise RuntimeError('Incorrect Android stable APK signing certificate')
+          pkg=subprocess.check_output([os.environ['AAPT'],'dump','badging',apk],text=True).splitlines()[0]
+          for literal in ("name='cn.borealos.glacier.geckopreview'",
+                          "versionCode='12'","versionName='0.2.3'"):
+              if literal not in pkg:raise RuntimeError('Android package identity/version mismatch')
+          with ZipFile(apk) as archive:
+              files=set(archive.namelist())
+              for abi in ('arm64-v8a','x86_64'):
+                  for lib in ('libxul.so','libsingbox.so'):
+                      if f'lib/{abi}/{lib}' not in files:
+                          raise RuntimeError('Missing Android Gecko/sing-box native ABI')
+          print('PASS: stable APK signature, app ID, version and dual ABI')
+          PY
+      - name: Publish ONLY the 3 verified existing DRAFT Release IDs
+        run: |
+          set -euo pipefail
+          # GitHub cannot publish several independent Releases atomically.
+          # All three drafts/assets are verified BEFORE this point.
+          for release_id in 441442639 441442444 441442325; do
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              -F draft=false >/dev/null
+            gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq .draft | grep -qx false
+          done
+          echo 'Glacier Android 0.2.3 / macOS 0.20.17 / Windows 0.20.20 all released; existing independent Ed25519 VPS channels now update.' >> "$GITHUB_STEP_SUMMARY"
