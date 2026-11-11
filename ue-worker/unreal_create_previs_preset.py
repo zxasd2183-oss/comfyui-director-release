@@ -65,11 +65,17 @@ def create_private_exposure_stage(job_id):
     """
     asset = "WO_EP01_ExposurePreview_" + job_id
     stage = PREVIEW_MAP_DIR + "/" + asset
-    if not unreal.EditorAssetLibrary.does_asset_exist(V03_SOURCE_STAGE):
+    # EditorAssetLibrary.does_asset_exist is not reliable for LEVEL assets.
+    # Derive both .umap paths from the trusted job output, never caller input.
+    project_root = Path(os.environ["DIRECTOR_UE_PREVIEW_OUTPUT"]).resolve().parents[3]
+    original_file = project_root / "Content" / "Director" / "V03" / "Maps" / "WaitingOffice_EP01_Stage.umap"
+    preview_file = project_root / "Content" / "Director" / "V051" / "Maps" / (asset + ".umap")
+    if original_file.is_symlink() or not original_file.is_file():
         raise RuntimeError("v03_source_map_missing")
-    if unreal.EditorAssetLibrary.does_asset_exist(stage):
+    if preview_file.is_symlink() or preview_file.exists():
         raise RuntimeError("exposure_stage_collision")
-    if not unreal.EditorAssetLibrary.make_directory(PREVIEW_MAP_DIR):
+    if (not unreal.EditorAssetLibrary.does_directory_exist(PREVIEW_MAP_DIR)
+            and not unreal.EditorAssetLibrary.make_directory(PREVIEW_MAP_DIR)):
         raise RuntimeError("exposure_stage_directory_failed")
     editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     if not editor or not editor.new_level_from_template(stage, V03_SOURCE_STAGE):
