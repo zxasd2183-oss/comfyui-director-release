@@ -1,0 +1,7 @@
+{
+  "archive_sha256": "02937ffd8fa2530c07291759a5ec0a3846426153a49d20c3b924a47662013402",
+  "archive_size": 9147,
+  "format": "director-ue-hub-signed-v1",
+  "signature": "6f8b6ae78d8b6209efe007c5a982cb3f3006e298d367907804faec6a5d915f0ce96ba46c43ad126459f6f3d965651d060f1170cded0bb71157426a607613d007",
+  "version": "0.7.0"
+}
