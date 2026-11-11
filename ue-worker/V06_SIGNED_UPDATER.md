@@ -23,13 +23,21 @@ rendering/exposure is fixed.
 5. The ZIP is restricted to an exact set of eight Worker .py files,
    rejects path traversal/symlinks/extra entries, syntax-checks each,
    and verifies `agent.py` declares the signed version.
-6. If a UE commandlet is active, **do not upgrade**. Otherwise, make an
+6. If a UE commandlet or (for V0.6+) an active Worker job is detected,
+   **do not upgrade**. Otherwise, make an
    admin-only backup, persist a rollback journal, stop only
    `Director-UE-Worker-V02`, replace the eight reviewed scripts,
    restart only that task and verify its real version over loopback.
 7. If the new Worker fails health validation, automatically restore the
    last healthy files and restart the Worker. A crash mid-update leaves
    the journal for recovery on the next scheduled run.
+
+After V0.6 is installed, the existing authenticated
+`get_ue_worker_status()` exposes a small `signed_update` status object,
+written by the privileged updater to the Worker-readable receipt. It
+reports whether a release was applied, already current, failed, or whether
+the first signed channel has not been published. Private keys and worker
+tokens are never included.
 
 No arbitrary PowerShell, caller-selectable URL, package filename, PID,
 filesystem path or executable may be supplied through ChatGPT/MCP.
