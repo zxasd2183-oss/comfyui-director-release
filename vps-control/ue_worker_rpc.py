@@ -239,3 +239,72 @@ def cancel_ue_job(job_id, opener=None, token_file=None):
         "/v3/jobs/" + job_id + "/cancel",
         "POST", None, opener, token_file,
     )
+
+
+# V0.5.2: exact one-frame image forwarding over the existing private SSH
+# tunnel. This is deliberately separate from bounded JSON job-status RPCs.
+PREVIEW_SHOTS = frozenset({"01", "13", "26", "31"})
+MAX_PREVIEW_PNG = 2 * 1024 * 1024
+PNG_HEADER = b"\x89PNG\r\n\x1a\n"
+
+
+def get_ue_preview_png(job_id, shot_id, opener=None, token_file=None):
+    """Return verified raw PNG bytes internally, never a filesystem path/URL."""
+    import hashlib
+    import struct
+
+    if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
+        return {"ok": False, "reason": "invalid_job_id"}
+    if not isinstance(shot_id, str) or shot_id not in PREVIEW_SHOTS:
+        return {"ok": False, "reason": "invalid_preview_shot"}
+    if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
+        return {"ok": False, "reason": "ue_worker_not_enabled"}
+    try:
+        token = load_token(token_file)
+        url = WORKER_ORIGIN + "/v5/jobs/" + job_id + "/previews/" + shot_id
+        request = urllib.request.Request(url, method="GET", headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "image/png",
+        })
+        with (opener or OPENER).open(request, timeout=15) as response:
+            if response.geturl() != url:
+                raise WorkerError("redirect_not_allowed")
+            if response.headers.get("Content-Type") != "image/png":
+                raise WorkerError("preview_mime_mismatch")
+            declared = response.headers.get("Content-Length")
+            if (declared is None or not declared.isdecimal()
+                    or not 2048 <= int(declared) <= MAX_PREVIEW_PNG):
+                raise WorkerError("preview_length_invalid")
+            expected_digest = response.headers.get("X-Director-PNG-SHA256")
+            if not isinstance(expected_digest, str) or not re.fullmatch(
+                r"[a-f0-9]{64}", expected_digest
+            ):
+                raise WorkerError("preview_digest_header_invalid")
+            data = response.read(MAX_PREVIEW_PNG + 1)
+        if len(data) != int(declared) or len(data) > MAX_PREVIEW_PNG:
+            raise WorkerError("preview_size_mismatch")
+        if (len(data) < 24 or data[:8] != PNG_HEADER
+                or data[12:16] != b"IHDR"
+                or struct.unpack(">II", data[16:24]) != (720, 1280)):
+            raise WorkerError("preview_png_invalid")
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != expected_digest:
+            raise WorkerError("preview_hash_mismatch")
+        return {"ok": True, "data": data, "sha256": digest,
+                "job_id": job_id, "shot_id": shot_id}
+    except urllib.error.HTTPError as exc:
+        try:
+            raw = exc.read(1025)
+            info = json.loads(raw)
+            if (len(raw) <= 1024 and type(info) is dict
+                    and info.get("ok") is False
+                    and type(info.get("reason")) is str
+                    and re.fullmatch(r"[a-z0-9_]{1,80}", info["reason"])):
+                return {"ok": False, "reason": info["reason"]}
+        except (OSError, ValueError, UnicodeError, TypeError):
+            pass
+        return {"ok": False, "reason": "preview_worker_http_error"}
+    except WorkerError as exc:
+        return {"ok": False, "reason": str(exc)}
+    except (OSError, ValueError, TypeError, urllib.error.URLError):
+        return {"ok": False, "reason": "ue_worker_unavailable"}
