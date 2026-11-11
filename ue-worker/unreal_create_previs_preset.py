@@ -18,6 +18,8 @@ ROOT = "/Game/Director/V04"
 PRESET_DIR = ROOT + "/Presets"
 V03_SOURCE_STAGE = "/Game/Director/V03/Maps/WaitingOffice_EP01_Stage"
 PREVIEW_MAP_DIR = "/Game/Director/V051/Maps"
+PRIVATE_CAMERA_ROOT = "/Game/Director/V071/ShotBindings"
+PROOF_SHOTS = ("01", "13", "26", "31")
 LIGHT_TARGETS = {
     "V03_Key_Light": (18000.0, 800.0),
     "V03_Fill_Light": (9000.0, 400.0),
@@ -105,6 +107,69 @@ def create_private_exposure_stage(job_id):
     return stage, changed, camera13
 
 
+def create_private_bound_sequences(job_id, actors):
+    """Bind a NEW camera-cut sequence to each actor in the CLONED level.
+
+    Original V03 possessable bindings refer to actors from another level.
+    Reusing them against a new map can silently fall back to a default
+    spectator camera. These four job-scoped sequences bind their own
+    possessables to the actual preview-map CineCameraActors.
+    """
+    directory = PRIVATE_CAMERA_ROOT + "/" + job_id
+    if unreal.EditorAssetLibrary.does_directory_exist(directory):
+        raise RuntimeError("preview_private_sequences_collision")
+    if not unreal.EditorAssetLibrary.make_directory(directory):
+        raise RuntimeError("preview_private_sequence_directory_failed")
+    tools = unreal.AssetToolsHelpers.get_asset_tools()
+    result = {}
+    used_actors = set()
+    for shot in PROOF_SHOTS:
+        label = "V03_CAM_SH" + shot
+        matching = [a for a in actors if a.get_actor_label() == label]
+        if len(matching) != 1:
+            raise RuntimeError("preview_camera_missing_or_duplicate_" + shot)
+        camera = matching[0]
+        if not camera.get_component_by_class(unreal.CineCameraComponent):
+            raise RuntimeError("preview_camera_component_missing_" + shot)
+        if id(camera) in used_actors:
+            raise RuntimeError("preview_camera_actor_reused_" + shot)
+        used_actors.add(id(camera))
+        name = "WaitingOffice_EP01_SH" + shot + "_V03"
+        path = directory + "/" + name
+        if unreal.EditorAssetLibrary.does_asset_exist(path):
+            raise RuntimeError("preview_private_sequence_collision_" + shot)
+        sequence = tools.create_asset(
+            asset_name=name, package_path=directory,
+            asset_class=unreal.LevelSequence,
+            factory=unreal.LevelSequenceFactoryNew()
+        )
+        if not sequence:
+            raise RuntimeError("preview_sequence_creation_failed_" + shot)
+        sequence.set_display_rate(unreal.FrameRate(numerator=24, denominator=1))
+        sequence.set_playback_start(0)
+        sequence.set_playback_end(3)
+        binding = unreal.MovieSceneSequenceExtensions.add_possessable(
+            sequence, camera
+        )
+        if not binding:
+            raise RuntimeError("preview_camera_possessable_failed_" + shot)
+        track = sequence.add_track(unreal.MovieSceneCameraCutTrack)
+        section = track.add_section()
+        section.set_range(0, 3)
+        binding_id = unreal.MovieSceneSequenceExtensions.get_binding_id(
+            sequence, binding
+        )
+        if not binding_id:
+            raise RuntimeError("preview_camera_binding_id_missing_" + shot)
+        section.set_camera_binding_id(binding_id)
+        if not unreal.EditorAssetLibrary.save_loaded_asset(sequence):
+            raise RuntimeError("preview_sequence_save_failed_" + shot)
+        result[shot] = path + "." + name
+    if set(result) != set(PROOF_SHOTS):
+        raise RuntimeError("preview_bound_sequence_count_mismatch")
+    return result
+
+
 def main():
     result_file = Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
     try:
@@ -150,11 +215,18 @@ def main():
             raise RuntimeError("preview_preset_save_failed")
         # Source V03.umap remains immutable; never apply light changes in place.
         map_path, light_levels, camera13 = create_private_exposure_stage(job_id)
+        # Only after cloned map has been saved, create NEW cut tracks pointing
+        # to the actor instances that live in the cloned map.
+        preview_actors = unreal.get_editor_subsystem(
+            unreal.EditorActorSubsystem
+        ).get_all_level_actors()
+        bound_sequences = create_private_bound_sequences(job_id, preview_actors)
         result = {"ok":True, "preset":asset_path + "." + asset_name,
                   "width":720,"height":1280,"frames_per_shot":1,
                   "stage_map":map_path, "source_map":V03_SOURCE_STAGE,
                   "light_intensities":light_levels,
-                  "camera13_reframe":camera13}
+                  "camera13_reframe":camera13,
+                  "bound_preview_sequences":bound_sequences}
     except Exception as exc:
         result = {"ok":False, "reason":str(exc)[:400],
                   "traceback":traceback.format_exc(limit=5)[-2000:]}
