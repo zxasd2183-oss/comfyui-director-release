@@ -49,7 +49,9 @@ def main():
                 raise RuntimeError("Browser compact + new tab button missing")
             if window._account_button26.text():
                 raise RuntimeError("Browser account icon still has clipped old label")
-            print("proxy visual", repr(window.proxy_label.text()),
+            safe_text = repr(window.proxy_label.text()).encode(
+                "ascii", "backslashreplace").decode("ascii")
+            print("proxy visual", safe_text,
                   "icon_null", window.proxy_label.icon().isNull(),
                   "shell_ready", window._chrome_ui33_ready,
                   flush=True)
