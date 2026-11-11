@@ -45,7 +45,10 @@ are pinned by source code.
 
 MRQ setup max 180 seconds and each of 4 one-frame renders max 180 seconds.
 The worker runs only one UE job at once and does **not** automatically retry
-failed renders. Timeout or missing/corrupt image fails the whole job with
+failed renders. A dedicated on-disk rate limiter allows **at most two V0.4
+preview attempts in any rolling 24-hour window**, including failed attempts.
+It survives the Worker restart and rejects corrupt budget files (fail-closed).
+Timeout or missing/corrupt image fails the whole job with
 its structured error code.
 
 ## Unreal 5.8 implementation
