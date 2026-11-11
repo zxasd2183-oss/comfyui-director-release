@@ -33,7 +33,10 @@ jobs:
       - name: Guard independent Windows/macOS signing version gates
         run: python -m unittest -v scripts/test_glacier_platform_versions.py
       - name: Verify macOS independent signing cannot downgrade or mutate Windows
-        run: python -m unittest -v scripts/test_glacier_macos_signed.py
+        run: |
+          ln -s . source
+          python -m unittest -v source/scripts/test_glacier_macos_signed.py
+          rm source
       - name: Compile desktop additions without publishing any build
         run: |
           python -m py_compile glacier-windows/glacier_chrome_ui30.py glacier-windows/glacier_site_diagnostic31.py glacier-windows/main.py glacier-macos/main.py
