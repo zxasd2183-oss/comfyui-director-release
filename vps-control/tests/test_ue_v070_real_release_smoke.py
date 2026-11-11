@@ -25,7 +25,7 @@ class ActualReleaseSmoke(unittest.TestCase):
             w=folder/"worker"
             h=folder/"hub"
             worker_signer.build_release("0.7.2", ROOT/"ue-worker", w, prv, pub)
-            hub_signer.sign("0.7.0", ROOT/"vps-control", h, prv, pub)
+            hub_signer.sign("0.7.1", ROOT/"vps-control", h, prv, pub)
             wdoc=worker_updater.verify_manifest(
                 (w/"channel.json").read_bytes(),pub)
             hdoc=hub_updater.verify_manifest(
@@ -34,7 +34,7 @@ class ActualReleaseSmoke(unittest.TestCase):
                 (w/"ue-worker-v0.7.2.zip").read_bytes(),wdoc)),
                 set(worker_updater.FILES))
             self.assertEqual(set(hub_updater.files_from_archive(
-                (h/"ue-hub-v0.7.0.zip").read_bytes(),hdoc)),
+                (h/"ue-hub-v0.7.1.zip").read_bytes(),hdoc)),
                 set(hub_updater.FILES))
             self.assertEqual(len(worker_updater.FILES),9)
             self.assertEqual(len(hub_updater.FILES),2)
