@@ -16,6 +16,8 @@ on:
       - 'scripts/test_glacier_windows_signed.py'
       - 'scripts/glacier_publish_signed_updates.py'
       - 'scripts/glacier_vps_mirror_gate.py'
+      - 'scripts/glacier_wait_windows_vps.py'
+      - 'scripts/test_glacier_wait_windows_vps.py'
 
 permissions:
   contents: write
@@ -29,7 +31,7 @@ concurrency:
 jobs:
   signed-windows-only:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 22
     steps:
       - name: Request existing OIDC VPS mirror immediately on a newly published Windows Release
         if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'glacier-v')
@@ -57,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'cryptography>=43,<47'
-          python -m unittest -v source/scripts/test_glacier_windows_signed.py source/scripts/test_glacier_signed_updates.py
+          python -m unittest -v source/scripts/test_glacier_windows_signed.py source/scripts/test_glacier_signed_updates.py source/scripts/test_glacier_wait_windows_vps.py
 
       - name: Fetch immutable published GitHub Releases
         env:
@@ -90,27 +92,23 @@ jobs:
               out.write('pending=' + str(pending).lower() + '\n')
           PY
 
-      - name: Independently GET and SHA256 verify complete VPS Windows installer
+      - name: Wait for VPS staging and independently verify entire Windows EXE
         id: vps_verified
-        if: steps.pending.outputs.pending == 'true'
+        # Pushing changes to CI tests must not hold a runner for the full
+        # readiness window. A real Release, dispatch or scheduled retry does.
+        if: steps.pending.outputs.pending == 'true' && github.event_name != 'push'
         env:
           GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
         run: |
           set -euo pipefail
-          # Never sign a release asset URL pointing to GitHub: the browser
-          # must download from the owner VPS, verified to exact immutable bytes.
-          python - <<'PY'
-          import json, os
-          from source.scripts.glacier_publish_windows_signed import newest_windows, make_windows_payload
-          from source.scripts.glacier_vps_mirror_gate import verify_installer
-          releases = json.load(open('releases.json', encoding='utf-8'))
-          version, release = newest_windows(releases)
-          payload = make_windows_payload(version, release)
-          verify_installer(payload['url'], payload['size'], payload['sha256'])
-          print('Independent VPS full-byte SHA256 verified: Windows v' + version)
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-              out.write('ready=1\n')
-          PY
+          # GitHub -> VPS OIDC is already queued on the Release path.
+          # Poll the PUBLIC owner VPS only; no token is stored on VPS.
+          # A 200 HEAD only indicates readiness. Full GET + SHA256 of
+          # the canonical immutable GitHub Release digest is mandatory.
+          python source/scripts/glacier_wait_windows_vps.py \
+            --releases releases.json \
+            --timeout-seconds 700 \
+            --poll-seconds 6
 
       - name: Generate and verify signed Windows-only manifest
         if: steps.pending.outputs.pending == 'true' && steps.vps_verified.outputs.ready == '1'
