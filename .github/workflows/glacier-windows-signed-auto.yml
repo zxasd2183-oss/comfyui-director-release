@@ -119,7 +119,7 @@ jobs:
           GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
         run: |
           set -euo pipefail
-          python source/scripts/glacier_publish_windows_signed.py releases.json feed/channels
+          python -m source.scripts.glacier_publish_windows_signed releases.json feed/channels
 
       - name: Publish ONLY Windows manifest, preserving signed macOS file
         if: steps.pending.outputs.pending == 'true' && steps.vps_verified.outputs.ready == '1'
