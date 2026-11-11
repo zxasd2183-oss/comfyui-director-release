@@ -1764,6 +1764,20 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void showReleaseNotes() {
+        // Concrete, user-visible changes, not an artificial version-number bump.
+        // This native dialog works without internet and without accessing secrets.
+        new AlertDialog.Builder(this)
+                .setTitle("Glacier · 本版更新内容")
+                .setMessage("• 重新设计浅色 Chrome 风格标签栏、地址栏与新标签快捷入口。\n\n"
+                        + "• 独立私人/工作空间；标签、书签、历史及下载记录恢复。\n\n"
+                        + "• 网站账号卡片、验证码接口和可选择的加密账号同步。\n\n"
+                        + "• 内置 VLESS/sing-box，代理故障拒绝静默直连。\n\n"
+                        + "• 正式版本检查下载前核对 SHA-256、包名与 APK 固定签名；安装仍由 Android 确认。")
+                .setPositiveButton("知道了",null)
+                .show();
+    }
+
     private void showBrowserMenu() {
         // CI-only native click receipt: proves the toolbar responds even when
         // a heavy Gecko page makes emulator UIAutomator traversal unreliable.
@@ -1779,6 +1793,7 @@ public final class MainActivity extends Activity {
         actions.add("历史记录");
         actions.add("下载记录");
         actions.add("更新与版本");
+        actions.add("本版新增与改动");
         actions.add("切换账号空间");
         actions.add("网站账号保险箱");
         actions.add("Glacier 统一账号与同步");
@@ -1815,6 +1830,8 @@ public final class MainActivity extends Activity {
                         showLibraryList("downloads",false);
                     } else if ("更新与版本".equals(item)) {
                         showUpdatePanel();
+                    } else if ("本版新增与改动".equals(item)) {
+                        showReleaseNotes();
                     } else if ("切换账号空间".equals(item)) {
                         chooseProfile();
                     } else if ("网站账号保险箱".equals(item)) {
