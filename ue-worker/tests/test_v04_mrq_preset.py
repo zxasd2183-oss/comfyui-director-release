@@ -109,6 +109,11 @@ class PreviewPresetTest(unittest.TestCase):
                 self.shot = shot
                 self.location=FakeVector(-420.0,345.0,225.0) if shot == "13" else FakeVector(-630,250,180)
                 self.rotation=None
+                self.props={}
+            def get_editor_property(self,name):
+                return self.props[name]
+            def set_editor_property(self,name,value):
+                self.props[name]=value
             def get_actor_label(self):
                 return "V03_CAM_SH" + self.shot
             def get_component_by_class(self,kind):
@@ -173,6 +178,12 @@ class PreviewPresetTest(unittest.TestCase):
             EditorActorSubsystem=type("EditorActorSubsystem",(),{}),
             PointLightComponent=type("PointLightComponent",(),{}),
             CineCameraComponent=type("CineCameraComponent",(),{}),
+            CameraFilmbackSettings=lambda sensor_width,sensor_height: types.SimpleNamespace(
+                sensor_width=sensor_width,sensor_height=sensor_height,
+            ),
+            PlateCropSettings=lambda aspect_ratio: types.SimpleNamespace(
+                aspect_ratio=aspect_ratio
+            ),
             Vector=FakeVector,
             MathLibrary=types.SimpleNamespace(
                 find_look_at_rotation=lambda start,target: ("look_at",start,target)
@@ -222,6 +233,27 @@ class PreviewPresetTest(unittest.TestCase):
             self.assertEqual(result["camera13_reframe"]["preview"],
                              [-860.0,345.0,225.0])
             self.assertEqual(original_file.read_bytes(), b"original-v03-map")
+            pose_expected = {
+                "01": ([-480.0,-335.0,235.0],[140.0,-45.0,115.0],20.0),
+                "13": ([-860.0,345.0,225.0],[-245.0,380.0,103.0],27.0),
+                "26": ([-250.0,80.0,230.0],[425.0,225.0,145.0],32.0),
+                "31": ([-735.0,250.0,235.0],[-245.0,380.0,103.0],28.0),
+            }
+            self.assertEqual(set(result["portrait_preview_cameras"]),set(pose_expected))
+            for shot, (location, focus, focal) in pose_expected.items():
+                camera = cameras[shot]
+                self.assertEqual([camera.location.x,camera.location.y,camera.location.z],location)
+                self.assertEqual(camera.rotation[0],"look_at")
+                self.assertEqual(camera.props["filmback"].sensor_width,13.5)
+                self.assertEqual(camera.props["filmback"].sensor_height,24.0)
+                self.assertEqual(camera.props["crop_settings"].aspect_ratio,0.0)
+                self.assertIs(camera.props["constrain_aspect_ratio"],True)
+                self.assertEqual(camera.props["current_focal_length"],focal)
+                receipt = result["portrait_preview_cameras"][shot]
+                self.assertEqual(receipt["location"],location)
+                self.assertEqual(receipt["look_at"],focus)
+                self.assertEqual(receipt["focal_mm"],focal)
+                self.assertEqual(receipt["sensor_mm"],[13.5,24.0])
             self.assertEqual(result["height"],1280)
             self.assertEqual(len(created),5)
             expected = {
