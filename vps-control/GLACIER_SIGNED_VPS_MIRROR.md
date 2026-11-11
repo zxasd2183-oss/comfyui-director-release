@@ -23,6 +23,42 @@ If the service user cannot write into the existing mirror directory, grant ONLY 
 
 The VPS may require outbound GitHub connectivity or an explicitly configured service proxy. The interactive `HTTPS_PROXY` for git does not automatically configure the systemd service. Set a drop-in with `Environment=HTTPS_PROXY=...` and `Environment=HTTP_PROXY=...` if needed; verify service-side DNS and connectivity before relying on the timer.
 
+## Independent Windows installer on owner VPS (v0.20.18 and later)
+
+The Windows installer mirror is **not held back** by the macOS release
+version. The existing `glacier-signed-mirror.service` now stages the newest
+canonical published Windows installer independently, checking exact GitHub
+Release asset size and SHA-256 and writing it atomically to the existing
+`/var/lib/glacier-preview-downloads` web directory. It then continues to
+process the paired releases and Ed25519-signed feeds as before. It needs no
+new Nginx route, firewall rule, sudoers permission, service unit, or GPU change.
+
+**One-time deployment to the already installed VPS:**
+
+```bash
+cd /home/ubuntu/comfyui-director-release
+HTTPS_PROXY=http://127.0.0.1:1081 HTTP_PROXY=http://127.0.0.1:1081 git pull --ff-only
+bash vps-control/stage-glacier-windows-v02018.sh
+```
+
+The verification script independently checks **175,907,184 bytes**, the
+canonical SHA-256
+`9292482af0f96d347363b332c664311efb774c2521d97631b86e7dbcce871371`,
+and the public HTTPS HEAD response (200/206). It refuses mismatches.
+
+After success, the Windows v0.20.18 installer is downloaded only from:
+
+`https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.18-Windows-Setup-x64.exe`
+
+This is an independently verified **manual VPS download**. Staging does not
+sign or edit `windows-x64.json`: until a separately approved Ed25519-signed
+Windows feed v0.20.18 is published, installed v0.20.16 clients must not
+automatically install the standalone release. Do not hand-edit either signed
+JSON or claim that VPS staging itself signs a browser update.
+
+When the VPS has pulled the new code, subsequent OIDC receiver events and the
+existing mirror timer use this Windows-only pre-staging automatically.
+
 ## Verification
 
 ```bash
