@@ -20,6 +20,7 @@ from pathlib import Path
 
 from ue_jobs import JobManager, JobError
 from ue_logs import log_tail
+from ue_preview_images import get_preview_png
 
 HOST = "127.0.0.1"
 PORT = 19010
@@ -110,7 +111,7 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
-        "worker_version": "0.5.1",
+        "worker_version": "0.5.2",
     }
 
 
@@ -122,6 +123,8 @@ def capabilities():
         "job_status_route": "/v2/jobs/<job_id>",
         "job_logs_route": "/v3/jobs/<job_id>/logs/<kind>",
         "job_cancel_route": "/v3/jobs/<job_id>/cancel",
+        "preview_image_route": "/v5/jobs/<job_id>/previews/<shot_id>",
+        "supports_preview_image_read": True,
         "supports_job_cancel": True,
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
@@ -144,7 +147,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/0.5.1"
+    server_version = "DirectorUEWorker/0.5.2"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -173,6 +176,23 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, status())
         elif self.path == "/v1/capabilities":
             self.send_json(200, capabilities())
+        elif re.fullmatch(r"/v5/jobs/[a-f0-9]{32}/previews/(?:01|13|26|31)", self.path):
+            parts = self.path.split("/")
+            try:
+                data, digest = get_preview_png(JOB_MANAGER, parts[3], parts[5])
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Disposition", "attachment")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Director-PNG-SHA256", digest)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except JobError as exc:
+                self.send_json(404, {"ok": False, "reason": str(exc)})
+            except OSError:
+                self.send_json(500, {"ok": False, "reason": "preview_image_unavailable"})
         elif re.fullmatch(r"/v2/jobs/[a-f0-9]{32}", self.path):
             try:
                 self.send_json(200, JOB_MANAGER.lookup(self.path.rsplit("/", 1)[-1]))
