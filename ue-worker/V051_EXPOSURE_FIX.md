@@ -5,8 +5,9 @@
 - V0.4 produced four real 720×1280 PNG files from UE 5.8 MRQ.
 - The original V0.3 stage has overbright point lights
   `V03_Key_Light=18000` and `V03_Fill_Light=9000`.
-- Shot 13 also has a camera distance/composition issue. Exposure repair does
-  not claim to solve that.
+- Shot 13 had a distinct camera-location error: its original 420cm
+  parameter placed the camera at (-420,345,225), only about 216cm from
+  the Zero stand-in at (-245,380,103).
 
 ## This patch
 
@@ -18,14 +19,21 @@
 3. In the NEW map only, find exactly one `V03_Key_Light` and one
    `V03_Fill_Light` and check expected original intensities before changing
    to `800` / `400`. If the source differs, fail without guessing.
-4. Save only the new map, then MRQ renders against its exact fixed path with
+4. In the same new map only, move the *single* labeled `V03_CAM_SH13`
+   camera from `(-420,345,225)` to `(-860,345,225)`, looking at the
+   unchanged Zero proxy `(-245,380,103)`. Verify that the original
+   camera pose matches before moving and that the new position persists.
+   This changes the distance to about 628cm, without editing the original
+   31 sequences or source map.
+5. Save only the new map, then MRQ renders against its exact fixed path with
    the existing 31 camera sequences, selecting the same four shots
    01/13/26/31.
-5. SHA-256 the source `V03.umap` before creation and again before and after
+6. SHA-256 the source `V03.umap` before creation and again before and after
    actual rendering. Any unexpected source mutation fails the receipt.
-6. The per-job receipt records the cloned preview map, source map digest,
-   light intensities and the original four PNGs + ZIP checksum.
-7. Remove the artificial `2 attempts per rolling 24h` hard cap. Still
+7. The per-job receipt records the cloned preview map, source map digest,
+   light intensities, corrected SH13 camera pose, and the original four
+   PNGs + ZIP checksum.
+8. Remove the artificial `2 attempts per rolling 24h` hard cap. Still
    enforce only one active job, fixed allowed scripts and shot IDs,
    per-process timeouts and no automatic retry.
 
@@ -48,7 +56,8 @@ solely because Unreal returns exit 0.
    tools continue working.
 5. Manually submit exactly one `enqueue_ue_previs_stills("WaitingOffice",
    "EP01")` job from the approved Director Studio shot plan.
-6. Inspect the resulting four PNGs. Check SH13 camera distance separately.
+6. Inspect the resulting four PNGs, including SH13 after camera
+   repositioning. A successful status/receipt does not prove visual framing.
    Confirm `source_stage_unchanged=true` and the source map SHA against the
    original source asset.
 7. Use `get_ue_job_logs` to investigate any failed UE runs and rerender as
