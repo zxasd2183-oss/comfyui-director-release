@@ -233,7 +233,7 @@ def run_previs(spec,root,work):
         "output_dir":str(output.relative_to(root)).replace("\\","/"),
         "screenshots":screenshots,
         "package": {
-            "relative_path":str(package.relative_to(root)).replace("\\\\","/"),
+            "relative_path":str(package.relative_to(root)).replace("\\","/"),
             "bytes":package.stat().st_size,
             "sha256":hashlib.sha256(package.read_bytes()).hexdigest(),
             "member_count":len(screenshots)+1,
