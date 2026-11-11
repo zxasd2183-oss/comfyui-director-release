@@ -8,6 +8,9 @@ on:
       - 'glacier-windows/secure_update.py'
       - 'glacier-windows/test_win_resume28.py'
       - '.github/workflows/glacier-windows-resume-regression.yml'
+  pull_request:
+    branches:
+      - fix/glacier-browser-windows-v0201-input
 permissions:
   contents: read
 jobs:
