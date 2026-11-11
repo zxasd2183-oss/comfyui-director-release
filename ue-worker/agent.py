@@ -110,7 +110,7 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
-        "worker_version": "0.5.0",
+        "worker_version": "0.6.0",
     }
 
 
@@ -144,7 +144,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/0.5"
+    server_version = "DirectorUEWorker/0.6"
     sys_version = ""
 
     def log_message(self, fmt, *args):
