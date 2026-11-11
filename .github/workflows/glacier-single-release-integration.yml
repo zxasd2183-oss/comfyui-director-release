@@ -7,6 +7,8 @@ on:
       - 'glacier-windows/**'
       - 'glacier-macos/**'
       - 'glacier-android-gecko/**'
+      - 'scripts/glacier_prepare_rotated_update.py'
+      - 'scripts/test_glacier_platform_versions.py'
       - '.github/workflows/glacier-single-release-integration.yml'
   workflow_dispatch:
 permissions:
