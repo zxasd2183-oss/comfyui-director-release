@@ -75,14 +75,16 @@ Network access to the fixed GitHub raw and release hosts is required.
 
 ### 3. Review and merge V0.6, then sign the first release
 
-The workflow `.github/workflows/ue-worker-signed-release.yml` runs
-*only from main* via a manual GitHub Actions `workflow_dispatch`
-with `version=0.6.0`. It refuses to sign if the code's declared Worker
-version differs or if the two signing keys mismatch. The step executes
-only the **trusted main-branch signer**, not a downloaded payload.
-It creates the immutable GitHub release ZIP, then advances the signed
-`ue-worker-updates/channel.json` only after all checks pass. Never
-overwrite release tags or old signed channels.
+The workflow `.github/workflows/ue-worker-signed-release.yml`
+**automatically runs after a successful UE Worker offline CI push run on
+main**, or can be invoked manually via GitHub Actions `workflow_dispatch`.
+It signs only the tested, reviewed main-branch code and derives the
+version from `agent.py`; an optional manual version must match.
+It refuses to sign if the Ed25519 credentials are missing/mismatched.
+If a signed version is already current, it does nothing.
+For a new version it creates the immutable GitHub release ZIP, then advances
+`ue-worker-updates/channel.json` only after all checks pass. It never
+overwrites release tags or old signed channels.
 
 A Windows updater that trusts the pinned public key will then
 automatically detect and apply 0.6.0 on its next check, provided no UE
