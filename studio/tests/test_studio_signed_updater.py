@@ -122,6 +122,28 @@ class SignedStudioTests(unittest.TestCase):
                                  updater.files_from_archive(self.zip,self.manifest))
         self.assertEqual(list(self.state.glob("backup-*")),[])
 
+    def test_live_studio_version_must_match_signed_release(self):
+        data={"ok":True,"audit_chain_verified":True,
+              "studio_code_version":"0.9.0",
+              "counts":{"projects":1,"episodes":1,"production_shots":31}}
+        class Reply:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*a):return False
+            def geturl(self):return "http://127.0.0.1:8900/api/v1/production"
+            def read(self,max_bytes):return json.dumps(data).encode("utf-8")
+        class Opener:
+            def open(self,request,timeout=0):
+                self_request=request.full_url
+                if self_request!="http://127.0.0.1:8900/api/v1/production":
+                    raise AssertionError("unexpected health URL")
+                return Reply()
+        with patch.object(updater.urllib.request,"build_opener",return_value=Opener()):
+            with self.assertRaisesRegex(updater.UpdateError,"studio_running_version_mismatch"):
+                updater.check_studio("0.10.0")
+            data["studio_code_version"]="0.10.0"
+            self.assertEqual(updater.check_studio("0.10.0")["production_shots"],31)
+
     def test_missing_or_unsafe_pinned_source_fails_build(self):
         (self.src/"studio_brain.py").unlink()
         with self.assertRaises(updater.UpdateError):
