@@ -325,6 +325,142 @@ def get_ue_preview_png(job_id, shot_id, opener=None, token_file=None):
         return {"ok": False, "reason": str(exc)}
     except (OSError, ValueError, TypeError, urllib.error.URLError):
         return {"ok": False, "reason": "ue_worker_unavailable"}
+# The public MCP bridge rejects responses larger than 1 MiB. A verified
+# 720x1280 PNG can exceed this once portrait pixels fill the full frame
+# (Base64 alone adds ~33%). Return an explicitly labeled VIEW thumbnail,
+# never alter the SHA-pinned original PNG on the RTX 4090.
+def make_bounded_preview_thumbnail_png(original):
+    """Safely decode fixed-size RGB/RGBA PNG and return a <=512KiB PNG.
+
+    No filesystem paths, shell, arbitrary URL, optional Pillow dependency,
+    or source asset edits. The call site MUST first run get_ue_preview_png,
+    which validates the authoritative Worker receipt SHA-256.
+    """
+    import binascii
+    import struct
+    import zlib
+
+    def fail():
+        raise WorkerError("preview_thumbnail_invalid_png")
+
+    if (type(original) is not bytes or
+            not 2048 <= len(original) <= MAX_PREVIEW_PNG or
+            not original.startswith(PNG_HEADER)):
+        fail()
+
+    pos = 8
+    chunks = 0
+    compressed = bytearray()
+    image_info = None
+    has_end = False
+    while pos + 12 <= len(original) and chunks < 128:
+        size = struct.unpack_from(">I", original, pos)[0]
+        kind = original[pos + 4:pos + 8]
+        end = pos + 12 + size
+        if size > MAX_PREVIEW_PNG or end > len(original):
+            fail()
+        body = original[pos + 8:pos + 8 + size]
+        crc = struct.unpack_from(">I", original, pos + 8 + size)[0]
+        if (binascii.crc32(kind + body) & 0xffffffff) != crc:
+            fail()
+        chunks += 1
+        if kind == b"IHDR":
+            if image_info is not None or chunks != 1 or size != 13:
+                fail()
+            w, h, depth, col, compression, filtering, interlace = struct.unpack(
+                ">IIBBBBB", body
+            )
+            if ((w, h) != (720, 1280) or depth != 8 or col not in (2, 6)
+                    or compression or filtering or interlace):
+                fail()
+            image_info = (w, h, 3 if col == 2 else 4, col)
+        elif kind == b"IDAT":
+            if image_info is None or has_end:
+                fail()
+            compressed.extend(body)
+            if len(compressed) > MAX_PREVIEW_PNG:
+                fail()
+        elif kind == b"IEND":
+            if size != 0 or image_info is None or not compressed or end != len(original):
+                fail()
+            has_end = True
+            break
+        elif kind in (b"PLTE", b"tRNS") or (kind[0] & 32) == 0:
+            # Fixed truecolor image: no palette or other unknown critical chunks.
+            fail()
+        pos = end
+    if not has_end or image_info is None:
+        fail()
+
+    width, height, channels, color_type = image_info
+    stride = width * channels
+    expected = height * (stride + 1)
+    decoder = zlib.decompressobj()
+    try:
+        raw = decoder.decompress(bytes(compressed), expected + 1)
+    except zlib.error as exc:
+        raise WorkerError("preview_thumbnail_bad_deflate") from exc
+    if (len(raw) != expected or not decoder.eof or decoder.unconsumed_tail
+            or decoder.unused_data):
+        fail()
+
+    rows = []
+    prev = bytearray(stride)
+    offset = 0
+    for _ in range(height):
+        method = raw[offset]
+        offset += 1
+        if method > 4:
+            fail()
+        row = bytearray(raw[offset:offset + stride])
+        offset += stride
+        for i in range(stride):
+            left = row[i - channels] if i >= channels else 0
+            up = prev[i]
+            ul = prev[i - channels] if i >= channels else 0
+            if method == 1:
+                predictor = left
+            elif method == 2:
+                predictor = up
+            elif method == 3:
+                predictor = (left + up) // 2
+            elif method == 4:
+                p = left + up - ul
+                a, b, c = abs(p - left), abs(p - up), abs(p - ul)
+                predictor = left if a <= b and a <= c else (up if b <= c else ul)
+            else:
+                predictor = 0
+            row[i] = (row[i] + predictor) & 0xff
+        rows.append(row)
+        prev = row
+
+    def png_chunk(kind, contents):
+        length = struct.pack(">I", len(contents))
+        crc = struct.pack(">I", binascii.crc32(kind + contents) & 0xffffffff)
+        return length + kind + contents + crc
+
+    # Source PNGs are 720x1280. 2x downsampling produces a useful
+    # 360x640 visual. If compression is unexpectedly poor, 4x is always
+    # below our conservative 512KiB MCP bridge budget even for RGBA noise.
+    for factor in (2, 4):
+        tw, th = width // factor, height // factor
+        scanlines = bytearray()
+        for y in range(0, height, factor):
+            row = rows[y]
+            scanlines.append(0)  # unfiltered output row
+            for x in range(0, width, factor):
+                at = x * channels
+                scanlines.extend(row[at:at + channels])
+        packed = zlib.compress(bytes(scanlines), level=6)
+        output = (PNG_HEADER +
+                  png_chunk(b"IHDR", struct.pack(
+                      ">IIBBBBB", tw, th, 8, color_type, 0, 0, 0
+                  )) + png_chunk(b"IDAT", packed) + png_chunk(b"IEND", b""))
+        if len(output) <= 512 * 1024:
+            return output
+    raise WorkerError("preview_thumbnail_bridge_budget_exceeded")
+
+
 # V0.6 signed update controls: caller cannot supply code, version or URL.
 def get_ue_signed_update_status(opener=None, token_file=None):
     return _v2_request("/v4/update/status", "GET", None, opener, token_file)

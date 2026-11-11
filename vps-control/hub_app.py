@@ -17,10 +17,11 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_job_logs as get_ue_job_logs_rpc,
                            cancel_ue_job as cancel_ue_job_rpc,
                            get_ue_preview_png as get_ue_preview_png_rpc,
+                           make_bounded_preview_thumbnail_png,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "0.7.0"
+UE_HUB_API_VERSION = "0.7.1"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -391,6 +392,26 @@ def get_ue_preview_image(job_id: str, shot_id: str):
     if not result.get("ok"):
         return {"ok": False, "reason": result.get("reason", "preview_unavailable")}
     return Image(data=result["data"], format="png")
+
+
+@app.tool(annotations=READ)
+def get_ue_preview_thumbnail(job_id: str, shot_id: str):
+    """View a verified UE PNG as a bounded 360x640/180x320 PNG thumbnail.
+
+    Original 720x1280 PNG is independently verified by the Windows
+    Worker SHA-256 receipt over the private SSH tunnel, but may exceed the
+    fixed 1MiB MCP JSON bridge after Base64 encoding. This is explicitly
+    a *viewing derivative*; it never alters or replaces the source PNG,
+    receipt, source Unreal asset or render job. Shots: 01, 13, 26, 31.
+    """
+    result = get_ue_preview_png_rpc(job_id, shot_id)
+    if not result.get("ok"):
+        return {"ok": False, "reason": result.get("reason", "preview_unavailable")}
+    try:
+        thumb = make_bounded_preview_thumbnail_png(result["data"])
+    except (RuntimeError, ValueError, TypeError, OSError):
+        return {"ok": False, "reason": "preview_thumbnail_unavailable"}
+    return Image(data=thumb, format="png")
 
 
 @app.tool(annotations=READ)
