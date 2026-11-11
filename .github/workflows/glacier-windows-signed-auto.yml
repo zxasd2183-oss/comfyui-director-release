@@ -1,0 +1,143 @@
+name: Glacier Windows independent signed VPS updates
+# Every published Windows Release eventually becomes a signed VPS-hosted
+# Windows channel after a complete byte-for-byte verification. Mac is not
+# modified and never blocks Windows. No static per-version commands.
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-windows-signed-auto.yml'
+      - 'scripts/glacier_publish_windows_signed.py'
+      - 'scripts/test_glacier_windows_signed.py'
+      - 'scripts/glacier_publish_signed_updates.py'
+      - 'scripts/glacier_vps_mirror_gate.py'
+
+permissions:
+  contents: write
+  actions: write
+
+# The dual-platform workflow shares this lock so no one can race a feed push.
+concurrency:
+  group: glacier-dual-signed-update-feed
+  cancel-in-progress: false
+
+jobs:
+  signed-windows-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout audited publisher from main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          path: source
+          persist-credentials: false
+
+      - name: Checkout existing immutable Ed25519 signed channels
+        uses: actions/checkout@v5
+        with:
+          ref: glacier-browser-updates-v2
+          path: feed
+          persist-credentials: true
+
+      - name: Run offline signed-release security regressions
+        run: |
+          set -euo pipefail
+          python -m pip install 'cryptography>=43,<47'
+          python -m unittest -v source/scripts/test_glacier_windows_signed.py source/scripts/test_glacier_signed_updates.py
+
+      - name: Fetch immutable published GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          test -s releases.json
+
+      - name: Check Windows-only signed channel version and canonical digest
+        id: pending
+        env:
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from source.scripts.glacier_publish_windows_signed import pending_windows, newest_windows
+          from source.scripts.glacier_publish_signed_updates import read_unique, verify_signed_doc
+          releases = json.load(open('releases.json', encoding='utf-8'))
+          previous = verify_signed_doc(read_unique('feed/channels/windows-x64.json'))
+          assert previous['channel'] == 'windows-x64'
+          pending = pending_windows(releases, 'feed/channels')
+          newest = newest_windows(releases)
+          print('Existing Windows signed version:', previous['version'])
+          print('Latest published Windows version:', newest[0] if newest else 'none')
+          print('Windows-only signing pending:', pending)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write('pending=' + str(pending).lower() + '\n')
+          PY
+
+      - name: Independently GET and SHA256 verify complete VPS Windows installer
+        id: vps_verified
+        if: steps.pending.outputs.pending == 'true'
+        env:
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          # Never sign a release asset URL pointing to GitHub: the browser
+          # must download from the owner VPS, verified to exact immutable bytes.
+          python - <<'PY'
+          import json, os
+          from source.scripts.glacier_publish_windows_signed import newest_windows, make_windows_payload
+          from source.scripts.glacier_vps_mirror_gate import verify_installer
+          releases = json.load(open('releases.json', encoding='utf-8'))
+          version, release = newest_windows(releases)
+          payload = make_windows_payload(version, release)
+          verify_installer(payload['url'], payload['size'], payload['sha256'])
+          print('Independent VPS full-byte SHA256 verified: Windows v' + version)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write('ready=1\n')
+          PY
+
+      - name: Generate and verify signed Windows-only manifest
+        if: steps.pending.outputs.pending == 'true' && steps.vps_verified.outputs.ready == '1'
+        env:
+          GLACIER_WINDOWS_VPS_VERIFIED: '1'
+          GLACIER_UPDATE_SIGNING_PRIVATE_HEX: ${{ secrets.GLACIER_UPDATE_SIGNING_PRIVATE_HEX }}
+          GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python source/scripts/glacier_publish_windows_signed.py releases.json feed/channels
+
+      - name: Publish ONLY Windows manifest, preserving signed macOS file
+        if: steps.pending.outputs.pending == 'true' && steps.vps_verified.outputs.ready == '1'
+        run: |
+          set -euo pipefail
+          cd feed
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add channels/windows-x64.json
+          if git diff --cached --quiet; then
+            echo "Windows signed feed already current; no new commit"
+            exit 0
+          fi
+          git diff --quiet -- channels/macos-arm64.json || {
+            echo "::error::Refusing unexpected macOS metadata mutation"
+            exit 1
+          }
+          git commit -m 'Publish Ed25519 signed Glacier Windows VPS-only update'
+          git push origin HEAD:glacier-browser-updates-v2
+
+      - name: OIDC notify existing VPS to atomically publish newly signed Windows feed
+        if: steps.pending.outputs.pending == 'true' && steps.vps_verified.outputs.ready == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo "Windows feed signed and VPS authenticated sync requested."
