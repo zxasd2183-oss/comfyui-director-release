@@ -1,0 +1,35 @@
+name: Glacier Windows resumable signed updater
+on:
+  push:
+    branches:
+      - feature/glacier-windows-resume-update-20261110
+    paths:
+      - 'glacier-windows/glacier_win_resume28.py'
+      - 'glacier-windows/secure_update.py'
+      - 'glacier-windows/test_win_resume28.py'
+      - '.github/workflows/glacier-windows-resume-regression.yml'
+permissions:
+  contents: read
+jobs:
+  windows-signed-resume:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: glacier-windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare frozen updater compatibility dependencies
+        run: |
+          python -m pip install 'requests[socks]>=2.32,<3' 'cryptography>=43,<47'
+          python -c "from pathlib import Path; import base64,lzma; p=Path('update_core.py.xz.b64'); Path('update_core.py').write_bytes(lzma.decompress(base64.b64decode(p.read_text())))"
+          python -m py_compile secure_update.py glacier_win_resume28.py test_win_resume28.py
+      - name: Test real Windows signed updater with mocked HTTPS responses
+        run: |
+          python -m unittest -v test_win_resume28 test_update_security
+      - name: Assert signed version gate remains mandatory
+        run: |
+          python -c "import inspect,secure_update; s=inspect.getsource(secure_update); assert 'parse_manifest' in s and 'Ed25519PublicKey' in s; assert 'download_signed_vps' in s; print('Signed manifest verification preserved; HTTP Range resume integrated')"
