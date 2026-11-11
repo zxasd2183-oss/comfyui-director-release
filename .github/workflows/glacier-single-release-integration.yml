@@ -43,7 +43,7 @@ jobs:
         run: python3 -m unittest -v scripts/test_glacier_final_release_workflow.py
       - name: Compile desktop additions without publishing any build
         run: |
-          python -m py_compile glacier-windows/glacier_chrome_ui30.py glacier-windows/glacier_site_diagnostic31.py glacier-windows/main.py glacier-macos/main.py
+          python -m py_compile glacier-windows/glacier_chrome_ui30.py glacier-windows/glacier_desktop_ui32.py glacier-windows/glacier_site_diagnostic31.py glacier-windows/main.py glacier-macos/main.py
           python -m py_compile glacier-windows/glacier_accounts22.py glacier-windows/glacier_sync23.py glacier-windows/glacier_account_center26.py
       - name: Compile macOS native sources (without publishing DMG)
         run: |
@@ -52,7 +52,7 @@ jobs:
         working-directory: glacier-windows
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m unittest -v test_chrome_ui30 test_site_diagnostic31 test_shell20 test_accounts22 test_account_center26 test_sync23
+        run: python -m unittest -v test_chrome_ui30 test_site_diagnostic31 test_desktop_ui32 test_shell20 test_accounts22 test_account_center26 test_sync23
   android-source:
     runs-on: ubuntu-24.04
     steps:
