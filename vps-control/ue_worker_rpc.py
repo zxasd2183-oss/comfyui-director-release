@@ -134,7 +134,8 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
     if not all(isinstance(v, str) and STUDIO_ID.fullmatch(v)
                for v in (project_id, episode_id)):
         return {"ok": False, "reason": "invalid_identifiers"}
-    if task not in ("build_episode_timeline", "build_stage_cameras"):
+    if task not in ("build_episode_timeline", "build_stage_cameras",
+                    "render_previs_stills"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -193,4 +194,19 @@ def enqueue_ue_stage_cameras(project_id, episode_id, studio_getter=None,
     return enqueue_ue_episode_timeline(
         project_id, episode_id, studio_getter=studio_getter,
         opener=opener, token_file=token_file, task="build_stage_cameras",
+    )
+
+
+def enqueue_ue_previs_stills(project_id, episode_id, studio_getter=None,
+                            opener=None, token_file=None):
+    """Render exactly four fixed PNG stills using V03 map and Studio shot plan.
+
+    Requires an existing V03 stage/cameras; consumes metered GPU time.
+    Clients cannot supply paths, shots, output settings or render scripts.
+    """
+    if (project_id, episode_id) != ("WaitingOffice", "EP01"):
+        return {"ok": False, "reason": "v04_previs_requires_locked_ep01"}
+    return enqueue_ue_episode_timeline(
+        project_id, episode_id, studio_getter=studio_getter,
+        opener=opener, token_file=token_file, task="render_previs_stills",
     )

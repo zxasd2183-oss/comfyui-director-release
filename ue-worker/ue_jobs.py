@@ -12,12 +12,13 @@ import re
 import subprocess
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 MAX_SHOTS = 150
 MAX_DURATION_MS = 30 * 60 * 1000
 FPS_ALLOWED = frozenset({24, 25, 30})
+PREVIEW_MAX_DAILY_ATTEMPTS = 2
 ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,47}$")
 SHOT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 PROJECT_NAME = "DirectorVirtualStudio"
@@ -37,7 +38,9 @@ def sanitized_plan(body):
         "task", "project_id", "episode_id", "fps", "shots", "expected_total_ms"
     }:
         raise JobError("invalid_fields")
-    if body["task"] not in ("build_episode_timeline", "build_stage_cameras"):
+    if body["task"] not in (
+        "build_episode_timeline", "build_stage_cameras", "render_previs_stills"
+    ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
     if (type(project_id) is not str or not ID.fullmatch(project_id) or
@@ -78,13 +81,20 @@ def sanitized_plan(body):
         raise JobError("timeline_total_mismatch")
     # The V0.3 stage recipe is FIXED to WaitingOffice EP01 and does not
     # modify V0.2 sequences or accept any user-authored scene/code paths.
-    if body["task"] == "build_stage_cameras":
+    if body["task"] in ("build_stage_cameras", "render_previs_stills"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
-            raise JobError("v03_stage_requires_locked_ep01")
-    fmt = ("director_ue_stage_v03" if body["task"] == "build_stage_cameras"
-           else "director_ue_timeline_v1")
+            raise JobError("previs_requires_locked_ep01")
+        if [s["shot_id"] for s in validated] != [
+            str(i).zfill(2) for i in range(1, 32)
+        ]:
+            raise JobError("previs_requires_frozen_shot_ids")
+    fmt = (
+        "director_ue_previs_v04" if body["task"] == "render_previs_stills"
+        else "director_ue_stage_v03" if body["task"] == "build_stage_cameras"
+        else "director_ue_timeline_v1"
+    )
     # This is a source-of-truth manifest built from Studio's registered shots.
     return {
         "format": fmt,
@@ -104,9 +114,18 @@ def ensure_project(root):
         "Description": "Director UE original automated production project",
         "Plugins": [{"Name": name, "Enabled": True} for name in KNOWN_PLUGINS],
     }
+    render_expected = dict(expected)
+    render_expected["Plugins"] = expected["Plugins"] + [
+        {"Name": "MovieRenderPipeline", "Enabled": True}
+    ]
     if project.exists():
-        if project.is_symlink() or project.read_text(encoding="utf-8") != (
-                json.dumps(expected, ensure_ascii=False, indent=2) + "\n"):
+        if project.is_symlink():
+            raise JobError("project_is_symlink")
+        try:
+            actual = json.loads(project.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError):
+            raise JobError("project_exists_not_managed_by_director") from None
+        if actual not in (expected, render_expected):
             raise JobError("project_exists_not_managed_by_director")
     else:
         project.write_text(
@@ -249,12 +268,54 @@ class JobManager:
             except (OSError, ValueError, TypeError):
                 continue
 
+    def _reserve_previs_attempt(self, job_id):
+        """Durable rate cap: at most 2 V04 previews in any rolling 24 hours.
+
+        Reservation is written before a new GPU task can start, and a failed
+        task still counts against the budget (no retry storms). Budget file
+        survives process restart independently of the 64-job status cache.
+        """
+        root = self._state_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        budget = root / "preview_budget_v04.json"
+        if budget.is_symlink():
+            raise JobError("preview_budget_store_invalid")
+        stamp = datetime.now(timezone.utc)
+        attempts = []
+        if budget.exists():
+            try:
+                blob = json.loads(budget.read_text(encoding="utf-8"))
+                if not isinstance(blob, dict) or type(blob.get("attempts")) is not list:
+                    raise ValueError("malformed preview budget")
+                for entry in blob["attempts"]:
+                    if (type(entry) is not dict or
+                            not re.fullmatch("[a-f0-9]{32}", entry["job_id"])):
+                        raise ValueError("malformed preview budget record")
+                    instant = datetime.fromisoformat(entry["at"])
+                    if instant.tzinfo is None:
+                        raise ValueError("naive preview timestamp")
+                    if instant > stamp + timedelta(minutes=2):
+                        raise ValueError("future preview timestamp")
+                    if stamp - instant < timedelta(hours=24):
+                        attempts.append(entry)
+            except (KeyError, TypeError, ValueError, OSError):
+                raise JobError("preview_budget_store_invalid") from None
+        if len(attempts) >= PREVIEW_MAX_DAILY_ATTEMPTS:
+            raise JobError("preview_daily_limit_reached")
+        attempts.append({"job_id": job_id, "at": stamp.isoformat()})
+        temp = root / ("preview_budget_" + job_id + ".pending")
+        temp.write_text(json.dumps({"attempts": attempts}, ensure_ascii=False),
+                        encoding="utf-8")
+        temp.replace(budget)
+
     def submit(self, body):
         spec = sanitized_plan(body)
         with self.lock:
             if self.active is not None:
                 raise JobError("ue_worker_busy")
             job_id = uuid.uuid4().hex
+            if spec["format"] == "director_ue_previs_v04":
+                self._reserve_previs_attempt(job_id)
             entry = {
                 "ok": True, "job_id": job_id,
                 "state": "queued", "task": body["task"],
@@ -286,7 +347,13 @@ class JobManager:
         try:
             root = self.root_factory()
             work = root / "Jobs" / job_id
-            result = self.runner(spec, root, work)
+            if spec["format"] == "director_ue_previs_v04":
+                from ue_previs import run_previs
+                # Preview uses a separate, fixed render pipeline and strict
+                # output receipt, never the legacy commandlet path.
+                result = run_previs(spec, root, work)
+            else:
+                result = self.runner(spec, root, work)
             outcome = {"state": "succeeded", "result": result}
         except JobError as exc:
             outcome = {"state": "failed", "reason": str(exc)}
