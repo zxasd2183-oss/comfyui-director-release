@@ -24,8 +24,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install signed release verifier dependency
+        run: python -m pip install 'cryptography>=43,<47'
       - name: Compile
-        run: python -m py_compile ue-worker/agent.py ue-worker/ue_jobs.py ue-worker/unreal_build_episode.py ue-worker/unreal_build_stage.py ue-worker/ue_previs.py ue-worker/ue_process.py ue-worker/ue_logs.py ue-worker/unreal_create_previs_preset.py vps-control/ue_worker_rpc.py vps-control/hub_app.py
+        run: python -m py_compile ue-worker/agent.py ue-worker/ue_jobs.py ue-worker/unreal_build_episode.py ue-worker/unreal_build_stage.py ue-worker/ue_previs.py ue-worker/ue_process.py ue-worker/ue_logs.py ue-worker/ue_signed_updater.py ue-worker/ue_sign_release.py ue-worker/unreal_create_previs_preset.py vps-control/ue_worker_rpc.py vps-control/hub_app.py
       - name: Test Windows worker API without GPU
         run: python -m unittest discover -s ue-worker/tests -p "test_*.py" -v
       - name: Test private VPS adapter
@@ -38,7 +40,7 @@ jobs:
       - name: Verify Windows PowerShell bootstrap syntax
         shell: pwsh
         run: |
-          foreach ($path in @("ue-worker/WindowsBootstrap.ps1", "ue-worker/install-v02.ps1", "ue-worker/install-v03.ps1", "ue-worker/install-v04.ps1", "ue-worker/install-v05.ps1")) {
+          foreach ($path in @("ue-worker/WindowsBootstrap.ps1", "ue-worker/install-v02.ps1", "ue-worker/install-v03.ps1", "ue-worker/install-v04.ps1", "ue-worker/install-v05.ps1", "ue-worker/install-signed-updater.ps1")) {
             $tokens = $null
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
