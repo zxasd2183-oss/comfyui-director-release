@@ -1,0 +1,53 @@
+name: Glacier one-time immediate signed VPS feed promotion
+# Release events created by GITHUB_TOKEN do not start other workflows.
+# Workflow-dispatch is explicitly permitted and runs existing trusted signers.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-final-feed-kick.yml'
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch-pinned-signed-feeds:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Ensure all THREE canonical releases are public and byte-verified
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          expected=[
+             (441442325,'glacier-v0.20.20',
+              'GlacierBrowser-v0.20.20-Windows-Setup-x64.exe',
+              '05c103895d2ecf5634046b63b928b4857309b7a81c2c5214860a679a8ea68654'),
+             (441442444,'glacier-macos-v0.20.17',
+              'GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg',
+              '3ab7a17518f84bdf36230530d8be77cfaaa4c1802e12de7c24f76f58d26e7810'),
+             (441442639,'glacier-android-browser-v0.2.3',
+              'GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk',
+              '0408635edaf5bdad5c7bb4145609253959d2e99825fe4fd7af1291f36588070e'),
+          ]
+          for release_id,tag,filename,digest in expected:
+              r=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{release_id}']))
+              a=r.get('assets',[])
+              if (r.get('draft') or r.get('prerelease')
+                  or not r.get('published_at') or r.get('tag_name')!=tag
+                  or len(a)!=1 or a[0].get('name')!=filename
+                  or a[0].get('digest')!='sha256:'+digest):
+                  raise RuntimeError('Glacier final release incomplete or changed: '+tag)
+              print(tag,'public canonical digest verified')
+          PY
+      - name: Dispatch approved VPS OIDC sync and independent Windows/macOS v2 signers
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh workflow run glacier-macos-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Glacier v0.20.20 Windows + v0.20.17 macOS signed-feed verification dispatched. Original Ed25519 publisher refuses rollback/same-version overwrite.' >> "$GITHUB_STEP_SUMMARY"
