@@ -1,6 +1,8 @@
 # Director UE Worker V0.6 — signed unattended upgrades
 
 **Status:** implementation in PR; NOT yet installed or running on Windows.
+ChatGPT currently sees the installed 0.5.0 Worker, not these proposed
+V0.6 tools. Code+CI completion must not be described as live deployment.
 The production Worker continues to report V0.4.0 until the Windows/VPS
 operator deploys a subsequent release. This PR does not claim that GPU
 rendering/exposure is fixed.
@@ -38,6 +40,33 @@ written by the privileged updater to the Worker-readable receipt. It
 reports whether a release was applied, already current, failed, or whether
 the first signed channel has not been published. Private keys and worker
 tokens are never included.
+
+## Direct ChatGPT / Director Hub controls
+
+Once V0.6 is actually deployed and the existing Hub is refreshed,
+the following two new MCP tools become available (total Hub tool count
+increases by two):
+
+- `get_ue_signed_update_status()` — read the last signed-updater
+  receipt and a pending check request. The previous
+  `get_ue_worker_status()` also reports `signed_update`.
+- `request_ue_signed_update()` — **only queue one idempotent
+  request for the NEXT scheduled updater poll** (up to five minutes).
+  Request fields contain no version, URL, script, PID, or executable.
+  Returns `pending_next_signed_poll` plus a request ID, NOT proof of
+  installation. If the privileged updater has not been bootstrapped
+  and produced a heartbeat, it fails closed with
+  `signed_updater_not_ready` and creates no request.
+
+The SYSTEM updater continues to check signed releases automatically,
+even without a request. After each check it writes a sanitized outcome,
+including the associated request ID, and acknowledges a completed request.
+A transient failure leaves a request pending for the next scheduled check.
+The signed update is verified independently of this unprivileged trigger.
+
+The original Hub routes for UE jobs, job logs and cancellation remain
+unchanged. Deployment of the **Hub** code still requires an authenticated
+VPS rollout; the Windows signed updater does not change VPS services.
 
 No arbitrary PowerShell, caller-selectable URL, package filename, PID,
 filesystem path or executable may be supplied through ChatGPT/MCP.
