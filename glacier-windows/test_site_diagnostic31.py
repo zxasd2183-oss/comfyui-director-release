@@ -90,6 +90,16 @@ class ProbeTests31(unittest.TestCase):
             self.assertNotIn("private", result.message)
             self.assertNotIn("secret", result.message)
 
+    def test_windows_proxy_is_locked_before_qt_initializes(self):
+        from pathlib import Path
+        source = (Path(__file__).parent / "main.py").read_text(encoding="utf-8")
+        entry = source.split("def main():", 1)[1]
+        flags = entry.index('os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]')
+        startup = entry.index("app=QApplication(sys.argv)")
+        self.assertLess(flags, startup)
+        self.assertIn("--proxy-server=socks5://127.0.0.1:", entry[flags:startup])
+        self.assertIn("--disable-quic", entry[flags:startup])
+
     def test_probe_not_triggered_until_user_action(self):
         class Host(GlacierSiteDiagnostic31, QMainWindow):
             proxy_port = 1080
