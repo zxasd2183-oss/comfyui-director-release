@@ -82,6 +82,39 @@ What the script actually does:
 optionally VPS root. A ChatGPT plugin's "full access" permission cannot
 grant those machine privileges. Do not paste the signing private key to chat.
 
+## If Windows updater is ALREADY installed
+
+Do **not** rerun `setup-signed-auto-updates-once.ps1`; it is intentionally
+non-idempotent and refuses to replace an installed SYSTEM updater. On the
+RTX 4090 host the existing Windows signed updater has already been verified
+with a `no_signed_channel` receipt and a working V0.5.2 Worker.
+
+Configure **only** VPS through the separate reviewed script, from an elevated
+PowerShell console in the current integration checkout:
+
+```powershell
+.\ue-worker\bootstrap-vps-updater-only.ps1 -VpsSshTarget "YOUR_SSH_USER@YOUR_VPS_SSH_HOST"
+```
+
+The script reads the existing local pinned **PUBLIC** key, copies only two
+reviewed bootstrap files over the pre-existing SSH trust, uses sudo for the
+one-time root installation, verifies the timer, and does **not** regenerate
+or rotate a signing identity, request GitHub OAuth, touch Windows tasks, or
+render new PNGs. The VPS Python environment must already import cryptography.
+
+**PowerShell 5.1 corrections committed to source:** GitHub CLI stderr no
+longer becomes a terminating PowerShell error; paths with spaces are passed
+as separate argv elements; key generation is executed from a temporary
+`.py` script rather than multi-line `-c`; the Windows task is registered
+with the Task Scheduler PowerShell cmdlets (proper quoted executable/script
+paths and bounded ten-year repeat period). GitHub Actions now checks these
+with Windows PowerShell **5.1** as well as `pwsh`.
+
+If the VPS has no known SSH user/host, use its already authorized operator
+console to execute `vps-control/install-ue-hub-signed-updater.sh` after
+transferring the script and updater module, with only the matching
+**public key** argument; do not send passwords, PATs or private keys to chat.
+
 ## First signed V0.7.0 release
 
 After the one-time trust step, merge the reviewed entire dependency chain to
