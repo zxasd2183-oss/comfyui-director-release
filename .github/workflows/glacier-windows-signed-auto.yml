@@ -106,7 +106,7 @@ jobs:
           # Poll the PUBLIC owner VPS only; no token is stored on VPS.
           # A 200 HEAD only indicates readiness. Full GET + SHA256 of
           # the canonical immutable GitHub Release digest is mandatory.
-          python source/scripts/glacier_wait_windows_vps.py \
+          python -m source.scripts.glacier_wait_windows_vps \
             --releases releases.json \
             --timeout-seconds 700 \
             --poll-seconds 6
