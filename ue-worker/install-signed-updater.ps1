@@ -88,11 +88,16 @@ if (Test-Path -LiteralPath $installedPath) {
 }
 Copy-Item -LiteralPath $source -Destination (Join-Path $updaterDir 'ue_signed_updater.py') -ErrorAction Stop
 
-$actionText = '"{0}" "{1}"' -f $python, (Join-Path $updaterDir 'ue_signed_updater.py')
-& schtasks.exe /Create /SC MINUTE /MO 5 /TN $taskName /TR $actionText /RU SYSTEM /RL HIGHEST | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw 'Unable to register privileged updater task.'
-}
+# schtasks /TR loses quotes on paths with spaces under Windows
+# PowerShell 5.1; Task Scheduler XML via Register-ScheduledTask is safer.
+# Do not use TimeSpan::MaxValue for RepetitionDuration: Task Scheduler
+# rejects the resulting P99999999DT... XML. Ten years is a bounded term.
+$script = Join-Path $updaterDir 'ue_signed_updater.py'
+$action = New-ScheduledTaskAction -Execute $python -Argument ('"' + $script + '"') -WorkingDirectory $updaterDir
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 4)
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -ErrorAction Stop | Out-Null
 $registered = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
 if ([string]$registered.Principal.UserId -notmatch '(?i)SYSTEM|S-1-5-18') {
     throw 'Updater task principal is not SYSTEM.'
