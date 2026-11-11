@@ -378,6 +378,10 @@ class GlacierChromeShell33:
                                 ";font-size:18px;border:none;}")
             proxy.setFixedWidth(25)
         elif proxy is not None:
+            # Old background connectivity probes must not overwrite the icon
+            # with an arbitrary Unicode glyph after Chrome UI initialization.
+            if hasattr(proxy, "_glacier_icon_only33"):
+                proxy._glacier_icon_only33 = True
             proxy.setMinimumWidth(30)
             proxy.setMaximumWidth(30)
 
