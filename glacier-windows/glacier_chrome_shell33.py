@@ -97,6 +97,12 @@ QPushButton#GlacierProxyHealth29 {
     background: transparent; border: none; color: #5f6368;
     font-size: 17px; min-height: 30px; max-width: 32px; padding: 0;
 }
+QToolButton#GlacierProxyVisual33 {
+    background: transparent; border: none; border-radius: 16px;
+    padding: 0; min-width: 32px; max-width: 32px;
+    min-height: 32px; max-height: 32px;
+}
+QToolButton#GlacierProxyVisual33:hover { background: #e8eaed; }
 QLabel#GlacierProxyMac32 {
     background: transparent; border: none; color: #5f6368;
     font-size: 15px; min-width: 19px; max-width: 24px;
@@ -378,12 +384,28 @@ class GlacierChromeShell33:
                                 ";font-size:18px;border:none;}")
             proxy.setFixedWidth(25)
         elif proxy is not None:
-            # Old background connectivity probes must not overwrite the icon
-            # with an arbitrary Unicode glyph after Chrome UI initialization.
-            if hasattr(proxy, "_glacier_icon_only33"):
-                proxy._glacier_icon_only33 = True
-            proxy.setMinimumWidth(30)
-            proxy.setMaximumWidth(30)
+            # Connection probes inherited from older modules can still write
+            # directly into this legacy QPushButton after UI initialization.
+            # Preserve that original button and its callbacks, but never paint
+            # its diagnostic text in the new Chrome navigation.
+            old_position = nav.indexOf(proxy)
+            if old_position < 0:
+                raise RuntimeError("Missing legacy local proxy status control")
+            indicator = QToolButton(surface)
+            indicator.setObjectName("GlacierProxyVisual33")
+            indicator.setAutoRaise(True)
+            indicator.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            indicator.setFixedSize(32, 32)
+            indicator.setIcon(proxy_icon33(False))
+            indicator.setIconSize(QSize(24, 24))
+            indicator.setToolTip(proxy.toolTip() or "本地 VLESS 状态 · 点击重连")
+            indicator.setAccessibleName("本地 VLESS 状态与重连")
+            indicator.clicked.connect(proxy.click)
+            nav.removeWidget(proxy)
+            proxy.hide()
+            nav.insertWidget(old_position, indicator)
+            indicator.show()
+            self._proxy_visual33 = indicator
 
         # The Chrome menu owns rarely used options; no separate '工具 ▾'
         # permanently squeezes the address bar. Keep old handlers accessible.
