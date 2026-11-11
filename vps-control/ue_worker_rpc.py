@@ -245,7 +245,7 @@ def cancel_ue_job(job_id, opener=None, token_file=None):
 # tunnel. This is deliberately separate from bounded JSON job-status RPCs.
 PREVIEW_SHOTS = frozenset({"01", "13", "26", "31"})
 MAX_PREVIEW_PNG = 2 * 1024 * 1024
-PNG_HEADER = b"\\x89PNG\\r\\n\\x1a\\n"
+PNG_HEADER = b"\x89PNG\r\n\x1a\n"
 
 
 def get_ue_preview_png(job_id, shot_id, opener=None, token_file=None):
