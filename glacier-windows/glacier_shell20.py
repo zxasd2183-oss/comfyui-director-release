@@ -236,6 +236,39 @@ a{color:inherit;text-decoration:none}
 </main></body></html>"""
 
 
+def ensure_offline_home_file(directory, html):
+    """Write only our static script-free homepage for a local WebEngine fallback.
+
+    A file URL needs no network and avoids the data: URL renderer path on
+    Windows QtWebEngine. No credentials, proxy links or user state are stored.
+    """
+    import os
+    import tempfile
+    from pathlib import Path
+
+    base = Path(directory)
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / "glacier-offline-home-v34.html"
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise PermissionError("Unsafe local Glacier homepage path")
+    payload = html.encode("utf-8")
+    if len(payload) > 200000 or b"<script" in payload.lower():
+        raise ValueError("Untrusted or oversized Glacier homepage")
+    if path.is_file() and path.read_bytes() == payload:
+        return path
+    fd, tmp = tempfile.mkstemp(prefix=".glacier-home-", dir=base)
+    try:
+        os.fchmod(fd, 0o600) if hasattr(os, "fchmod") else None
+        with os.fdopen(fd, "wb") as out:
+            out.write(payload)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    return path
+
+
 class GlacierShell20:
     """A single compact tool hub on top of the unchanged functional modules."""
 
