@@ -283,7 +283,7 @@ def _latest_release_for(channel, expected_version=None):
     prefix, _ = PLATFORMS[channel]
     pattern = re.compile(
         r"^" + re.escape(prefix) +
-        r"((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))$"
+        r"((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$"
     )
     versions = {}
     for release in releases:
