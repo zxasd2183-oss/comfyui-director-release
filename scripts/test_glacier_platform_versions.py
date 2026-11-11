@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from glacier_prepare_rotated_update import PLATFORM_VERSIONS, prepare
+from scripts.glacier_prepare_rotated_update import PLATFORM_VERSIONS, prepare
 
 PUBLIC = "02" * 32
 
