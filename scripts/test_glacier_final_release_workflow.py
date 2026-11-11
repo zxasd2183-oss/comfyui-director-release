@@ -12,7 +12,7 @@ class GlacierOneReleaseWorkflow(unittest.TestCase):
             'GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg',
             'GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk',
             'GlacierAndroid-v0.2.3-STABLE-SIGNED-RC-NOT-PUBLISHED',
-            'EXPECTED_CERT_PIN', 'apksigner', 'libxul.so', 'libsingbox.so',
+            'GH_ANDROID_CERT_PIN', 'GLACIER_APKSIGNER', 'libxul.so', 'libsingbox.so',
             "versionCode='12'", "versionName='0.2.3'",
         ):
             self.assertIn(item, SRC)
@@ -23,7 +23,6 @@ class GlacierOneReleaseWorkflow(unittest.TestCase):
         self.assertIn('cancel-in-progress: false',SRC)
         self.assertIn('branches: [main]',SRC)
         self.assertIn('if gh release view',SRC)
-        self.assertIn('git','git')
         self.assertIn("unchanged=subprocess.run(['git','diff','--quiet'",SRC)
 
 if __name__ == "__main__":
