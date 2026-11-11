@@ -182,7 +182,7 @@ class GlacierChromeUI30:
             # with consistent native-resolution icons in the new omnibox.
             from glacier_chrome_shell33 import shell_icon33
             self._site_button30.setIcon(
-                shell_icon33("insecure" if url.scheme().lower() == "http" else "site"))
+                shell_icon33("secure" if site else ("insecure" if url.scheme().lower() == "http" else "site")))
             self._site_button30.setIconSize(QSize(18, 18))
             self._site_button30.setText("")
 
