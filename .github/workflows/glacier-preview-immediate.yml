@@ -86,23 +86,41 @@ jobs:
 
       - name: Confirm both VPS channels match their canonical signed metadata
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, time, urllib.request
+          import base64, json, os, time, urllib.request
           root="https://sync.borealos.cn/downloads/"
-          origin=("https://raw.githubusercontent.com/zxasd2183-oss/"
-                  "comfyui-director-release/glacier-browser-updates-v2/channels/")
+          api="https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/"
+          headers={
+              "Authorization":"Bearer "+os.environ["GH_TOKEN"],
+              "Accept":"application/vnd.github+json",
+              "User-Agent":"Glacier-VPS-Signed-Channel-Check/1",
+              "Cache-Control":"no-cache",
+              "Pragma":"no-cache",
+          }
+          def github_doc(url):
+              with urllib.request.urlopen(
+                  urllib.request.Request(url,headers=headers), timeout=20
+              ) as reply:
+                  return json.load(reply)
+          # First pin the immutable HEAD SHA of the signed feed branch,
+          # then fetch each file from that SHA through GitHub's REST API.
+          # The raw CDN has been seen returning an older v0.20.18 manifest
+          # after the Ed25519 publisher committed v0.20.19.
+          branch_sha=github_doc(
+              api+"git/ref/heads/glacier-browser-updates-v2")["object"]["sha"]
+          print("Signed channel source pinned to commit",branch_sha[:12])
           for channel, suffix in (("windows-x64","Windows-Setup-x64.exe"),
                                   ("macos-arm64","macOS-AppleSilicon.dmg")):
-              # Cache bust BOTH sides. A stale GitHub raw CDN response must
-              # not turn a v0.20.19 sync into a false-success v0.20.18 check.
-              q="?nonce="+str(time.time_ns())
-              canonical_req=urllib.request.Request(
-                  origin+channel+".json"+q,
-                  headers={"Cache-Control":"no-cache","Pragma":"no-cache"})
-              with urllib.request.urlopen(canonical_req,timeout=18) as f:
-                  canonical=json.load(f)
+              doc=github_doc(api+"contents/channels/"+channel+
+                  ".json?ref="+branch_sha)
+              if doc.get("encoding")!="base64":
+                  raise RuntimeError("GitHub signed JSON encoding is unexpected")
+              blob=base64.b64decode(doc["content"].replace("\n",""),validate=True)
+              canonical=json.loads(blob.decode("utf-8"))
               for attempt in range(8):
                   live_req=urllib.request.Request(
                       root+channel+".json?nonce="+str(time.time_ns()),
