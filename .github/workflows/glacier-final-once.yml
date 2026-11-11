@@ -1,0 +1,185 @@
+name: Glacier FINAL one-time verified 3-platform release
+# Publish only upon the controlled merge of THIS new workflow onto main.
+# An existing canonical tag/Release immediately blocks all further writes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-final-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: glacier-three-platform-one-time-release
+  cancel-in-progress: false
+
+jobs:
+  one-final-release:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+      GH_ANDROID_CERT_PIN: ${{ vars.GLACIER_ANDROID_CERT_SHA256 }}
+      WINDOWS_RUN: '42978496121'
+      MAC_RUN: '42978270136'
+      ANDROID_RUN: '42989730306'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require 3 successful original QA runs and UNCHANGED app source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          branch='integration/glacier-browser-release-candidate-20261111'
+          runs=[('Windows','WINDOWS_RUN','glacier-windows/'),
+                ('macOS','MAC_RUN','glacier-macos/'),
+                ('Android','ANDROID_RUN','glacier-android-gecko/')]
+          for name,envvar,client in runs:
+              run=os.environ[envvar]
+              doc=json.loads(subprocess.check_output(['gh','api',
+                  f'repos/{repo}/actions/runs/{run}']))
+              if (doc.get('status')!='completed' or doc.get('conclusion')!='success'
+                  or doc.get('head_branch')!=branch
+                  or doc.get('repository',{}).get('full_name')!=repo):
+                  raise RuntimeError(name+' source tests not successful/expected')
+              sha=doc['head_sha']
+              subprocess.run(['git','merge-base','--is-ancestor',sha,'HEAD'],check=True)
+              unchanged=subprocess.run(['git','diff','--quiet',sha,'HEAD','--',client])
+              if unchanged.returncode!=0:
+                  raise RuntimeError(name+' client changed since actual QA')
+              if name=='macOS':
+                  shared=subprocess.check_output(['git','diff','--name-only',sha,
+                      'HEAD','--','glacier-windows/'],text=True).splitlines()
+                  if any(not p.split('/')[-1].startswith('test_') for p in shared):
+                      raise RuntimeError('Shared macOS/Windows client files changed after DMG QA')
+              print(name,'success, source is unchanged since tested installer')
+          expected='6d8fb8a4b3dd90427ff2f7959394df4b73f37c117a7d1d2e983bde0f10a1ff4e'
+          if os.environ['GH_ANDROID_CERT_PIN'].lower()!=expected:
+              raise RuntimeError('Android production signing certificate pin changed')
+          PY
+      - name: Enforce NEVER reusing three immutable public Release tags
+        run: |
+          set -euo pipefail
+          for tag in glacier-v0.20.20 glacier-macos-v0.20.17 glacier-android-browser-v0.2.3; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::Existing Release tag $tag must not be overwritten"; exit 3
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::Existing git tag $tag must not be reused"; exit 3
+            fi
+          done
+      - name: Download only the three specific SUCCESSFUL CI artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p staged/windows staged/macos staged/android
+          gh run download "$WINDOWS_RUN" --repo "$GITHUB_REPOSITORY" --name GlacierBrowser-RC-Windows-Setup --dir staged/windows
+          gh run download "$MAC_RUN" --repo "$GITHUB_REPOSITORY" --name GlacierBrowser-RC-macOS-AppleSilicon-DMG --dir staged/macos
+          gh run download "$ANDROID_RUN" --repo "$GITHUB_REPOSITORY" --name GlacierAndroid-v0.2.3-STABLE-SIGNED-RC-NOT-PUBLISHED --dir staged/android
+      - name: Verify 3 complete installer files and Android fixed certificate/ABI
+        run: |
+          set -euo pipefail
+          sdk="$ANDROID_HOME"
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" --install 'build-tools;36.0.0'
+          export GLACIER_APKSIGNER="$sdk/build-tools/36.0.0/apksigner"
+          export GLACIER_AAPT="$sdk/build-tools/36.0.0/aapt"
+          python3 - <<'PY'
+          import hashlib,os,re,subprocess
+          from pathlib import Path
+          from zipfile import ZipFile
+          root=Path('staged')
+          expected={
+              'windows':('GlacierBrowser-v0.20.20-Windows-Setup-x64.exe',100_000_000,900_000_000),
+              'macos':('GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg',150_000_000,900_000_000),
+              'android':('GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk',150_000_000,600_000_000),
+          }
+          for platform,(name,minsize,maxsize) in expected.items():
+              folder=root/platform
+              contents=list(folder.iterdir())
+              if len(contents)!=1 or contents[0].name!=name or not contents[0].is_file() or contents[0].is_symlink():
+                  raise RuntimeError(platform+' installer pathname mismatch')
+              if not minsize<=contents[0].stat().st_size<=maxsize:
+                  raise RuntimeError(platform+' installer has abnormal size')
+              with contents[0].open('rb') as f:
+                  digest=hashlib.file_digest(f,'sha256').hexdigest()
+              print(platform,name,contents[0].stat().st_size,digest)
+          exe=root/'windows'/expected['windows'][0]
+          with exe.open('rb') as f:
+              if f.read(2)!=b'MZ':raise RuntimeError('Invalid Windows EXE header')
+          apk=root/'android'/expected['android'][0]
+          with ZipFile(apk) as archive:
+              names=set(archive.namelist())
+              for abi in ('arm64-v8a','x86_64'):
+                  for lib in ('libxul.so','libsingbox.so'):
+                      if f'lib/{abi}/{lib}' not in names:
+                          raise RuntimeError('Signed Android APK lacks required native engine')
+          signer=os.environ['GLACIER_APKSIGNER']
+          subprocess.run([signer,'verify','--verbose',str(apk)],check=True)
+          cert=subprocess.check_output([signer,'verify','--print-certs',str(apk)],text=True)
+          found=re.search(r'Signer #1 certificate SHA-256 digest:\s*([a-fA-F0-9]{64})',cert)
+          if not found or found.group(1).lower()!=os.environ['GH_ANDROID_CERT_PIN'].lower():
+              raise RuntimeError('SIGNED Android APK uses incorrect permanent cert')
+          pkg=subprocess.check_output([os.environ['GLACIER_AAPT'],'dump','badging',str(apk)],text=True).splitlines()[0]
+          for literal in ("name='cn.borealos.glacier.geckopreview'",
+                          "versionCode='12'","versionName='0.2.3'"):
+              if literal not in pkg:raise RuntimeError('Android app identity/version mismatch')
+          print('All three exact installer files passed integrity checks')
+          PY
+      - name: Stage all three as DRAFT Releases, not visible as updates
+        run: |
+          set -euo pipefail
+          gh release create glacier-v0.20.20 staged/windows/GlacierBrowser-v0.20.20-Windows-Setup-x64.exe \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Browser Windows v0.20.20 · 完整 UI 和 Gemini 诊断' \
+            --notes '全新 Chrome 风格浅色 UI、新标签页与工具中心、网站账号卡片、VLESS 保存、Gemini 连接诊断。安装包由 Ed25519 签名更新清单进行验证；Windows EXE 未使用商业 Authenticode 代码证书。'
+          gh release create glacier-macos-v0.20.17 staged/macos/GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Browser Apple Silicon v0.20.17 · 完整 UI 和 VLESS REALITY' \
+            --notes '统一浅色 UI、账号卡片、工作区、Gemini 连接诊断、内置 Xray/sing-box REALITY。macOS 使用 ad-hoc 签名，尚未经过 Apple Developer ID 公证。'
+          gh release create glacier-android-browser-v0.2.3 staged/android/GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Browser Android v0.2.3 · 永久签名正式版' \
+            --notes 'GeckoView + 内置 sing-box/VLESS、账号卡片、私人/工作空间、书签历史下载恢复、断线拒绝直连。使用 Glacier 专属永久 APK 签名。旧 Debug APK 可能无法直接覆盖，卸载前请备份应用内重要数据。'
+      - name: Validate all three exact DRAFT asset digests before making any public
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY']
+          parts=[
+              ('glacier-v0.20.20','staged/windows/GlacierBrowser-v0.20.20-Windows-Setup-x64.exe'),
+              ('glacier-macos-v0.20.17','staged/macos/GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg'),
+              ('glacier-android-browser-v0.2.3','staged/android/GlacierAndroid-v0.2.3-ARM64-x86_64-release.apk'),
+          ]
+          for tag,filename in parts:
+              doc=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+              f=Path(filename)
+              with f.open('rb') as handle:
+                  digest=hashlib.file_digest(handle,'sha256').hexdigest()
+              assets=doc.get('assets',[])
+              if not doc.get('draft') or doc.get('prerelease') or len(assets)!=1:
+                  raise RuntimeError('Unexpected public or multi-asset Release: '+tag)
+              asset=assets[0]
+              if (asset['name']!=f.name or asset['size']!=f.stat().st_size
+                      or asset.get('digest')!='sha256:'+digest):
+                  raise RuntimeError('Draft GitHub asset digest does not match staged installer: '+tag)
+              print(tag,'draft digest/size verified')
+          PY
+      - name: Publish verified Android, macOS and Windows Releases in one gated batch
+        run: |
+          set -euo pipefail
+          # The prior step validates ALL artifacts before any visibility.
+          # Publication of 3 GitHub Release objects cannot be atomic; on
+          # any failure this job will alert rather than claim success.
+          gh release edit glacier-android-browser-v0.2.3 --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release edit glacier-macos-v0.20.17 --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release edit glacier-v0.20.20 --repo "$GITHUB_REPOSITORY" --draft=false
+          echo 'All three final Releases published once. The existing Ed25519 workflows now validate and promote Windows/macOS VPS feeds.' >> "$GITHUB_STEP_SUMMARY"

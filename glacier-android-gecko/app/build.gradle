@@ -1,0 +1,70 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'cn.borealos.glacier.geckopreview'
+    compileSdk 37
+    buildFeatures {
+        buildConfig true
+    }
+
+    defaultConfig {
+        applicationId 'cn.borealos.glacier.geckopreview'
+        minSdk 26
+        targetSdk 35
+        versionCode 12
+        versionName '0.2.3'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    // Release identity comes only from protected GitHub Actions secrets.
+    // Debug APKs remain isolated test builds with an ephemeral debug key.
+    def signingPath = System.getenv('GLACIER_ANDROID_SIGNING_STORE_FILE')
+    def signingPassword = System.getenv('GLACIER_ANDROID_SIGNING_STORE_PASSWORD')
+    def signingAlias = System.getenv('GLACIER_ANDROID_SIGNING_KEY_ALIAS')
+    def signingKeyPassword = System.getenv('GLACIER_ANDROID_SIGNING_KEY_PASSWORD')
+    def hasSigning = signingPath && signingPassword && signingAlias && signingKeyPassword
+    signingConfigs {
+        glacierStable {
+            if (hasSigning) {
+                storeFile file(signingPath)
+                storePassword signingPassword
+                keyAlias signingAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (hasSigning) signingConfig signingConfigs.glacierStable
+            minifyEnabled false
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols.add('**/libsingbox.so')
+        }
+    }
+}
+
+dependencies {
+    // Pin the verified October 2026 stable GeckoView build, not a moving nightly.
+    implementation 'org.mozilla.geckoview:geckoview:159.0.20261022150525'
+    implementation 'androidx.core:core:1.15.0'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

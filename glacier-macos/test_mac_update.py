@@ -1,0 +1,148 @@
+"""No keys are committed: tests use temporary Ed25519 identities at runtime."""
+import base64
+import copy
+import hashlib
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import mac_update_core as u
+
+
+class ManifestTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.key=Ed25519PrivateKey.generate()
+        cls.pub=cls.key.public_key().public_bytes(
+            serialization.Encoding.Raw,serialization.PublicFormat.Raw,
+        )
+
+    def signed(self, version="0.14.1"):
+        payload={
+            "channel":"macos-arm64",
+            "version":version,
+            "url":f"https://github.com/zxasd2183-oss/comfyui-director-release/releases/download/glacier-macos-v{version}/GlacierBrowser-v{version}-macOS-AppleSilicon.dmg",
+            "sha256":hashlib.sha256(b"test").hexdigest(),
+            "size":2_000_000,
+            "notes":"Mac build test",
+            "key_id":u.KEY_ID,
+        }
+        payload["signature"]=base64.b64encode(
+            self.key.sign(u.canonical(payload))
+        ).decode("ascii")
+        return payload
+
+    def check(self,payload):
+        with patch.object(u,"PUBLIC_KEY",self.pub):
+            return u.verify_manifest(payload)
+
+    def test_valid_signature(self):
+        self.assertEqual(self.check(self.signed())["channel"],"macos-arm64")
+
+    def test_vps_signed_installer_origin_accepted(self):
+        m=self.signed("0.20.10")
+        m["url"]="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg"
+        m["signature"]=base64.b64encode(self.key.sign(u.canonical(
+            {k:v for k,v in m.items() if k!="signature"}))).decode("ascii")
+        self.assertEqual(self.check(m)["version"],"0.20.10")
+
+    def test_vps_signed_wrong_path_rejected(self):
+        m=self.signed("0.20.10")
+        m["url"]="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg"
+        m["signature"]=base64.b64encode(self.key.sign(u.canonical(
+            {k:v for k,v in m.items() if k!="signature"}))).decode("ascii")
+        with self.assertRaises(u.UpdateError):self.check(m)
+
+    def test_modified_hash(self):
+        m=self.signed()
+        m["sha256"]="0"*64
+        with self.assertRaises(u.UpdateError):self.check(m)
+
+    def test_modified_url(self):
+        m=self.signed()
+        m["url"]=m["url"].replace("github.com","evil.example")
+        with self.assertRaises(u.UpdateError):self.check(m)
+
+    def test_wrong_channel(self):
+        m=self.signed()
+        m["channel"]="windows-x64"
+        with self.assertRaises(u.UpdateError):self.check(m)
+
+    def test_unknown_key(self):
+        m=self.signed()
+        m["key_id"]="attacker"
+        with self.assertRaises(u.UpdateError):self.check(m)
+
+    def test_unsigned(self):
+        m=self.signed()
+        m.pop("signature")
+        with self.assertRaises(u.UpdateError):self.check(m)
+
+    def test_wrong_platform_filename_even_if_signed(self):
+        m=self.signed()
+        m["url"]=m["url"].replace("macOS-AppleSilicon.dmg","Windows-Setup-x64.exe")
+        m.pop("signature")
+        m["signature"]=base64.b64encode(self.key.sign(u.canonical(m))).decode()
+        with self.assertRaises(u.UpdateError):self.check(m)
+
+    def test_version_order(self):
+        self.assertTrue(u.newer_than("0.14.0","0.14.1"))
+        self.assertFalse(u.newer_than("0.14.1","0.14.0"))
+        with self.assertRaises(u.UpdateError):u.newer_than("0.14.0","0.14.0-rc1")
+
+    def test_duplicate_json(self):
+        with self.assertRaises(u.UpdateError):
+            __import__("json").loads('{"a":1,"a":2}',object_pairs_hook=u.unique_json_pairs)
+
+    def test_disallowed_redirect(self):
+        class Session:
+            def get(self,*args,**kw):
+                class R:
+                    status_code=302
+                    headers={"Location":"https://evil.example/bad.dmg"}
+                    def close(self):pass
+                return R()
+        with self.assertRaises(u.UpdateError):
+            u._request(Session(),"https://github.com/allowed",u.TRUSTED_REDIRECT_HOSTS)
+
+    def test_vless_update_proxy_and_dns_fail_closed(self):
+        session=u.signed_update_session(18080)
+        self.assertFalse(session.trust_env)
+        self.assertEqual(session.proxies["https"],"socks5h://127.0.0.1:18080")
+        self.assertEqual(session.proxies["http"],"socks5h://127.0.0.1:18080")
+        self.assertEqual(u.FEED_URL,"https://sync.borealos.cn/downloads/macos-arm64.json")
+        direct=u.owner_vps_session()
+        self.assertFalse(direct.trust_env)
+        self.assertFalse(direct.proxies.get("https"))
+        direct.close()
+        session.close()
+        for port in (0, -1, 65536, None):
+            with self.assertRaises(u.UpdateError):u.signed_update_session(port)
+
+    def test_cached_dmg_is_reverified_before_finder_opens_it(self):
+        data = b"glacier-dmg-content" * 105264
+        manifest = self.signed("0.20.16")
+        manifest["sha256"] = hashlib.sha256(data).hexdigest()
+        manifest["size"] = len(data)
+        manifest["signature"] = base64.b64encode(self.key.sign(u.canonical(
+            {k: v for k, v in manifest.items() if k != "signature"}
+        ))).decode("ascii")
+        with tempfile.TemporaryDirectory() as root:
+            installer = Path(root) / "GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg"
+            installer.write_bytes(data)
+            with patch.object(u, "PUBLIC_KEY", self.pub):
+                self.assertEqual(u.verify_local_dmg(manifest, installer), installer)
+                installer.write_bytes(b"tampered" + data[8:])
+                with self.assertRaises(u.UpdateError):
+                    u.verify_local_dmg(manifest, installer)
+                installer.write_bytes(data)
+                wrong_name = Path(root) / "GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg"
+                installer.rename(wrong_name)
+                with self.assertRaises(u.UpdateError):
+                    u.verify_local_dmg(manifest, wrong_name)
+
+if __name__=="__main__":
+    unittest.main()

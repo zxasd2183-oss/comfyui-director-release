@@ -1,0 +1,20 @@
+name: Glacier Android signing helper syntax check (no publication)
+on:
+  push:
+    branches:
+      - integration/glacier-browser-release-candidate-20261111
+    paths:
+      - 'scripts/GlacierAndroid-ConfigureSigning.ps1'
+      - '.github/workflows/glacier-signing-helper-check.yml'
+permissions:
+  contents: read
+jobs:
+  validate-helper:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check-only Windows PowerShell syntax without GitHub login or private keys
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/GlacierAndroid-ConfigureSigning.ps1 -CheckOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Signing helper could not be parsed or invoked.' }
