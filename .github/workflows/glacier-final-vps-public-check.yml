@@ -1,0 +1,44 @@
+name: Glacier final public VPS signed-feed end-to-end verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-final-vps-public-check.yml'
+permissions:
+  contents: read
+jobs:
+  public-vps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Confirm both public HTTPS feeds are exact final versions
+        run: |
+          python3 - <<'PY'
+          import json,time,urllib.request
+          expected={
+             'windows-x64':('0.20.20','05c103895d2ecf5634046b63b928b4857309b7a81c2c5214860a679a8ea68654',175947525),
+             'macos-arm64':('0.20.17','3ab7a17518f84bdf36230530d8be77cfaaa4c1802e12de7c24f76f58d26e7810',287169487),
+          }
+          for channel,(version,sha,size) in expected.items():
+              source='https://sync.borealos.cn/downloads/'+channel+'.json?nonce='+str(time.time_ns())
+              request=urllib.request.Request(source,headers={
+                  'Cache-Control':'no-cache','Pragma':'no-cache'})
+              with urllib.request.urlopen(request,timeout=25) as response:
+                  actual=json.load(response)
+              print('Public VPS',channel,'reports version',actual.get('version'),flush=True)
+              if (actual.get('channel')!=channel or actual.get('version')!=version or
+                  actual.get('sha256')!=sha or actual.get('size')!=size or
+                  actual.get('key_id')!='v2-259ea4a7b9da4bea' or
+                  not actual.get('signature')):
+                  raise RuntimeError(channel+' signed feed is not yet final')
+              package=actual.get('url','')
+              if not package.startswith('https://sync.borealos.cn/downloads/'):
+                  raise RuntimeError('Public installer is not bound to owner VPS')
+              check=urllib.request.Request(package,method='HEAD',headers={'Cache-Control':'no-cache'})
+              with urllib.request.urlopen(check,timeout=25) as response:
+                  if response.status!=200 or response.geturl()!=package:
+                      raise RuntimeError('VPS installer not available')
+                  if response.headers.get('Content-Length') is not None and int(response.headers['Content-Length'])!=size:
+                      raise RuntimeError('VPS installer HEAD length mismatch')
+              print('PASS',channel,version,'signed metadata and installer HTTPS HEAD',flush=True)
+          PY
