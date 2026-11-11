@@ -71,6 +71,28 @@ if((Test-Path $store) -xor (Test-Path $passwordFile)){throw 'Existing signer/pas
 $password=$null
 $encoded=$null
 try {
+  # Never rotate an existing production signer just because a workstation
+  # lost its local P12 or was reinstalled. GitHub secrets are not readable:
+  # their NAMES are sufficient to detect an existing signing identity.
+  $remoteSecrets = @(& $gh secret list --repo $repository --json name --jq '.[].name')
+  if($LASTEXITCODE -ne 0){throw 'Could not verify existing repository Secret names; refusing unsafe key generation.'}
+  $remoteVars = @(& $gh variable list --repo $repository --json name --jq '.[].name')
+  if($LASTEXITCODE -ne 0){throw 'Could not verify existing repository variable names; refusing unsafe key generation.'}
+  $identityNames=@('GLACIER_ANDROID_KEYSTORE_BASE64',
+                   'GLACIER_ANDROID_SIGNING_STORE_PASSWORD',
+                   'GLACIER_ANDROID_SIGNING_KEY_PASSWORD',
+                   'GLACIER_ANDROID_SIGNING_KEY_ALIAS',
+                   'GLACIER_ANDROID_CERT_SHA256')
+  $remoteIdentityExists=$false
+  foreach($name in $identityNames){
+    if(($remoteSecrets -contains $name) -or ($remoteVars -contains $name)){
+      $remoteIdentityExists=$true
+      break
+    }
+  }
+  if((-not (Test-Path $store)) -and $remoteIdentityExists){
+    throw 'GitHub already has Glacier Android signing settings. Restore the ORIGINAL P12 and password; refusing to rotate the signing identity.'
+  }
   if(-not (Test-Path $store)){
     Write-Host 'Glacier Android requires ONE permanent signing password.'
     Write-Host 'Generate an ASCII password of at least 24 characters in your password manager.'
