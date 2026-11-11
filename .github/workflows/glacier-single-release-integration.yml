@@ -13,6 +13,8 @@ on:
       - 'scripts/test_glacier_macos_signed.py'
       - '.github/workflows/glacier-macos-signed-auto.yml'
       - '.github/workflows/glacier-single-release-integration.yml'
+      - '.github/workflows/glacier-final-once.yml'
+      - 'scripts/test_glacier_final_release_workflow.py'
   workflow_dispatch:
 permissions:
   contents: read
