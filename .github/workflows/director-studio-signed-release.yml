@@ -1,0 +1,131 @@
+name: Publish signed Director Studio application release
+on:
+  workflow_run:
+    workflows: ["Director Studio realtime workbench CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional exact reviewed STUDIO_CODE_VERSION"
+        required: false
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: director-studio-signed-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout only the reviewed main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+          path: trusted
+          persist-credentials: false
+      - name: Checkout pinned Studio update channel
+        uses: actions/checkout@v4
+        with:
+          ref: studio-updates
+          path: feed
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install release verifier
+        run: python -m pip install 'cryptography>=43,<47'
+      - name: Verify immutable source version and release monotonicity
+        id: preflight
+        env:
+          EXPECTED_VERSION: ${{ inputs.version || '' }}
+          SIGNING_PRIVATE: ${{ secrets.DIRECTOR_UE_SIGNING_PRIVATE_HEX }}
+          SIGNING_PUBLIC: ${{ vars.DIRECTOR_UE_SIGNING_PUBLIC_HEX }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,re,sys
+          from pathlib import Path
+          sys.path.insert(0,"trusted/studio")
+          from studio_signed_updater import verify_manifest, version
+          source=Path("trusted/studio/studio_server.py").read_text("utf-8")
+          found=re.findall(r'^STUDIO_CODE_VERSION = "(\d+\.\d+\.\d+)"$',source,re.M)
+          if len(found)!=1: raise SystemExit("Expected exactly one reviewed Studio code version")
+          value=found[0];version(value)
+          if os.environ["EXPECTED_VERSION"] and os.environ["EXPECTED_VERSION"]!=value:
+              raise SystemExit("Requested version does not match reviewed code")
+          pri=os.environ.get("SIGNING_PRIVATE","")
+          pub=os.environ.get("SIGNING_PUBLIC","")
+          if not re.fullmatch("[0-9a-f]{64}",pri) or not re.fullmatch("[0-9a-f]{64}",pub):
+              raise SystemExit("Pinned Studio release signing identity unavailable")
+          existing=Path("feed/channel.json")
+          publish=True
+          if existing.exists():
+              prior=verify_manifest(existing.read_bytes(),pub)
+              publish=version(value)>version(prior["version"])
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as f:
+              f.write(f"version={value}\npublish={str(publish).lower()}\n")
+          print("Reviewed Studio code:",value,"new signed release required:",publish)
+          PY
+      - name: Build pinned allowlisted Studio artifact and self-verify signature
+        if: steps.preflight.outputs.publish == 'true'
+        env:
+          DIRECTOR_UE_SIGNING_PRIVATE_HEX: ${{ secrets.DIRECTOR_UE_SIGNING_PRIVATE_HEX }}
+          DIRECTOR_UE_SIGNING_PUBLIC_HEX: ${{ vars.DIRECTOR_UE_SIGNING_PUBLIC_HEX }}
+          VERSION: ${{ steps.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          python trusted/studio/studio_sign_release.py "$VERSION" trusted/studio dist
+          python - <<'PY'
+          import os,sys
+          from pathlib import Path
+          sys.path.insert(0,"trusted/studio")
+          from studio_signed_updater import verify_manifest,files_from_archive,FILES
+          doc=verify_manifest(Path("dist/channel.json").read_bytes(),
+                              os.environ["DIRECTOR_UE_SIGNING_PUBLIC_HEX"])
+          archive=Path("dist","director-studio-v"+doc["version"]+".zip").read_bytes()
+          assert set(files_from_archive(archive,doc))==set(FILES)
+          assert len(FILES)==35
+          print("Pinned Ed25519 Studio signature, 35 files and digest verified")
+          PY
+      - name: Publish immutable Studio release ZIP
+        if: steps.preflight.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.preflight.outputs.version }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          tag="director-studio-v$VERSION"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Existing signed Studio release cannot be replaced"
+            exit 1
+          fi
+          if git -C trusted ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
+            echo "::error::Signed release tag already exists"
+            exit 1
+          fi
+          gh release create "$tag" "dist/director-studio-v$VERSION.zip" \
+            --repo "$GITHUB_REPOSITORY" --target "$TESTED_SHA" \
+            --title "Director Studio v$VERSION" \
+            --notes "Pinned 35-file signed Studio update. No database, credentials, GPU operations, or Nginx changes."
+      - name: Advance signed Studio channel after artifact publication
+        if: steps.preflight.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          cp dist/channel.json feed/channel.json
+          cd feed
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add channel.json
+          git commit -m "Publish pinned Director Studio signed application ${{ steps.preflight.outputs.version }}"
+          git push origin HEAD:studio-updates

@@ -1,0 +1,39 @@
+name: Director Studio pinned signed update contract
+on:
+  push:
+    paths:
+      - "studio/studio_signed_updater.py"
+      - "studio/studio_sign_release.py"
+      - "studio/install-studio-signed-updater.sh"
+      - "studio/studio_brain.py"
+      - "studio/studio_server.py"
+      - "studio/signed_update_tests/test_studio_signed_updater.py"
+      - ".github/workflows/director-studio-signed-*.yml"
+  pull_request:
+    paths:
+      - "studio/studio_signed_updater.py"
+      - "studio/studio_sign_release.py"
+      - "studio/install-studio-signed-updater.sh"
+      - "studio/studio_brain.py"
+      - "studio/studio_server.py"
+      - "studio/signed_update_tests/test_studio_signed_updater.py"
+      - ".github/workflows/director-studio-signed-*.yml"
+permissions:
+  contents: read
+jobs:
+  verify-signed-updater:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Ed25519 verifier and signer library
+        run: python -m pip install 'cryptography>=43,<47'
+      - name: Compile updater and signer and validate bootstrap script
+        run: |
+          python -m py_compile studio/studio_signed_updater.py studio/studio_sign_release.py studio/studio_brain.py studio/studio_server.py
+          bash -n studio/install-studio-signed-updater.sh
+      - name: Test actual archive signature, trusted file list and rollback
+        run: python -m unittest discover -s studio/signed_update_tests -p 'test_studio_signed_updater.py' -v

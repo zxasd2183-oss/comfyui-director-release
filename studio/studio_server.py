@@ -6,6 +6,9 @@ NOT the live ComfyUI queue or GPU power.
 """
 from __future__ import annotations
 
+# Monotonic, separately signed Studio application release version.
+STUDIO_CODE_VERSION = "0.10.0"
+
 import json
 import os
 import sqlite3
@@ -474,7 +477,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/snapshot":
             return self.reply(200, self.fresh_snapshot())
         if path == "/api/v1/production":
-            return self.reply(200, dashboard_from_path(self.server.production_db_path))
+            return self.reply(200, {**dashboard_from_path(self.server.production_db_path),
+                                    "studio_code_version": STUDIO_CODE_VERSION})
         if path == "/api/v1/production/episode":
             # Episode details include private media-version metadata: allow
             # only the signed-in Microsoft owner, not SSH/basic/anonymous.

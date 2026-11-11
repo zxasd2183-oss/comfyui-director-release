@@ -31,6 +31,34 @@ from character_library import (
 )
 
 BRAIN_PATH="/api/v1/brain"
+
+def _studio_signed_update_receipt():
+    """Read only bounded root-owned updater receipt, no payload or secrets."""
+    path=Path("/opt/director-studio/signed-update-status.json")
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size>512:
+            return {"status":"not_configured"}
+        raw=json.loads(path.read_text("ascii"))
+        if not isinstance(raw,dict) or set(raw)-{"status","version","reason"}:
+            return {"status":"invalid_receipt"}
+        if raw.get("status") not in (
+            "upgraded","already_current","failed","no_signed_channel"):
+            return {"status":"invalid_receipt"}
+        result={"status":raw["status"]}
+        if "version" in raw:
+            if not isinstance(raw["version"],str) or not re.fullmatch(
+                    r"\d{1,5}\.\d{1,5}\.\d{1,5}",raw["version"]):
+                return {"status":"invalid_receipt"}
+            result["version"]=raw["version"]
+        if "reason" in raw:
+            if not isinstance(raw["reason"],str) or not re.fullmatch(
+                    r"[a-z_]{1,100}",raw["reason"]):
+                return {"status":"invalid_receipt"}
+            result["reason"]=raw["reason"]
+        return result
+    except (OSError,ValueError,UnicodeError,TypeError):
+        return {"status":"invalid_receipt"}
+
 READ_TOOLS=frozenset({"get_production_dashboard","get_production_episode",
                       "get_project_characters","get_production_scenes",
                       "get_production_episode_readiness"})
@@ -223,7 +251,8 @@ def execute(db_path,tool,args):
         with closing(open_db(db_path)) as db:
             if tool=="get_production_dashboard":
                 _exact(args,())
-                return {"ok":True,**dashboard(db)}
+                return {"ok":True,**dashboard(db),
+                        "studio_signed_update":_studio_signed_update_receipt()}
             if tool=="get_production_episode":
                 _exact(args,("project_id","episode_id"))
                 pid,eid=_ident(args["project_id"]),_ident(args["episode_id"])
