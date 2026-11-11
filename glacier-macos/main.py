@@ -28,7 +28,7 @@ from glacier_site_diagnostic31 import GlacierSiteDiagnostic31
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
-from glacier_splash import show_glacier_splash
+from glacier_splash import show_glacier_splash, reveal_browser_after_splash
 from mac_proxy_diagnostics import start_capture, latest_hint, classify
 from glacier_proxy_health29 import ephemeral_proxy_config
 from mac_xray_reality import build_xray_reality_config
@@ -274,12 +274,10 @@ def main():
   QMessageBox.critical(None,APP,"Mac 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt 以便排查。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- win.show()
- # Actually probe VLESS HTTPS connectivity on startup, rather than equating
- # sing-box process existence with a working internet connection.
- if proc:
-  QTimer.singleShot(1400, win.start_connection_check)
- QTimer.singleShot(1100, lambda: splash.finish(win))
+ # Main window remains hidden until the splash is completely dismissed.
+ # Start remote HTTPS probing only after it becomes visible.
+ on_reveal=(lambda: QTimer.singleShot(350, win.start_connection_check)) if proc else None
+ reveal_browser_after_splash(splash, win, on_reveal=on_reveal)
  code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
