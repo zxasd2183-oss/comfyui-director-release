@@ -137,6 +137,19 @@ def proxy_start(link,port):
  except OSError:pass
  return proc
 
+class ProxyIndicatorButton33(QPushButton):
+ """Keep legacy connection text updates from painting over the modern LED.
+
+ Older connection probes write a Unicode status glyph directly to this button.
+ After the Chrome shell is ready, the status belongs in the tooltip and a
+ native icon represents state. Click/reconnect and all old handlers survive.
+ """
+ def setText(self, text):
+  if getattr(self, "_glacier_icon_only33", False):
+   text = ""
+  super().setText(text)
+
+
 class Page(QWebEngineView):
  def __init__(self,win):
   super().__init__(win)
@@ -165,7 +178,7 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.init_features(bar)
   self.init_ui09(bar, lambda data: dpapi(data), lambda data: dpapi(data, True), appdir())
   self.setup_tabtools13(lay,bar)
-  self.proxy_label=QPushButton("● 正在检查代理状态",self)
+  self.proxy_label=ProxyIndicatorButton33("● 正在检查代理状态",self)
   self.proxy_label.setObjectName("GlacierProxyHealth29")
   self.proxy_label.setToolTip("这里只检测本地 VLESS 端口。检测 Gemini HTTPS：打开 ▦ 工具中心 → Gemini 连接诊断")
   self.proxy_label.clicked.connect(self.reconnect_saved_proxy29)
