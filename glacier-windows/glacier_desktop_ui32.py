@@ -17,7 +17,7 @@ CHROME_DESKTOP_QSS32 = """
 QMainWindow { background: #ffffff; color: #202c38; }
 QWidget#GlacierBrowserRoot32 { background: #ffffff; }
 QWidget#GlacierTabStrip14 {
-    background: #e8edf3; border: 0;
+    background: #dfe3eb; border: 0;
     border-bottom: 1px solid #d9e1e9;
 }
 QLabel#GlacierBrand14 { color: #366b8a; font-size: 18px;
@@ -102,20 +102,20 @@ def nav_icon32(kind):
     pix.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setPen(QPen(QColor("#455c70"), 2.5, Qt.PenStyle.SolidLine,
+    painter.setPen(QPen(QColor("#5f6368"), 2.3, Qt.PenStyle.SolidLine,
                         Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     if kind == "back":
-        painter.drawLine(QPointF(28, 20), QPointF(12, 20))
-        painter.drawLine(QPointF(12, 20), QPointF(20, 12))
-        painter.drawLine(QPointF(12, 20), QPointF(20, 28))
+        painter.drawLine(QPointF(32, 20), QPointF(8, 20))
+        painter.drawLine(QPointF(8, 20), QPointF(20, 8))
+        painter.drawLine(QPointF(8, 20), QPointF(20, 32))
     elif kind == "forward":
-        painter.drawLine(QPointF(12, 20), QPointF(28, 20))
-        painter.drawLine(QPointF(28, 20), QPointF(20, 12))
-        painter.drawLine(QPointF(28, 20), QPointF(20, 28))
+        painter.drawLine(QPointF(8, 20), QPointF(32, 20))
+        painter.drawLine(QPointF(32, 20), QPointF(20, 8))
+        painter.drawLine(QPointF(32, 20), QPointF(20, 32))
     elif kind == "reload":
-        painter.drawArc(QRectF(11, 11, 18, 18), 42 * 16, 302 * 16)
-        painter.drawLine(QPointF(29, 13), QPointF(29, 20))
-        painter.drawLine(QPointF(29, 13), QPointF(22, 13))
+        painter.drawArc(QRectF(8, 8, 24, 24), 42 * 16, 302 * 16)
+        painter.drawLine(QPointF(31, 12), QPointF(31, 20))
+        painter.drawLine(QPointF(31, 12), QPointF(23, 12))
     else:
         raise ValueError("Unsupported navigation icon")
     painter.end()
@@ -178,7 +178,7 @@ class GlacierDesktopUI32:
             button.setObjectName(name)
             button.setText("")
             button.setIcon(nav_icon32(kind))
-            button.setIconSize(QSize(19, 19))
+            button.setIconSize(QSize(28, 28))
             button.setToolTip(tooltip)
             button.setFixedSize(38, 38)
             return button

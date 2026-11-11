@@ -5,16 +5,16 @@ VLESS routing and signed updater remain owned by their original components.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer, QObject, QEvent
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton
+from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QTabBar
 
 CHROME_SHELL_QSS33 = """
 QMainWindow, QWidget#GlacierBrowserRoot32 {
     background: #ffffff; color: #202124;
 }
 QWidget#GlacierTabStrip14 {
-    background: #dee1e6; border: none;
+    background: #dfe3eb; border: none;
     border-bottom: 0;
 }
 QTabBar#GlacierExternalTabs14 {
@@ -22,11 +22,11 @@ QTabBar#GlacierExternalTabs14 {
     font-size: 12px; color: #3c4043;
 }
 QTabBar#GlacierExternalTabs14::tab {
-    background: #d0d4da; color: #3c4043;
-    border: 0; border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-    min-width: 128px; max-width: 230px; min-height: 32px;
-    padding: 4px 13px 1px; margin-right: 6px; margin-top: 6px;
+    background: #d5d9e0; color: #3c4043;
+    border: 0; border-top-left-radius: 13px;
+    border-top-right-radius: 13px;
+    min-width: 125px; max-width: 225px; min-height: 32px;
+    padding: 4px 12px 1px; margin-right: 3px; margin-top: 6px;
     font-weight: normal;
 }
 QTabBar#GlacierExternalTabs14::tab:selected {
@@ -34,7 +34,7 @@ QTabBar#GlacierExternalTabs14::tab:selected {
     border: 0; font-weight: 500;
 }
 QTabBar#GlacierExternalTabs14::tab:hover:!selected {
-    background: #e9ebef;
+    background: #e8ebf0;
 }
 QFrame#GlacierNavigation32 {
     background: #ffffff; border: 0;
@@ -44,8 +44,24 @@ QFrame#GlacierOmniboxShell33 {
     background: #f1f3f4; border: 1px solid #f1f3f4;
     border-radius: 19px;
 }
-QFrame#GlacierOmniboxShell33:focus-within {
-    background: #ffffff; border: 1px solid #93baf3;
+QFrame#GlacierOmniboxShell33[focused="true"] {
+    background: #ffffff; border: 1px solid #8ab4f8;
+}
+QToolButton#GlacierTabClose33 {
+    background: transparent; border: none; border-radius: 9px;
+    padding: 0; min-width: 18px; max-width: 18px;
+    min-height: 18px; max-height: 18px;
+}
+QToolButton#GlacierTabClose33:hover { background: #bdc1c6; }
+QAbstractButton#GlacierNewTab33 {
+    background: transparent; border: none; border-radius: 15px;
+    padding: 0; min-width: 30px; max-width: 30px;
+    min-height: 30px; max-height: 30px;
+}
+QAbstractButton#GlacierNewTab33:hover { background: #c5cbd4; }
+QToolButton#GlacierMore14::menu-indicator,
+QToolButton#GlacierHub20::menu-indicator {
+    image: none; width: 0px; height: 0px;
 }
 QLineEdit#GlacierOmnibox14 {
     background: transparent; border: none; color: #202124;
@@ -75,12 +91,18 @@ QToolButton#GlacierUtilityToggle32:hover, QPushButton#GlacierAccount26:hover {
     background: #e8eaed;
 }
 QPushButton#GlacierAccount26 {
-    background: #e8f0fe; border-radius: 18px;
+    background: #e8f0fe; border: 1px solid #d2e3fc; border-radius: 18px;
 }
 QPushButton#GlacierProxyHealth29 {
     background: transparent; border: none; color: #5f6368;
     font-size: 17px; min-height: 30px; max-width: 32px; padding: 0;
 }
+QToolButton#GlacierProxyVisual33 {
+    background: transparent; border: none; border-radius: 16px;
+    padding: 0; min-width: 32px; max-width: 32px;
+    min-height: 32px; max-height: 32px;
+}
+QToolButton#GlacierProxyVisual33:hover { background: #e8eaed; }
 QLabel#GlacierProxyMac32 {
     background: transparent; border: none; color: #5f6368;
     font-size: 15px; min-width: 19px; max-width: 24px;
@@ -89,6 +111,10 @@ QLabel#GlacierProxyMac32 {
 QFrame#GlacierUtility32 {
     background: #f8f9fa; border-bottom: 1px solid #e8eaed;
 }
+QMenu { background: #ffffff; color: #202124;
+    border: 1px solid #dadce0; padding: 5px; }
+QMenu::item { padding: 7px 22px; border-radius: 4px; }
+QMenu::item:selected { background: #e8f0fe; color: #202124; }
 QTabWidget::pane { background: #ffffff; border: 0; }
 """
 
@@ -122,6 +148,17 @@ def shell_icon33(kind):
     elif kind == "profile":
         p.drawEllipse(QRectF(17, 11, 10, 10))
         p.drawArc(QRectF(11, 21, 22, 15), 0, 180*16)
+    elif kind == "close":
+        p.setPen(QPen(QColor("#5f6368"), 2.7, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.drawLine(QPointF(10, 10), QPointF(34, 34))
+        p.drawLine(QPointF(34, 10), QPointF(10, 34))
+    elif kind == "newtab":
+        p.drawLine(QPointF(22, 7), QPointF(22, 37))
+        p.drawLine(QPointF(7, 22), QPointF(37, 22))
+    elif kind == "secure":
+        p.drawRoundedRect(QRectF(13, 19, 18, 16), 3, 3)
+        p.drawArc(QRectF(16, 11, 12, 16), 0, 180*16)
     elif kind == "menu":
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor("#5f6368"))
@@ -132,6 +169,69 @@ def shell_icon33(kind):
         raise ValueError("Unsupported shell icon: " + kind)
     p.end()
     return QIcon(pic)
+
+
+def proxy_icon33(ready):
+    """Draw a crisp status dot, not a fallback-font circle or red glyph."""
+    pix = QPixmap(32, 32)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#188038" if ready else "#b75b4b"))
+    p.drawEllipse(QRectF(10, 10, 12, 12))
+    p.end()
+    return QIcon(pix)
+
+
+class _AddressFocus33(QObject):
+    """Qt style sheets have no reliable CSS :focus-within selector.
+
+    Follow actual focus events, then repolish only the address shell. Neither
+    focus changes nor visuals may modify browser URLs or proxy settings.
+    """
+    def __init__(self, frame):
+        super().__init__(frame)
+        self.frame = frame
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            focused = event.type() == QEvent.Type.FocusIn
+            if self.frame.property("focused") != focused:
+                self.frame.setProperty("focused", focused)
+                self.frame.style().unpolish(self.frame)
+                self.frame.style().polish(self.frame)
+                self.frame.update()
+        return False
+
+
+def _install_tab_closers33(bar):
+    """Replace native platform-specific tab X glyphs (including red squares).
+
+    Compute the tab index on click, not at creation: tabs can be reordered.
+    """
+    if not bar.tabsClosable():
+        return
+    for index in range(bar.count()):
+        previous = bar.tabButton(index, QTabBar.ButtonPosition.RightSide)
+        if previous is not None and previous.objectName() == "GlacierTabClose33":
+            continue
+        button = QToolButton(bar)
+        button.setObjectName("GlacierTabClose33")
+        button.setAutoRaise(True)
+        button.setFixedSize(18, 18)
+        button.setIcon(shell_icon33("close"))
+        button.setIconSize(QSize(18, 18))
+        button.setToolTip("关闭标签页")
+        def close_this_tab(_checked=False, owned_button=button):
+            current_index = next(
+                (i for i in range(bar.count())
+                 if bar.tabButton(i, QTabBar.ButtonPosition.RightSide) is owned_button),
+                -1)
+            if current_index >= 0:
+                bar.tabCloseRequested.emit(current_index)
+        button.clicked.connect(close_this_tab)
+        bar.setTabButton(index, QTabBar.ButtonPosition.RightSide, button)
 
 
 class GlacierChromeShell33:
@@ -160,6 +260,8 @@ class GlacierChromeShell33:
         self.chrome_tab14.setElideMode(Qt.TextElideMode.ElideRight)
         self.chrome_tab14.setExpanding(False)
         self.chrome_tab14.setUsesScrollButtons(True)
+        _install_tab_closers33(self.chrome_tab14)
+        self._polish_tab_closers33 = lambda: _install_tab_closers33(self.chrome_tab14)
 
         # Chrome's + belongs immediately beside the last tab, not pinned to
         # the far right edge by an old expanding layout/spacer.
@@ -174,6 +276,12 @@ class GlacierChromeShell33:
                     new_tab_button = button
                     break
             if new_tab_button is not None:
+                new_tab_button.setObjectName("GlacierNewTab33")
+                new_tab_button.setText("")
+                new_tab_button.setIcon(shell_icon33("newtab"))
+                new_tab_button.setIconSize(QSize(20, 20))
+                new_tab_button.setFixedSize(30, 30)
+                new_tab_button.setToolTip("打开新标签页 (Ctrl+T)")
                 strip_layout.removeWidget(new_tab_button)
                 for i in range(strip_layout.count()-1, -1, -1):
                     piece = strip_layout.itemAt(i)
@@ -192,9 +300,12 @@ class GlacierChromeShell33:
             bar.setMaximumWidth(min(desired, available))
 
         self._resize_tabs_to_content33 = resize_tabs_to_content
+        def refresh_tabs():
+            _install_tab_closers33(self.chrome_tab14)
+            resize_tabs_to_content()
         self.tabs.currentChanged.connect(
-            lambda _index: QTimer.singleShot(0, resize_tabs_to_content))
-        QTimer.singleShot(0, resize_tabs_to_content)
+            lambda _index: QTimer.singleShot(0, refresh_tabs))
+        QTimer.singleShot(0, refresh_tabs)
 
         surface.setFixedHeight(54)
         nav.setContentsMargins(12, 5, 12, 5)
@@ -205,6 +316,7 @@ class GlacierChromeShell33:
         bookmark = self.bookmark_button
         shell = QFrame(surface)
         shell.setObjectName("GlacierOmniboxShell33")
+        shell.setProperty("focused", False)
         shell.setMinimumWidth(220)
         shell.setFixedHeight(39)
         shell.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -215,11 +327,13 @@ class GlacierChromeShell33:
             nav.removeWidget(widget)
         site.setText("")
         site.setIcon(shell_icon33("site"))
-        site.setIconSize(QSize(18, 18))
+        site.setIconSize(QSize(25, 25))
         site.setFixedSize(32, 32)
         address.setMinimumHeight(32)
         address.setMaximumHeight(35)
         address.setFrame(False)
+        self._address_focus33 = _AddressFocus33(shell)
+        address.installEventFilter(self._address_focus33)
         address.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         address.setPlaceholderText("在 Google 中搜索或输入网址")
         bookmark.setMinimumWidth(32)
@@ -239,27 +353,59 @@ class GlacierChromeShell33:
             btn = self.findChild(QToolButton, name)
             if btn is not None:
                 btn.setIcon(shell_icon33(kind))
-                btn.setIconSize(QSize(21, 21))
+                btn.setIconSize(QSize(28, 28))
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                if btn.menu() is not None and name in ("GlacierHub20", "GlacierMore14"):
+                    btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
                 btn.setFixedSize(36, 36)
 
         account = getattr(self, "_account_button26", None)
         if account is not None:
             account.setIcon(shell_icon33("profile"))
-            account.setIconSize(QSize(20, 20))
+            account.setIconSize(QSize(29, 29))
             account.setMinimumWidth(36)
             account.setMaximumWidth(36)
             account.setFixedSize(36, 36)
+            account.setText("")
+            account.setAccessibleName("Glacier 账号中心")
 
         proxy = getattr(self, "proxy_label", None)
         if isinstance(proxy, QLabel):
-            proxy.setMaximumWidth(24)
-            proxy.setMinimumWidth(19)
-            proxy.setToolTip(proxy.toolTip() or proxy.text())
+            # macOS uses a QLabel, unlike the clickable Windows status button.
+            prior = proxy.toolTip() or proxy.text()
+            proxy.setToolTip(prior)
+            proxy.setAccessibleName(prior)
+            ready = getattr(self, "proc", None) is not None
+            proxy.setText("●")
+            proxy.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            proxy.setStyleSheet("QLabel#GlacierProxyMac32{background:transparent;"
+                                "color:" + ("#188038" if ready else "#b75b4b") +
+                                ";font-size:18px;border:none;}")
+            proxy.setFixedWidth(25)
         elif proxy is not None:
-            proxy.setMinimumWidth(30)
-            proxy.setMaximumWidth(30)
+            # Connection probes inherited from older modules can still write
+            # directly into this legacy QPushButton after UI initialization.
+            # Preserve that original button and its callbacks, but never paint
+            # its diagnostic text in the new Chrome navigation.
+            old_position = nav.indexOf(proxy)
+            if old_position < 0:
+                raise RuntimeError("Missing legacy local proxy status control")
+            indicator = QToolButton(surface)
+            indicator.setObjectName("GlacierProxyVisual33")
+            indicator.setAutoRaise(True)
+            indicator.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            indicator.setFixedSize(32, 32)
+            indicator.setIcon(proxy_icon33(False))
+            indicator.setIconSize(QSize(24, 24))
+            indicator.setToolTip(proxy.toolTip() or "本地 VLESS 状态 · 点击重连")
+            indicator.setAccessibleName("本地 VLESS 状态与重连")
+            indicator.clicked.connect(proxy.click)
+            nav.removeWidget(proxy)
+            proxy.hide()
+            nav.insertWidget(old_position, indicator)
+            indicator.show()
+            self._proxy_visual33 = indicator
 
         # The Chrome menu owns rarely used options; no separate '工具 ▾'
         # permanently squeezes the address bar. Keep old handlers accessible.
@@ -299,3 +445,8 @@ class GlacierChromeShell33:
         site_update = getattr(self, "update_site_info30", None)
         if callable(site_update):
             site_update()
+        # The live Windows connectivity indicator must be repainted now, not
+        # only at its next periodic refresh after the screenshot is taken.
+        refresh_proxy = getattr(self, "refresh_proxy_status29", None)
+        if callable(refresh_proxy):
+            refresh_proxy()

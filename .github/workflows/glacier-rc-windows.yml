@@ -5,6 +5,7 @@ on:
       - integration/glacier-browser-release-candidate-20261111
       - feature/glacier-desktop-chrome-ui-v021-20261111
       - feature/glacier-chrome-shell-splash-sequential-20261111
+      - feature/glacier-ui-detail-polish-20261111
     paths:
       - 'glacier-windows/**'
       - '.github/workflows/glacier-rc-windows.yml'

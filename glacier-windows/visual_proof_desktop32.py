@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QTabBar, QAbstractButton
 
 def main():
     with tempfile.TemporaryDirectory(prefix="glacier-ui33-clean-profile-", ignore_cleanup_errors=True) as temp:
@@ -38,6 +38,26 @@ def main():
             print("tab strip", strip.y(), strip.height(), flush=True)
             print("navigation", nav.y(), nav.height(), flush=True)
             omni=window._chrome_omnibox_shell33
+            close_btn = window.chrome_tab14.tabButton(
+                0, QTabBar.ButtonPosition.RightSide)
+            if close_btn is None or close_btn.objectName() != "GlacierTabClose33":
+                raise RuntimeError("Browser still renders an unpolished native tab close button")
+            if close_btn.icon().isNull() or close_btn.width() != 18:
+                raise RuntimeError("Browser polished tab close icon missing")
+            new_btn = window.findChild(QAbstractButton, "GlacierNewTab33")
+            if new_btn is None or new_btn.icon().isNull() or new_btn.width() != 30:
+                raise RuntimeError("Browser compact + new tab button missing")
+            if window._account_button26.text():
+                raise RuntimeError("Browser account icon still has clipped old label")
+            indicator = getattr(window, "_proxy_visual33", None)
+            if (indicator is None or indicator.icon().isNull()
+                    or not window.proxy_label.isHidden()
+                    or indicator.text()):
+                raise RuntimeError(
+                    "Live Chrome status LED is missing, text-backed, or"
+                    " the old diagnostic control is still visible")
+            if omni.property("focused") is None:
+                raise RuntimeError("Address group focus contract was not installed")
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
@@ -46,13 +66,26 @@ def main():
             # included in QWidget.grab() on a headless Windows runner.
             # First verify the actual browser DOM is NOT blank. Screenshot
             # rasterization alone cannot prove a WebEngine document loaded.
-            document=[]
-            window.current().page().toHtml(lambda html: document.append(html))
-            for _ in range(60):
-                app.processEvents()
-                if document:break
-                time.sleep(0.05)
-            html=document[0] if document else ""
+            # A WebEngine process can reply with an initial empty DOM BEFORE
+            # setHtml() has committed. Poll until the expected actual local
+            # document appears, not until *any* toHtml callback returns.
+            html = ""
+            deadline = time.monotonic() + 12.0
+            while time.monotonic() < deadline:
+                document = []
+                window.current().page().toHtml(
+                    lambda value, target=document: target.append(value))
+                for _ in range(12):
+                    app.processEvents()
+                    if document:
+                        break
+                    time.sleep(0.05)
+                if document:
+                    html = document[-1]
+                    if ("Glacier" in html and "快捷访问" in html
+                            and 'name="q"' in html):
+                        break
+                time.sleep(0.12)
             if ("Glacier" not in html or "快捷访问" not in html
                     or 'name="q"' not in html):
                 raise RuntimeError(
