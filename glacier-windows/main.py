@@ -194,6 +194,16 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.setup_ui30(bar)
   self.setup_desktop_ui32(lay,bar)
   self.setup_chrome_shell33()
+  # The first WebEngine page is created while a dozen UI modules initialize.
+  # On some native systems that cancels its initial about:blank setHtml load.
+  # Repair ONLY a still-empty first tab once Qt finishes initialization.
+  QTimer.singleShot(0, self.ensure_initial_local_home33)
+ def ensure_initial_local_home33(self):
+  view=self.current()
+  if view is None:return
+  url=view.url()
+  if url.isEmpty() or url.toString()=="":
+   view.setHtml(self.home_markup(),QUrl("about:blank"))
  def refresh_proxy_status29(self):
   status, ready=proxy_status_text(self.proc,self.proxy_port)
   if getattr(self, "_desktop_ui_ready32", False):
