@@ -31,6 +31,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - name: Request existing OIDC VPS mirror immediately on a newly published Windows Release
+        if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'glacier-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo "Published Windows release: queued authorized VPS mirror refresh."
       - name: Checkout audited publisher from main
         uses: actions/checkout@v5
         with:
