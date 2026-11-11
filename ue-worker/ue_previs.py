@@ -122,6 +122,8 @@ def run_previs(spec,root,work):
     editor = find_editor_cmd()
     project = ensure_project(root)
     validate_existing_stage(root)
+    source_map_file = root / "Content" / "Director" / "V03" / "Maps" / "WaitingOffice_EP01_Stage.umap"
+    source_sha256_before = hashlib.sha256(source_map_file.read_bytes()).hexdigest()
     if work.is_symlink() or work.exists():
         raise JobError("previs_job_folder_already_exists")
     ensure_mrq_plugin(project,work)
@@ -155,13 +157,22 @@ def run_previs(spec,root,work):
             data.get("width") != 720 or data.get("height") != 1280 or
             data.get("frames_per_shot") != 1):
         raise JobError("previs_preset_creation_failed")
+    # The map path comes from a pinned per-job asset name, not HTTP input.
+    expected_map = "/Game/Director/V051/Maps/WO_EP01_ExposurePreview_" + work.name
+    if (data.get("stage_map") != expected_map or
+            data.get("source_map") != MAP_PATH or
+            data.get("light_intensities") !=
+            {"V03_Key_Light": 800.0, "V03_Fill_Light": 400.0}):
+        raise JobError("exposure_stage_unverified")
+    if hashlib.sha256(source_map_file.read_bytes()).hexdigest() != source_sha256_before:
+        raise JobError("source_v03_stage_was_modified")
     screenshots = []
     for shot in FRAME_SHOTS:
         sequence_name = "WaitingOffice_EP01_SH"+shot+"_V03"
         sequence = SHOTS_PATH + shot + "_V03." + sequence_name
         before = set(output.rglob("*.png"))
         command = [
-            str(editor),str(project),MAP_PATH,
+            str(editor),str(project),expected_map,
             "-game",
             "-LevelSequence="+sequence,
             "-MoviePipelineConfig="+expected_preset,
@@ -183,6 +194,8 @@ def run_previs(spec,root,work):
         # arbitrary file paths are returned to Hub clients.
         receipt["relative_path"]=str(path.relative_to(root)).replace("\\","/")
         screenshots.append(receipt)
+    if hashlib.sha256(source_map_file.read_bytes()).hexdigest() != source_sha256_before:
+        raise JobError("source_v03_stage_was_modified")
     # One portable, operator-retrievable package. No endpoint publishes this.
     # Atomic rename makes incomplete archives impossible to claim as success.
     manifest = {
@@ -217,6 +230,10 @@ def run_previs(spec,root,work):
             raise JobError("previs_package_integrity_failed")
     return {
         "preview_kind":"stage_proxy_only",
+        "preview_stage_map": expected_map,
+        "source_stage_sha256": source_sha256_before,
+        "source_stage_unchanged": True,
+        "light_intensities": data["light_intensities"],
         "render_ready":False,
         "metahuman_bound":False,
         "preview_count":len(screenshots),
