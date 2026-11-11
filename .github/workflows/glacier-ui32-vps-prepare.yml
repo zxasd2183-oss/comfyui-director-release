@@ -1,0 +1,26 @@
+name: Glacier UI32 immediate VPS mirror preparation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-ui32-vps-prepare.yml'
+permissions:
+  contents: read
+  actions: write
+jobs:
+  notify:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check both new immutable Release assets exist
+        run: |
+          set -euo pipefail
+          gh release view glacier-v0.20.21 --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release view glacier-macos-v0.20.18 --repo "$GITHUB_REPOSITORY" >/dev/null
+      - name: Dispatch existing OIDC-validated VPS downloader without secrets
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'VPS sync requested to stage latest immutable Windows 0.20.21 EXE before independent signer. Existing service independently verifies SHA256 and rejects unsigned direct feeds.' >> "$GITHUB_STEP_SUMMARY"
