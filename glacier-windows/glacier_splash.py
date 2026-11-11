@@ -1,9 +1,10 @@
-"""Glacier unified light startup splash for Windows and macOS.
+"""Glacier standalone boot screen and strict one-window-at-a-time handoff.
 
-Shown while the main browser window initializes; no blocking delay and no
-network access. Keep this module independent of the browser profile.
+Keep splash visible until browser initialization finishes. The main window is
+created while hidden, and is revealed only after the splash is fully hidden.
 """
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from time import monotonic
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QApplication, QSplashScreen
 
@@ -51,15 +52,42 @@ def show_glacier_splash(version):
                      "正在初始化浏览器  ·  " + str(version))
     painter.end()
     splash = QSplashScreen(canvas)
-    # Keep credential/network dialogs in front of the splash at first launch.
-    splash.setWindowOpacity(0.0)
+    # Paint the separate startup window BEFORE potentially blocking proxy and
+    # Qt WebEngine initialization. Never show the browser behind this splash.
     splash.show()
-    fade = QPropertyAnimation(splash, b"windowOpacity", splash)
-    fade.setDuration(650)
-    fade.setStartValue(0.0)
-    fade.setEndValue(1.0)
-    fade.setEasingCurve(QEasingCurve.Type.OutCubic)
-    splash._glacier_fade = fade
-    fade.start()
+    splash._glacier_started = monotonic()
     QApplication.processEvents()
     return splash
+
+
+def reveal_browser_after_splash(splash, browser, *, min_visible_ms=850,
+                                on_reveal=None):
+    """Complete startup in strict order: splash hides -> browser shows.
+
+    This callback runs once on Qt's main thread after Browser.__init__ finished.
+    A short minimum makes very fast launches visually distinguishable, but
+    slow launches are never delayed beyond their actual initialization.
+    """
+    if browser.isVisible():
+        raise RuntimeError("Browser must stay hidden during the startup splash")
+    if getattr(splash, "_glacier_reveal_pending", False):
+        raise RuntimeError("Splash handoff already scheduled")
+    splash._glacier_reveal_pending = True
+    elapsed_ms = (monotonic() - getattr(splash, "_glacier_started", monotonic())) * 1000
+    remaining_ms = max(0, int(min_visible_ms - elapsed_ms))
+
+    def reveal():
+        if browser.isVisible():
+            raise RuntimeError("Browser appeared before splash was dismissed")
+        splash.hide()
+        QApplication.processEvents()  # Flush the hide before showing the app.
+        browser.show()
+        splash.close()
+        if callable(on_reveal):
+            on_reveal()
+
+    # Preserve a live Python callback until Qt fires the one-shot timer.
+    splash._glacier_reveal_callback = reveal
+    QTimer.singleShot(remaining_ms, reveal)
+    return remaining_ms
+

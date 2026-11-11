@@ -37,8 +37,10 @@ class GlacierAccountCenter26:
         title, subtitle = account_label26(state)
         button = getattr(self, "_account_button26", None)
         if button is not None:
-            button.setText("❄ " + title)
-            button.setToolTip(subtitle)
+            # Chrome-like shell uses a profile avatar, not a wide account pill.
+            # Keep the full state available on hover and in the actual dialog.
+            button.setText("" if getattr(self, "_chrome_ui33_ready", False) else "❄ " + title)
+            button.setToolTip(title + " · " + subtitle)
 
     def show_account_center26(self):
         state = getattr(self, "_sync_state23", {})

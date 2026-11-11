@@ -24,11 +24,12 @@ from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
 from glacier_chrome_ui30 import GlacierChromeUI30
 from glacier_desktop_ui32 import GlacierDesktopUI32
+from glacier_chrome_shell33 import GlacierChromeShell33
 from glacier_site_diagnostic31 import GlacierSiteDiagnostic31
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
-from glacier_splash import show_glacier_splash
+from glacier_splash import show_glacier_splash, reveal_browser_after_splash
 from mac_proxy_diagnostics import start_capture, latest_hint, classify
 from glacier_proxy_health29 import ephemeral_proxy_config
 from mac_xray_reality import build_xray_reality_config
@@ -156,13 +157,13 @@ class Page(QWebEngineView):
   self.win=win
   self.setPage(QWebEnginePage(win.profile,self))
  def createWindow(self,typ):return self.win.new_tab()
-class Browser(GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.19")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.20")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -197,6 +198,17 @@ class Browser(GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, Gl
   self.setup_account_center26(bar)
   self.setup_ui30(bar)
   self.setup_desktop_ui32(lay,bar)
+  self.setup_chrome_shell33()
+  # The first WebEngine page is created while a dozen UI modules initialize.
+  # On some native systems that cancels its initial about:blank setHtml load.
+  # Repair ONLY a still-empty first tab once Qt finishes initialization.
+  QTimer.singleShot(0, self.ensure_initial_local_home33)
+ def ensure_initial_local_home33(self):
+  view=self.current()
+  if view is None:return
+  url=view.url()
+  if url.isEmpty() or url.toString()=="":
+   view.setHtml(self.home_markup(),QUrl("about:blank"))
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -206,7 +218,7 @@ class Browser(GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, Gl
   v.urlChanged.connect(lambda _url,view=v:self.sync_url() if view is self.current() else None)
   v.loadFinished.connect(lambda ok,view=v:self.on_page_loaded(view,ok))
   self.attach_page_security(v)
-  v.setHtml(self.home_markup(),QUrl("about:blank"));self.open_startup_home(v)
+  # Always keep a readable local new-tab page while the fail-closed VLESS\n  # proxy is unavailable. Never navigate to an unreachable remote startup URL.\n  v.setHtml(self.home_markup(),QUrl("about:blank"))\n  if self.proc is not None:self.open_startup_home(v)
   self.refresh_tabs14()
   self._workspace_register17(v)
   self.register_account_tab22(v)
@@ -250,7 +262,7 @@ def main():
   listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("macOS v0.20.19")
+ splash=show_glacier_splash("macOS v0.20.20")
  link=get_link(app,parse_node)
  proc=None
  try:proc=proxy_start(link,port)
@@ -274,12 +286,10 @@ def main():
   QMessageBox.critical(None,APP,"Mac 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt 以便排查。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- win.show()
- # Actually probe VLESS HTTPS connectivity on startup, rather than equating
- # sing-box process existence with a working internet connection.
- if proc:
-  QTimer.singleShot(1400, win.start_connection_check)
- QTimer.singleShot(1100, lambda: splash.finish(win))
+ # Main window remains hidden until the splash is completely dismissed.
+ # Start remote HTTPS probing only after it becomes visible.
+ on_reveal=(lambda: QTimer.singleShot(350, win.start_connection_check)) if proc else None
+ reveal_browser_after_splash(splash, win, on_reveal=on_reveal)
  code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
