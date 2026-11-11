@@ -11,7 +11,7 @@ PUBLIC = "02" * 32
 class PerPlatformVersionTests(unittest.TestCase):
     def test_versions_are_independent(self):
         self.assertEqual(PLATFORM_VERSIONS["windows"], "0.20.21")
-        self.assertEqual(PLATFORM_VERSIONS["macos"], "0.20.18")
+        self.assertEqual(PLATFORM_VERSIONS["macos"], "0.20.19")
 
     def test_unexpected_platform_is_refused_before_file_access(self):
         with self.assertRaises(ValueError):
