@@ -5,7 +5,7 @@ changes the proxy, autofills credentials or bypasses website verification.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QSize
 from PySide6.QtWidgets import (QDialog, QLabel, QMessageBox, QPushButton,
                                QTextBrowser, QToolButton, QVBoxLayout)
 
@@ -175,6 +175,14 @@ class GlacierChromeUI30:
         else:
             self._site_button30.setText("❄")
             self._site_button30.setToolTip("Glacier · 本地标签页")
+        if getattr(self, "_chrome_ui33_ready", False):
+            # Keep the live site security state but replace decorative glyphs
+            # with consistent native-resolution icons in the new omnibox.
+            from glacier_chrome_shell33 import shell_icon33
+            self._site_button30.setIcon(
+                shell_icon33("insecure" if url.scheme().lower() == "http" else "site"))
+            self._site_button30.setIconSize(QSize(18, 18))
+            self._site_button30.setText("")
 
     def open_site_info30(self):
         site = self._current_site30()
