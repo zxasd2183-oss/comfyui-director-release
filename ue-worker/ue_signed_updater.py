@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
@@ -49,6 +50,10 @@ ALLOWED_HOSTS = frozenset((
     "objects.githubusercontent.com", "raw.githubusercontent.com",
 ))
 MANIFEST_KEYS = {"format", "version", "archive_sha256", "archive_size"}
+# Only this fixed local workspace signal can be recorded; it never supplies
+# code, URLs, version selections or elevated command arguments.
+REQUEST_DIR = Path(r"C:\DirectorVirtualStudio") / "JobStatus"
+REQUEST_NAME = "signed_update_check_requested.json"
 
 
 class UpdateError(RuntimeError):
@@ -365,6 +370,39 @@ def run_once(code_dir, state, public_key_hex, *, channel=None, download=None):
     return result
 
 
+def read_signed_update_request():
+    """A low-privilege trigger receipt, never release authorization."""
+    folder = REQUEST_DIR
+    file = folder / REQUEST_NAME
+    if folder.is_symlink() or getattr(folder, "is_junction", lambda:False)():
+        raise UpdateError("request_directory_untrusted")
+    if not file.exists():
+        return None
+    if file.is_symlink() or getattr(file, "is_junction", lambda:False)():
+        raise UpdateError("request_is_symlink")
+    if not file.is_file() or file.stat().st_size > 512:
+        raise UpdateError("request_invalid")
+    try:
+        data = json.loads(file.read_text("ascii"), object_pairs_hook=unique_object)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise UpdateError("request_invalid") from exc
+    if (type(data) is not dict or set(data) != {"request_id", "requested_at"}
+            or type(data["request_id"]) is not str
+            or not re.fullmatch(r"[a-f0-9]{32}", data["request_id"])
+            or type(data["requested_at"]) is not str
+            or len(data["requested_at"]) > 50):
+        raise UpdateError("request_invalid")
+    return data
+
+
+def finish_signed_update_request(snapshot):
+    if snapshot is None:
+        return
+    current = read_signed_update_request()
+    if current is not None and current["request_id"] == snapshot["request_id"]:
+        (REQUEST_DIR / REQUEST_NAME).unlink()
+
+
 def main():
     if os.name != "nt":
         raise SystemExit("Windows only")
@@ -378,19 +416,29 @@ def main():
     if not public_file.is_file() or public_file.is_symlink():
         raise SystemExit("Updater public key not provisioned")
     public = public_file.read_text("ascii").strip()
+    snapshot = None
     try:
+        snapshot = read_signed_update_request()
         result = run_once(code, state, public)
-        # No secrets or token are present in the status record.
+        result["checked_at"] = datetime.now(timezone.utc).isoformat()
+        if snapshot:
+            result["request_id"] = snapshot["request_id"]
+        # Report the outcome before acknowledging a request.
         atomic_write(state / "last-result.json", canonical(result))
         atomic_write(code / "signed-update-status.json", canonical(result))
+        finish_signed_update_request(snapshot)
     except Exception as exc:
         summary = {
             "status": "failed", "reason": type(exc).__name__,
             "code": str(exc)[:100] if isinstance(exc, UpdateError)
                     else "unexpected_updater_failure",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
         }
+        if snapshot:
+            summary["request_id"] = snapshot["request_id"]
         atomic_write(state / "last-result.json", canonical(summary))
         atomic_write(code / "signed-update-status.json", canonical(summary))
+        # Keep the marker pending so the next automatic poll can retry.
         raise SystemExit(1) from None
 
 
