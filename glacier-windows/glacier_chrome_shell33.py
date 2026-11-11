@@ -145,11 +145,11 @@ def shell_icon33(kind):
     elif kind == "close":
         p.setPen(QPen(QColor("#5f6368"), 2.7, Qt.PenStyle.SolidLine,
                       Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        p.drawLine(QPointF(15, 15), QPointF(29, 29))
-        p.drawLine(QPointF(29, 15), QPointF(15, 29))
+        p.drawLine(QPointF(10, 10), QPointF(34, 34))
+        p.drawLine(QPointF(34, 10), QPointF(10, 34))
     elif kind == "newtab":
-        p.drawLine(QPointF(22, 12), QPointF(22, 32))
-        p.drawLine(QPointF(12, 22), QPointF(32, 22))
+        p.drawLine(QPointF(22, 7), QPointF(22, 37))
+        p.drawLine(QPointF(7, 22), QPointF(37, 22))
     elif kind == "secure":
         p.drawRoundedRect(QRectF(13, 19, 18, 16), 3, 3)
         p.drawArc(QRectF(16, 11, 12, 16), 0, 180*16)
@@ -202,7 +202,7 @@ def _install_tab_closers33(bar):
         button.setAutoRaise(True)
         button.setFixedSize(18, 18)
         button.setIcon(shell_icon33("close"))
-        button.setIconSize(QSize(13, 13))
+        button.setIconSize(QSize(18, 18))
         button.setToolTip("关闭标签页")
         def close_this_tab(_checked=False, owned_button=button):
             current_index = next(
@@ -260,7 +260,7 @@ class GlacierChromeShell33:
                 new_tab_button.setObjectName("GlacierNewTab33")
                 new_tab_button.setText("")
                 new_tab_button.setIcon(shell_icon33("newtab"))
-                new_tab_button.setIconSize(QSize(18, 18))
+                new_tab_button.setIconSize(QSize(20, 20))
                 new_tab_button.setFixedSize(30, 30)
                 new_tab_button.setToolTip("打开新标签页 (Ctrl+T)")
                 strip_layout.removeWidget(new_tab_button)
@@ -308,7 +308,7 @@ class GlacierChromeShell33:
             nav.removeWidget(widget)
         site.setText("")
         site.setIcon(shell_icon33("site"))
-        site.setIconSize(QSize(18, 18))
+        site.setIconSize(QSize(25, 25))
         site.setFixedSize(32, 32)
         address.setMinimumHeight(32)
         address.setMaximumHeight(35)
@@ -334,7 +334,7 @@ class GlacierChromeShell33:
             btn = self.findChild(QToolButton, name)
             if btn is not None:
                 btn.setIcon(shell_icon33(kind))
-                btn.setIconSize(QSize(21, 21))
+                btn.setIconSize(QSize(28, 28))
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 if btn.menu() is not None and name in ("GlacierHub20", "GlacierMore14"):
@@ -344,7 +344,7 @@ class GlacierChromeShell33:
         account = getattr(self, "_account_button26", None)
         if account is not None:
             account.setIcon(shell_icon33("profile"))
-            account.setIconSize(QSize(20, 20))
+            account.setIconSize(QSize(29, 29))
             account.setMinimumWidth(36)
             account.setMaximumWidth(36)
             account.setFixedSize(36, 36)
