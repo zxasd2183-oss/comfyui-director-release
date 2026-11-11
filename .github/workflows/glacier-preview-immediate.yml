@@ -91,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64, json, os, time, urllib.request
+          import base64, json, os, time, urllib.request, urllib.parse
           root="https://sync.borealos.cn/downloads/"
           api="https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/"
           headers={
@@ -113,6 +113,28 @@ jobs:
           branch_sha=github_doc(
               api+"git/ref/heads/glacier-browser-updates-v2")["object"]["sha"]
           print("Signed channel source pinned to commit",branch_sha[:12])
+          def retry_oidc_mirror():
+              # New short-lived GitHub OIDC credential for EACH retry.
+              # The VPS never receives or stores a GitHub personal token.
+              requrl=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+              sep="&" if "?" in requrl else "?"
+              requrl+=sep+urllib.parse.urlencode({
+                  "audience":"glacier-preview-vps-update-sync"})
+              req=urllib.request.Request(
+                  requrl,headers={"Authorization":"Bearer "+
+                      os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  bearer=json.load(response)["value"]
+              notify=urllib.request.Request(
+                  "https://sync.borealos.cn/downloads/notify",
+                  data=b"{}",method="POST",
+                  headers={"Authorization":"Bearer "+bearer,
+                           "Content-Type":"application/json"})
+              with urllib.request.urlopen(notify,timeout=25) as response:
+                  if response.status!=202:
+                      raise RuntimeError("Authenticated VPS retry not accepted")
+              print("VPS still behind signed source; new OIDC mirror retry accepted")
+
           for channel, suffix in (("windows-x64","Windows-Setup-x64.exe"),
                                   ("macos-arm64","macOS-AppleSilicon.dmg")):
               doc=github_doc(api+"contents/channels/"+channel+
@@ -121,7 +143,7 @@ jobs:
                   raise RuntimeError("GitHub signed JSON encoding is unexpected")
               blob=base64.b64decode(doc["content"].replace("\n",""),validate=True)
               canonical=json.loads(blob.decode("utf-8"))
-              for attempt in range(8):
+              for attempt in range(26):
                   live_req=urllib.request.Request(
                       root+channel+".json?nonce="+str(time.time_ns()),
                       headers={"Cache-Control":"no-cache","Pragma":"no-cache"})
@@ -129,9 +151,16 @@ jobs:
                       live=json.load(f)
                   if live==canonical:
                       break
-                  if attempt==7:
-                      raise RuntimeError(channel+" VPS has not yet caught up with signed metadata")
-                  time.sleep(5)
+                  # Fail closed on rollback or mismatched signed identity.
+                  if live.get("key_id")!=canonical.get("key_id") or (
+                      tuple(map(int,live["version"].split(".")))>
+                      tuple(map(int,canonical["version"].split(".")))):
+                      raise RuntimeError(channel+" VPS signed channel identity/version conflict")
+                  if attempt==25:
+                      raise RuntimeError(channel+" VPS did not catch up after OIDC retries")
+                  if attempt%3==2:
+                      retry_oidc_mirror()
+                  time.sleep(12)
               version=canonical["version"]
               assert tuple(map(int,version.split("."))) >= (0,20,10)
               expected=root+"GlacierBrowser-v"+version+"-"+suffix
