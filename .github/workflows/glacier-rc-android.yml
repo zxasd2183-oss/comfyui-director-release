@@ -41,6 +41,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
+      - name: Refuse stale Android APK identity before Gradle/emulators
+        run: |
+          python3 glacier-android-gecko/scripts/check_rc_version_consistency.py
+          python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_rc_version_consistency.py' -v
       - name: Download and SHA256 verify official sing-box 1.14.4 Android cores
         run: |
           set -euo pipefail

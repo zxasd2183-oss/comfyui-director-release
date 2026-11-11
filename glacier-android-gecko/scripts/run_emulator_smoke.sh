@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Executed as a single command by reactivecircus/android-emulator-runner.
 set -euo pipefail
-export GLACIER_APK="${GLACIER_APK:-$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.1.2-GeckoView-VLESS-ARM64-x86_64-debug.apk}"
+export GLACIER_APK="${GLACIER_APK:-$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.3-Mobile-M05-ARM64-x86_64-debug.apk}"
 export GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-evidence"
 mkdir -p "$GLACIER_SMOKE_OUT"
 

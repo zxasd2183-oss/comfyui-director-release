@@ -64,6 +64,10 @@ jobs:
           else
             echo '::warning::Android stable release blocked: separate signing identity or certificate pin not provisioned.'
           fi
+      - name: Verify Android RC artifact paths and versionCode before emulator startup
+        run: |
+          python3 glacier-android-gecko/scripts/check_rc_version_consistency.py
+          python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_rc_version_consistency.py' -v
       - name: Verify Android source is present without publishing APK
         run: |
           test -s glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/MainActivity.java
