@@ -113,6 +113,110 @@ class SignedStudioTests(unittest.TestCase):
         for name in updater.FILES:
             self.assertEqual((self.code/name).read_bytes(),prior[name])
 
+    def test_first_upgrade_installs_missing_signed_files_without_backup(self):
+        added=("video_results.py","picture_cuts.py","audio_stems.py",
+               "subtitle_tracks.py","release_candidates.py","assemble_approved_cut.py")
+        self.assertTrue(set(added).issubset(updater.FILES))
+        for name in added:
+            (self.code/name).unlink()
+        result=updater.run_once(channel=lambda:self.channel,
+                                download=lambda _:self.zip,public=self.public)
+        self.assertEqual(result,{"status":"upgraded","version":"0.10.0"})
+        self.assertEqual((self.state/"installed-version.txt").read_text(),"0.10.0")
+        backups=list(self.state.glob("backup-*"))
+        self.assertEqual(len(backups),1)
+        for name in added:
+            self.assertTrue((self.code/name).is_file())
+            self.assertFalse((backups[0]/name).exists())
+        for name in updater.FILES:
+            if name not in added:
+                self.assertEqual((backups[0]/name).read_bytes(),self.original[name])
+        self.assertFalse((self.state/"pending.json").exists())
+
+    def test_ledger_failure_removes_new_files_and_restores_old_files(self):
+        added=("video_results.py","picture_cuts.py","audio_master_jobs.py")
+        for name in added:
+            (self.code/name).unlink()
+        baseline={"projects":1,"episodes":1,"production_shots":31,"assets":0}
+        changed={**baseline,"projects":0}
+        with patch.object(updater,"check_studio_health",
+                          side_effect=[baseline,changed,baseline]):
+            with self.assertRaisesRegex(updater.UpdateError,
+                                         "studio_ledger_changed_during_upgrade"):
+                updater.apply_update(self.manifest,
+                    updater.files_from_archive(self.zip,self.manifest))
+        self.assertEqual((self.state/"installed-version.txt").read_text(),"0.9.0")
+        self.assertFalse((self.state/"pending.json").exists())
+        for name in added:
+            self.assertFalse((self.code/name).exists())
+        for name in updater.FILES:
+            if name not in added:
+                self.assertEqual((self.code/name).read_bytes(),self.original[name])
+        backups=list(self.state.glob("backup-*"))
+        self.assertEqual(len(backups),1)
+        for name in added:
+            self.assertFalse((backups[0]/name).exists())
+
+    def test_interrupted_upgrade_recovers_old_files_and_unlinks_new_files(self):
+        added={"video_results.py","audio_master.py","assemble_approved_cut.py"}
+        for name in added:
+            (self.code/name).unlink()
+        backup=self.state/("backup-"+"a"*32)
+        backup.mkdir()
+        for name in updater.FILES:
+            if name not in added:
+                (backup/name).write_bytes(self.original[name])
+        # Emulate power loss midway through a mixed add+replace transaction:
+        # some new files exist and others have not yet been written.
+        for name in ("video_results.py","audio_master.py","studio_server.py"):
+            (self.code/name).write_bytes((self.src/name).read_bytes())
+        (self.state/"pending.json").write_text(json.dumps({
+            "backup":backup.name,"from_version":"0.9.0",
+            "created_files":sorted(added)}))
+        self.assertTrue(updater.recover())
+        self.assertFalse((self.state/"pending.json").exists())
+        self.assertEqual((self.state/"installed-version.txt").read_text(),"0.9.0")
+        for name in added:
+            self.assertFalse((self.code/name).exists())
+        for name in updater.FILES:
+            if name not in added:
+                self.assertEqual((self.code/name).read_bytes(),self.original[name])
+        self.assertFalse(updater.recover())
+
+    def test_malicious_recovery_journal_cannot_delete_nonallowlisted_file(self):
+        protected=self.code/"private-owner-data.txt"
+        protected.write_text("do not delete")
+        backup=self.state/("backup-"+"b"*32)
+        backup.mkdir()
+        for name in updater.FILES:
+            (backup/name).write_bytes(self.original[name])
+        journal=self.state/"pending.json"
+        for bad in (["private-owner-data.txt"],["video_results.py"]*2,
+                    ["../private-owner-data.txt"],[23]):
+            journal.write_text(json.dumps({"backup":backup.name,
+                "from_version":"0.9.0","created_files":bad}))
+            with self.assertRaisesRegex(updater.UpdateError,"bad_recovery_journal"):
+                updater.recover()
+            self.assertEqual(protected.read_text(),"do not delete")
+            self.assertTrue(journal.exists())
+
+    def test_dangling_symlink_and_existing_directory_still_rejected(self):
+        name="video_results.py"
+        path=self.code/name
+        path.unlink()
+        path.symlink_to(self.root/"nonexistent-module.py")
+        self.assertFalse(path.exists())
+        self.assertTrue(path.is_symlink())
+        with self.assertRaisesRegex(updater.UpdateError,"unsafe_existing_studio_file"):
+            updater.apply_update(self.manifest,
+                updater.files_from_archive(self.zip,self.manifest))
+        path.unlink()
+        path.mkdir()
+        with self.assertRaisesRegex(updater.UpdateError,"unsafe_existing_studio_file"):
+            updater.apply_update(self.manifest,
+                updater.files_from_archive(self.zip,self.manifest))
+        self.assertEqual(list(self.state.glob("backup-*")),[])
+
     def test_symlink_existing_file_is_refused_before_backup(self):
         target=self.code/"studio_brain.py"
         target.unlink()
