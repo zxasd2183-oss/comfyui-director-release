@@ -112,7 +112,7 @@ def signed_update_status():
         if type(item) is not dict:
             return {"status": "invalid_receipt"}
         # Never forward arbitrary strings or raw updater logs through MCP.
-        allowed = ("status", "version", "reason", "recovered")
+        allowed = ("status", "version", "reason", "code", "recovered")
         return {name: item[name] for name in allowed
                 if name in item and type(item[name]) in (str, bool)}
     except (OSError, UnicodeError, ValueError, TypeError):
