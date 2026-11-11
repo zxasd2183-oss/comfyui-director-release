@@ -66,10 +66,29 @@ class PreviewPresetTest(unittest.TestCase):
             def get_component_by_class(self,_type):
                 return self.light
 
+        class FakeVector:
+            def __init__(self,x,y,z):
+                self.x,self.y,self.z=x,y,z
+        class FakeCameraActor:
+            def __init__(self):
+                self.location=FakeVector(-420.0,345.0,225.0)
+                self.rotation=None
+            def get_actor_label(self):
+                return "V03_CAM_SH13"
+            def get_component_by_class(self,kind):
+                return self if kind is fake.CineCameraComponent else None
+            def get_actor_location(self):
+                return self.location
+            def set_actor_location_and_rotation(self,new_location,new_rotation,sweep,teleport):
+                assert not sweep and teleport
+                self.location=new_location
+                self.rotation=new_rotation
+        camera13=FakeCameraActor()
         original_map="/Game/Director/V03/Maps/WaitingOffice_EP01_Stage"
         stage_actors=[
             FakeLightActor("V03_Key_Light",18000.0),
             FakeLightActor("V03_Fill_Light",9000.0),
+            camera13,
         ]
         class FakeLevel:
             cloned_from=None
@@ -107,6 +126,11 @@ class PreviewPresetTest(unittest.TestCase):
             LevelEditorSubsystem=type("LevelEditorSubsystem",(),{}),
             EditorActorSubsystem=type("EditorActorSubsystem",(),{}),
             PointLightComponent=type("PointLightComponent",(),{}),
+            CineCameraComponent=type("CineCameraComponent",(),{}),
+            Vector=FakeVector,
+            MathLibrary=types.SimpleNamespace(
+                find_look_at_rotation=lambda start,target: ("look_at",start,target)
+            ),
             get_editor_subsystem=get_subsystem,
             DirectoryPath=lambda path: ("DirectoryPath",path),
             IntPoint=lambda x,y: (x,y),
@@ -141,6 +165,13 @@ class PreviewPresetTest(unittest.TestCase):
             self.assertIn("/Game/Director/V051/Maps/",level.stage_path)
             self.assertEqual(stage_actors[0].light.props["intensity"],800.0)
             self.assertEqual(stage_actors[1].light.props["intensity"],400.0)
+            self.assertEqual((camera13.location.x,camera13.location.y,camera13.location.z),
+                             (-860.0,345.0,225.0))
+            self.assertIsNotNone(camera13.rotation)
+            self.assertEqual(result["camera13_reframe"]["original"],
+                             [-420.0,345.0,225.0])
+            self.assertEqual(result["camera13_reframe"]["preview"],
+                             [-860.0,345.0,225.0])
             self.assertEqual(result["height"],1280)
             self.assertEqual(len(created),1)
             config=assets[created[0]]
