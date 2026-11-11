@@ -53,7 +53,7 @@ class ClientKeyMigrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             file = Path(root) / "mac_update_core.py"
             file.write_text(
-                'CURRENT_VERSION = "0.20.18"\n'
+                f'CURRENT_VERSION = "{migrate.PLATFORM_VERSIONS["macos"]}"\n'
                 f'KEY_ID = "{migrate.OLD_KEY_ID}"\n'
                 f'PUBLIC_KEY = bytes.fromhex("{migrate.OLD_PUBLIC}")\n',
                 encoding="utf-8",
