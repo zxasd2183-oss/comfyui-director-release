@@ -25,6 +25,8 @@ from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
 from glacier_splash import show_glacier_splash
+from glacier_proxy_health29 import (ephemeral_proxy_config, await_proxy_ready,
+                                    proxy_status_text)
 
 APP = "Glacier Browser"
 def appdir():
@@ -106,12 +108,31 @@ def proxy_start(link,port):
  core=core_path()
  if not core:raise RuntimeError("安装包内未找到 sing-box.exe")
  config={"log":{"level":"warn"},"inbounds":[{"type":"mixed","tag":"in","listen":"127.0.0.1","listen_port":port,"set_system_proxy":False}],"outbounds":[parse_node(link)],"route":{"final":"node"}}
- configfile=appdir()/"runtime.json"
- configfile.write_text(json.dumps(config),encoding="utf-8")
  flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
- result=subprocess.run([str(core),"check","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15,creationflags=flags)
- if result.returncode:raise RuntimeError("代理内核无法识别这个 VLESS 节点（可能存在不兼容参数）")
- return subprocess.Popen([str(core),"run","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
+ # The persistent VLESS link stays DPAPI-encrypted. Only a temporary JSON
+ # is provided to sing-box while the core verifies and loads configuration.
+ # After local listener readiness this JSON is deleted even if startup fails.
+ with ephemeral_proxy_config(appdir(),config) as configfile:
+  result=subprocess.run([str(core),"check","-c",str(configfile)],
+   stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+   timeout=15,creationflags=flags)
+  if result.returncode:raise RuntimeError("VLESS 核心无法识别该线路配置")
+  proc=subprocess.Popen([str(core),"run","-c",str(configfile)],
+   stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
+  try:
+   await_proxy_ready(proc,port,timeout=12)
+  except Exception:
+   if proc.poll() is None:
+    try:proc.terminate()
+    except OSError:pass
+   raise
+ # Delete any stale plaintext config left by the old v0.20.x client.
+ # It is never necessary for the verified, running sing-box core.
+ legacy=appdir()/"runtime.json"
+ try:legacy.unlink(missing_ok=True)
+ except OSError:pass
+ return proc
+
 class Page(QWebEngineView):
  def __init__(self,win):
   super().__init__(win)
@@ -140,7 +161,15 @@ class Browser(GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierI
   self.init_features(bar)
   self.init_ui09(bar, lambda data: dpapi(data), lambda data: dpapi(data, True), appdir())
   self.setup_tabtools13(lay,bar)
-  self.proxy_label=QLabel("● 核心运行中（尚未联网验证）" if process else "● 未连接（禁止直连）");bar.addWidget(self.proxy_label)
+  self.proxy_label=QPushButton("● 正在检查代理状态",self)
+  self.proxy_label.setObjectName("GlacierProxyHealth29")
+  self.proxy_label.setToolTip("仅检测本地代理端口，不进行公网直连；断开时点击重连已保存线路")
+  self.proxy_label.clicked.connect(self.reconnect_saved_proxy29)
+  bar.addWidget(self.proxy_label)
+  self._proxy_health_timer29=QTimer(self)
+  self._proxy_health_timer29.timeout.connect(self.refresh_proxy_status29)
+  self._proxy_health_timer29.start(3500)
+  self.refresh_proxy_status29()
   self.tabs=QTabWidget();self.tabs.setTabsClosable(True);self.tabs.tabCloseRequested.connect(self.close_tab);self.tabs.currentChanged.connect(self.sync_url);self.tabs.currentChanged.connect(lambda _idx:self.queue_session_save())
   lay.addWidget(self.tabs);self.connect_tabbar13();self.new_tab()
   self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
@@ -158,6 +187,45 @@ class Browser(GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierI
   self.setup_accounts22(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
   self.setup_sync23(appdir(), lambda data: dpapi(data), lambda data: dpapi(data, True))
   self.setup_account_center26(bar)
+ def refresh_proxy_status29(self):
+  status, ready=proxy_status_text(self.proc,self.proxy_port)
+  if self.proxy_label.text()!=status:self.proxy_label.setText(status)
+  self.proxy_label.setStyleSheet(
+   "QPushButton#GlacierProxyHealth29 {border:1px solid #dce6ec;"
+   "border-radius:9px;background:#f5f9fb;padding:6px 9px;"
+   "color:"+("#177956" if ready else "#a04d41")+";}")
+
+ def reconnect_saved_proxy29(self):
+  # Deliberately reconnect only the stored DPAPI-encrypted VLESS line.
+  # The Qt and Chromium proxies remain locked to 127.0.0.1 at all times:
+  # a failed reconnect NEVER falls back to the machine's direct connection.
+  state,ready=proxy_status_text(self.proc,self.proxy_port)
+  if ready:
+   self.statusBar().showMessage("本地 VLESS 代理已在运行",4500)
+   return True
+  link=get_link(QApplication.instance())
+  if not link:return False
+  previous=self.proc
+  if previous is not None and previous.poll() is None:
+   try:
+    previous.terminate()
+    previous.wait(timeout=5)
+   except (OSError,subprocess.TimeoutExpired):
+    QMessageBox.warning(self,APP,"旧代理尚未退出。为避免端口冲突，已取消重新连接。")
+    self.refresh_proxy_status29()
+    return False
+  self.proc=None
+  self.refresh_proxy_status29()
+  try:
+   self.proc=proxy_start(link,self.proxy_port)
+  except Exception:
+   QMessageBox.warning(self,APP,"VLESS 重新连接失败，已继续禁止直连。请检查线路或代理内核。")
+   self.refresh_proxy_status29()
+   return False
+  self.refresh_proxy_status29()
+  self.statusBar().showMessage("本地代理端口已就绪；公网连通性尚未验证",5500)
+  return True
+
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -195,6 +263,7 @@ class Browser(GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierI
   else:url=self.search_url(text)
   self.current().setUrl(QUrl(url))
  def closeEvent(self,event):
+  self._proxy_health_timer29.stop()
   self.close_satellite_windows()
   self.flush_workspaces17()
   self.flush_downloads17()

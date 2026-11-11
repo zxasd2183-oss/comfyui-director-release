@@ -1,0 +1,36 @@
+name: Glacier Windows VLESS privacy and local proxy health
+on:
+  push:
+    branches:
+      - feature/glacier-windows-proxy-health-v02019
+    paths:
+      - 'glacier-windows/glacier_proxy_health29.py'
+      - 'glacier-windows/test_proxy_health29.py'
+      - 'glacier-windows/main.py'
+      - '.github/workflows/glacier-windows-proxy-health-regression.yml'
+  pull_request:
+    branches:
+      - release/glacier-windows-v0-20-18
+permissions:
+  contents: read
+jobs:
+  windows-proxy-safety:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: glacier-windows
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile untrusted-input and proxy guard without importing private browser state
+        run: |
+          python -m py_compile main.py glacier_proxy_health29.py test_proxy_health29.py
+          if ($LASTEXITCODE -ne 0) { throw 'Windows VLESS proxy guard syntax failure' }
+      - name: Validate loopback-only transport, encrypted profile and ephemeral config removal
+        run: |
+          python -m unittest -v test_proxy_health29
+          if ($LASTEXITCODE -ne 0) { throw 'Windows VLESS proxy guard regression failed' }
