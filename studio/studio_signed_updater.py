@@ -203,7 +203,10 @@ def check_studio(expected_version=None):
         if len(raw) > 65536: raise UpdateError("studio_health_oversized")
         info=json.loads(raw)
     counts=info.get("counts") if isinstance(info,dict) else None
-    if (not isinstance(info,dict) or info.get("ok") is not True or
+    if (not isinstance(info,dict) or
+            info.get("mode") != "read_only_production_summary" or
+            type(info.get("version")) is not str or
+            not VER.fullmatch(info["version"]) or
             info.get("audit_chain_verified") is not True or
             not isinstance(counts,dict) or
             not all(type(v) is int and v>=0 for v in counts.values()) or

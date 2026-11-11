@@ -123,7 +123,9 @@ class SignedStudioTests(unittest.TestCase):
         self.assertEqual(list(self.state.glob("backup-*")),[])
 
     def test_live_studio_version_must_match_signed_release(self):
-        data={"ok":True,"audit_chain_verified":True,
+        # Matches REAL studio /api/v1/production: intentionally no "ok" key.
+        data={"version":"0.9.0","mode":"read_only_production_summary",
+              "audit_chain_verified":True,
               "studio_code_version":"0.9.0",
               "counts":{"projects":1,"episodes":1,"production_shots":31}}
         class Reply:
@@ -143,6 +145,13 @@ class SignedStudioTests(unittest.TestCase):
                 updater.check_studio("0.10.0")
             data["studio_code_version"]="0.10.0"
             self.assertEqual(updater.check_studio("0.10.0")["production_shots"],31)
+            data["audit_chain_verified"]=False
+            with self.assertRaisesRegex(updater.UpdateError,"studio_audit_or_health_invalid"):
+                updater.check_studio("0.10.0")
+            data["audit_chain_verified"]=True
+            data["mode"]="microsoft_owner_api"
+            with self.assertRaisesRegex(updater.UpdateError,"studio_audit_or_health_invalid"):
+                updater.check_studio("0.10.0")
 
     def test_missing_or_unsafe_pinned_source_fails_build(self):
         (self.src/"studio_brain.py").unlink()
