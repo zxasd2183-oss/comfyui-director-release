@@ -195,6 +195,44 @@ jobs:
           path: emulator-evidence/
           if-no-files-found: warn
           retention-days: 30
+  emulator_external_websites:
+    name: Android 15 fresh real-sites + native UI click stress
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the exact APK built by this run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug
+          path: .glacier-test-apk
+      - name: Configure KVM access for emulator
+        run: |
+          if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Test ChatGPT, GitHub and real native click after heavy pages
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            GLACIER_APK="$GITHUB_WORKSPACE/.glacier-test-apk/GlacierAndroid-v0.2.2-Mobile-M05-ARM64-x86_64-debug.apk" GLACIER_SMOKE_OUT="$GITHUB_WORKSPACE/emulator-websites-evidence" python3 "$GITHUB_WORKSPACE/glacier-android-gecko/scripts/external_site_smoke.py"
+      - name: Preserve screenshots and ADB/logcat evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierAndroid-v0.2.2-M05-websites-evidence
+          path: emulator-websites-evidence/
+          if-no-files-found: warn
+          retention-days: 30
   emulator_proxy_fail_closed:
     name: Android 15 SOCKS offline fail-closed regression (no VLESS secrets)
     needs: build
