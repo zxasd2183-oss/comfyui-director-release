@@ -314,7 +314,9 @@ def apply_update(code_dir, state, payload, files):
     status = worker_status(code_dir)
     if status.get("worker_version") != current:
         raise UpdateError("worker_version_drift")
-    if status.get("active_job_id") is not None:
+    if "active_job_id" not in status:
+        raise UpdateError("ue_worker_job_state_unverifiable")
+    if status["active_job_id"] is not None:
         raise UpdateError("ue_worker_job_in_progress")
     check_no_running_ue_commandlet()
     if (state / "pending.json").exists():
