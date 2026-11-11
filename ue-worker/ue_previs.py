@@ -159,11 +159,18 @@ def run_previs(spec,root,work):
         raise JobError("previs_preset_creation_failed")
     # The map path comes from a pinned per-job asset name, not HTTP input.
     expected_map = "/Game/Director/V051/Maps/WO_EP01_ExposurePreview_" + work.name
+    expected_camera13 = {
+        "label": "V03_CAM_SH13",
+        "original": [-420.0, 345.0, 225.0],
+        "preview": [-860.0, 345.0, 225.0],
+        "look_at": [-245.0, 380.0, 103.0],
+    }
     if (data.get("stage_map") != expected_map or
             data.get("source_map") != MAP_PATH or
             data.get("light_intensities") !=
-            {"V03_Key_Light": 800.0, "V03_Fill_Light": 400.0}):
-        raise JobError("exposure_stage_unverified")
+            {"V03_Key_Light": 800.0, "V03_Fill_Light": 400.0} or
+            data.get("camera13_reframe") != expected_camera13):
+        raise JobError("preview_stage_unverified")
     if hashlib.sha256(source_map_file.read_bytes()).hexdigest() != source_sha256_before:
         raise JobError("source_v03_stage_was_modified")
     screenshots = []
@@ -234,6 +241,7 @@ def run_previs(spec,root,work):
         "source_stage_sha256": source_sha256_before,
         "source_stage_unchanged": True,
         "light_intensities": data["light_intensities"],
+        "camera13_reframe": data["camera13_reframe"],
         "render_ready":False,
         "metahuman_bound":False,
         "preview_count":len(screenshots),
