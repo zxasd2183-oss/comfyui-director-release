@@ -72,5 +72,24 @@ class HubPortContractTests(unittest.TestCase):
         self.assertIn('systemctl restart director-hub-bridge',script)
 
 
+    def test_installer_accepts_only_exact_retired_gpu_readonly_state(self):
+        script=content(VPS/"install-hub-v06.sh")
+        # Verify the embedded, actual post-deployment Python probe compiles.
+        probe=re.search(r"""(?s)"\$PYTHON" - <<'PY'\n(.*?)\nPY""",script)
+        self.assertIsNotNone(probe,"read-only deployment probe missing")
+        compile(probe.group(1),"<director-hub-deploy-probe>","exec")
+        self.assertIn('controller.get("configured")',probe.group(1))
+        self.assertIn('controller.get("instance_selected")',probe.group(1))
+        self.assertIn('controller.get("gpu_control_enabled") is False',probe.group(1))
+        self.assertIn('controller.get("mode") == "read_only"',probe.group(1))
+        self.assertIn('stat.get("ok") is False',probe.group(1))
+        self.assertIn('stat.get("mode") == "read_only"',probe.group(1))
+        self.assertIn('stat.get("reason") == "provider_request_failed"',probe.group(1))
+        self.assertIn('raise RuntimeError("Read-only status backend unavailable")',probe.group(1))
+        self.assertNotIn('read(port,"start_gpu_now")',probe.group(1))
+        self.assertNotIn('read(port,"stop_gpu_now")',probe.group(1))
+        self.assertIn("Hub 47 tools; no GPU power operation",probe.group(1))
+
+
 if __name__=="__main__":
     unittest.main()

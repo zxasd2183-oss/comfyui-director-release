@@ -208,13 +208,27 @@ for attempt in range(8):
         for port,expected in ((8892,core),(8898,hub)):
             actual={item["name"] for item in rpc(port,"tools/list",{})["tools"]}
             if actual!=expected: raise RuntimeError("Unexpected registry at "+str(port))
-            stat=read(port,"get_gpu_power_status")
-            if not stat.get("ok") or stat.get("state") not in (
-                "Stopped","Running","Starting","Stopping"):
-                raise RuntimeError("Read-only status backend unavailable")
-            if not read(port,"get_control_center_status").get("configured"):
+            controller=read(port,"get_control_center_status")
+            if not controller.get("configured") or not controller.get("instance_selected"):
                 raise RuntimeError("Provider configuration unavailable")
-        print("PASS: VPS core 8 tools; Hub 29 tools; state via both; no power operation")
+            stat=read(port,"get_gpu_power_status")
+            if stat.get("ok") is True:
+                if stat.get("state") not in ("Stopped","Running","Starting","Stopping"):
+                    raise RuntimeError("Unexpected GPU provider state")
+            elif (
+                # Retired/disabled cloud GPU may have a stale provider token.
+                # This explicitly readonly state is NOT a power authorization.
+                controller.get("gpu_control_enabled") is False and
+                controller.get("mode") == "read_only" and
+                stat.get("ok") is False and
+                stat.get("mode") == "read_only" and
+                stat.get("reason") == "provider_request_failed"
+            ):
+                print("PASS: GPU provider unavailable, cloud power disabled (read-only)")
+            else:
+                # Any enabled power controller must prove the real provider state.
+                raise RuntimeError("Read-only status backend unavailable")
+        print("PASS: VPS core 8 tools; Hub 47 tools; no GPU power operation")
         break
     except Exception:
         if attempt==7: raise
