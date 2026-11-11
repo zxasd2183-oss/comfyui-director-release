@@ -22,8 +22,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_PROMPT_DISABLED: '1'
-      WINDOWS_QA_RUN: '0'
-      MACOS_QA_RUN: '0'
+      WINDOWS_QA_RUN: '43051203477'
+      MACOS_QA_RUN: '43051203460'
       WINDOWS_TAG: 'glacier-v0.20.23'
       MACOS_TAG: 'glacier-macos-v0.20.21'
       WINDOWS_ASSET: 'GlacierBrowser-v0.20.23-Windows-Setup-x64.exe'
@@ -78,9 +78,14 @@ jobs:
                   raise RuntimeError(label+' native QA not successful on expected feature branch')
               sha=run['head_sha']
               subprocess.run(['git','merge-base','--is-ancestor',sha,'HEAD'],check=True)
+              shared=(['glacier-windows/glacier_shell20.py',
+                       'glacier-windows/glacier_chrome_shell33.py',
+                       'glacier-windows/glacier_desktop_ui32.py',
+                       'glacier-windows/glacier_chrome_ui30.py'] if label=='macOS' else [])
               if subprocess.run(['git','diff','--quiet',sha,'HEAD','--',
-                                 source,'scripts/glacier_prepare_rotated_update.py']).returncode:
-                  raise RuntimeError(label+' client changed after final native QA')
+                                 source,'scripts/glacier_prepare_rotated_update.py',
+                                 *shared]).returncode:
+                  raise RuntimeError(label+' client or shared browser UI changed after final native QA')
               print(label,'native QA pinned:',runid,sha)
           PY
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$WINDOWS_QA_RUN/artifacts?per_page=100" > windows-artifacts.json
