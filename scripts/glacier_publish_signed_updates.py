@@ -101,7 +101,8 @@ def release_index(releases):
         raise ValueError("GitHub release metadata is not an array")
     windows, macs = {}, {}
     for release in releases:
-        if not isinstance(release, dict) or release.get("draft"):
+        if (not isinstance(release, dict) or release.get("draft")
+                or release.get("prerelease")):
             continue
         if not release.get("published_at"):
             continue
@@ -237,11 +238,14 @@ def needs_new_signed_release(releases, directory):
         if verified.get("channel") != channel:
             raise ValueError("Existing feed channel mismatch")
         versions.append(verified["version"])
-    if versions[0] != versions[1]:
-        raise ValueError("Existing dual-platform signed feed versions differ")
-    if version_tuple(latest) < version_tuple(versions[0]):
+    if version_tuple(latest) < min(map(version_tuple, versions)):
         raise ValueError("Refusing signed feed rollback")
-    if version_tuple(latest) == version_tuple(versions[0]):
+    # Windows and macOS may now advance independently. A paired publisher
+    # must never downgrade the channel that is already ahead.
+    if version_tuple(latest) < max(map(version_tuple, versions)):
+        print("Paired release behind an independently advanced signed channel.")
+        return False
+    if all(version_tuple(latest) == version_tuple(v) for v in versions):
         # Do not trust potentially replaced GitHub assets under the old tag.
         # Stable clients retain the previously signed and pinned payload.
         print("No newer canonical dual-platform release; signed feeds remain immutable.")
