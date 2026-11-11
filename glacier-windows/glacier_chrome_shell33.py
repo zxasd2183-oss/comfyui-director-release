@@ -205,8 +205,10 @@ def _install_tab_closers33(bar):
         button.setIconSize(QSize(13, 13))
         button.setToolTip("关闭标签页")
         def close_this_tab(_checked=False, owned_button=button):
-            point = owned_button.mapTo(bar, owned_button.rect().center())
-            current_index = bar.tabAt(point)
+            current_index = next(
+                (i for i in range(bar.count())
+                 if bar.tabButton(i, QTabBar.ButtonPosition.RightSide) is owned_button),
+                -1)
             if current_index >= 0:
                 bar.tabCloseRequested.emit(current_index)
         button.clicked.connect(close_this_tab)
