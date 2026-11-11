@@ -22,6 +22,39 @@ LIGHT_TARGETS = {
     "V03_Key_Light": (18000.0, 800.0),
     "V03_Fill_Light": (9000.0, 400.0),
 }
+# The original entrance shot 13 was accidentally positioned only ~216 cm
+# from the Zero stand-in. Reframe ONLY the cloned stage's SH13 camera.
+CAMERA13_LABEL = "V03_CAM_SH13"
+CAMERA13_ORIGINAL = (-420.0, 345.0, 225.0)
+CAMERA13_PREVIEW = (-860.0, 345.0, 225.0)
+CAMERA13_FOCUS = (-245.0, 380.0, 103.0)
+
+
+def _coords(vector):
+    return (float(vector.x), float(vector.y), float(vector.z))
+
+
+def fix_private_sh13_camera(actors):
+    matching = [a for a in actors if a.get_actor_label() == CAMERA13_LABEL]
+    if len(matching) != 1:
+        raise RuntimeError("exposure_camera13_missing_or_duplicated")
+    camera = matching[0]
+    if not camera.get_component_by_class(unreal.CineCameraComponent):
+        raise RuntimeError("exposure_camera13_component_missing")
+    original = _coords(camera.get_actor_location())
+    if any(abs(actual - expected) > 1.0 for actual, expected in
+           zip(original, CAMERA13_ORIGINAL)):
+        raise RuntimeError("exposure_camera13_source_pose_drift")
+    destination = unreal.Vector(*CAMERA13_PREVIEW)
+    focus = unreal.Vector(*CAMERA13_FOCUS)
+    rotation = unreal.MathLibrary.find_look_at_rotation(destination, focus)
+    camera.set_actor_location_and_rotation(destination, rotation, False, True)
+    final = _coords(camera.get_actor_location())
+    if any(abs(actual - expected) > 1.0 for actual, expected in
+           zip(final, CAMERA13_PREVIEW)):
+        raise RuntimeError("exposure_camera13_write_failed")
+    return {"label": CAMERA13_LABEL, "original": list(original),
+            "preview": list(final), "look_at": list(CAMERA13_FOCUS)}
 
 
 def create_private_exposure_stage(job_id):
@@ -59,10 +92,11 @@ def create_private_exposure_stage(job_id):
         if abs(measured - target) > 0.5:
             raise RuntimeError("exposure_light_write_failed_" + label)
         changed[label] = measured
+    camera13 = fix_private_sh13_camera(actors)
     # Saving the current level persists ONLY the newly created map.
     if not editor.save_current_level():
         raise RuntimeError("exposure_stage_save_failed")
-    return stage, changed
+    return stage, changed, camera13
 
 
 def main():
@@ -109,11 +143,12 @@ def main():
         if not unreal.EditorAssetLibrary.save_loaded_asset(config):
             raise RuntimeError("preview_preset_save_failed")
         # Source V03.umap remains immutable; never apply light changes in place.
-        map_path, light_levels = create_private_exposure_stage(job_id)
+        map_path, light_levels, camera13 = create_private_exposure_stage(job_id)
         result = {"ok":True, "preset":asset_path + "." + asset_name,
                   "width":720,"height":1280,"frames_per_shot":1,
                   "stage_map":map_path, "source_map":V03_SOURCE_STAGE,
-                  "light_intensities":light_levels}
+                  "light_intensities":light_levels,
+                  "camera13_reframe":camera13}
     except Exception as exc:
         result = {"ok":False, "reason":str(exc)[:400],
                   "traceback":traceback.format_exc(limit=5)[-2000:]}
