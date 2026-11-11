@@ -9,7 +9,8 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QDialog, QHBoxLayout, QLabel,
                                QMessageBox, QProgressBar, QPushButton, QVBoxLayout)
 from mac_update_core import (CURRENT_VERSION, UpdateError, get_manifest,
-                             newer_than, download_dmg)
+                             newer_than, download_dmg, verify_local_dmg)
+from mac_install import writable_installed_app, launch_user_confirmed_install
 
 
 class _UpdateSignals(QObject):
@@ -28,7 +29,7 @@ class MacUpdateUI:
             self._mac_update_settings = json.loads(self._mac_settings_path.read_text(encoding="utf-8"))
             if not isinstance(self._mac_update_settings,dict): raise ValueError()
         except (OSError,ValueError):
-            self._mac_update_settings = {"auto_check": True, "auto_download": False}
+            self._mac_update_settings = {"auto_check": True, "auto_download": True}
         self._mac_update_busy = False
         self._mac_manifest = None
         self._mac_installer = None
@@ -49,7 +50,7 @@ class MacUpdateUI:
         dlg.resize(460,270)
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel(f"❄ Glacier Browser  ·  macOS Apple Silicon v{CURRENT_VERSION}"))
-        lay.addWidget(QLabel("更新通道：GitHub / macos-arm64  ·  Ed25519 验签"))
+        lay.addWidget(QLabel("更新通道：VPS / macos-arm64  ·  Ed25519 验签"))
         status = QLabel("点击「检查更新」获取最新版本。")
         status.setWordWrap(True)
         lay.addWidget(status)
@@ -60,7 +61,7 @@ class MacUpdateUI:
         row=QHBoxLayout()
         check=QPushButton("检查更新")
         download=QPushButton("下载更新")
-        install=QPushButton("打开 DMG 安装")
+        install=QPushButton("一键安装并重启" if writable_installed_app() else "打开 DMG 安装")
         download.setEnabled(False)
         install.setEnabled(False)
         check.clicked.connect(lambda: self.check_mac_updates(True))
@@ -71,12 +72,12 @@ class MacUpdateUI:
         auto_check=QCheckBox("启动时自动检查更新")
         auto_download=QCheckBox("检测到新版后自动下载（安装前仍需要确认）")
         auto_check.setChecked(bool(self._mac_update_settings.get("auto_check",True)))
-        auto_download.setChecked(bool(self._mac_update_settings.get("auto_download",False)))
+        auto_download.setChecked(bool(self._mac_update_settings.get("auto_download",True)))
         auto_check.toggled.connect(lambda v:self._save_mac_setting("auto_check",v))
         auto_download.toggled.connect(lambda v:self._save_mac_setting("auto_download",v))
         lay.addWidget(auto_check)
         lay.addWidget(auto_download)
-        lay.addWidget(QLabel("更新流量通过 VLESS 访问 GitHub；无代理时拒绝直连。"))
+        lay.addWidget(QLabel("正式更新由自有 VPS HTTPS 提供；签名及 SHA256 均会校验。"))
         lay.addWidget(QLabel("未进行 Apple Developer ID 签名/公证，安装时需确认。"))
         self._mac_dialog=dlg
         self._mac_status=status
@@ -115,7 +116,7 @@ class MacUpdateUI:
         self._mac_installer=None
         self._mac_manifest=None
         self._set_busy(True)
-        self._mac_status.setText("正在经 VLESS 获取 Mac 签名更新…")
+        self._mac_status.setText("正在从 VPS 获取 Mac 签名更新…")
         if show_ui:self.show_mac_updates()
         port=getattr(self,"proxy_port",0)
         def job():
@@ -139,14 +140,14 @@ class MacUpdateUI:
         self._mac_manifest=manifest
         self._mac_status.setText("发现 v"+manifest["version"]+"："+manifest["notes"])
         self._set_busy(False)
-        if self._mac_update_settings.get("auto_download",False):
+        if self._mac_update_settings.get("auto_download",True):
             self.download_mac_update()
 
     def download_mac_update(self):
         if self._mac_update_busy or self._mac_manifest is None:return
         self._mac_progress.setValue(0)
         self._set_busy(True)
-        self._mac_status.setText("正在经 VLESS 下载并验证新版 DMG…")
+        self._mac_status.setText("正在下载并验证新版 DMG…")
         manifest=self._mac_manifest.copy()
         port=getattr(self,"proxy_port",0)
         def job():
@@ -176,6 +177,43 @@ class MacUpdateUI:
     def open_verified_dmg(self):
         if self._mac_installer is None or not self._mac_installer.is_file():
             return
+        try:
+            if self._mac_manifest is None:
+                raise UpdateError("没有可验证的更新清单")
+            verify_local_dmg(self._mac_manifest, self._mac_installer)
+        except UpdateError as exc:
+            self._mac_installer = None
+            self._set_busy(False)
+            QMessageBox.warning(self, "Glacier Browser", "更新包验证失败：" + str(exc))
+            return
+        if writable_installed_app() is not None:
+            answer=QMessageBox.question(
+                self, "一键安装 Glacier Browser 更新",
+                "已验证签名更新清单及 DMG SHA256。\n"
+                "确认后将保存会话并退出当前浏览器，在可写的 Applications 目录"
+                "替换应用，随后自动重启。\n"
+                "钥匙串、浏览记录和账户数据保存在应用程序包之外，不会被清除。\n\n"
+                "安装包尚无 Apple Developer ID 公证，macOS 仍可能要求授权。\n\n"
+                "立即安装并重启？",
+                QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                launch_user_confirmed_install(
+                    self._mac_manifest, self._mac_installer, self._mac_update_dir
+                )
+            except UpdateError as exc:
+                QMessageBox.warning(
+                    self, "Glacier Browser", "无法启动一键安装：" + str(exc)
+                    + "\n可改用 Finder 打开 DMG 手动替换。"
+                )
+                return
+            self._mac_status.setText("安装助手已启动，正在保存浏览会话并退出…")
+            QTimer.singleShot(200, self.close)
+            return
+
         answer=QMessageBox.question(
             self,
             "安装 Glacier Browser 更新",

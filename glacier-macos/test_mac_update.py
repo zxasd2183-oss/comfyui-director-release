@@ -2,7 +2,9 @@
 import base64
 import copy
 import hashlib
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from cryptography.hazmat.primitives import serialization
@@ -39,6 +41,20 @@ class ManifestTests(unittest.TestCase):
 
     def test_valid_signature(self):
         self.assertEqual(self.check(self.signed())["channel"],"macos-arm64")
+
+    def test_vps_signed_installer_origin_accepted(self):
+        m=self.signed("0.20.10")
+        m["url"]="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.10-macOS-AppleSilicon.dmg"
+        m["signature"]=base64.b64encode(self.key.sign(u.canonical(
+            {k:v for k,v in m.items() if k!="signature"}))).decode("ascii")
+        self.assertEqual(self.check(m)["version"],"0.20.10")
+
+    def test_vps_signed_wrong_path_rejected(self):
+        m=self.signed("0.20.10")
+        m["url"]="https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.11-macOS-AppleSilicon.dmg"
+        m["signature"]=base64.b64encode(self.key.sign(u.canonical(
+            {k:v for k,v in m.items() if k!="signature"}))).decode("ascii")
+        with self.assertRaises(u.UpdateError):self.check(m)
 
     def test_modified_hash(self):
         m=self.signed()
@@ -97,10 +113,36 @@ class ManifestTests(unittest.TestCase):
         self.assertFalse(session.trust_env)
         self.assertEqual(session.proxies["https"],"socks5h://127.0.0.1:18080")
         self.assertEqual(session.proxies["http"],"socks5h://127.0.0.1:18080")
-        self.assertTrue(u.FEED_URL.startswith("https://raw.githubusercontent.com/"))
+        self.assertEqual(u.FEED_URL,"https://sync.borealos.cn/downloads/macos-arm64.json")
+        direct=u.owner_vps_session()
+        self.assertFalse(direct.trust_env)
+        self.assertFalse(direct.proxies.get("https"))
+        direct.close()
         session.close()
         for port in (0, -1, 65536, None):
             with self.assertRaises(u.UpdateError):u.signed_update_session(port)
+
+    def test_cached_dmg_is_reverified_before_finder_opens_it(self):
+        data = b"glacier-dmg-content" * 105264
+        manifest = self.signed("0.20.16")
+        manifest["sha256"] = hashlib.sha256(data).hexdigest()
+        manifest["size"] = len(data)
+        manifest["signature"] = base64.b64encode(self.key.sign(u.canonical(
+            {k: v for k, v in manifest.items() if k != "signature"}
+        ))).decode("ascii")
+        with tempfile.TemporaryDirectory() as root:
+            installer = Path(root) / "GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg"
+            installer.write_bytes(data)
+            with patch.object(u, "PUBLIC_KEY", self.pub):
+                self.assertEqual(u.verify_local_dmg(manifest, installer), installer)
+                installer.write_bytes(b"tampered" + data[8:])
+                with self.assertRaises(u.UpdateError):
+                    u.verify_local_dmg(manifest, installer)
+                installer.write_bytes(data)
+                wrong_name = Path(root) / "GlacierBrowser-v0.20.17-macOS-AppleSilicon.dmg"
+                installer.rename(wrong_name)
+                with self.assertRaises(u.UpdateError):
+                    u.verify_local_dmg(manifest, wrong_name)
 
 if __name__=="__main__":
     unittest.main()

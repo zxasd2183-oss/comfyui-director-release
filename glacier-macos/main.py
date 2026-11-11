@@ -1,7 +1,7 @@
-import json, os, re, socket, subprocess, sys, uuid
+import json, os, re, socket, subprocess, sys, time, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QTimer
 from PySide6.QtNetwork import QNetworkProxy
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
@@ -12,7 +12,7 @@ from ui08 import GlacierPrefs
 from mac_ui08 import MacGlacierUI08
 from ui09 import GlacierUI09
 from mac_update import MacUpdateUI
-from mac_platform import appdir, dpapi, get_link, core_path
+from mac_platform import appdir, dpapi, get_link, core_path, xray_core_path
 from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
 from mac_chrome_adapter import MacChrome14
@@ -22,10 +22,13 @@ from glacier_workspaces17 import GlacierWorkspaces17
 from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
 from glacier_shell20 import GlacierShell20
+from glacier_chrome_ui30 import GlacierChromeUI30
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
-from glacier_chrome_ui30 import GlacierChromeUI30
+from glacier_splash import show_glacier_splash
+from mac_proxy_diagnostics import start_capture, latest_hint, classify
+from mac_xray_reality import build_xray_reality_config
 
 APP = "Glacier Browser"
 def parse_node(link):
@@ -44,7 +47,11 @@ def parse_node(link):
  if security!="none":
   tls={"enabled":True,"server_name":g("sni") or p.hostname}
   if g("fp"): tls["utls"]={"enabled":True,"fingerprint":g("fp")}
-  if g("alpn"): tls["alpn"]=g("alpn").split(",")
+  elif security=="reality":
+   # REALITY generally expects a browser-shaped ClientHello; Xray share links
+   # often omit fp even though matching clients default to chrome.
+   tls["utls"]={"enabled":True,"fingerprint":"chrome"}
+  if g("alpn"): tls["alpn"]=[v.strip() for v in g("alpn").split(",") if v.strip()]
   if security=="reality":
    if not g("pbk"): raise ValueError("REALITY 缺少 pbk")
    tls["reality"]={"enabled":True,"public_key":g("pbk"),"short_id":g("sid")}
@@ -53,22 +60,91 @@ def parse_node(link):
  if transport=="ws":
   t={"type":"ws","path":g("path","/")}
   if g("host"):t["headers"]={"Host":g("host")}
+  # Xray WebSocket early data must be preserved or the tunnel handshake fails.
+  ed=g("ed") or g("maxEarlyData")
+  if ed:
+   if not ed.isascii() or not ed.isdecimal() or not 0<=int(ed)<=65535:
+    raise ValueError("WebSocket early data 参数无效")
+   if int(ed):
+    t["max_early_data"]=int(ed)
+    t["early_data_header_name"]=g("eh") or "Sec-WebSocket-Protocol"
   o["transport"]=t
- elif transport=="grpc":o["transport"]={"type":"grpc","service_name":g("serviceName")}
+ elif transport=="grpc":
+  o["transport"]={"type":"grpc","service_name":g("serviceName") or g("service_name") or g("path")}
+ elif transport in ("httpupgrade","http-upgrade"):
+  t={"type":"httpupgrade","path":g("path","/")}
+  if g("host"):t["host"]=g("host")
+  o["transport"]=t
+ elif transport=="http":
+  t={"type":"http","path":g("path","/")}
+  if g("host"):t["host"]=[g("host")]
+  o["transport"]=t
  elif transport not in ("","tcp","raw"):raise ValueError("暂不支持传输类型 "+transport)
  return o
-def proxy_start(link,port):
- if not link:return None
+
+
+def build_proxy_config(link,port):
+ if not 1<=int(port)<=65535:raise ValueError("无效代理端口")
+ outbound=parse_node(link)
+ # sing-box 1.14 requires an explicit outbound dial-domain resolver.
+ # This DNS is used only to resolve the actual node endpoint locally;
+ # browser target names continue through the remote VLESS SOCKS5 connection.
+ return {
+  "log":{"level":"info"},
+  "dns":{"servers":[{"type":"local","tag":"system-local"}],"final":"system-local"},
+  "inbounds":[{"type":"mixed","tag":"in","listen":"127.0.0.1",
+               "listen_port":int(port),"set_system_proxy":False}],
+  "outbounds":[outbound],
+  "route":{"final":"node","default_domain_resolver":"system-local"}
+ }
+
+
+def select_proxy_core(link,port):
+ """Always use official Xray for REALITY; sing-box for other VLESS variants."""
+ node=parse_node(link)
+ if (node.get("tls") or {}).get("reality",{}).get("enabled"):
+  core=xray_core_path()
+  if not core:raise RuntimeError("应用包缺少用于 REALITY 的官方 Xray ARM64 内核")
+  config=build_xray_reality_config(node,port)
+  return core, config, "xray"
  core=core_path()
  if not core:raise RuntimeError("应用包内未找到 Apple Silicon sing-box")
- config={"log":{"level":"warn"},"inbounds":[{"type":"mixed","tag":"in","listen":"127.0.0.1","listen_port":port,"set_system_proxy":False}],"outbounds":[parse_node(link)],"route":{"final":"node"}}
+ return core, build_proxy_config(link,port), "sing-box"
+
+
+def proxy_start(link,port):
+ if not link:return None
+ core,config,engine=select_proxy_core(link,port)
+ # Credential-bearing config remains strictly local in a user-private directory.
  configfile=appdir()/"runtime.json"
  fd=os.open(str(configfile),os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
  with os.fdopen(fd,"w",encoding="utf-8") as handle:json.dump(config,handle)
  flags=getattr(subprocess,"CREATE_NO_WINDOW",0)
- result=subprocess.run([str(core),"check","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=15,creationflags=flags)
- if result.returncode:raise RuntimeError("代理内核无法识别这个 VLESS 节点（可能存在不兼容参数）")
- return subprocess.Popen([str(core),"run","-c",str(configfile)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=flags)
+ # Xray and sing-box have different validation command forms.
+ check_args=([str(core),"run","-test","-config",str(configfile)]
+             if engine=="xray" else [str(core),"check","-c",str(configfile)])
+ result=subprocess.run(check_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                       timeout=15,creationflags=flags)
+ if result.returncode:
+  hint=classify(result.stdout.decode("utf-8",errors="replace")) or (engine+" 配置不受支持")
+  raise RuntimeError("VLESS 内核配置校验失败："+hint)
+ run_args=([str(core),"run","-config",str(configfile)]
+           if engine=="xray" else [str(core),"run","-c",str(configfile)])
+ process=subprocess.Popen(run_args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                          creationflags=flags)
+ start_capture(process)
+ # The process may exit or fail to bind even when config validation succeeds.
+ # Do not advertise a working core until its local SOCKS5 port accepts traffic.
+ for _ in range(30):
+  if process.poll() is not None:
+   raise RuntimeError(engine+" 启动后退出："+(latest_hint(process) or "内核初始化失败"))
+  try:
+   with socket.create_connection(("127.0.0.1",port),timeout=0.3):
+    return process
+  except OSError:
+   time.sleep(0.1)
+ process.terminate()
+ raise RuntimeError(engine+" 未监听本地代理端口，已禁止直连")
 class Page(QWebEngineView):
  def __init__(self,win):
   super().__init__(win)
@@ -81,7 +157,7 @@ class Browser(GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierA
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.0")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.16")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -96,7 +172,7 @@ class Browser(GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierA
   self.init_features(bar)
   self.init_ui09(bar, lambda data: dpapi(data), lambda data: dpapi(data, True), appdir())
   self.setup_tabtools13(lay,bar)
-  self.proxy_label=QLabel("● 核心运行中（尚未联网验证）" if process else "● 未连接（禁止直连）");bar.addWidget(self.proxy_label)
+  self.proxy_label=QLabel("● 本地代理已启动，正在验证外网…" if process else "● 未连接（禁止直连）");bar.addWidget(self.proxy_label)
   self.tabs=QTabWidget();self.tabs.setTabsClosable(True);self.tabs.tabCloseRequested.connect(self.close_tab);self.tabs.currentChanged.connect(self.sync_url);self.tabs.currentChanged.connect(lambda _idx:self.queue_session_save())
   lay.addWidget(self.tabs);self.connect_tabbar13();self.new_tab()
   self.setStyleSheet("QMainWindow,QWidget{background:#eef7fc;color:#365b72} QPushButton,QLineEdit{background:white;border:1px solid #cce1ef;border-radius:8px;padding:7px} QTabBar::tab{padding:9px;background:#d9edf8} QTabBar::tab:selected{background:white}")
@@ -162,19 +238,23 @@ class Browser(GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierA
   except OSError:pass
   super().closeEvent(event)
 def main():
+ # Chromium reads QTWEBENGINE_CHROMIUM_FLAGS during Qt startup on macOS.
+ # Reserve a per-process local port and set fail-closed proxy flags BEFORE QApplication.
+ with socket.socket() as listener:
+  listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
+ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
+ splash=show_glacier_splash("macOS v0.20.16")
  link=get_link(app,parse_node)
- with socket.socket() as s:
-  s.bind(("127.0.0.1",0));port=s.getsockname()[1]
  proc=None
  try:proc=proxy_start(link,port)
  except Exception as e:QMessageBox.warning(None,APP,"代理未启动，禁止直连："+str(e))
  # The proxy remains configured even when the core is unavailable: fail closed.
- os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.Socks5Proxy,"127.0.0.1",port))
  try:
   win=Browser(proc,port)
  except Exception as exc:
+  splash.close()
   # Expose a startup error instead of a silent macOS .app exit.
   # Never write VLESS credentials or raw traceback values to logs.
   import traceback
@@ -188,7 +268,13 @@ def main():
   QMessageBox.critical(None,APP,"Mac 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt 以便排查。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- win.show();code=app.exec()
+ win.show()
+ # Actually probe VLESS HTTPS connectivity on startup, rather than equating
+ # sing-box process existence with a working internet connection.
+ if proc:
+  QTimer.singleShot(1400, win.start_connection_check)
+ QTimer.singleShot(1100, lambda: splash.finish(win))
+ code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
 if __name__=="__main__":sys.exit(main())

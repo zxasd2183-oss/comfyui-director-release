@@ -1,4 +1,4 @@
-name: Glacier Browser macOS Apple Silicon DMG v0.20
+name: Glacier Browser macOS Apple Silicon v0.20.16 unified release
 on:
   push:
     branches:
@@ -23,9 +23,11 @@ on:
 permissions:
   contents: write
   actions: write
+concurrency:
+  group: glacier-macos-ui-refresh
+  cancel-in-progress: true
 jobs:
   macos-arm64:
-    if: vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX != ''
     runs-on: macos-26
     env:
       GLACIER_UPDATE_SIGNING_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
@@ -39,6 +41,14 @@ jobs:
         with:
           python-version: '3.12'
           architecture: 'arm64'
+      - name: Verify pinned updater trust key before packaging
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.glacier_prepare_rotated_update import validate_public
+          validate_public(os.environ.get("GLACIER_UPDATE_SIGNING_PUBLIC_HEX", ""))
+          print("Glacier updater public key configured")
+          PY
       - name: Verify actual Apple Silicon runner
         run: |
           set -euo pipefail
@@ -64,16 +74,19 @@ jobs:
           PY
           cp ../glacier-windows/glacier_productivity16.py glacier_productivity16.py
           cp ../glacier-windows/test_productivity16.py test_productivity16.py
-          for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py test_accounts22.py glacier_sync23.py test_sync23.py glacier_account_center26.py test_account_center26.py glacier_chrome_ui30.py test_chrome_ui30.py; do cp ../glacier-windows/"$file" "$file"; done
+          for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_chrome_ui30.py test_chrome_ui30.py; do cp ../glacier-windows/"$file" "$file"; done
           python ../scripts/glacier_prepare_rotated_update.py macos .
-          python -m py_compile main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_accounts22.py test_accounts22.py glacier_sync23.py test_sync23.py glacier_account_center26.py test_account_center26.py glacier_chrome_ui30.py test_chrome_ui30.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
+          python -m py_compile mac_xray_reality.py test_mac_xray_reality.py test_mac_xray_integration.py main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_proxy_diagnostics.py test_mac_proxy_diagnostics.py test_mac_core_log_integration.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_chrome_ui30.py test_chrome_ui30.py glacier_accounts22.py glacier_account_center26.py test_account_center26.py glacier_sync23.py glacier_sync_auto24.py test_accounts22.py test_sync23.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
           python -m unittest -v test_mac_update
           python -m unittest -v test_mac_https_probe
+          python -m unittest -v test_mac_proxy_diagnostics
+          QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_xray_reality
+          QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_vless_config
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_gui_start
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_desktop15
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_productivity16
-          QT_QPA_PLATFORM=offscreen python -m unittest -v test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19 test_shell20 test_chrome_ui30 test_accounts22 test_account_center26 test_sync23
-          python -c "from mac_update_core import FEED_URL,signed_update_session; assert FEED_URL.startswith('https://raw.githubusercontent.com/'); s=signed_update_session(1080); assert not s.trust_env and s.proxies['https']=='socks5h://127.0.0.1:1080'; s.close(); print('VLESS HTTPS signed updater checks passed')"
+          QT_QPA_PLATFORM=offscreen python -m unittest -v test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19 test_shell20 test_chrome_ui30 test_account_center26 test_accounts22 test_sync23
+          python -c "from mac_update_core import FEED_URL,signed_update_session; assert FEED_URL == 'https://sync.borealos.cn/downloads/macos-arm64.json'; s=signed_update_session(1080); assert not s.trust_env and s.proxies['https']=='socks5h://127.0.0.1:1080'; s.close(); print('VLESS HTTPS signed updater checks passed')"
           python -c "from PySide6.QtWebEngineWidgets import QWebEngineView; import keyring.backends.macOS; import mac_update; print('Qt WebEngine / Keychain / updater imports passed')"
       - name: Download and SHA256-verify official sing-box 1.14.4 darwin arm64
         working-directory: glacier-macos
@@ -92,6 +105,85 @@ jobs:
           file bin/sing-box
           test "$(lipo -archs bin/sing-box)" = 'arm64'
           bin/sing-box version
+      - name: Download pinned official Xray 26.11.9 Apple Silicon for modern REALITY
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          mkdir -p xray-unpack bin
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 30 --max-time 420 \
+            'https://github.com/XTLS/Xray-core/releases/download/v26.11.9/Xray-macos-arm64-v8a.zip' -o xray.zip
+          echo '233f0c66681cd0726f81a6b2b6ed6a5710869e312047b522e46ed53035bebd26  xray.zip' | shasum -a 256 -c -
+          unzip -q xray.zip -d xray-unpack
+          test -f xray-unpack/xray
+          cp xray-unpack/xray bin/xray
+          chmod 755 bin/xray
+          file bin/xray
+          test "$(lipo -archs bin/xray)" = 'arm64'
+          bin/xray version
+      - name: Validate VLESS REALITY Xray configuration with actual Xray 26.11.9
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,json,subprocess,tempfile,uuid
+          from pathlib import Path
+          from main import parse_node
+          from mac_xray_reality import build_xray_reality_config
+          pk=base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+          node=("vless://"+str(uuid.UUID(int=1))+"@example.com:443?"
+                "encryption=none&security=reality&sni=www.example.com&fp=chrome"
+                "&pbk="+pk+"&sid=01ab&flow=xtls-rprx-vision")
+          config=build_xray_reality_config(parse_node(node),19010)
+          with tempfile.TemporaryDirectory() as folder:
+              path=Path(folder)/"config.json"
+              path.write_text(json.dumps(config),encoding="utf-8")
+              result=subprocess.run(["bin/xray","run","-test","-config",str(path)],
+                                    capture_output=True,text=True,timeout=20)
+              if result.returncode:
+                  # Only synthetic test credentials used here, never user's.
+                  raise RuntimeError("Xray REALITY client config rejected: "+result.stderr[:500]+result.stdout[:500])
+          print("Xray-core 26.11.9 accepts REALITY/SNI/shortId/XTLS Vision config")
+          PY
+
+      - name: Prove real REALITY handshake and SOCKS relay between Xray cores
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_xray_integration
+
+      - name: Validate REALITY and modern dial DNS against actual bundled sing-box
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,json,subprocess,tempfile,uuid
+          from pathlib import Path
+          from main import build_proxy_config
+          pk=base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+          base="vless://"+str(uuid.UUID(int=1))+"@example.com:443?encryption=none&security=tls"
+          examples={
+              "tls":base,
+              "websocket":base+"&type=ws&path=%2Fws&ed=1024",
+              "httpupgrade":base+"&type=httpupgrade&path=%2Fws",
+              "reality":base.replace("security=tls","security=reality")+"&pbk="+pk+"&sid=01ab&flow=xtls-rprx-vision"
+          }
+          for kind,link in examples.items():
+              config=build_proxy_config(link,19010)
+              with tempfile.TemporaryDirectory() as temp:
+                  cfg=Path(temp)/"config.json"
+                  cfg.write_text(json.dumps(config),encoding="utf-8")
+                  result=subprocess.run(["bin/sing-box","check","-c",str(cfg)],
+                                        capture_output=True,timeout=20,text=True)
+                  if result.returncode:
+                      raise RuntimeError(kind+" sing-box check failed: "+result.stderr[:500])
+                  print("sing-box 1.14.4 validates",kind,"with explicit DNS")
+          PY
+      - name: Reproduce SOCKS5 code 1 with real sing-box and prove stdout diagnostics
+        working-directory: glacier-macos
+        run: |
+          set -euo pipefail
+          python -m unittest -v test_mac_core_log_integration
+
       - name: Assemble native .app with Qt WebEngine and bundled sing-box
         working-directory: glacier-macos
         run: |
@@ -100,12 +192,16 @@ jobs:
             --target-architecture arm64 \
             --osx-bundle-identifier cn.borealos.glacierbrowser \
             --add-binary 'bin/sing-box:bin' \
+            --add-binary 'bin/xray:bin' \
             --collect-all PySide6.QtWebEngineCore \
             --collect-all PySide6.QtWebEngineWidgets \
             --collect-all keyring \
             --hidden-import keyring.backends.macOS \
+            --hidden-import glacier_sync_auto24 --hidden-import glacier_account_center26 \
+            --hidden-import socks \
             --collect-all cryptography \
             --collect-data certifi \
+            --add-data 'LICENSE-Xray-core.txt:licenses' \
             main.py
           # certifi must exist inside frozen app, not just on the CI runner
           if ! find dist/GlacierBrowser.app -type f -name cacert.pem | grep -q .; then
@@ -115,10 +211,12 @@ jobs:
           test -f dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser
           test "$(lipo -archs dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser)" = 'arm64'
           test "$(find dist/GlacierBrowser.app -type f -name sing-box | wc -l | tr -d ' ')" -ge 1
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.20.0' dist/GlacierBrowser.app/Contents/Info.plist || \
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.20.0' dist/GlacierBrowser.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.20.0' dist/GlacierBrowser.app/Contents/Info.plist || \
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 0.20.0' dist/GlacierBrowser.app/Contents/Info.plist
+          test "$(find dist/GlacierBrowser.app -type f -name xray | wc -l | tr -d ' ')" -ge 1
+          test "$(find dist/GlacierBrowser.app -type f -name LICENSE-Xray-core.txt | wc -l | tr -d ' ')" -ge 1
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.20.16' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.20.16' dist/GlacierBrowser.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.20.16' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 0.20.16' dist/GlacierBrowser.app/Contents/Info.plist
           # Local ad-hoc signature is for Apple Silicon execution only, NOT Developer ID notarization.
           codesign --force --deep --sign - dist/GlacierBrowser.app
           codesign --verify --deep --verbose=2 dist/GlacierBrowser.app
@@ -130,9 +228,9 @@ jobs:
           ditto dist/GlacierBrowser.app dmg-stage/GlacierBrowser.app
           ln -s /Applications dmg-stage/Applications
           cat > dmg-stage/README-安装说明.txt <<'EOF'
-          Glacier Browser v0.20.0 · macOS Apple Silicon 测试版
+          Glacier Browser v0.20.16 · macOS Apple Silicon 版本
           1. 将 GlacierBrowser.app 拖到 Applications 文件夹。
-          2. 该测试版未经过 Apple Developer ID 签名/公证，macOS 可能拒绝首次打开。
+          2. 该版本未经过 Apple Developer ID 签名/公证，macOS 可能拒绝首次打开。
              请核对发布来源，并在 系统设置 > 隐私与安全性 中按系统提示授权。
              不要全局关闭 Gatekeeper。
           3. 首次启动请粘贴 VLESS 分享链接，仅存入本机钥匙串。
@@ -141,18 +239,19 @@ jobs:
           5. 工作区、标签分组、下载历史本地加密存储，覆盖安装不会主动清除数据。
           6. 书签、历史及应用设置使用 Mac 本地数据目录；
              Windows 上的线路/历史不会自动迁移到 Mac。
-          版本：0.20.0，架构：Apple Silicon (arm64)
+          版本：0.20.16，架构：Apple Silicon (arm64)
           EOF
           hdiutil create -volname 'Glacier Browser' -srcfolder dmg-stage \
-            -ov -format UDZO 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
-          test -s 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
-          hdiutil verify 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
-          shasum -a 256 'GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
+            -ov -format UDZO 'GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg'
+          test -s 'GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg'
+          hdiutil verify 'GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg'
+          shasum -a 256 'GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg' > 'GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg.sha256'
+          cat 'GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg.sha256'
       - name: Upload actual DMG for inspection
         uses: actions/upload-artifact@v4
         with:
-          name: GlacierBrowser-v0.20.0-macOS-AppleSilicon-DMG
-          path: glacier-macos/GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg
+          name: GlacierBrowser-v0.20.16-macOS-AppleSilicon-DMG
+          path: glacier-macos/GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -162,26 +261,27 @@ jobs:
         working-directory: glacier-macos
         run: |
           set -euo pipefail
-          tag='glacier-macos-v0.20.0'
-          dmg='GlacierBrowser-v0.20.0-macOS-AppleSilicon.dmg'
+          tag="glacier-macos-v0.20.16"
+          dmg='GlacierBrowser-v0.20.16-macOS-AppleSilicon.dmg'
           for attempt in 1 2 3 4 5; do
             if gh release view "$tag" >/dev/null 2>&1; then
-              gh release upload "$tag" "$dmg" --clobber && break
+              echo 'Canonical macOS release exists; preserving immutable asset'
+              break
             else
-              gh release create "$tag" "$dmg" --target build/glacier-browser-v0-20-ui-refresh \
-                --title 'Glacier Browser 0.20.0 · macOS Apple Silicon preview' \
-                --notes 'Native v0.20: redesigned light browser shell, cleaner tabs and omnibox, unified workspaces and downloads hub, offline new-tab page and Ed25519-signed updates through VLESS SOCKS5. Preview DMG is not Apple Developer ID signed/notarized.' \
-                --prerelease && break
+              gh release create "$tag" "$dmg" "$dmg.sha256" --target "$GITHUB_SHA" \
+                --title 'Glacier Browser 0.20.16 · macOS Apple Silicon' \
+                --notes 'Unified accounts, device approvals, E2E encrypted vault sync, VLESS, signed update verification. DMG is not Apple Developer ID signed/notarized.' \
+                && break
             fi
             if [ "$attempt" = 5 ]; then exit 1; fi
             sleep 20
           done
           gh release view "$tag" --json tagName,assets
           echo 'Mac release available. Ed25519 update feed published independently after offline signature.'
-      - name: Request v2 signed update feed (only after BOTH releases exist)
+
+      - name: Notify authenticated owner VPS mirror immediately after release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run glacier-browser-signed-updates.yml --ref main || \
-            echo "Automatic hourly fallback will retry signed feed publication."
-
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"

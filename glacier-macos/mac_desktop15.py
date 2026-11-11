@@ -77,6 +77,12 @@ class MacDesktop15:
         add("下载中心                      ⌘J", lambda: self.show_download_center17() if hasattr(self, "show_download_center17") else self.show_downloads())
         add("在网页中查找               ⌘F", self.open_find13)
         menu.addSeparator()
+        if callable(getattr(self, "show_accounts22", None)):
+            add("Glacier 统一账号与加密同步", self.show_sync23)
+            add("管理全部网站账号", self.manage_accounts22)
+            add("当前网站账号卡片", self.show_accounts22)
+            add("添加网站账号卡片", self.add_account22)
+            menu.addSeparator()
         add("检测 VLESS 连接", self.start_connection_check)
         add("浏览器设置", self.open_settings)
         add("关于 · 检查更新", self.update_manager.show_dialog)

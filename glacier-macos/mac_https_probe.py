@@ -24,6 +24,29 @@ def create_tls_context():
     return context
 
 
+SOCKS_ERRORS = {
+    1: "代理服务器一般性故障",
+    2: "代理规则拒绝连接",
+    3: "代理无法到达目标网络",
+    4: "代理无法连接目标主机",
+    5: "目标端口连接被拒绝",
+    6: "连接超时或 TTL 失效",
+    7: "SOCKS 命令不受支持",
+    8: "地址类型不受支持",
+}
+
+
+def socks_failure_message(reply):
+    """Explain the SOCKS5 CONNECT status without disclosing node credentials."""
+    if len(reply) != 4 or reply[0] != 5:
+        return "本地 SOCKS5 返回无效响应"
+    if reply[1] == 0 and reply[2] == 0:
+        return None
+    return ("VLESS 线路未能连接到测试目标："
+            + SOCKS_ERRORS.get(reply[1], "未知代理故障")
+            + f"（SOCKS5 代码 {reply[1]}）")
+
+
 def check_via_socks(port,host="www.google.com",path="/generate_204"):
     if not 1<=int(port)<=65535:
         raise ValueError("无效本地 SOCKS5 端口")
@@ -38,8 +61,9 @@ def check_via_socks(port,host="www.google.com",path="/generate_204"):
             raise OSError("本地 SOCKS5 握手失败")
         sock.sendall(b"\x05\x01\x00\x03"+bytes([len(domain)])+domain+struct.pack("!H",443))
         reply=read_exact(sock,4)
-        if reply[:3]!=b"\x05\x00\x00":
-            raise OSError("VLESS 线路未能连接到测试目标")
+        failure=socks_failure_message(reply)
+        if failure:
+            raise OSError(failure)
         atyp=reply[3]
         if atyp==1:
             read_exact(sock,4)
