@@ -14,6 +14,20 @@ function Need($name) {
     if (-not $cmd) { throw "Missing required tool: $name" }
     return $cmd.Source
 }
+# PowerShell 5.1 turns native stderr into terminating errors when
+# ErrorActionPreference is Stop. Collect exit codes explicitly, preserve argv
+# (including paths with spaces), and never emit GitHub CLI diagnostics.
+function Invoke-Gh([string[]]$Args) {
+    $prior = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $lines = @(& $gh @Args 2>$null)
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prior
+    }
+    return @{ ExitCode = $code; Output = ($lines -join "`n") }
+}
 function Live-Worker-Version {
     $secret = [IO.File]::ReadAllText($tokenFile).Trim()
     try {
@@ -27,8 +41,8 @@ function Live-Worker-Version {
 $git = Need "git.exe"
 $gh = Need "gh.exe"
 $py = Need "py.exe"
-& $gh auth status *> $null
-if ($LASTEXITCODE -ne 0) { throw "Run gh auth login with repository access first" }
+$auth = Invoke-Gh -Args @("auth", "status")
+if ($auth.ExitCode -ne 0) { throw "Run gh auth login with repository access first" }
 & $py -3 -c "import cryptography, sys; assert sys.version_info >= (3,10)"
 if ($LASTEXITCODE -ne 0) { throw "Python 3.10+ and cryptography are required before bootstrap" }
 if (Get-ScheduledTask -TaskName $updaterTask -ErrorAction SilentlyContinue) {
@@ -62,14 +76,19 @@ try {
     }
 
     # No silent key rotation. Existing public key can be reused by new nodes.
-    $key = & $gh variable get DIRECTOR_UE_SIGNING_PUBLIC_HEX --repo $repo 2>$null
-    if ($LASTEXITCODE -ne 0) { $key = "" }
-    $key = ([string]$key).Trim()
+    $keyResult = Invoke-Gh -Args @("variable", "get", "DIRECTOR_UE_SIGNING_PUBLIC_HEX", "--repo", $repo)
+    $key = if ($keyResult.ExitCode -eq 0) { [string]$keyResult.Output } else { "" }
+    $key = $key.Trim()
     if ($key -and $key -notmatch "^[a-f0-9]{64}$") {
         throw "Existing repository public key malformed"
     }
     if (-not $key) {
-        $raw = & $py -3 -c @'
+        # PowerShell 5.1 mangles a multi-line here-string passed via -c.
+        # Execute a temporary reviewed Python source file instead. The script
+        # contains no keys; generated private bytes exist only in memory.
+        $generator = Join-Path $env:TEMP ("director-ue-keygen-" + [guid]::NewGuid().ToString("N") + ".py")
+        try {
+            [IO.File]::WriteAllText($generator, @'
 import json
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -77,8 +96,12 @@ key=Ed25519PrivateKey.generate()
 prv=key.private_bytes(serialization.Encoding.Raw,serialization.PrivateFormat.Raw,serialization.NoEncryption()).hex()
 pub=key.public_key().public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw).hex()
 print(json.dumps({"private":prv,"public":pub}))
-'@
-        if ($LASTEXITCODE -ne 0) { throw "Ed25519 key generation failed" }
+'@, [Text.Encoding]::UTF8)
+            $raw = & $py -3 $generator
+            if ($LASTEXITCODE -ne 0) { throw "Ed25519 key generation failed" }
+        } finally {
+            Remove-Item -LiteralPath $generator -Force -ErrorAction SilentlyContinue
+        }
         $pair = $raw | ConvertFrom-Json
         $key = [string]$pair.public
         if ($key -notmatch "^[a-f0-9]{64}$") { throw "Invalid keypair" }
@@ -90,18 +113,18 @@ print(json.dumps({"private":prv,"public":pub}))
         $envFile = Join-Path $folder ("gh-secret-" + [guid]::NewGuid().ToString("N") + ".env")
         try {
             Set-Content -LiteralPath $envFile -Value ("DIRECTOR_UE_SIGNING_PRIVATE_HEX=" + [string]$pair.private) -Encoding ascii -NoNewline
-            & $gh secret set --repo $repo --env-file $envFile
-            if ($LASTEXITCODE -ne 0) { throw "Could not store GitHub Actions signing secret" }
-            & $gh variable set DIRECTOR_UE_SIGNING_PUBLIC_HEX --repo $repo --body $key
-            if ($LASTEXITCODE -ne 0) { throw "Could not store GitHub Actions public key" }
+            $secretWrite = Invoke-Gh -Args @("secret", "set", "--repo", $repo, "--env-file", $envFile)
+            if ($secretWrite.ExitCode -ne 0) { throw "Could not store GitHub Actions signing secret" }
+            $variableWrite = Invoke-Gh -Args @("variable", "set", "DIRECTOR_UE_SIGNING_PUBLIC_HEX", "--repo", $repo, "--body", $key)
+            if ($variableWrite.ExitCode -ne 0) { throw "Could not store GitHub Actions public key" }
         } finally {
             Remove-Item -LiteralPath $envFile -Force -ErrorAction SilentlyContinue
             Remove-Variable pair,raw -ErrorAction SilentlyContinue
         }
         Write-Host "Dedicated UE signing key configured in GitHub. Private key not printed."
     } else {
-        $secrets = & $gh secret list --repo $repo --json name
-        if ($LASTEXITCODE -ne 0 -or -not (($secrets | ConvertFrom-Json).name -contains "DIRECTOR_UE_SIGNING_PRIVATE_HEX")) {
+        $secretList = Invoke-Gh -Args @("secret", "list", "--repo", $repo, "--json", "name")
+        if ($secretList.ExitCode -ne 0 -or -not ((($secretList.Output | ConvertFrom-Json).name) -contains "DIRECTOR_UE_SIGNING_PRIVATE_HEX")) {
             throw "Pinned public key exists but corresponding GitHub secret is not provisioned"
         }
         Write-Host "Existing signing key reused without rotation."
