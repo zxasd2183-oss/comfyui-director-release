@@ -370,8 +370,8 @@ def make_bounded_preview_thumbnail_png(original):
             w, h, depth, col, compression, filtering, interlace = struct.unpack(
                 ">IIBBBBB", body
             )
-            if (w, h) != (720, 1280) or depth != 8 or col not in (2, 6) or
-                    compression or filtering or interlace:
+            if ((w, h) != (720, 1280) or depth != 8 or col not in (2, 6)
+                    or compression or filtering or interlace):
                 fail()
             image_info = (w, h, 3 if col == 2 else 4, col)
         elif kind == b"IDAT":
