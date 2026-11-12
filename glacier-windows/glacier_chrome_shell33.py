@@ -15,7 +15,7 @@ QMainWindow, QWidget#GlacierBrowserRoot32 {
     background: #ffffff; color: #202124;
 }
 QWidget#GlacierTabStrip14 {
-    background: #dfe3e9; border: none;
+    background: #e2e5ea; border: none;
     border-bottom: 0;
 }
 QTabBar#GlacierExternalTabs14 {
@@ -23,12 +23,12 @@ QTabBar#GlacierExternalTabs14 {
     color: #3c4043; font-size: 12px;
 }
 QTabBar#GlacierExternalTabs14::tab {
-    background: #cfd4dc; color: #414750;
+    background: #d1d5dc; color: #414750;
     border: none; border-top-left-radius: 12px;
     border-top-right-radius: 12px;
-    min-width: 106px; max-width: 216px;
-    min-height: 31px; padding: 4px 15px 1px;
-    margin-right: 5px; margin-top: 6px;
+    min-width: 160px; max-width: 232px;
+    min-height: 32px; padding: 4px 16px 1px;
+    margin-right: 3px; margin-top: 6px;
     font-weight: normal;
 }
 QTabBar#GlacierExternalTabs14::tab:selected {
@@ -43,11 +43,11 @@ QFrame#GlacierNavigation32 {
     border-bottom: 1px solid #e5e8ed;
 }
 QFrame#GlacierOmniboxShell33 {
-    background: #f0f2f5; border: 1px solid #f0f2f5;
-    border-radius: 20px;
+    background: #f1f3f5; border: 1px solid #f1f3f5;
+    border-radius: 19px;
 }
 QFrame#GlacierOmniboxShell33[glacierFocus="true"] {
-    background: #ffffff; border: 2px solid #8ab4f8;
+    background: #ffffff; border: 1px solid #8ab4f8;
 }
 QLineEdit#GlacierOmnibox14 {
     background: transparent; border: 0; color: #202124;
@@ -92,6 +92,19 @@ QToolButton#GlacierTabClose33 {
 }
 QToolButton#GlacierTabClose33:hover { background: #dfe4eb; }
 QToolButton#GlacierTabClose33:pressed { background: #cdd5df; }
+QToolButton#GlacierProxyStatus34 {
+    background: transparent; border: none; border-radius: 17px;
+    min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px;
+}
+QToolButton#GlacierProxyStatus34:hover { background: #edf0f4; }
+QToolButton#GlacierProxyStatus34:pressed { background: #dce3ed; }
+QAbstractButton#GlacierNewTab34 {
+    background: transparent; border: none; border-radius: 16px;
+    min-width: 32px; max-width: 32px;
+    min-height: 32px; max-height: 32px; padding: 0;
+}
+QAbstractButton#GlacierNewTab34:hover { background: #cfd5dc; }
+QAbstractButton#GlacierNewTab34:pressed { background: #bec6d0; }
 QPushButton#GlacierBack32:pressed, QPushButton#GlacierForward32:pressed,
 QPushButton#GlacierReload32:pressed, QToolButton#GlacierMore14:pressed {
     background: #dce3ed;
@@ -100,7 +113,8 @@ QPushButton#GlacierBack32:disabled, QPushButton#GlacierForward32:disabled {
     color: #b0b5bb;
 }
 QPushButton#GlacierAccount26 {
-    background: #e6effe; border-radius: 18px;
+    background: #f1f3f4; border: 1px solid transparent;
+    border-radius: 18px;
 }
 QPushButton#GlacierProxyHealth29 {
     background: transparent; border: none; color: #5f6368;
@@ -165,6 +179,25 @@ def shell_icon33(kind):
     elif kind == "profile":
         p.drawEllipse(QRectF(17, 11, 10, 10))
         p.drawArc(QRectF(11, 21, 22, 15), 0, 180*16)
+    elif kind == "plus":
+        p.drawLine(QPointF(22, 12), QPointF(22, 32))
+        p.drawLine(QPointF(12, 22), QPointF(32, 22))
+    elif kind == "brand":
+        p.setPen(QPen(QColor("#497eac"), 2.6, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.drawEllipse(QRectF(5, 5, 34, 34))
+        for dx, dy in ((0, -11), (0, 11), (-11, 0), (11, 0),
+                       (-8, -8), (8, 8), (-8, 8), (8, -8)):
+            p.drawLine(QPointF(22, 22), QPointF(22+dx, 22+dy))
+        p.setBrush(QColor("#497eac"))
+        p.drawEllipse(QRectF(19, 19, 6, 6))
+    elif kind in ("proxy-on", "proxy-off"):
+        tint = QColor("#18856b") if kind == "proxy-on" else QColor("#a4a9b2")
+        p.setPen(QPen(tint, 2.4))
+        p.drawEllipse(QRectF(8, 8, 28, 28))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(tint)
+        p.drawEllipse(QRectF(17, 17, 10, 10))
     elif kind == "close":
         p.setPen(QPen(QColor("#5f6368"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         p.drawLine(QPointF(15, 15), QPointF(29, 29))
@@ -216,8 +249,8 @@ class GlacierChromeShell33:
         strip.setFixedHeight(44)
         strip_layout = strip.layout()
         if isinstance(strip_layout, QHBoxLayout):
-            strip_layout.setContentsMargins(11, 3, 11, 0)
-            strip_layout.setSpacing(4)
+            strip_layout.setContentsMargins(9, 3, 9, 0)
+            strip_layout.setSpacing(3)
         brand = self.findChild(QLabel, "GlacierBrand14")
         if brand is not None:
             brand.hide()  # A second giant Glacier logo is not a browser tab.
@@ -247,12 +280,22 @@ class GlacierChromeShell33:
                 strip_layout.insertWidget(
                     strip_layout.indexOf(self.chrome_tab14)+1, new_tab_button)
                 strip_layout.addStretch(1)
+                # Keep the original new-tab clicked signal and shortcut.
+                # Only replace platform-dependent text rendering with an icon.
+                new_tab_button.setObjectName("GlacierNewTab34")
+                new_tab_button.setText("")
+                new_tab_button.setIcon(shell_icon33("plus"))
+                new_tab_button.setIconSize(QSize(21, 21))
+                new_tab_button.setFixedSize(32, 32)
+                new_tab_button.setToolTip("新建标签页 (Ctrl+T)")
+                new_tab_button.setAccessibleName("新建标签页")
+                self._new_tab_button34 = new_tab_button
 
         def resize_tabs_to_content():
             bar = self.chrome_tab14
             # Fixed-width tab content: keep the + adjacent to the last
             # actual tab, and allow native scroll buttons when crowded.
-            desired = max(124, bar.sizeHint().width() + 3)
+            desired = max(180, bar.sizeHint().width() + 3)
             available = max(155, self.width()-180)
             bar.setMaximumWidth(min(desired, available))
 
@@ -294,9 +337,9 @@ class GlacierChromeShell33:
         QTimer.singleShot(0, resize_tabs_to_content)
         QTimer.singleShot(0, polish_close_buttons)
 
-        surface.setFixedHeight(54)
-        nav.setContentsMargins(12, 5, 12, 5)
-        nav.setSpacing(6)
+        surface.setFixedHeight(50)
+        nav.setContentsMargins(10, 4, 10, 4)
+        nav.setSpacing(4)
 
         site = self._site_button30
         address = self.address
@@ -304,16 +347,16 @@ class GlacierChromeShell33:
         shell = QFrame(surface)
         shell.setObjectName("GlacierOmniboxShell33")
         shell.setMinimumWidth(220)
-        shell.setFixedHeight(40)
+        shell.setFixedHeight(38)
         shell.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         inner = QHBoxLayout(shell)
-        inner.setContentsMargins(7, 1, 6, 1)
+        inner.setContentsMargins(8, 1, 7, 1)
         inner.setSpacing(1)
         for widget in (site, address, bookmark):
             nav.removeWidget(widget)
         site.setText("")
         site.setIcon(shell_icon33("site"))
-        site.setIconSize(QSize(18, 18))
+        site.setIconSize(QSize(23, 23))
         site.setFixedSize(32, 32)
         address.setMinimumHeight(32)
         address.setMaximumHeight(35)
@@ -339,7 +382,7 @@ class GlacierChromeShell33:
             btn = self.findChild(QToolButton, name)
             if btn is not None:
                 btn.setIcon(shell_icon33(kind))
-                btn.setIconSize(QSize(21, 21))
+                btn.setIconSize(QSize(29, 29))
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 btn.setFixedSize(36, 36)
@@ -351,19 +394,36 @@ class GlacierChromeShell33:
         account = getattr(self, "_account_button26", None)
         if account is not None:
             account.setIcon(shell_icon33("profile"))
-            account.setIconSize(QSize(20, 20))
+            account.setIconSize(QSize(27, 27))
             account.setMinimumWidth(36)
             account.setMaximumWidth(36)
             account.setFixedSize(36, 36)
+            account.setAccessibleName("Glacier 账号中心")
 
         proxy = getattr(self, "proxy_label", None)
         if isinstance(proxy, QLabel):
             proxy.setMaximumWidth(24)
             proxy.setMinimumWidth(19)
             proxy.setToolTip(proxy.toolTip() or proxy.text())
-        elif proxy is not None:
-            proxy.setMinimumWidth(30)
-            proxy.setMaximumWidth(30)
+        elif isinstance(proxy, QAbstractButton):
+            # The old QPushButton is refreshed by several legacy modules.
+            # Do not rely on overriding its text/stylesheet on every tick:
+            # preserve its click handler and expose a separate icon-only
+            # control to the real browser toolbar.
+            nav.removeWidget(proxy)
+            proxy.hide()
+            indicator = QToolButton(surface)
+            indicator.setObjectName("GlacierProxyStatus34")
+            indicator.setIcon(shell_icon33("proxy-off"))
+            indicator.setIconSize(QSize(25, 25))
+            indicator.setFixedSize(34, 34)
+            indicator.setToolTip(proxy.toolTip() or "本地 VLESS 代理状态；点击重连")
+            indicator.setAccessibleName("本地 VLESS 未连接，点击重连")
+            indicator.clicked.connect(proxy.click)
+            position = nav.indexOf(account) if account is not None else nav.count()
+            nav.insertWidget(position, indicator)
+            indicator.show()
+            self._proxy_indicator34 = indicator
 
         # The Chrome menu owns rarely used options; no separate '工具 ▾'
         # permanently squeezes the address bar. Keep old handlers accessible.
@@ -395,7 +455,13 @@ class GlacierChromeShell33:
         status.messageChanged.connect(
             lambda message: status.setVisible(bool(message.strip())))
 
+        self.setWindowIcon(shell_icon33("brand"))
         self._chrome_ui33_ready = True
+        # The proxy timer normally ticks after 3.5s. Update its actual
+        # glyph immediately, so first paint never flashes a red Unicode dot.
+        proxy_refresh = getattr(self, "refresh_proxy_status29", None)
+        if callable(proxy_refresh):
+            proxy_refresh()
         refresh = getattr(self, "refresh_account_center26", None)
         if callable(refresh):
             refresh()

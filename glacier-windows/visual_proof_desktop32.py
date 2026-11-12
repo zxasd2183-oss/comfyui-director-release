@@ -41,7 +41,7 @@ def main():
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
-            path=out/"Glacier-Windows-v0.20.23-live-ui33.png"
+            path=out/"Glacier-Windows-v0.20.24-live-ui33.png"
             # QtWebEngine may paint into a compositor surface that is not
             # included in QWidget.grab() on a headless Windows runner.
             # First verify the actual browser DOM is NOT blank. Screenshot
@@ -100,8 +100,24 @@ def main():
                 raise RuntimeError(
                     "Actual Chrome grouped omnibox remains too narrow: "+
                     str(omni.width())+" of "+str(window.width()))
-            if nav.height()<51 or strip.height()<43:
+            # The revised compact navigation is deliberately 50px, while
+            # keeping the 44px tab row and the site/address/bookmark group.
+            if not (49 <= nav.height() <= 52) or strip.height()<43:
                 raise RuntimeError("Actual Chrome navigation/tab strip geometry is incorrect")
+            plus=getattr(window, "_new_tab_button34", None)
+            if plus is None or plus.objectName()!="GlacierNewTab34" or plus.icon().isNull():
+                raise RuntimeError("Actual clickable Chrome new-tab icon was not installed")
+            if plus.width()!=32 or plus.text():
+                raise RuntimeError("New-tab geometry or legacy glyph was not replaced")
+            proxy=getattr(window,"proxy_label",None)
+            indicator=getattr(window,"_proxy_indicator34",None)
+            if (proxy is None or indicator is None or not proxy.isHidden()
+                    or indicator.icon().isNull() or indicator.text()):
+                raise RuntimeError("Visible proxy is still a loose legacy Unicode dot")
+            if indicator.accessibleName() != "本地 VLESS 未连接，点击重连":
+                raise RuntimeError("First frame status icon has wrong accessible state")
+            if window.windowIcon().isNull():
+                raise RuntimeError("Glacier application title icon was not installed")
             if omni.layout().count()!=3:
                 raise RuntimeError("Site, address and bookmark were not grouped into omnibox")
             if window._account_button26.width()>38:
