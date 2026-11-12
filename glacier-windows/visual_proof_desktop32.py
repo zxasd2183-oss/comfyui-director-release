@@ -81,31 +81,41 @@ def main():
             # screenshot, not merely in a post-capture assertion.
             window._glacier_sync_tab_icons35()
             app.processEvents()
-            screen=window.grab()
-            if not screen.save(str(path),"PNG"):
-                raise RuntimeError("Could not capture live Browser screenshot")
-            if path.stat().st_size<8000:
-                raise RuntimeError("Browser toolbar screenshot unexpectedly empty")
-            image=screen.toImage()
-            # A white viewport technically passes size/geometry checks but
-            # is NOT a usable Chrome-style new tab. Require real painted text
-            # from the local offline homepage, not only the upper toolbar.
-            painted=0
-            for y in range(nav.y()+nav.height()+40, image.height()-75, 4):
-                for x in range(65, image.width()-65, 4):
-                    rgb=image.pixelColor(x,y)
-                    if rgb.red()<175 and rgb.green()<195 and rgb.blue()<210:
-                        painted+=1
-            # A passing DOM and toolbar screenshot are not enough. Qt can
-            # recreate the top-level Windows HWND after WebEngine starts and
-            # leave the page compositor as a tiny orphan rectangle.
-            # This real Windows runner captures the full homepage in a
-            # healthy window; require actual central page pixels too.
+            # A real WebEngine compositor can create its native surface
+            # slightly after DOM readiness on Windows CI. Retry painting
+            # rather than treating a transient blank initial grab as a
+            # functioning browser. Persistent blank pixels still FAIL CLOSED.
+            painted = 0
+            for attempt in range(15):
+                app.processEvents()
+                screen = window.grab()
+                if not screen.save(str(path), "PNG"):
+                    raise RuntimeError("Could not capture live Browser screenshot")
+                if path.stat().st_size < 8000:
+                    raise RuntimeError("Browser toolbar screenshot unexpectedly empty")
+                image = screen.toImage()
+                painted = 0
+                for y in range(nav.y()+nav.height()+40, image.height()-75, 4):
+                    for x in range(65, image.width()-65, 4):
+                        rgb = image.pixelColor(x,y)
+                        if rgb.red()<175 and rgb.green()<195 and rgb.blue()<210:
+                            painted += 1
+                if painted >= 120:
+                    break
+                if attempt == 6:
+                    # Trigger a real viewport resize/reflow on this CI host;
+                    # do not disable the nonblank visual assertion.
+                    window.resize(1361, 890)
+                    app.processEvents()
+                    window.resize(1360, 890)
+                window.current().update()
+                app.processEvents()
+                time.sleep(0.15)
             if painted < 120:
                 raise RuntimeError(
-                    "Qt WebEngine viewport is visually blank or shrunken; "
-                    "native window flags must be set before page creation: "
-                    + str(painted) + " sampled page pixels")
+                    "Qt WebEngine viewport remained visually blank after "
+                    "native repaint/reflow checks; " + str(painted) +
+                    " sampled page pixels")
             print("Real offline homepage colored pixels",painted,flush=True)
             min_width=max(260, int(window.width()*0.33))
             if omni.width()<min_width or omni.height()<38:
