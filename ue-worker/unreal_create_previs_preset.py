@@ -713,7 +713,75 @@ def hero_metahuman_seed_main():
     else:
         unreal.log_error("EP01 GPT MetaHuman seed creation failed: "+result["reason"])
 
-if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_seed_v130":
+
+def hero_metahuman_runtime_audit_main():
+    """Read-only test of one verified GPT MetaHuman in UE 5.8."""
+    result_file=Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    try:
+        ident=os.environ.get("DIRECTOR_UE_JOB_ID","")
+        if (not re.fullmatch(r"[a-f0-9]{32}",ident) or
+            os.environ.get("DIRECTOR_UE_REVIEW_MODE")!="hero_audit_v140"):
+            raise RuntimeError("hero_audit_untrusted_job")
+        seed="d5253c965631447684e49613533e85ad"
+        asset_path=("/Game/Director/Candidates/EP01/HeroBuilds/J"+
+                    seed+"/MHC_CHAR_GPT")
+        asset=unreal.EditorAssetLibrary.load_asset(asset_path)
+        if not asset or asset.get_class().get_name()!="MetaHumanCharacter":
+            raise RuntimeError("hero_audit_native_metahuman_missing")
+        editor_exists=hasattr(unreal,"MetaHumanCharacterEditorSubsystem")
+        subsystem=(unreal.get_editor_subsystem(
+            unreal.MetaHumanCharacterEditorSubsystem)
+            if editor_exists else None)
+        api={
+            "character_editor_subsystem":subsystem is not None,
+            "request_auto_rigging":bool(subsystem and hasattr(
+                subsystem,"request_auto_rigging")),
+            "request_texture_sources":bool(subsystem and hasattr(
+                subsystem,"request_texture_sources")),
+            "build_meta_human":bool(subsystem and hasattr(
+                subsystem,"build_meta_human")),
+            "try_add_object_to_edit":bool(subsystem and hasattr(
+                subsystem,"try_add_object_to_edit")),
+            "commit_eyes_settings":bool(subsystem and hasattr(
+                subsystem,"commit_eyes_settings")),
+        }
+        # Only inspect installed example files, not arbitrary external paths.
+        plugin=Path(unreal.Paths.engine_dir()).resolve()/"Plugins"/"MetaHuman"/(
+            "MetaHumanCharacter")/"Content"/"Python"/"examples"
+        examples={
+            "create":(plugin/"example_create_asset.py").is_file(),
+            "texture":(plugin/"example_download_textures.py").is_file(),
+            "rig":(plugin/"example_auto_rig.py").is_file(),
+            "assembly":(plugin/"example_assembly.py").is_file(),
+        }
+        try:
+            highres=asset.get_editor_property("has_high_resolution_textures")
+            source_state=("present" if highres is True else "absent"
+                          if highres is False else "unknown")
+        except Exception:
+            source_state="unknown"
+        result={
+            "ok":True,"asset_path":asset_path,
+            "asset_class":asset.get_class().get_name(),
+            "capabilities":api,"reference_examples":examples,
+            "texture_source_state":source_state,
+            "rigged":False,"costly_cloud_requests_executed":False,
+            "source_unmodified":True,"character_master_approved":False,
+        }
+    except Exception as exc:
+        result={"ok":False,"reason":str(exc)[:200],
+                "traceback":traceback.format_exc(limit=5)[-1100:]}
+    result_file.write_text(
+        json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
+    if result["ok"]:
+        unreal.log("GPT MetaHuman UE runtime read-only audit completed")
+    else:
+        unreal.log_error("GPT MetaHuman runtime audit failed "+result["reason"])
+
+
+if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_audit_v140":
+    hero_metahuman_runtime_audit_main()
+elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_seed_v130":
     hero_metahuman_seed_main()
 elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "cast_v11":
     cast_review_main()
