@@ -285,3 +285,149 @@ def run_previs(spec,root,work):
         },
         "note":"Only V03 blockout cubes + fixed cameras. Not a finished film.",
     }
+
+
+# V1.1 real Unreal Engine PNG visualization of the V1.0 cast Blueprints.
+# The sources are pinned to a previously SUCCEEDED actor build; no gray V03
+# proxies, generated concept art, or user-provided paths are involved.
+CAST_V100_JOB = "f32dea96d7a94990b3eb274d1cef3de3"
+CAST_V11_VIEWS = ("LINEUP", "GPT", "GEM", "DS", "CLA", "ZERO")
+CAST_V11_ROOT = "/Game/Director/Candidates/EP01/ReviewRenders/J"
+CAST_V11_PREVIEW = "WO_EP01_CastReview"
+CAST_V11_MAX_PNG = 2 * 1024 * 1024
+
+
+def render_cast_review(spec, root, work):
+    """MRQ one true UE frame from each of 6 fixed cameras and verify PNGs.
+
+    This explicitly DOES NOT create character models, modify source review
+    level, approve candidate masters, or claim a finalized film.
+    """
+    from ue_jobs import JobError, ensure_project, find_editor_cmd
+    if spec.get("format") != "director_ue_cast_review_v110":
+        raise JobError("cast_review_spec_invalid")
+    if (spec.get("project_id"),spec.get("episode_id"),
+            spec.get("fps"),spec.get("total_ms"),
+            spec.get("total_frames"),len(spec.get("shots",[]))) != (
+            "WaitingOffice","EP01",24,160000,3840,31):
+        raise JobError("cast_review_requires_frozen_ep01")
+    if [x["shot_id"] for x in spec["shots"]] != [
+            "%02d"%i for i in range(1,32)]:
+        raise JobError("cast_review_requires_31_shots")
+    if not re.fullmatch(r"[a-f0-9]{32}",work.name):
+        raise JobError("cast_review_job_id_invalid")
+    if work.is_symlink() or work.exists():
+        raise JobError("cast_review_job_collision")
+    editor = find_editor_cmd()
+    project = ensure_project(root)
+    source_root = (
+        root/"Content"/"Director"/"Candidates"/"EP01"/"CastBuilds"
+        /("J"+CAST_V100_JOB)
+    )
+    source = source_root/"Maps"/"EP01_Five_Cast_Review.umap"
+    if source.is_symlink() or not source.is_file():
+        raise JobError("cast_review_original_v100_map_missing")
+    for sid in ("GPT","GEM","DS","CLA","ZERO"):
+        item=source_root/"Blueprints"/("BP_CHAR_"+sid+".uasset")
+        if item.is_symlink() or not item.is_file():
+            raise JobError("cast_review_blueprint_missing_"+sid.lower())
+    source_hash_before=hashlib.sha256(source.read_bytes()).hexdigest()
+    ensure_mrq_plugin(project,work)
+    work.mkdir(parents=True,exist_ok=True)
+    output=root/"Outputs"/"V11"/work.name/"Previews"
+    if output.is_symlink() or output.exists():
+        raise JobError("cast_review_output_collision")
+    output.mkdir(parents=True)
+    script=Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if not script.is_file() or script.is_symlink():
+        raise JobError("trusted_cast_mrq_script_missing")
+    env=os.environ.copy()
+    env["DIRECTOR_UE_JOB_ID"]=work.name
+    env["DIRECTOR_UE_RESULT_FILE"]=str(work/"preset_result.json")
+    env["DIRECTOR_UE_PREVIEW_OUTPUT"]=str(output)
+    env["DIRECTOR_UE_REVIEW_MODE"]="cast_v11"
+    _run_unreal(
+        [str(editor),str(project),"-run=pythonscript",
+         "-script="+str(script),"-unattended","-nop4","-nosplash",
+         "-NoSound","-log"],root,work/"preset.log",MAX_PREP_SECONDS,env)
+    file=work/"preset_result.json"
+    if not file.is_file() or file.is_symlink() or file.stat().st_size>16000:
+        raise JobError("cast_review_preset_receipt_missing")
+    data=json.loads(file.read_text(encoding="utf-8"))
+    prefix=CAST_V11_ROOT+work.name
+    expected_world=prefix+"/Maps/"+CAST_V11_PREVIEW
+    expected_sequences={
+        view:prefix+"/Shots/WO_EP01_CAST_"+view+".WO_EP01_CAST_"+view
+        for view in CAST_V11_VIEWS
+    }
+    expected_presets={
+        name:prefix+"/Presets/WO_EP01_CastPNG_"+name+
+             ".WO_EP01_CastPNG_"+name
+        for name in ("wide","portrait")
+    }
+    expected_cast={
+        s:"WO_CANDIDATE_CHAR_"+s for s in ("GPT","GEM","DS","CLA","ZERO")
+    }
+    if (type(data) is not dict or data.get("ok") is not True
+            or data.get("source_world") !=
+            "/Game/Director/Candidates/EP01/CastBuilds/J"+
+            CAST_V100_JOB+"/Maps/EP01_Five_Cast_Review"
+            or data.get("review_world") != expected_world
+            or data.get("view_sequences") != expected_sequences
+            or data.get("mrq_presets") != expected_presets
+            or data.get("cast") != expected_cast
+            or data.get("views") != list(CAST_V11_VIEWS)
+            or data.get("frames_per_view") != 1
+            or data.get("source_world_unchanged") is not True):
+        raise JobError("cast_review_preset_receipt_invalid")
+    if hashlib.sha256(source.read_bytes()).hexdigest()!=source_hash_before:
+        raise JobError("original_character_review_world_modified")
+    images=[]
+    for view in CAST_V11_VIEWS:
+        before=set(output.rglob("*.png"))
+        preset=expected_presets["wide" if view=="LINEUP" else "portrait"]
+        width,height=(1280,720) if view=="LINEUP" else (720,1280)
+        _run_unreal([
+            str(editor),str(project),expected_world,
+            "-game",
+            "-LevelSequence="+expected_sequences[view],
+            "-MoviePipelineConfig="+preset,
+            "-unattended","-nop4","-nosplash","-RenderOffscreen",
+            "-resx="+str(width),"-resy="+str(height),"-log",
+        ],root,work/("render_"+view.lower()+".log"),MAX_RENDER_SECONDS,env)
+        added=set(output.rglob("*.png"))-before
+        if len(added)!=1:
+            raise JobError("cast_review_exactly_one_png_required_"+view.lower())
+        png=next(iter(added))
+        filename="WO_EP01_CAST_"+view+"_V11_0000.png"
+        if (png.is_symlink() or not png.is_file()
+                or png.name != filename
+                or png.stat().st_size<2048
+                or png.stat().st_size>CAST_V11_MAX_PNG
+                or read_png_dimensions(png)!=(width,height)):
+            raise JobError("cast_review_invalid_png_"+view.lower())
+        raw=png.read_bytes()
+        images.append({
+            "view":view,"filename":filename,
+            "relative_path":str(png.relative_to(root)).replace("\\","/"),
+            "bytes":len(raw),"sha256":hashlib.sha256(raw).hexdigest(),
+            "width":width,"height":height,
+        })
+    if hashlib.sha256(source.read_bytes()).hexdigest()!=source_hash_before:
+        raise JobError("original_character_review_world_modified")
+    return {
+        "kind":"actual_unreal_5_8_cast_mrq_review_v110",
+        "source_cast_world":data["source_world"],
+        "source_cast_sha256":source_hash_before,
+        "source_cast_unchanged":True,
+        "render_world":expected_world,
+        "bound_review_sequences":expected_sequences,
+        "preview_count":len(images),
+        "screenshots":images,
+        "material_preview_only":True,
+        "character_masters_approved":False,
+        "skeletal_animation_bound":False,
+        "final_film_rendered":False,
+        "portrait_resolution":"720x1280",
+        "lineup_resolution":"1280x720",
+    }
