@@ -7,6 +7,7 @@ on:
       - feature/glacier-chrome-shell-splash-sequential-20261111
       - feature/glacier-desktop-pixel-polish-20261111
       - feature/glacier-chrome-finish-v024-v022-20261111
+      - feature/glacier-graphic-wordmark-20261111
     paths:
       - 'glacier-windows/**'
       - '.github/workflows/glacier-rc-windows.yml'
@@ -96,11 +97,11 @@ jobs:
           # application's displayed patch version be updated.
           python -c "from pathlib import Path; p=Path('secure_update.py'); s=p.read_text(encoding='utf8'); expected='CURRENT_VERSION = '+chr(39)+'0.20.24'+chr(39); assert s.count(expected)==1, 'Updater version must be 0.20.24'; print('Verified Windows signed-updater version 0.20.24')"
           if ($LASTEXITCODE -ne 0) { throw 'Failed to set preview version after secure key rotation' }
-          python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py glacier_accounts22.py glacier_sync23.py glacier_sync_auto24.py glacier_preview_updates25.py glacier_account_center26.py test_account_center26.py test_accounts22.py test_sync23.py test_preview_updates25.py glacier_signed_install27.py test_signed_install27.py glacier_win_resume28.py test_win_resume28.py glacier_proxy_health29.py test_proxy_health29.py glacier_site_diagnostic31.py test_site_diagnostic31.py glacier_desktop_ui32.py test_desktop_ui32.py glacier_chrome_shell33.py test_chrome_shell33.py glacier_splash.py test_glacier_startup_sequence.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
+          python -m py_compile main.py windows_desktop15.py test_windows_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_input21.py test_input21.py glacier_accounts22.py glacier_sync23.py glacier_sync_auto24.py glacier_preview_updates25.py glacier_account_center26.py test_account_center26.py test_accounts22.py test_sync23.py test_preview_updates25.py glacier_signed_install27.py test_signed_install27.py glacier_win_resume28.py test_win_resume28.py glacier_proxy_health29.py test_proxy_health29.py glacier_site_diagnostic31.py test_site_diagnostic31.py glacier_desktop_ui32.py test_desktop_ui32.py glacier_chrome_shell33.py test_chrome_shell33.py glacier_brand35.py test_glacier_brand35.py glacier_splash.py test_glacier_startup_sequence.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py update_core.py update_ui.py secure_update.py
           if ($LASTEXITCODE -ne 0) { throw 'Glacier v0.20 Windows build prerequisite or test failed' }
           python -c "import ui12; assert ui12.normalize_input('example.com') == 'https://example.com'; assert ui12.normalize_input('https://example.com').startswith('https:'); print('New window module import checks passed')"
           python -c "from PySide6.QtWebEngineCore import QWebEnginePage; import tabtools13; QWebEnginePage.FindFlag(0); assert tabtools13.copyable_page_url('https://example.com/a') == 'https://example.com/a'; assert not tabtools13.copyable_page_url('javascript:alert(1)'); assert not tabtools13.copyable_page_url('https://name:pass@example.com'); print('Glacier v0.13 tab API and link safety tests passed')"
-          python -m unittest -v test_signed_install27 test_win_resume28 test_proxy_health29 test_site_diagnostic31 test_chrome_ui30 test_desktop_ui32 test_chrome_shell33 test_glacier_startup_sequence
+          python -m unittest -v test_signed_install27 test_win_resume28 test_proxy_health29 test_site_diagnostic31 test_chrome_ui30 test_desktop_ui32 test_chrome_shell33 test_glacier_brand35 test_glacier_startup_sequence
           if ($LASTEXITCODE -ne 0) { throw 'Signed installer safety tests failed' }
           python ../scripts/test_glacier_patch_windows_update_ui.py
           if ($LASTEXITCODE -ne 0) { throw 'Decoded updater patch regression failed' }
