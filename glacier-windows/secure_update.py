@@ -25,7 +25,7 @@ from update_core import (
     parse_manifest as _parse_insecure_manifest,
 )
 
-CURRENT_VERSION = '0.20.26'
+CURRENT_VERSION = '0.20.27'
 # Signed update metadata is delivered directly by our own HTTPS VPS.
 # The Ed25519 pinned key (rotated by the trusted build job) still verifies it.
 VPS_FEED_URL = 'https://sync.borealos.cn/downloads/windows-x64.json'
