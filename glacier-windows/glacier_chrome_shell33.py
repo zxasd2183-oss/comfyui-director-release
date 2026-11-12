@@ -92,6 +92,12 @@ QToolButton#GlacierTabClose33 {
 }
 QToolButton#GlacierTabClose33:hover { background: #dfe4eb; }
 QToolButton#GlacierTabClose33:pressed { background: #cdd5df; }
+QToolButton#GlacierProxyStatus34 {
+    background: transparent; border: none; border-radius: 17px;
+    min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px;
+}
+QToolButton#GlacierProxyStatus34:hover { background: #edf0f4; }
+QToolButton#GlacierProxyStatus34:pressed { background: #dce3ed; }
 QAbstractButton#GlacierNewTab34 {
     background: transparent; border: none; border-radius: 16px;
     min-width: 32px; max-width: 32px;
@@ -399,9 +405,25 @@ class GlacierChromeShell33:
             proxy.setMaximumWidth(24)
             proxy.setMinimumWidth(19)
             proxy.setToolTip(proxy.toolTip() or proxy.text())
-        elif proxy is not None:
-            proxy.setMinimumWidth(30)
-            proxy.setMaximumWidth(30)
+        elif isinstance(proxy, QAbstractButton):
+            # The old QPushButton is refreshed by several legacy modules.
+            # Do not rely on overriding its text/stylesheet on every tick:
+            # preserve its click handler and expose a separate icon-only
+            # control to the real browser toolbar.
+            nav.removeWidget(proxy)
+            proxy.hide()
+            indicator = QToolButton(surface)
+            indicator.setObjectName("GlacierProxyStatus34")
+            indicator.setIcon(shell_icon33("proxy-off"))
+            indicator.setIconSize(QSize(25, 25))
+            indicator.setFixedSize(34, 34)
+            indicator.setToolTip(proxy.toolTip() or "本地 VLESS 代理状态；点击重连")
+            indicator.setAccessibleName("本地 VLESS 未连接，点击重连")
+            indicator.clicked.connect(proxy.click)
+            position = nav.indexOf(account) if account is not None else nav.count()
+            nav.insertWidget(position, indicator)
+            indicator.show()
+            self._proxy_indicator34 = indicator
 
         # The Chrome menu owns rarely used options; no separate '工具 ▾'
         # permanently squeezes the address bar. Keep old handlers accessible.
