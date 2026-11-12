@@ -378,8 +378,10 @@ def _populate_scene(scene_id, materials, meshes):
             raise RuntimeError("candidate_light_component_missing")
         component.set_editor_property("intensity", float(intensity))
         component.set_editor_property("attenuation_radius", 1450.0)
-        # Material palette handles the scene's stylized color design;
-        # no external HDRI, environment texture or unapproved asset used.
+        component.set_editor_property("light_color",
+                                      unreal.Color(255, 75, 65) if color_name=="Coral"
+                                      else unreal.Color(255, 241, 223))
+        # No external HDRI, environment texture or unapproved asset used.
         lights.append(name)
 
     def view(name, xyz, target, focal_mm):
@@ -466,13 +468,13 @@ def _populate_scene(scene_id, materials, meshes):
         point("Key_Light",(-150,-260,440),850)
         point("Fill_Light",(260,390,390),480)
         point("Window_Bounce",(610,-190,410),620)
+        # Same physical set and prop placements in BOTH lighting variants.
+        part("Pendant_Lamp", "Cylinder",(110,-20,345),
+             (.72,.72,.25),"Gold")
+        part("Ceiling_Alert_Bar", "Cube", (110,-20,355),
+             (2.4,.28,.10), "Coral" if warning else "Slate")
         if warning:
-            part("Ceiling_Alert_Bar", "Cube", (110,-20,355),
-                 (2.4,.28,.10), "Coral")
             point("Warning_Light",(140,-30,410),1200,"Coral")
-        else:
-            part("Pendant_Lamp", "Cylinder",(110,-20,345),
-                 (.72,.72,.25),"Gold")
         view("Hall_Master_Camera",(-500,-440,265),(130,-35,120),28)
         view("Console_Insert_Camera",(-245,85,220),(430,225,150),42)
     else:
