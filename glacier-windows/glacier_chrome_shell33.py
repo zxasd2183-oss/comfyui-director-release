@@ -76,6 +76,22 @@ QToolButton#GlacierHub20:hover, QToolButton#GlacierMore14:hover,
 QToolButton#GlacierUtilityToggle32:hover, QPushButton#GlacierAccount26:hover {
     background: #edf0f4;
 }
+/* Qt menu-bearing QToolButtons draw their own dropdown triangle unless
+   both subcontrols are explicitly hidden. Keep native menu interactions. */
+QToolButton#GlacierHub20::menu-indicator,
+QToolButton#GlacierMore14::menu-indicator {
+    image: none; width: 0px; height: 0px;
+}
+QToolButton#GlacierHub20::menu-button,
+QToolButton#GlacierMore14::menu-button {
+    border: none; width: 0px; height: 0px;
+}
+QToolButton#GlacierTabClose33 {
+    background: transparent; border: none;
+    border-radius: 10px; padding: 0;
+}
+QToolButton#GlacierTabClose33:hover { background: #dfe4eb; }
+QToolButton#GlacierTabClose33:pressed { background: #cdd5df; }
 QPushButton#GlacierBack32:pressed, QPushButton#GlacierForward32:pressed,
 QPushButton#GlacierReload32:pressed, QToolButton#GlacierMore14:pressed {
     background: #dce3ed;
@@ -243,23 +259,33 @@ class GlacierChromeShell33:
         self._resize_tabs_to_content33 = resize_tabs_to_content
 
         def polish_close_buttons():
-            """Replace native platform-red X tiles without changing close signals."""
+            """Use our own SVG-like gray icon, never the platform red X tile."""
             bar = self.chrome_tab14
+            side = QTabBar.ButtonPosition.RightSide
+
+            def emit_close(button):
+                # Tabs can reorder: resolve the index when actually clicked.
+                for index in range(bar.count()):
+                    if bar.tabButton(index, side) is button:
+                        bar.tabCloseRequested.emit(index)
+                        return
+
             for i in range(bar.count()):
-                for side in (QTabBar.ButtonPosition.RightSide, QTabBar.ButtonPosition.LeftSide):
-                    button = bar.tabButton(i, side)
-                    if not isinstance(button, QAbstractButton):
-                        continue
-                    button.setIcon(shell_icon33("close"))
-                    button.setIconSize(QSize(15, 15))
-                    button.setFixedSize(20, 20)
-                    button.setToolTip("关闭标签")
-                    button.setStyleSheet(
-                        "QAbstractButton{background:transparent;border:0;"
-                        "border-radius:10px;padding:0;}"
-                        "QAbstractButton:hover{background:#d8dde5;}"
-                        "QAbstractButton:pressed{background:#c8d0da;}")
-                    break
+                current = bar.tabButton(i, side)
+                if isinstance(current, QToolButton) and current.objectName() == "GlacierTabClose33":
+                    continue
+                close = QToolButton(bar)
+                close.setObjectName("GlacierTabClose33")
+                close.setIcon(shell_icon33("close"))
+                close.setIconSize(QSize(13, 13))
+                close.setFixedSize(20, 20)
+                close.setToolTip("关闭标签")
+                close.setAutoRaise(True)
+                close.setCursor(Qt.CursorShape.PointingHandCursor)
+                close.clicked.connect(lambda checked=False, button=close: emit_close(button))
+                # QTabBar's auto-created close control can use a red native
+                # Windows style even after setIcon(). Replace the widget.
+                bar.setTabButton(i, side, close)
 
         self._polish_close_buttons33 = polish_close_buttons
         self.tabs.currentChanged.connect(
