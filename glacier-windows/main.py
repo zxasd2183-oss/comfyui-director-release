@@ -291,9 +291,11 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   v.urlChanged.connect(lambda _url,view=v:self.sync_url() if view is self.current() else None)
   v.loadFinished.connect(lambda ok,view=v:self.on_page_loaded(view,ok))
   self.attach_page_security(v)
-  # Keep a local new-tab page even if the proxy is down.
-  # Only navigate to a remote startup URL if the bundled proxy is running.
-  v.setHtml(self.home_markup(), QUrl("about:blank"))
+  # The local first tab must render without relying on an in-memory
+  # data: URL: QtWebEngine on some Windows machines leaves those blank.
+  # A fixed, user-private file:// URL works offline, including with VLESS off.
+  offline=ensure_offline_home_file(appdir(), self.home_markup())
+  v.setUrl(QUrl.fromLocalFile(str(offline)))
   if self.proc is not None:
    self.open_startup_home(v)
   self.refresh_tabs14()
