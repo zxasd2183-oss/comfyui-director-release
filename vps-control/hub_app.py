@@ -20,6 +20,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_cast_review as enqueue_ue_cast_review_rpc,
                            enqueue_ue_hero_metahuman_seed as enqueue_ue_hero_metahuman_seed_rpc,
                            enqueue_ue_hero_runtime_audit as enqueue_ue_hero_runtime_audit_rpc,
+                           enqueue_ue_hero_amber_eyes as enqueue_ue_hero_amber_eyes_rpc,
                            get_ue_cast_review_png as get_ue_cast_review_png_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
@@ -30,7 +31,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.3.0"
+UE_HUB_API_VERSION = "1.4.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -484,6 +485,16 @@ def enqueue_ue_hero_runtime_audit(project_id: str, episode_id: str) -> dict:
     No changes to the original EP01 or isolated MetaHuman candidate.
     """
     return enqueue_ue_hero_runtime_audit_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_hero_amber_eyes(project_id: str, episode_id: str) -> dict:
+    """Create a non-destructive MetaHuman candidate with amber-brown eyes.
+
+    Uses only Studio-locked original character, fixed Iris color adjustment,
+    no arbitrary assets, no models, no cloud auth/rigging, no master approval.
+    """
+    return enqueue_ue_hero_amber_eyes_rpc(project_id,episode_id)
 
 
 @app.tool(annotations=READ)
