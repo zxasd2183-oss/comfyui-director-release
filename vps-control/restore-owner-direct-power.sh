@@ -16,8 +16,55 @@ HUB_SERVICE=director-hub-mcp.service
 [[ -x "$PY" && -d "$POWER" && ! -L "$POWER" ]] || fail "known_power_service_install_required"
 [[ -f "$DB" && ! -L "$DB" ]] || fail "existing_power_database_required"
 [[ "$(git -C "$REPO" branch --show-current)" == "main" ]] || fail "reviewed_main_only"
-for name in power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py; do
-  [[ -f "$POWER/$name" && ! -L "$POWER/$name" ]] || fail "existing_power_file_missing_or_unsafe"
+# FILE OPERATIONS BEGIN: isolated function definitions are exercised in CI.
+# Only power_direct.py is a legitimate newly introduced module. Missing core
+# files remain an installation-integrity failure.
+POWER_FILES=(power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py)
+ORIGINALLY_MISSING=()
+check_target_files(){
+  local name
+  for name in "${POWER_FILES[@]}"; do
+    if [[ -e "$POWER/$name" || -L "$POWER/$name" ]]; then
+      [[ -f "$POWER/$name" && ! -L "$POWER/$name" ]] ||
+        fail "existing_power_file_missing_or_unsafe"
+    else
+      [[ "$name" == power_direct.py ]] ||
+        fail "required_existing_power_file_missing"
+      ORIGINALLY_MISSING+=("$name")
+    fi
+  done
+}
+backup_target_files(){
+  local name
+  for name in "${POWER_FILES[@]}"; do
+    if [[ -f "$POWER/$name" && ! -L "$POWER/$name" ]]; then
+      cp -p "$POWER/$name" "$BACKUP/$name"
+    elif [[ "$name" != power_direct.py || -e "$POWER/$name" || -L "$POWER/$name" ]]; then
+      fail "existing_power_file_changed_before_backup"
+    fi
+  done
+}
+restore_target_files(){
+  local name
+  for name in "${POWER_FILES[@]}"; do
+    if [[ -f "$BACKUP/$name" && ! -L "$BACKUP/$name" ]]; then
+      # Never follow a symlink inserted into the installed location.
+      [[ ! -L "$POWER/$name" ]] || fail "unsafe_power_rollback_target"
+      cp -p "$BACKUP/$name" "$POWER/$name" ||
+        fail "existing_power_file_restore_failed"
+    elif [[ "$name" == power_direct.py && ! -e "$BACKUP/$name" && ! -L "$BACKUP/$name" ]]; then
+      # First install: remove the newly created module; do not copy a
+      # nonexistent backup. rm -f unlinks a dangling symlink, too.
+      [[ ! -d "$POWER/$name" ]] || fail "unsafe_new_power_file_directory"
+      rm -f -- "$POWER/$name" || fail "new_power_file_cleanup_failed"
+    else
+      fail "required_power_rollback_backup_missing"
+    fi
+  done
+}
+# FILE OPERATIONS END
+check_target_files
+for name in "${POWER_FILES[@]}"; do
   [[ -f "$SRC/$name" && ! -L "$SRC/$name" ]] || fail "reviewed_power_source_missing_or_unsafe"
   git -C "$REPO" diff --quiet -- "vps-control/$name" ||
     fail "reviewed_power_source_modified"
@@ -48,22 +95,27 @@ PY
 "$PY" -m py_compile "$SRC/power_ops.py" "$SRC/power_direct.py" "$SRC/power_write_mcp.py" "$SRC/vps_unified_status.py"
 BACKUP="$(mktemp -d /var/lib/comfyui-director-power/owner-direct-backup.XXXXXXXX)"
 chmod 0700 "$BACKUP"
-for name in power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py; do
-  cp -p "$POWER/$name" "$BACKUP/$name"
-done
+backup_target_files
 COMMITTED=0
 cleanup(){
   if (( ! COMMITTED )); then
     echo "Restoring prior power service code after failed verification." >&2
-    for name in power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py; do
-      cp -p "$BACKUP/$name" "$POWER/$name" || :
-    done
+    restore_target_files
     systemctl restart "$SERVICE" || :
   fi
 }
 trap cleanup EXIT
 
-for name in power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py; do
+for name in "${POWER_FILES[@]}"; do
+  # Refuse to overwrite a path created after initial validation. In
+  # particular, do not follow a newly inserted symlink.
+  if [[ "$name" == power_direct.py && " ${ORIGINALLY_MISSING[*]} " == *" power_direct.py "* ]]; then
+    [[ ! -e "$POWER/$name" && ! -L "$POWER/$name" ]] ||
+      fail "new_power_file_appeared_during_install"
+  else
+    [[ -f "$POWER/$name" && ! -L "$POWER/$name" ]] ||
+      fail "existing_power_file_changed_during_install"
+  fi
   install -o root -g root -m 0644 "$SRC/$name" "$POWER/$name"
 done
 systemctl restart "$SERVICE"
