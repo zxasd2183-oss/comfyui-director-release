@@ -1,10 +1,10 @@
 {
   "channel": "windows-x64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.20.23：Windows 独立签名更新；安装前确认。",
-  "sha256": "c1061fb3fc45acffd84cedc6acc00f07088d0847946cb3501be82fe669ea8827",
-  "signature": "IALy5OHVIOK6QvOArftkzi4t8yBpFuZDRNMIzFRCuheDn19ZqQLb3H1Ky6k4l+kRpF2fK3LgXF4ZN/nqdUDYDA==",
-  "size": 176000023,
-  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.23-Windows-Setup-x64.exe",
-  "version": "0.20.23"
+  "notes": "Glacier Browser v0.20.24：Windows 独立签名更新；安装前确认。",
+  "sha256": "6049b004b9cbe671977063b3aa840fca396f77fa3a91b6ec41e7945ad059dd15",
+  "signature": "KEyJjafMj/3hJqs0u5+q9JLPE8/K6QSaNyQDdCy5SjjkNCJxJG2xSFyUKqKwBCUf6M+dC/7O67Q0HFNkl5s2CA==",
+  "size": 175941343,
+  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.24-Windows-Setup-x64.exe",
+  "version": "0.20.24"
 }
