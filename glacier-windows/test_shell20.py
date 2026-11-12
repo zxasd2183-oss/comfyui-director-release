@@ -116,6 +116,20 @@ class Shell20Tests(unittest.TestCase):
         self.assertIn("#eef1f5", w.styleSheet())
         self.assertIn("#f1f3f6", w.styleSheet())
 
+    def test_new_tab_matches_glacier_mountain_brand_without_remote_assets(self):
+        page = glacier_home20()
+        self.assertIn('class="mountain-mark"', page)
+        self.assertIn('class="landscape"', page)
+        self.assertIn("Glacier <em>Browser</em>", page)
+        self.assertIn('action="https://www.google.com/search"', page)
+        self.assertIn('href="https://gemini.google.com/"', page)
+        self.assertIn('href="https://chatgpt.com/"', page)
+        self.assertIn("前往 ChatGPT", page)
+        self.assertIn("前往 Gemini", page)
+        self.assertNotIn("<script", page.lower())
+        self.assertNotIn("http://", page.lower())
+        self.assertNotIn("onclick=", page.lower())
+
     def test_new_hub_preserves_all_original_actions(self):
         w = self.win
         w._build_hub_menu20()

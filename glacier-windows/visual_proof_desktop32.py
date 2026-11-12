@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
+from secure_update import CURRENT_VERSION
 
 def main():
     with tempfile.TemporaryDirectory(prefix="glacier-ui33-clean-profile-", ignore_cleanup_errors=True) as temp:
@@ -41,7 +42,7 @@ def main():
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
-            path=out/"Glacier-Windows-v0.20.24-live-ui33.png"
+            path=out/f"Glacier-Windows-v{CURRENT_VERSION}-live-ui33.png"
             # QtWebEngine may paint into a compositor surface that is not
             # included in QWidget.grab() on a headless Windows runner.
             # First verify the actual browser DOM is NOT blank. Screenshot

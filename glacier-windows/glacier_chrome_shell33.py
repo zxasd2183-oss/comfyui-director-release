@@ -6,7 +6,7 @@ VLESS routing and signed updater remain owned by their original components.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer, QEvent, QObject
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QTabBar, QToolButton
 
 CHROME_SHELL_QSS33 = """
@@ -183,14 +183,34 @@ def shell_icon33(kind):
         p.drawLine(QPointF(22, 12), QPointF(22, 32))
         p.drawLine(QPointF(12, 22), QPointF(32, 22))
     elif kind == "brand":
-        p.setPen(QPen(QColor("#497eac"), 2.6, Qt.PenStyle.SolidLine,
-                      Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        p.drawEllipse(QRectF(5, 5, 34, 34))
-        for dx, dy in ((0, -11), (0, 11), (-11, 0), (11, 0),
-                       (-8, -8), (8, 8), (-8, 8), (8, -8)):
-            p.drawLine(QPointF(22, 22), QPointF(22+dx, 22+dy))
-        p.setBrush(QColor("#497eac"))
-        p.drawEllipse(QRectF(19, 19, 6, 6))
+        # Window/taskbar mark matches the Glacier mountain artwork, not a snowflake.
+        p.setPen(Qt.PenStyle.NoPen)
+        back = QPainterPath()
+        back.moveTo(4, 33)
+        back.lineTo(17, 14)
+        back.lineTo(24, 24)
+        back.lineTo(30, 9)
+        back.lineTo(41, 33)
+        back.closeSubpath()
+        p.fillPath(back, QColor("#3b9cf0"))
+        snow = QPainterPath()
+        snow.moveTo(17, 14)
+        snow.lineTo(24, 24)
+        snow.lineTo(18, 21)
+        snow.lineTo(13, 25)
+        snow.closeSubpath()
+        p.fillPath(snow, QColor("#d9f6ff"))
+        high = QPainterPath()
+        high.moveTo(30, 9)
+        high.lineTo(37, 22)
+        high.lineTo(31, 18)
+        high.lineTo(27, 21)
+        high.lineTo(26, 17)
+        high.closeSubpath()
+        p.fillPath(high, QColor("#eefbff"))
+        p.setPen(QPen(QColor("#2687d9"), 2.3, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.RoundCap))
+        p.drawArc(QRectF(4, 27, 38, 13), 190*16, 150*16)
     elif kind in ("proxy-on", "proxy-off"):
         tint = QColor("#18856b") if kind == "proxy-on" else QColor("#a4a9b2")
         p.setPen(QPen(tint, 2.4))
