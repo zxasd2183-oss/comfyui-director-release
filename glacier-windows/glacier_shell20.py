@@ -141,7 +141,8 @@ QStatusBar {
 
 
 def glacier_home20():
-    """Script-free, offline Chromium-style start page with Glacier branding."""
+    """Script-free, offline Chromium-style start page with real vector brand."""
+    from glacier_brand35 import GLACIER_BRAND_SVG35
     return """<!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
@@ -163,14 +164,8 @@ body{margin:0;background:#fff;color:#202124;
   font-weight:700;text-decoration:none}
 main{width:min(100%,720px);margin:0 auto;
   padding:clamp(120px,19vh,200px) 24px 40px;text-align:center}
-.wordmark{margin:0 auto 36px;display:flex;align-items:center;
-  justify-content:center;gap:13px;letter-spacing:-2px;
-  font-size:clamp(43px,6vw,67px);font-weight:550;line-height:1.15;
-  color:#263c50}
-.symbol{display:grid;place-items:center;width:58px;height:58px;
-  border-radius:20px;background:linear-gradient(145deg,#dceefb,#f2f8ff);
-  box-shadow:inset 0 1px 0 #fff;color:#528db5;
-  font-size:37px;letter-spacing:0;font-weight:400}
+.wordmark{display:block;margin:0 auto 37px;width:min(490px,88vw)}
+.wordmark svg{display:block;width:100%;height:auto;overflow:visible}
 .search{height:49px;max-width:584px;margin:0 auto;
   display:flex;align-items:center;gap:17px;padding:0 18px;
   border:1px solid #dfe1e5;border-radius:26px;
@@ -207,8 +202,7 @@ a{color:inherit;text-decoration:none}
 @media(max-width:520px){
   .top{padding:14px 17px;gap:14px}
   main{padding:clamp(125px,22vh,190px) 14px 24px}
-  .wordmark{font-size:45px;gap:9px}
-  .symbol{width:45px;height:45px;font-size:29px;border-radius:15px}
+  .wordmark{width:min(390px,88vw);margin-bottom:30px}
   .shortcuts{grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
   .shortcut{font-size:11px}
 }
@@ -219,7 +213,7 @@ a{color:inherit;text-decoration:none}
 <a class="about" href="https://www.google.com" aria-label="Google">G</a>
 </nav>
 <main>
-<div class="wordmark"><span class="symbol" aria-hidden="true">❄</span>Glacier</div>
+<div class="wordmark" aria-label="Glacier 品牌 Logo"><!--GLACIER_VECTOR_LOGO35--></div>
 <form class="search" action="https://www.google.com/search" method="get"
  aria-label="使用 Google 搜索">
 <span class="magnify" aria-hidden="true"></span>
@@ -235,7 +229,7 @@ a{color:inherit;text-decoration:none}
 <a class="shortcut" href="https://www.wikipedia.org"><span class="tile">W</span>Wikipedia</a>
 </section>
 <div class="foot">Glacier Browser · 新标签页</div>
-</main></body></html>"""
+</main></body></html>""".replace("<!--GLACIER_VECTOR_LOGO35-->", GLACIER_BRAND_SVG35)
 
 
 def ensure_offline_home_file(directory, html):

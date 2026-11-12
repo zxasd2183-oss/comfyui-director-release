@@ -101,7 +101,7 @@ class ChromeUI30Tests(unittest.TestCase):
         self.assertIn('name="q"', html)
         self.assertIn("快捷访问", html)
         self.assertNotIn("<script", html.lower())
-        self.assertNotIn("http://", html.lower())
+        self.assertNotIn("http://", html.lower().replace('xmlns="http://www.w3.org/2000/svg"', ""))
         self.assertEqual(self.win.home_markup(), html)
 
 

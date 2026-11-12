@@ -134,7 +134,7 @@ class Shell20Tests(unittest.TestCase):
         self.assertIn('name="q"', page)
         self.assertIn("https://chatgpt.com", page)
         self.assertNotIn("<script", page.casefold())
-        self.assertNotIn("http://", page.casefold())
+        self.assertNotIn("http://", page.casefold().replace('xmlns="http://www.w3.org/2000/svg"', ""))
         self.assertEqual(self.win.home_markup(), page)
 
 
