@@ -90,14 +90,17 @@ def main():
                     rgb=image.pixelColor(x,y)
                     if rgb.red()<175 and rgb.green()<195 and rgb.blue()<210:
                         painted+=1
-            if painted<40:
-                # Not an assertion of page visibility on a real monitor:
-                # the headless QtWebEngine framebuffer is absent in grab().
-                # The local DOM check above is the authoritative page test.
-                print("HEADLESS WEBENGINE: QWidget.grab did not capture page pixels;"
-                      " browser DOM was validated separately",flush=True)
-            else:
-                print("Real offline homepage colored pixels",painted,flush=True)
+            # A passing DOM and toolbar screenshot are not enough. Qt can
+            # recreate the top-level Windows HWND after WebEngine starts and
+            # leave the page compositor as a tiny orphan rectangle.
+            # This real Windows runner captures the full homepage in a
+            # healthy window; require actual central page pixels too.
+            if painted < 120:
+                raise RuntimeError(
+                    "Qt WebEngine viewport is visually blank or shrunken; "
+                    "native window flags must be set before page creation: "
+                    + str(painted) + " sampled page pixels")
+            print("Real offline homepage colored pixels",painted,flush=True)
             min_width=max(260, int(window.width()*0.33))
             if omni.width()<min_width or omni.height()<38:
                 raise RuntimeError(

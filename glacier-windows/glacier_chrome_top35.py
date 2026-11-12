@@ -354,7 +354,12 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
 
     if is_windows:
         # No extra Windows titlebar above the Chrome tab strip.
-        owner.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        # Production sets this flag before constructing Qt WebEngine.
+        # In pure QWidget unit stubs there is no Chromium compositor.
+        if not (owner.windowFlags() & Qt.WindowType.FramelessWindowHint):
+            if hasattr(owner, "profile"):
+                raise RuntimeError("Windows frameless flag must precede Qt WebEngine creation")
+            owner.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         strip_layout.setContentsMargins(9, 3, 0, 0)
         group = QFrame(strip)
         group.setObjectName("GlacierCaptionGroup35")
