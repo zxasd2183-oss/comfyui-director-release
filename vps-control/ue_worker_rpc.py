@@ -344,6 +344,8 @@ def enqueue_ue_cast_review(project_id,episode_id,
 LOG_KIND = frozenset({
     "unreal", "preset", "render_01", "render_13",
     "render_26", "render_31",
+    "render_lineup", "render_gpt", "render_gem",
+    "render_ds", "render_cla", "render_zero",
 })
 
 
