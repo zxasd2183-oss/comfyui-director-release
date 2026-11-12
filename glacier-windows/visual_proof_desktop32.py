@@ -75,6 +75,10 @@ def main():
                     "html_length="+str(len(html))+
                     " url_prefix="+window.current().url().toString()[:140])
             print("SUCCESS: actual local homepage DOM loaded",len(html),"bytes")
+            # Include the actual compact tab caption/favicon in the saved
+            # screenshot, not merely in a post-capture assertion.
+            window._glacier_sync_tab_icons35()
+            app.processEvents()
             screen=window.grab()
             if not screen.save(str(path),"PNG"):
                 raise RuntimeError("Could not capture live Browser screenshot")
