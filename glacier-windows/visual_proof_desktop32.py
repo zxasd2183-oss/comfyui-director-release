@@ -129,6 +129,11 @@ def main():
                 raise RuntimeError("First frame status icon has wrong accessible state")
             if window.windowIcon().isNull():
                 raise RuntimeError("Glacier application title icon was not installed")
+            # The active tab may meet, but never cross, the bottom edge of
+            # the first-row frame. The other hitboxes stay fully inset.
+            # The Qt tabbar must not paint a native gray base line.
+            if window.chrome_tab14.drawBase():
+                raise RuntimeError("Qt added an unwanted tabbar baseline")
             # The visible external tab must show an actual small favicon,
             # not the old long 'Glacier Browser · 新标签页' placeholder.
             window._glacier_sync_tab_icons35()

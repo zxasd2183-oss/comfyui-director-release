@@ -122,7 +122,7 @@ QTabBar#GlacierExternalTabs14::tab {
     border-top-right-radius: 11px;
     min-width: 160px;
     max-width: 224px;
-    min-height: 25px;
+    min-height: 34px;
     margin: 5px 3px 0 0;
     padding: 2px 14px 1px 13px;
     color: #455468;
@@ -185,7 +185,9 @@ def framed_top_geometry36(owner):
     def capture(name, widget):
         origin = widget.mapTo(strip, QPoint(0, 0))
         bounds = QRect(origin, widget.size())
-        frame = strip.rect().adjusted(2, 2, -2, -2)
+        # The active white tab must join the navigation's white surface
+        # at the *inside* bottom edge, while + and caption stay inset.
+        frame = strip.rect().adjusted(2, 2, -2, 0 if name == "tabs" else -2)
         if not frame.contains(bounds):
             raise RuntimeError(f"{name} escapes the first-row frame: {bounds} vs {frame}")
         positions[name] = bounds
@@ -415,6 +417,7 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
     tabbar.setIconSize(QSize(16, 16))
     tabbar.setUsesScrollButtons(True)
     tabbar.setExpanding(False)
+    tabbar.setDrawBase(False)
 
     # Reuse original controls. An icon swap must never replace a click handler.
     buttons = (
@@ -479,9 +482,9 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
                 raise RuntimeError("Windows frameless flag must precede Qt WebEngine creation")
             owner.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         # The container is the full frame: never position controls outside it.
-        strip_layout.setContentsMargins(8, 4, 2, 3)
+        strip_layout.setContentsMargins(8, 4, 2, 0)
         strip_layout.setSpacing(4)
-        tabbar.setFixedHeight(38)
+        tabbar.setFixedHeight(42)
         group = QFrame(strip)
         group.setObjectName("GlacierCaptionGroup35")
         group.setFixedHeight(39)
