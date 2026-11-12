@@ -40,6 +40,7 @@ jobs:
           bash -n install-hub-v05.sh
           bash -n install-hub-v06.sh
           bash -n restore-owner-direct-power.sh
+          bash -n repair-owner-direct-hub-route.sh
           bash -n install-power-v03.sh
           bash -n install-vps-named-tunnel.sh
           bash -n install-mobile-v06.sh
