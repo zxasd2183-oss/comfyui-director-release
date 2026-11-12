@@ -46,13 +46,13 @@ def png(w,h):
 
 
 class MockResponse:
-    def __init__(self,url,data):
+    def __init__(self,url,data,expected_sha=None):
         self.url=url
         self.data=data
         self.headers={
             "Content-Type":"image/png",
             "Content-Length":str(len(data)),
-            "X-Director-PNG-SHA256":hashlib.sha256(data).hexdigest(),
+            "X-Director-PNG-SHA256":expected_sha or hashlib.sha256(data).hexdigest(),
         }
     def geturl(self):
         return self.url
@@ -65,10 +65,11 @@ class MockResponse:
 
 
 class Opener:
-    def __init__(self,data):
+    def __init__(self,data,expected_sha=None):
         self.data=data
+        self.expected_sha=expected_sha
     def open(self,request,timeout):
-        return MockResponse(request.full_url,self.data)
+        return MockResponse(request.full_url,self.data,self.expected_sha)
 
 
 class PreviewTests(unittest.TestCase):
@@ -124,8 +125,8 @@ class PreviewTests(unittest.TestCase):
             bad=bytearray(raw)
             bad[-1]^=1
             self.assertEqual(ue_worker_rpc.get_ue_cast_review_png(
-                job,"LINEUP",opener=Opener(bytes(bad)))["reason"],
-                "cast_review_png_invalid" if False else "cast_review_hash_mismatch")
+                job,"LINEUP",opener=Opener(bytes(bad),hashlib.sha256(raw).hexdigest()))["reason"],
+                "cast_review_hash_mismatch")
         # The bridge-safe thumbnail remains RGB/RGBA PNG; it is NOT the
         # original. SHA returned above is for the true UE source image.
 
