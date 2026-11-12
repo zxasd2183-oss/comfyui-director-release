@@ -82,6 +82,7 @@ QToolButton#GlacierProxyStatus34:hover, QPushButton#GlacierAccount26:hover {
 QPushButton#GlacierAccount26 {
     background: #e8f0fe;
     border: none;
+    border-radius: 18px;
     color: #37639d;
 }
 QFrame#GlacierCaptionGroup35 { background: transparent; border: none; }
@@ -288,6 +289,10 @@ class _WindowsCaption35(QObject):
         if watched is self.owner and kind in (
             QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.WindowStateChange
         ):
+            if kind == QEvent.Type.Resize:
+                recalc = getattr(self.owner, "_resize_tabs_to_content33", None)
+                if callable(recalc):
+                    QTimer.singleShot(0, recalc)
             QTimer.singleShot(0, self.sync_state)
         return False
 
@@ -334,12 +339,18 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
             page = pages.widget(i)
             url_method = getattr(page, "url", None)
             url = url_method().toString() if callable(url_method) else ""
-            icon_method = getattr(page, "icon", None)
-            icon = icon_method() if callable(icon_method) else QIcon()
-            if icon.isNull():
-                icon = top_icon35("glacier" if (
-                    not url or url == "about:blank" or "glacier-offline-home" in url
-                ) else "globe")
+            local = not url or url == "about:blank" or "glacier-offline-home" in url
+            if local:
+                # Only alter the visible external strip; preserve underlying
+                # QTabWidget's title and URL for restore/history logic.
+                icon = top_icon35("glacier")
+                if tabbar.tabText(i) != "新标签页":
+                    tabbar.setTabText(i, "新标签页")
+            else:
+                icon_method = getattr(page, "icon", None)
+                icon = icon_method() if callable(icon_method) else QIcon()
+                if icon.isNull():
+                    icon = top_icon35("globe")
             if tabbar.tabIcon(i).cacheKey() != icon.cacheKey():
                 tabbar.setTabIcon(i, icon)
 

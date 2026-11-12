@@ -130,6 +130,13 @@ class ChromeShell33Tests(unittest.TestCase):
                               if a.objectName() == "GlacierUtilityMenuAction33"]), 1)
 
 
+    def test_offline_tab_has_glacier_favicon_and_short_title(self):
+        bar = self.window.chrome_tab14
+        bar.addTab("Glacier Browser · 新标签页")
+        self.window._glacier_sync_tab_icons35()
+        self.assertEqual(bar.tabText(0), "新标签页")
+        self.assertFalse(bar.tabIcon(0).isNull())
+
     def test_integrated_top_row_preserves_original_qt_actions(self):
         w = self.window
         self.assertTrue(w._glacier_top_chrome35_ready)

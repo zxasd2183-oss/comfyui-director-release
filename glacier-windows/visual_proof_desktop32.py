@@ -124,6 +124,13 @@ def main():
                 raise RuntimeError("First frame status icon has wrong accessible state")
             if window.windowIcon().isNull():
                 raise RuntimeError("Glacier application title icon was not installed")
+            # The visible external tab must show an actual small favicon,
+            # not the old long 'Glacier Browser · 新标签页' placeholder.
+            window._glacier_sync_tab_icons35()
+            app.processEvents()
+            if (window.chrome_tab14.tabText(0) != "新标签页"
+                    or window.chrome_tab14.tabIcon(0).isNull()):
+                raise RuntimeError("Native new-tab favicon or compact tab title not rendered")
             if sys.platform == "win32":
                 if not (window.windowFlags() & Qt.WindowType.FramelessWindowHint):
                     raise RuntimeError("Windows is still using an extra separate native titlebar")
