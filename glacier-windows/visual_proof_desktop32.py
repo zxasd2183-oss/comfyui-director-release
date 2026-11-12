@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
+from glacier_chrome_top35 import framed_top_geometry36
 import sys
 from secure_update import CURRENT_VERSION
 
@@ -145,6 +146,21 @@ def main():
                     raise RuntimeError("Windows caption buttons have incorrect geometry")
                 if not getattr(window, "_glacier_caption35", None):
                     raise RuntimeError("Windows native drag/resize controller missing")
+                # The screenshot's red comparison frame is NOT part of
+                # the product. Assert every tab/+ /caption hitbox stays inside
+                # the actual first-row widget at real Windows DPI.
+                for candidate_width in (720, 1050, 1360):
+                    window.resize(candidate_width, 890)
+                    for _ in range(5):
+                        app.processEvents()
+                    window._resize_tabs_to_content33()
+                    app.processEvents()
+                    positions = framed_top_geometry36(window)
+                    print("FRAME_INSIDE", candidate_width,
+                          {k: (v.x(), v.y(), v.width(), v.height())
+                           for k, v in positions.items()}, flush=True)
+                window.resize(1360, 890)
+                app.processEvents()
                 print("SUCCESS: integrated native Windows caption and tab row verified")
             if omni.layout().count()!=3:
                 raise RuntimeError("Site, address and bookmark were not grouped into omnibox")

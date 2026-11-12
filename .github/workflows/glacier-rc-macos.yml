@@ -9,6 +9,7 @@ on:
       - feature/glacier-desktop-pixel-polish-20261111
       - feature/glacier-chrome-finish-v024-v022-20261111
       - feature/glacier-native-topbar-35-20261112
+      - feature/glacier-framed-tabstrip-36-20261112
       - feature/glacier-home-brand-20261112
     paths:
       - 'glacier-macos/**'
