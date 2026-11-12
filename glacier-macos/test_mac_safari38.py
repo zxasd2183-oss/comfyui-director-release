@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtCore import QUrl, Qt
+from PySide6.QtCore import QUrl, Qt, QSettings
 from PySide6.QtWidgets import (
     QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
     QMenu, QPushButton, QTabBar, QTabWidget, QToolButton, QVBoxLayout, QWidget
@@ -72,6 +73,7 @@ class SafariFixture(QMainWindow):
         self.bookmarks_menu = QMenu(self)
         self.bookmarks_menu.addAction("示例书签")
         self.history_opened = 0
+        self._recently_closed15 = ["https://recent.example/path"]
         self._chrome_ui33_ready = True
         self._group_button17 = QToolButton(self)
         self._group_button17.setMenu(QMenu(self))
@@ -93,7 +95,11 @@ class MacSafari38Tests(unittest.TestCase):
         )
 
     def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
         self.window = SafariFixture()
+        self.window._safari_settings39 = QSettings(
+            os.path.join(self.temp.name, "safari.ini"), QSettings.Format.IniFormat)
+        self.window._safari_settings39.clear()
         install_mac_safari38(self.window)
         self.window.show()
         self.app.processEvents()
@@ -102,6 +108,8 @@ class MacSafari38Tests(unittest.TestCase):
         self.window._safari_refresh_timer38.stop()
         self.window.close()
         self.app.processEvents()
+        self.window._safari_settings39.sync()
+        self.temp.cleanup()
 
     def test_real_widgets_reordered_and_browser_pages_preserved(self):
         win = self.window
@@ -122,7 +130,7 @@ class MacSafari38Tests(unittest.TestCase):
         self.app.processEvents()
         self.assertTrue(win._safari_sidebar38.isVisible())
         self.assertEqual(win._safari_tab_list38.count(), 2)
-        win._safari_tab_list38.setCurrentRow(1)
+        win._safari_controller39.activate(win._safari_tab_list38.item(1))
         self.assertEqual(win.tabs.currentIndex(), 1)
         win._safari_sidebar_button38.click()
         self.app.processEvents()
@@ -148,6 +156,8 @@ class MacSafari38Tests(unittest.TestCase):
         self.assertIn("GlacierSafariHistory38", buttons)
         self.assertIn("GlacierSafariGroups38", buttons)
         buttons["GlacierSafariHistory38"].click()
+        self.assertEqual(win._safari_controller39.mode, "history")
+        win._safari_controller39.footer.click()
         self.assertEqual(win.history_opened, 1)
         self.assertEqual(len(win.bookmarks_menu.actions()), 1)
         self.assertFalse(safari_icon38("share").isNull())
