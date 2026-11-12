@@ -287,6 +287,86 @@ def run_previs(spec,root,work):
     }
 
 
+
+def build_gpt_hero_metahuman_seed(spec, root, work):
+    """Use real UE 5.8 MetaHuman factory in fixed isolated project.
+
+    No cloud login, rigging, rendering, asset uploads, arbitrary file inputs,
+    or promotion to director-approved character master occurs here.
+    """
+    from ue_jobs import JobError, find_editor_cmd
+    from agent import hero_project_manifest
+    if spec.get("format") != "director_ue_hero_seed_v130":
+        raise JobError("hero_seed_spec_invalid")
+    if ((spec.get("project_id"),spec.get("episode_id"),
+         spec.get("fps"),spec.get("total_ms"),spec.get("total_frames"),
+         len(spec.get("shots",[]))) !=
+        ("WaitingOffice","EP01",24,160000,3840,31)):
+        raise JobError("hero_seed_requires_frozen_ep01")
+    if [item["shot_id"] for item in spec["shots"]] != [
+        "%02d"%i for i in range(1,32)]:
+        raise JobError("hero_seed_requires_31_shots")
+    if not re.fullmatch(r"[a-f0-9]{32}",work.name):
+        raise JobError("hero_seed_invalid_job_id")
+    if work.exists() or work.is_symlink():
+        raise JobError("hero_seed_job_collision")
+    project=(root/"HeroProjects"/"CHAR_GPT"/"DirectorHeroGPT.uproject")
+    if project.is_symlink() or not project.is_file():
+        raise JobError("hero_isolated_project_missing")
+    try:
+        if json.loads(project.read_text(encoding="utf-8"))!=hero_project_manifest():
+            raise JobError("hero_project_manifest_not_trusted")
+    except (UnicodeError,ValueError,TypeError):
+        raise JobError("hero_project_manifest_invalid") from None
+    folder=project.parent/"Content"/"Director"/"Candidates"/"EP01"/"HeroBuilds"/("J"+work.name)
+    if folder.is_symlink() or folder.exists():
+        raise JobError("hero_seed_asset_collision")
+    work.mkdir(parents=True,exist_ok=False)
+    file=work/"hero_result.json"
+    env=os.environ.copy()
+    env["DIRECTOR_UE_JOB_ID"]=work.name
+    env["DIRECTOR_UE_RESULT_FILE"]=str(file)
+    env["DIRECTOR_UE_REVIEW_MODE"]="hero_seed_v130"
+    script=Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if not script.is_file() or script.is_symlink():
+        raise JobError("hero_seed_fixed_script_missing")
+    _run_unreal(
+        [str(find_editor_cmd()),str(project),"-run=pythonscript",
+         "-script="+str(script),"-unattended","-nop4","-nosplash",
+         "-NoSound","-log"],root,work/"hero_seed.log",900,env)
+    if file.is_symlink() or not file.is_file() or file.stat().st_size>8000:
+        raise JobError("hero_seed_result_missing")
+    data=json.loads(file.read_text(encoding="utf-8"))
+    expected="/Game/Director/Candidates/EP01/HeroBuilds/J"+work.name+"/MHC_CHAR_GPT"
+    if (type(data) is not dict or data.get("ok") is not True
+        or data.get("kind")!="real_native_metahuman_character_seed_v130"
+        or data.get("asset_path")!=expected
+        or data.get("asset_class")!="MetaHumanCharacter"
+        or data.get("project")!="DirectorHeroGPT"
+        or data.get("independent_ep01_source_untouched") is not True
+        or any(data.get(flag) is not False for flag in (
+            "rigging_done","textures_downloaded","groom_applied",
+            "wardrobe_applied","character_master_approved",
+            "cinematic_character_ready"))):
+        raise JobError("hero_seed_result_invalid")
+    uasset=folder/"MHC_CHAR_GPT.uasset"
+    if (uasset.is_symlink() or not uasset.is_file()
+            or not 1024<=uasset.stat().st_size<=100*1024*1024):
+        raise JobError("hero_seed_native_uasset_missing")
+    digest=hashlib.sha256(uasset.read_bytes()).hexdigest()
+    return {
+        "kind":"real_native_unreal_5_8_metahuman_character_seed_v130",
+        "character_id":"CHAR_GPT","candidate_asset":expected,
+        "native_uasset_verified":True,"native_uasset_sha256":digest,
+        "native_uasset_bytes":uasset.stat().st_size,
+        "source_episode_project_untouched":True,
+        "rigging_done":False,"textures_downloaded":False,
+        "groom_applied":False,"wardrobe_applied":False,
+        "cinematic_character_ready":False,"character_master_approved":False,
+        "next_stage":"create_full_rig_groom_wardrobe_and_cine_evidence"
+    }
+
+
 # V1.1 real Unreal Engine PNG visualization of the V1.0 cast Blueprints.
 # The sources are pinned to a previously SUCCEEDED actor build; no gray V03
 # proxies, generated concept art, or user-provided paths are involved.

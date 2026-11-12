@@ -41,7 +41,8 @@ def sanitized_plan(body):
     if body["task"] not in (
         "build_episode_timeline", "build_stage_cameras", "render_previs_stills",
         "audit_ep01_assets", "build_ep01_scene_candidates",
-        "build_ep01_cast_blueprints", "render_cast_review_stills"
+        "build_ep01_cast_blueprints", "render_cast_review_stills",
+        "build_ep01_hero_metahuman_seed"
     ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
@@ -86,7 +87,8 @@ def sanitized_plan(body):
     if body["task"] in ("build_stage_cameras", "render_previs_stills",
                         "audit_ep01_assets", "build_ep01_scene_candidates",
                         "build_ep01_cast_blueprints",
-                        "render_cast_review_stills"):
+                        "render_cast_review_stills",
+                        "build_ep01_hero_metahuman_seed"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
@@ -96,7 +98,9 @@ def sanitized_plan(body):
         ]:
             raise JobError("previs_requires_frozen_shot_ids")
     fmt = (
-        "director_ue_cast_review_v110"
+        "director_ue_hero_seed_v130"
+        if body["task"] == "build_ep01_hero_metahuman_seed"
+        else "director_ue_cast_review_v110"
         if body["task"] == "render_cast_review_stills"
         else "director_ue_cast_blueprints_v100"
         if body["task"] == "build_ep01_cast_blueprints"
@@ -447,6 +451,9 @@ class JobManager:
                 elif spec["format"] == "director_ue_cast_review_v110":
                     from ue_previs import render_cast_review
                     result = render_cast_review(spec, root, work)
+                elif spec["format"] == "director_ue_hero_seed_v130":
+                    from ue_previs import build_gpt_hero_metahuman_seed
+                    result = build_gpt_hero_metahuman_seed(spec, root, work)
                 else:
                     result = self.runner(spec, root, work)
                 if self.controller.cancel_requested.is_set():

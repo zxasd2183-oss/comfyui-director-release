@@ -651,7 +651,71 @@ def cast_review_main():
 
 
 
-if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "cast_v11":
+
+def hero_metahuman_seed_main():
+    """Create one *real native* MetaHumanCharacter candidate (not a rig).
+
+    This code only executes through the fixed signed Worker job under the
+    isolated DirectorHeroGPT project. No user-provided paths or meshes.
+    It never requests cloud authentication, textures, rigs or assembly.
+    """
+    result_file=Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    try:
+        job_id=os.environ.get("DIRECTOR_UE_JOB_ID","")
+        if not re.fullmatch(r"[a-f0-9]{32}",job_id):
+            raise RuntimeError("hero_invalid_job_id")
+        if os.environ.get("DIRECTOR_UE_REVIEW_MODE")!="hero_seed_v130":
+            raise RuntimeError("hero_invalid_execution_mode")
+        package="/Game/Director/Candidates/EP01/HeroBuilds/J"+job_id
+        asset_name="MHC_CHAR_GPT"
+        target=package+"/"+asset_name
+        if unreal.EditorAssetLibrary.does_directory_exist(package):
+            raise RuntimeError("hero_candidate_folder_collision")
+        if unreal.EditorAssetLibrary.does_asset_exist(target):
+            raise RuntimeError("hero_candidate_asset_collision")
+        required=("MetaHumanCharacter","MetaHumanCharacterFactoryNew")
+        for key in required:
+            if not hasattr(unreal,key):
+                raise RuntimeError("hero_mhc_plugin_api_missing_"+key)
+        if not unreal.EditorAssetLibrary.make_directory(package):
+            raise RuntimeError("hero_candidate_directory_failed")
+        factory=unreal.MetaHumanCharacterFactoryNew()
+        factory.set_editor_property("edit_after_new",False)
+        asset=unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+            asset_name=asset_name,package_path=package,
+            asset_class=unreal.MetaHumanCharacter,factory=factory)
+        if not asset:
+            raise RuntimeError("hero_mhc_asset_creation_failed")
+        if asset.get_class().get_name()!="MetaHumanCharacter":
+            raise RuntimeError("hero_mhc_asset_wrong_type")
+        if not unreal.EditorAssetLibrary.save_loaded_asset(asset):
+            raise RuntimeError("hero_mhc_asset_save_failed")
+        if not unreal.EditorAssetLibrary.does_asset_exist(target):
+            raise RuntimeError("hero_mhc_asset_not_persisted")
+        reloaded=unreal.EditorAssetLibrary.load_asset(target)
+        if not reloaded or reloaded.get_class().get_name()!="MetaHumanCharacter":
+            raise RuntimeError("hero_mhc_reload_failed")
+        result={"ok":True,"kind":"real_native_metahuman_character_seed_v130",
+                "asset_path":target,"asset_class":"MetaHumanCharacter",
+                "project":"DirectorHeroGPT",
+                "independent_ep01_source_untouched":True,
+                "rigging_done":False,"textures_downloaded":False,
+                "groom_applied":False,"wardrobe_applied":False,
+                "character_master_approved":False,
+                "cinematic_character_ready":False}
+    except Exception as exc:
+        result={"ok":False,"reason":str(exc)[:240],
+                "traceback":traceback.format_exc(limit=5)[-1200:]}
+    result_file.write_text(json.dumps(result,ensure_ascii=False,indent=2),
+                           encoding="utf-8")
+    if result["ok"]:
+        unreal.log("EP01 GPT real MetaHuman Character candidate saved")
+    else:
+        unreal.log_error("EP01 GPT MetaHuman seed creation failed: "+result["reason"])
+
+if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_seed_v130":
+    hero_metahuman_seed_main()
+elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "cast_v11":
     cast_review_main()
 else:
     main()

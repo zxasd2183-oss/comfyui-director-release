@@ -18,6 +18,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_scene_candidates as enqueue_ue_scene_candidates_rpc,
                            enqueue_ue_cast_blueprints as enqueue_ue_cast_blueprints_rpc,
                            enqueue_ue_cast_review as enqueue_ue_cast_review_rpc,
+                           enqueue_ue_hero_metahuman_seed as enqueue_ue_hero_metahuman_seed_rpc,
                            get_ue_cast_review_png as get_ue_cast_review_png_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
@@ -28,7 +29,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.1.1"
+UE_HUB_API_VERSION = "1.2.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -459,6 +460,18 @@ def enqueue_ue_cast_review(project_id: str, episode_id: str) -> dict:
     a job ID. Original level and approved masters stay unchanged.
     """
     return enqueue_ue_cast_review_rpc(project_id,episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_hero_metahuman_seed(project_id: str, episode_id: str) -> dict:
+    """Create one real UE 5.8 MetaHumanCharacter asset for EP01 吉皮提.
+
+    Only after the isolated project exists. Uses the registered Studio rev2
+    identity brief. Never imports arbitrary images, requests Epic sign-in,
+    downloads textures, creates rigs, renders or approves a final master.
+    Returns a job ID for native-uasset SHA-256 verification.
+    """
+    return enqueue_ue_hero_metahuman_seed_rpc(project_id,episode_id)
 
 
 @app.tool(annotations=READ)
