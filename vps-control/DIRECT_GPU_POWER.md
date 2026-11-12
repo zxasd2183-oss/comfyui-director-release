@@ -57,3 +57,28 @@ sudo /opt/comfyui-director-control/.venv/bin/python vps-control/diagnose_gpu_dir
 **重要**：诊断 \`ready\` 只证明云平台查询成功，不证明直控已被运行时启用，更不证明 GPU 已启动。确认 \`get_control_center_status.gpu_control_enabled=true\` 和真实云状态后，再用私有 MCP 的 \`start_gpu_now()\`。云平台响应为 accepted 后需要再次检查 Running。关机必须先有可验证的空队列，并确认文件已持久保存；队列当前不可达时仍禁止关机。
 
 保留 VPS 运行时或运营人员施加的停用开关，不因用户免逐次审批的要求自动移除实例安全限制。
+
+
+### 有效凭证与实例核验后：受控恢复现有电源核心
+
+如果只读诊断的 JSON 为 \`{"ok":true,"stage":"ready",...}\`，但现有 Hub 仍返回
+\`gpu_control_enabled=false, mode=read_only\`，可能是运行中 VPS 的电源核心程序
+与已审核的 GitHub 版本不一致。使用受控恢复脚本：
+
+\`\`\`bash
+git pull --ff-only
+sudo bash vps-control/restore-owner-direct-power.sh
+\`\`\`
+
+脚本首先通过官方 \`DescribeCompShareInstance\` 只读确认实例、地域和网络；
+如果提供商无法访问、权限不对或找不到实例，则**直接拒绝更改**。
+若通过，则要求现有核心和 Hub 服务正常、没有未完结的电源请求，备份
+4 个已安装的电源核心文件，仅重启私有 \`director-power-mcp.service\`，
+然后通过回环 8892 和 8898 检查 \`gpu_control_enabled=true\`、
+\`mode=owner_direct\` 和真实实例状态。验证失败则回滚原文件并恢复服务。
+
+脚本自身**不会开机、关机、修改 GPU 配置或启用匿名公网 API**。
+此后持有私有 Director Hub 访问权限的人直接调用 \`start_gpu_now\`、
+\`stop_gpu_now\`，无需旧的逐次审批；若 ComfyUI 队列不可验证，
+\`stop_gpu_now\` 必须继续拒绝执行。若诊断不成功，先修网络、
+云账号 API 凭证和实例归属，不能强行开启写权限。
