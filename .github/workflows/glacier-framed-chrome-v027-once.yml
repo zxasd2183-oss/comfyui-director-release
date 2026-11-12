@@ -50,12 +50,24 @@ jobs:
               raise RuntimeError('Unchanged macOS release identity not preserved')
           print('Checked new Windows release identity and retained macOS 0.20.24')
           PY
-          if gh release view "$WINDOWS_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release already exists, never overwrite"; exit 2
-          fi
-          if [[ -n "$(git ls-remote --tags origin "refs/tags/$WINDOWS_TAG")" ]]; then
-            echo "::error::Immutable tag already exists"; exit 3
-          fi
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          tag=os.environ['WINDOWS_TAG']
+          releases=json.loads(subprocess.check_output(
+              ['gh','api',f'repos/{repo}/releases?per_page=100']))
+          matches=[r for r in releases if r['tag_name']==tag]
+          if len(matches)>1 or (matches and not matches[0]['draft']):
+              raise RuntimeError('Never replace a published or ambiguous release')
+          if matches:
+              print('Existing unpublished draft will be reverified, not overwritten',
+                    matches[0]['id'])
+          else:
+              tags=subprocess.check_output(
+                  ['git','ls-remote','--tags','origin','refs/tags/'+tag]).strip()
+              if tags:
+                  raise RuntimeError('Immutable tag already exists without a draft')
+          PY
 
       - name: Require successful native Windows source QA, unchanged after squash
         shell: bash
@@ -118,10 +130,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$WINDOWS_TAG" "staged/$WINDOWS_ASSET" \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
-            --title 'Glacier Browser Windows v0.20.27 — 顶部标签与窗口按钮完整收进同一框内' \
-            --notes '顶部布局正式修复：标签页、关闭按钮、加号、系统窗口按钮在同一条有边界的第一排内，窗口宽度 720/1050/1360 均做过原生几何验收。去除额外灰线，保留系统拖动/最大化/缩放和现有标签功能。保留 VLESS、账号、Cookie 和 Ed25519 安全更新。Windows 无商业 Authenticode 代码签名。'
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq "[.[] | select(.tag_name == \"$WINDOWS_TAG\" and .draft == true)] | length")"
+          if [[ "$existing" == "1" ]]; then
+            echo "Reusing exact previously uploaded draft; no duplicate publication"
+          elif [[ "$existing" == "0" ]]; then
+            gh release create "$WINDOWS_TAG" "staged/$WINDOWS_ASSET" \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+              --title 'Glacier Browser Windows v0.20.27 — 顶部标签与窗口按钮完整收进同一框内' \
+              --notes '顶部布局正式修复：标签页、关闭按钮、加号、系统窗口按钮在同一条有边界的第一排内，窗口宽度 720/1050/1360 均做过原生几何验收。去除额外灰线，保留系统拖动/最大化/缩放和现有标签功能。保留 VLESS、账号、Cookie 和 Ed25519 安全更新。Windows 无商业 Authenticode 代码签名。'
+          else
+            echo "::error::Ambiguous draft count"; exit 4
+          fi
 
       - name: Verify GitHub draft asset is exactly the tested installer
         shell: bash
@@ -131,8 +151,15 @@ jobs:
           import json,os,pathlib,subprocess
           repo=os.environ['GITHUB_REPOSITORY']
           tag=os.environ['WINDOWS_TAG']
-          info=json.loads(subprocess.check_output(
-              ['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          # GitHub returns HTTP 404 for the /releases/tags/ endpoint
+          # while a Release is a draft. Listing authenticated Releases
+          # includes draft IDs, which can then be verified without publishing.
+          releases=json.loads(subprocess.check_output(
+              ['gh','api',f'repos/{repo}/releases?per_page=100']))
+          matches=[x for x in releases if x['tag_name']==tag]
+          if len(matches)!=1:
+              raise RuntimeError('Draft release not uniquely present')
+          info=matches[0]
           if not info.get('draft'):
               raise RuntimeError('Release unexpectedly public before asset validation')
           assets=info.get('assets',[])
@@ -144,14 +171,18 @@ jobs:
               raise RuntimeError('Draft remote asset byte count mismatch')
           if assets[0].get('digest')!='sha256:'+expected:
               raise RuntimeError('Draft remote SHA256 mismatch')
-          print('Exact full Windows installer verified in GitHub draft Release')
+          pathlib.Path('staged/verified-release-id.txt').write_text(str(info['id']))
+          print('Exact full Windows installer verified in GitHub draft Release',
+                info['id'])
           PY
 
       - name: Publish exactly one verified Windows Release and request signed VPS update
         shell: bash
         run: |
           set -euo pipefail
-          gh release edit "$WINDOWS_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          release_id="$(cat staged/verified-release-id.txt)"
+          printf '{"draft":false}' | gh api -X PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id" --input - >/dev/null
           gh workflow run glacier-preview-immediate.yml --repo "$GITHUB_REPOSITORY" --ref main
           gh workflow run glacier-windows-signed-auto.yml --repo "$GITHUB_REPOSITORY" --ref main
           echo 'Windows 0.20.27 immutable release published; existing independent Ed25519 signing and OIDC VPS mirror queued.' >> "$GITHUB_STEP_SUMMARY"
