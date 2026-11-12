@@ -237,9 +237,14 @@ def install_mac_safari38(browser):
     bookmarks = action_button("☆   书签", "GlacierSafariBookmarks38", open_bookmarks)
     history = action_button("◷   历史记录", "GlacierSafariHistory38",
                             lambda: browser.show_history())
-    groups = getattr(browser, "_group_button17", None)
-    if groups is not None and callable(getattr(groups, "showMenu", None)):
-        action_button("▦   标签组", "GlacierSafariGroups38", groups.showMenu)
+    groups = getattr(browser, "_group_menu17", None)
+    if groups is not None:
+        def open_groups():
+            # The original group tool is in the hidden utility shelf:
+            # anchor its real QMenu to the visible sidebar button instead.
+            groups.popup(group_button.mapToGlobal(QPoint(0, group_button.height())))
+        group_button = action_button(
+            "▦   标签组", "GlacierSafariGroups38", open_groups)
 
     # This happens before Browser.show(); no WebEngine surface is live yet.
     tab_index = root.indexOf(tabs)
