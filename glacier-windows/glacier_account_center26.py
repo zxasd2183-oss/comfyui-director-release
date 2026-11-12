@@ -82,6 +82,15 @@ class GlacierAccountCenter26:
                 border: 0;
                 border-radius: 12px;
             }
+            QFrame#GlacierProfileHero37 QLabel {
+                background: transparent; border: none;
+            }
+            QLabel#GlacierProfileAvatar37,
+            QLabel#GlacierProfileBrand37,
+            QLabel#GlacierProfileName37,
+            QLabel#GlacierProfileStatus37 {
+                background: transparent; border: none;
+            }
             QLabel#GlacierProfileBrand37 {
                 font-size: 11px; font-weight: 700;
                 color: #587da9;

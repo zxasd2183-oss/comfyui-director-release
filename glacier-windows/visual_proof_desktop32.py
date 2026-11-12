@@ -184,6 +184,16 @@ def main():
                 raise RuntimeError("Account pill is still crowding the address bar")
             if not window.tabs.tabBar().isHidden():
                 raise RuntimeError("Legacy duplicate internal tab strip is visible")
+            # A CI Windows desktop may be narrower than the 1360px
+            # geometry-test browser. Fit this *screenshot only* to the actual
+            # display so the avatar and its popup are visible together.
+            display = window.screen().availableGeometry()
+            if window.width() > display.width() - 16:
+                window.resize(max(720, display.width() - 20),
+                              min(window.height(), max(600, display.height() - 30)))
+                for _ in range(12):
+                    app.processEvents()
+                    time.sleep(0.035)
             # Capture the REAL Qt Popup opened by the top-right account avatar.
             # The browser uses an empty temporary account profile, so no
             # credential, token or user identity appears in this artifact.
