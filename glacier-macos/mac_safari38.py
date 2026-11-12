@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, QSize
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QShortcut, QKeySequence
+from mac_safari_sidebar39 import SafariSidebar39, SAFARI_SIDEBAR_QSS39
 from PySide6.QtWidgets import (
     QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QPushButton,
     QSplitter, QToolButton, QVBoxLayout, QWidget,
@@ -208,8 +209,8 @@ def install_mac_safari38(browser):
     side = QFrame(central)
     side.setObjectName("GlacierSafariSidebar38")
     side.setMinimumWidth(205)
-    side.setMaximumWidth(300)
-    side.setFixedWidth(248)
+    side.setMaximumWidth(340)
+    side.resize(248, 600)
     side_col = QVBoxLayout(side)
     side_col.setContentsMargins(10, 12, 10, 12)
     side_col.setSpacing(7)
@@ -229,14 +230,11 @@ def install_mac_safari38(browser):
         side_col.addWidget(widget)
         return widget
 
-    def open_bookmarks():
-        menu = getattr(browser, "bookmarks_menu", None)
-        if menu is not None:
-            menu.popup(bookmarks.mapToGlobal(QPoint(0, bookmarks.height())))
-
-    bookmarks = action_button("☆   书签", "GlacierSafariBookmarks38", open_bookmarks)
+    # The mode-aware sidebar owns the clicks; existing QActions and the full
+    # history dialog remain accessible through its footer.
+    bookmarks = action_button("☆   书签", "GlacierSafariBookmarks38", lambda: None)
     history = action_button("◷   历史记录", "GlacierSafariHistory38",
-                            lambda: browser.show_history())
+                            lambda: None)
     groups = getattr(browser, "_group_menu17", None)
     if groups is not None:
         def open_groups():
@@ -259,39 +257,13 @@ def install_mac_safari38(browser):
     root.insertWidget(tab_index, splitter, 1)
     side.hide()
 
-    def refresh_sidebar():
-        if not side.isVisible():
-            return
-        rows = [
-            tabs.tabText(i).strip() or "新标签页"
-            for i in range(tabs.count())
-        ]
-        row = tabs.currentIndex()
-        if [tab_list.item(i).text() for i in range(tab_list.count())] != rows:
-            tab_list.blockSignals(True)
-            tab_list.clear()
-            tab_list.addItems(rows)
-            tab_list.blockSignals(False)
-        if row != tab_list.currentRow():
-            tab_list.blockSignals(True)
-            tab_list.setCurrentRow(row)
-            tab_list.blockSignals(False)
-
-    def toggle_sidebar(visible):
-        side.setVisible(bool(visible))
-        if visible:
-            splitter.setSizes([248, max(400, splitter.width() - 248)])
-            refresh_sidebar()
-        else:
-            splitter.setSizes([0, max(400, splitter.width())])
-
-    sidebar_button.toggled.connect(toggle_sidebar)
-    tab_list.currentRowChanged.connect(
-        lambda index: tabs.setCurrentIndex(index) if 0 <= index < tabs.count() else None)
-    tabs.currentChanged.connect(lambda _: QTimer.singleShot(0, refresh_sidebar))
+    sidebar_controller = SafariSidebar39(
+        browser, side, side_col, title, tab_list, sidebar_button, splitter,
+        bookmarks, history)
+    sidebar_button.toggled.connect(sidebar_controller.on_visibility)
     refresh_timer = QTimer(browser)
     refresh_timer.setInterval(1800)
-    refresh_timer.timeout.connect(refresh_sidebar)
+    refresh_timer.timeout.connect(sidebar_controller.refresh)
     refresh_timer.start()
     shortcut = QShortcut(QKeySequence("Meta+Shift+L"), browser)
     shortcut.activated.connect(sidebar_button.toggle)
@@ -303,6 +275,8 @@ def install_mac_safari38(browser):
     browser._safari_split38 = splitter
     browser._safari_refresh_timer38 = refresh_timer
     browser._safari_shortcut38 = shortcut
-    browser._safari_refresh38 = refresh_sidebar
+    browser._safari_refresh38 = sidebar_controller.refresh
+    browser._safari_controller39 = sidebar_controller
     browser._mac_safari_ready38 = True
-    browser.setStyleSheet(browser.styleSheet() + "\n" + SAFARI_MAC_QSS38)
+    browser.setStyleSheet(browser.styleSheet() + "\n" + SAFARI_MAC_QSS38
+                          + "\n" + SAFARI_SIDEBAR_QSS39)
