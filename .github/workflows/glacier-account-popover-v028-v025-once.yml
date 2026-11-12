@@ -1,4 +1,4 @@
-name: Glacier Glacier account profile popover — verified Windows v0.20.28 + macOS v0.20.25
+name: Glacier account profile popover — verified Windows v0.20.28 + macOS v0.20.25
 # One-shot on first merge to main; never overwrite existing Releases or channels.
 on:
   push:
@@ -144,12 +144,19 @@ jobs:
               with file.open('rb') as f:
                   digest=hashlib.file_digest(f,'sha256').hexdigest()
               print(kind,file.stat().st_size,digest)
-          proof=list(Path('staged/proof').glob('*.png'))
-          if len(proof)!=1 or proof[0].stat().st_size<12000:
-              raise RuntimeError('Actual native desktop screenshot is missing/empty')
-          with proof[0].open('rb') as f:
-              if f.read(8)!=bytes.fromhex('89504e470d0a1a0a'):
-                  raise RuntimeError('Native screenshot is not PNG')
+          proof_dir=Path('staged/proof')
+          proof=[
+              proof_dir/'Glacier-Windows-v0.20.28-live-ui33.png',
+              proof_dir/'Glacier-Windows-v0.20.28-profile-menu37.png',
+          ]
+          if sorted(proof_dir.glob('*.png'))!=sorted(proof):
+              raise RuntimeError('Both exact native screenshots are required')
+          for screenshot in proof:
+              if not screenshot.is_file() or screenshot.stat().st_size<12000:
+                  raise RuntimeError('Native account popup or desktop screenshot missing')
+              with screenshot.open('rb') as f:
+                  if f.read(8)!=bytes.fromhex('89504e470d0a1a0a'):
+                      raise RuntimeError('Invalid native screenshot PNG')
           PY
 
       - name: Stage both new tags only as draft releases
