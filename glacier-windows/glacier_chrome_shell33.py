@@ -435,6 +435,11 @@ class GlacierChromeShell33:
 
         self.setWindowIcon(shell_icon33("brand"))
         self._chrome_ui33_ready = True
+        # The proxy timer normally ticks after 3.5s. Update its actual
+        # glyph immediately, so first paint never flashes a red Unicode dot.
+        proxy_refresh = getattr(self, "refresh_proxy_status29", None)
+        if callable(proxy_refresh):
+            proxy_refresh()
         refresh = getattr(self, "refresh_account_center26", None)
         if callable(refresh):
             refresh()
