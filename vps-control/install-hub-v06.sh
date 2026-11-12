@@ -199,7 +199,7 @@ hub={
      "get_project_characters","create_project_character","update_project_character","link_project_character_visual",
      "sync_chatgpt_visual_to_studio","enqueue_chatgpt_visual_to_studio","get_chatgpt_visual_sync_status","list_recent_chatgpt_visual_syncs",
      "get_ue_worker_status","get_ue_worker_capabilities","get_ue_episode_assembly_readiness","prepare_ue_workspace",
-     "enqueue_ue_episode_timeline","enqueue_ue_stage_cameras","enqueue_ue_previs_stills","enqueue_ue_asset_audit","enqueue_ue_scene_candidates","get_ue_episode_job_status",
+     "enqueue_ue_episode_timeline","enqueue_ue_stage_cameras","enqueue_ue_previs_stills","enqueue_ue_asset_audit","enqueue_ue_scene_candidates","enqueue_ue_cast_blueprints","get_ue_episode_job_status",
      "get_ue_job_logs","cancel_ue_job","get_ue_preview_image","get_ue_preview_thumbnail",
      "get_ue_signed_update_status","request_ue_signed_update","get_ue_hub_signed_update_status"
 }
@@ -228,7 +228,7 @@ for attempt in range(8):
             else:
                 # Any enabled power controller must prove the real provider state.
                 raise RuntimeError("Read-only status backend unavailable")
-        print("PASS: VPS core 8 tools; Hub 49 tools; no GPU power operation")
+        print("PASS: VPS core 8 tools; Hub 50 tools; no GPU power operation")
         break
     except Exception:
         if attempt==7: raise
