@@ -100,8 +100,20 @@ def main():
                 raise RuntimeError(
                     "Actual Chrome grouped omnibox remains too narrow: "+
                     str(omni.width())+" of "+str(window.width()))
-            if nav.height()<51 or strip.height()<43:
+            # The revised compact navigation is deliberately 50px, while
+            # keeping the 44px tab row and the site/address/bookmark group.
+            if not (49 <= nav.height() <= 52) or strip.height()<43:
                 raise RuntimeError("Actual Chrome navigation/tab strip geometry is incorrect")
+            plus=getattr(window, "_new_tab_button34", None)
+            if plus is None or plus.objectName()!="GlacierNewTab34" or plus.icon().isNull():
+                raise RuntimeError("Actual clickable Chrome new-tab icon was not installed")
+            if plus.width()!=32 or plus.text():
+                raise RuntimeError("New-tab geometry or legacy glyph was not replaced")
+            proxy=getattr(window,"proxy_label",None)
+            if proxy is None or proxy.text() or proxy.icon().isNull():
+                raise RuntimeError("Disconnected proxy still appears as loose Unicode dot")
+            if window.windowIcon().isNull():
+                raise RuntimeError("Glacier application title icon was not installed")
             if omni.layout().count()!=3:
                 raise RuntimeError("Site, address and bookmark were not grouped into omnibox")
             if window._account_button26.width()>38:
