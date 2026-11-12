@@ -18,6 +18,8 @@ class ChromeShell33Tests(unittest.TestCase):
         self.window = BrowserShellStub()
         self.window.more.setMenu(QMenu(self.window.more))
         strip = self.window.chrome_tab14.parentWidget()
+        self.proxy_clicks = 0
+        self.window.proxy_label.clicked.connect(self._clicked_proxy)
         self.new_tab_button = QPushButton("+", strip)
         self.new_tab_clicks = 0
         self.new_tab_button.clicked.connect(self._clicked_new_tab)
@@ -26,6 +28,9 @@ class ChromeShell33Tests(unittest.TestCase):
 
     def _clicked_new_tab(self):
         self.new_tab_clicks += 1
+
+    def _clicked_proxy(self):
+        self.proxy_clicks += 1
 
     def tearDown(self):
         self.window.close()
@@ -99,6 +104,13 @@ class ChromeShell33Tests(unittest.TestCase):
         self.assertEqual(w._account_button26.width(), 36)
         self.assertEqual(w._account_button26.accessibleName(), "Glacier 账号中心")
         self.assertFalse(w.windowIcon().isNull())
+        self.assertTrue(w.proxy_label.isHidden())
+        indicator = w._proxy_indicator34
+        self.assertEqual(indicator.objectName(), "GlacierProxyStatus34")
+        self.assertFalse(indicator.icon().isNull())
+        self.assertEqual((indicator.width(), indicator.height()), (34, 34))
+        indicator.click()
+        self.assertEqual(self.proxy_clicks, 1)
         self.assertIsNotNone(w._utility_shelf32)
         # Original utility button remains wired to the shelf.
         w.more.menu().aboutToShow.emit()
