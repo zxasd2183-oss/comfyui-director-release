@@ -4,9 +4,11 @@ Keep splash visible until browser initialization finishes. The main window is
 created while hidden, and is revealed only after the splash is fully hidden.
 """
 from time import monotonic
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QByteArray, QRectF
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QApplication, QSplashScreen
+from PySide6.QtSvg import QSvgRenderer
+from glacier_brand35 import GLACIER_BRAND_SVG35
 
 
 def show_glacier_splash(version):
@@ -21,30 +23,16 @@ def show_glacier_splash(version):
     background.setColorAt(1, QColor("#d9edf9"))
     painter.fillRect(0, 0, width, height, background)
 
-    # Stylized ice peak: original geometric brand mark, drawn locally.
-    center_x, center_y = width / 2, 102
-    peak = QPainterPath()
-    peak.moveTo(center_x - 67, center_y + 44)
-    peak.lineTo(center_x - 15, center_y - 40)
-    peak.lineTo(center_x + 5, center_y - 7)
-    peak.lineTo(center_x + 26, center_y - 29)
-    peak.lineTo(center_x + 78, center_y + 44)
-    peak.closeSubpath()
-    painter.fillPath(peak, QColor("#67b2d9"))
-    ridge = QPainterPath()
-    ridge.moveTo(center_x - 15, center_y - 40)
-    ridge.lineTo(center_x + 5, center_y - 7)
-    ridge.lineTo(center_x + 26, center_y - 29)
-    ridge.lineTo(center_x + 10, center_y + 10)
-    ridge.closeSubpath()
-    painter.fillPath(ridge, QColor("#dff5ff"))
-    painter.setPen(QColor("#254e68"))
-    title = QFont("Arial", 33, QFont.Weight.DemiBold)
-    painter.setFont(title)
-    painter.drawText(0, 185, width, 55, Qt.AlignmentFlag.AlignHCenter, "Glacier")
+    # The SAME vector wordmark as the offline new-tab page. No emoji,
+    # platform font fallback or separate hand-drawn title.
+    vector = QSvgRenderer(QByteArray(GLACIER_BRAND_SVG35.encode("utf-8")))
+    if not vector.isValid():
+        painter.end()
+        raise RuntimeError("Glacier vector brand logo failed to load")
+    vector.render(painter, QRectF(89, 80, 422, 90))
     painter.setPen(QColor("#60859b"))
     painter.setFont(QFont("Arial", 12))
-    painter.drawText(0, 247, width, 30, Qt.AlignmentFlag.AlignHCenter,
+    painter.drawText(0, 214, width, 30, Qt.AlignmentFlag.AlignHCenter,
                      "冰川浏览器  ·  安全 · 纯净 · 自由")
     painter.setPen(QColor("#829aaa"))
     painter.setFont(QFont("Arial", 10))
