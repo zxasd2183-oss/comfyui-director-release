@@ -54,12 +54,22 @@ class ChromeShell33Tests(unittest.TestCase):
         self.window._polish_close_buttons33()
         button = bar.tabButton(0, QTabBar.ButtonPosition.RightSide)
         self.assertIsNotNone(button)
+        self.assertIsInstance(button, QToolButton)
+        self.assertEqual(button.objectName(), "GlacierTabClose33")
         self.assertFalse(button.icon().isNull())
         self.assertEqual(button.width(), 20)
         self.assertEqual(button.toolTip(), "关闭标签")
-        self.assertEqual(
-            self.window.more.popupMode(),
-            QToolButton.ToolButtonPopupMode.InstantPopup)
+        clicked = []
+        bar.tabCloseRequested.connect(clicked.append)
+        button.click()
+        self.assertEqual(clicked, [0])
+        self.window._polish_close_buttons33()
+        self.assertIs(bar.tabButton(0, QTabBar.ButtonPosition.RightSide), button)
+        button.click()
+        self.assertEqual(clicked, [0, 0])
+        self.assertEqual(self.window.more.popupMode(),
+                         QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.assertIn("::menu-indicator", CHROME_SHELL_QSS33)
 
     def test_previous_handlers_keep_their_original_connections(self):
         w = self.window
