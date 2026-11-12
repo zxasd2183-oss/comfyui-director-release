@@ -679,10 +679,11 @@ def hero_metahuman_seed_main():
                 raise RuntimeError("hero_mhc_plugin_api_missing_"+key)
         if not unreal.EditorAssetLibrary.make_directory(package):
             raise RuntimeError("hero_candidate_directory_failed")
+        factory=unreal.MetaHumanCharacterFactoryNew()
+        factory.set_editor_property("edit_after_new",False)
         asset=unreal.AssetToolsHelpers.get_asset_tools().create_asset(
             asset_name=asset_name,package_path=package,
-            asset_class=unreal.MetaHumanCharacter,
-            factory=unreal.MetaHumanCharacterFactoryNew())
+            asset_class=unreal.MetaHumanCharacter,factory=factory)
         if not asset:
             raise RuntimeError("hero_mhc_asset_creation_failed")
         if asset.get_class().get_name()!="MetaHumanCharacter":
