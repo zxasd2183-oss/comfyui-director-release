@@ -212,6 +212,7 @@ main{position:relative;z-index:2;width:min(100%,860px);margin:auto;
   font-size:18px;font-weight:700}
 .tile.gemini{color:#6686db;background:#f0f3ff}
 .tile.github{color:#202b3d;background:#f0f1f5}
+.tile.youtube{color:#ea4335;background:#fff0f0}
 .tile.chatgpt{color:#326c5b;background:#eaf6f0}
 .tile.claude{color:#c36b4d;background:#fff0e7}
 .tile.minimax{color:#ed528a;background:#fff0f5}
@@ -248,7 +249,7 @@ main{position:relative;z-index:2;width:min(100%,860px);margin:auto;
 </nav>
 <main>
 <div class="wordmark">
-<svg class="mountain-mark" viewBox="0 0 100 70" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="冰川山峰标识">
+<svg class="mountain-mark" viewBox="0 0 100 70" role="img" aria-label="冰川山峰标识">
 <defs><linearGradient id="peak-blue" x1="0" y1="0" x2="1" y2="1">
 <stop stop-color="#65d5fa"/><stop offset=".58" stop-color="#348ef7"/><stop offset="1" stop-color="#2564d8"/></linearGradient></defs>
 <path d="M2 56 28 17l12 18L58 5l40 51-26-8-15-21-13 20-15-13-15 22Z" fill="url(#peak-blue)"/>
@@ -274,13 +275,14 @@ main{position:relative;z-index:2;width:min(100%,860px);margin:auto;
 <a class="shortcut" href="https://gemini.google.com/"><span class="tile gemini">✦</span><span class="name">Gemini</span></a>
 <a class="shortcut" href="https://github.com/"><span class="tile github">⌘</span><span class="name">GitHub</span></a>
 <a class="shortcut" href="https://chatgpt.com/"><span class="tile chatgpt">◎</span><span class="name">ChatGPT</span></a>
+<a class="shortcut" href="https://www.youtube.com/"><span class="tile youtube">▶</span><span class="name">YouTube</span></a>
 <a class="shortcut" href="https://claude.ai/"><span class="tile claude">✳</span><span class="name">Claude</span></a>
 <a class="shortcut" href="https://www.minimaxi.com/"><span class="tile minimax">≋</span><span class="name">MiniMax</span></a>
 <a class="shortcut" href="https://www.jd.com/"><span class="tile shop">JD</span><span class="name">京东</span></a>
 <a class="shortcut" href="https://docs.google.com/"><span class="tile docs">▤</span><span class="name">文档</span></a>
 </section>
 </main>
-<svg class="landscape" viewBox="0 0 1440 230" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<svg class="landscape" viewBox="0 0 1440 230" preserveAspectRatio="none" aria-hidden="true">
 <defs><linearGradient id="sky-haze" x1="0" y1="0" x2="0" y2="1">
 <stop stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#d7ebfa"/></linearGradient>
 <linearGradient id="distant-mountain" x1="0" y1="0" x2="0" y2="1">
