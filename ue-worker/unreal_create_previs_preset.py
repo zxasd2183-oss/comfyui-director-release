@@ -318,14 +318,158 @@ V11_MAIN_CAST = ("GPT", "GEM", "DS", "CLA", "ZERO")
 V11_CAMERA_POSES = {
     # Portrait cameras face the front (+X) of V1.0 actor components.
     # A 13.5 x 24 mm filmback prevents 16:9 letterbox bars in 9:16 renders.
-    "LINEUP": ((760, 0, 155), (0, 0, 105), 30.0, (36.0, 20.25)),
-    "GPT": ((350, -330, 160), (0, -330, 110), 20.0, (13.5, 24.0)),
-    "GEM": ((350, -165, 160), (0, -165, 110), 20.0, (13.5, 24.0)),
-    "DS": ((350, 0, 160), (0, 0, 110), 20.0, (13.5, 24.0)),
-    "CLA": ((350, 165, 160), (0, 165, 110), 20.0, (13.5, 24.0)),
-    "ZERO": ((350, 330, 160), (0, 330, 110), 20.0, (13.5, 24.0)),
+    # Fixed review lens: figures fit vertically and other characters stay
+    # OUTSIDE single-actor 9:16 crops. Prior 20mm lens exposed neighbors.
+    "LINEUP": ((930, 0, 125), (0, 0, 112), 40.0, (36.0, 20.25)),
+    "GPT": ((480, -330, 113), (0, -330, 113), 50.0, (13.5, 24.0)),
+    "GEM": ((480, -165, 113), (0, -165, 113), 50.0, (13.5, 24.0)),
+    "DS": ((480, 0, 113), (0, 0, 113), 50.0, (13.5, 24.0)),
+    "CLA": ((480, 165, 113), (0, 165, 113), 50.0, (13.5, 24.0)),
+    "ZERO": ((480, 330, 113), (0, 330, 113), 50.0, (13.5, 24.0)),
 }
 
+
+
+def apply_v120_cast_review_look(actors, actor_by_short):
+    """Fix exposure and visibility in ONLY a clone of the authored V1.0 World.
+
+    No master Blueprint, source actor, or production Studio asset is modified.
+    Changes are true Unreal scene/component overrides that persist in the
+    job-owned review map and affect actual MRQ output.
+    """
+    # Original five female figures are deliberately static design maquettes.
+    # The V1.0 head is an ellipsoid of 55cm X radius. Iris X=25cm was INSIDE
+    # the face and invisible; use frontal (+X) component placement.
+    iris_names=(
+        "Right_Eye_Iris","Left_Eye_Iris",
+        "Right_Eye_Highlight","Left_Eye_Highlight",
+        "Right_Brow","Left_Brow",
+        "Nose","Mouth_Center",
+    )
+    override_count=0
+    for short,actor in actor_by_short.items():
+        cmap={}
+        for comp in actor.get_components_by_class(unreal.StaticMeshComponent):
+            raw=str(comp.get_name())
+            clean=raw.split("_GEN_VARIABLE")[0]
+            cmap[clean]=comp
+        missing=[name for name in iris_names if name not in cmap]
+        if missing:
+            raise RuntimeError("cast_review_face_components_missing_"+short)
+        for name in iris_names:
+            comp=cmap[name]
+            old=comp.get_relative_location()
+            x=(62 if "Highlight" in name else 57 if "Iris" in name
+               else 58 if "Brow" in name else 60 if name=="Nose" else 58)
+            comp.set_relative_location(
+                unreal.Vector(float(x),float(old.y),float(old.z)),
+                False,False)
+            override_count+=1
+        # Hairstyles already distinguish all five characters in V1.0.
+        # Reveal previously half-buried asymmetric fringes on the forehead.
+        if short=="GPT" and "Hair_SidePart_Fringe" in cmap:
+            cmap["Hair_SidePart_Fringe"].set_relative_location(
+                unreal.Vector(34,14,192),False,False)
+            override_count+=1
+        if short=="GEM":
+            for name in ("Hair_Layer_00","Hair_Layer_01",
+                         "Hair_Layer_02","Hair_Layer_03"):
+                if name not in cmap:
+                    raise RuntimeError("cast_review_gem_layer_missing")
+                old=cmap[name].get_relative_location()
+                cmap[name].set_relative_location(
+                    unreal.Vector(float(old.x+22),float(old.y),
+                                  float(old.z)),False,False)
+                override_count+=1
+        if short=="DS":
+            for idx in range(7):
+                key="Hair_Braid_%02d"%idx
+                if key not in cmap:
+                    raise RuntimeError("cast_review_braid_missing")
+                # Bring the long blue braid forward to be visible on shoulder.
+                cmap[key].set_relative_location(
+                    unreal.Vector(16,-35,float(147-idx*12)),
+                    False,False)
+                override_count+=1
+        if short=="ZERO":
+            if "Right_Wrist_Red_Thread" not in cmap:
+                raise RuntimeError("cast_review_zero_red_thread_missing")
+            wrist=cmap["Right_Wrist_Red_Thread"].get_relative_location()
+            if float(wrist.y)>=0:
+                raise RuntimeError("cast_review_zero_wrist_not_right")
+    if override_count<52:
+        raise RuntimeError("cast_review_face_visibility_not_applied")
+
+    # Separate trustworthy assets from studio lighting. Neither path can
+    # escape the locked V1.0 actor build namespace.
+    materials=("/Game/Director/Candidates/EP01/CastBuilds/J"+
+               V11_CAST_SOURCE_JOB+"/Materials/M_")
+    mat_floor=unreal.EditorAssetLibrary.load_asset(materials+"Charcoal")
+    mat_wall=unreal.EditorAssetLibrary.load_asset(materials+"Parchment")
+    mesh_cube=unreal.EditorAssetLibrary.load_asset(
+        "/Engine/BasicShapes/Cube.Cube")
+    if not mat_floor or not mat_wall or not mesh_cube:
+        raise RuntimeError("cast_review_stage_assets_missing")
+    levels=actors.get_all_level_actors()
+    floors=[actor for actor in levels
+            if actor.get_actor_label()=="WO_CANDIDATE_ReviewFloor"]
+    if len(floors)!=1:
+        raise RuntimeError("cast_review_floor_missing")
+    floor_comp=floors[0].get_component_by_class(unreal.StaticMeshComponent)
+    if not floor_comp:
+        raise RuntimeError("cast_review_floor_component_missing")
+    floor_comp.set_material(0,mat_floor)
+
+    # Real neutral backdrop; the previous camera saw infinite black outside
+    # the floor, triggering extreme brightness adaptation with 5k fills.
+    wall=actors.spawn_actor_from_class(
+        unreal.StaticMeshActor,unreal.Vector(-170,0,180),
+        unreal.Rotator(0,0,0))
+    if not wall:
+        raise RuntimeError("cast_review_backdrop_spawn_failed")
+    wall.set_actor_label("WO_V120_NeutralBackdrop")
+    wall_comp=wall.get_component_by_class(unreal.StaticMeshComponent)
+    if not wall_comp or not wall_comp.set_static_mesh(mesh_cube):
+        raise RuntimeError("cast_review_backdrop_mesh_missing")
+    wall_comp.set_material(0,mat_wall)
+    wall.set_actor_scale3d(unreal.Vector(.16,10.0,5.0))
+
+    original=[actor for actor in levels
+              if actor.get_actor_label()=="WO_CANDIDATE_ReviewLight"]
+    if len(original)!=1:
+        raise RuntimeError("cast_review_source_light_missing")
+    light=original[0].get_component_by_class(unreal.PointLightComponent)
+    if not light:
+        raise RuntimeError("cast_review_source_light_component_missing")
+    light.set_editor_property("intensity",350.0)
+
+    volume=actors.spawn_actor_from_class(
+        unreal.PostProcessVolume,unreal.Vector(0,0,0),
+        unreal.Rotator(0,0,0))
+    if not volume:
+        raise RuntimeError("cast_review_postprocess_spawn_failed")
+    volume.set_actor_label("WO_V120_FixedExposure")
+    volume.set_editor_property("unbound",True)
+    volume.set_editor_property("priority",100.0)
+    volume.set_editor_property("blend_weight",1.0)
+    settings=volume.get_editor_property("settings")
+    settings.set_editor_property("auto_exposure_method",
+                                 unreal.AutoExposureMethod.AEM_MANUAL)
+    settings.set_editor_property("override_auto_exposure_method",True)
+    settings.set_editor_property(
+        "auto_exposure_apply_physical_camera_exposure",False)
+    settings.set_editor_property(
+        "override_auto_exposure_apply_physical_camera_exposure",True)
+    settings.set_editor_property("auto_exposure_bias",-1.5)
+    settings.set_editor_property("override_auto_exposure_bias",True)
+    settings.set_editor_property("bloom_intensity",0.0)
+    settings.set_editor_property("override_bloom_intensity",True)
+    volume.set_editor_property("settings",settings)
+    return {"face_component_overrides":override_count,
+            "exposure_method":"manual","exposure_bias":-1.5,
+            "bloom_intensity":0.0,
+            "floor_material":"Charcoal","backdrop_material":"Parchment",
+            "v120_source_master_unchanged":True}
 
 def cast_review_main():
     """Make 6 deterministic MRQ single-frame visual verification views."""
@@ -369,6 +513,7 @@ def cast_review_main():
         actors=unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
         existing=actors.get_all_level_actors()
         known={}
+        cast_actors={}
         for index,short in enumerate(V11_MAIN_CAST):
             label="WO_CANDIDATE_CHAR_"+short
             matched=[actor for actor in existing
@@ -382,7 +527,10 @@ def cast_review_main():
                     abs(where[2])>1):
                 raise RuntimeError("cast_actor_position_mismatch_"+short)
             known[short]=label
+            cast_actors[short]=matched[0]
 
+        look=apply_v120_cast_review_look(actors,cast_actors)
+        # Low-power neutral soft front fill instead of two 5000-unit lights.
         # Dedicated uniform front fill: source floor, static meshes and lamp
         # remain untouched, only cloned review World receives extra lights.
         for name,y in (("ReviewFrontL",-360),("ReviewFrontR",360)):
@@ -393,7 +541,7 @@ def cast_review_main():
                 raise RuntimeError("cast_review_fill_light_missing")
             light.set_actor_label("WO_V11_"+name)
             comp=light.get_component_by_class(unreal.PointLightComponent)
-            comp.set_editor_property("intensity",5000.0)
+            comp.set_editor_property("intensity",550.0)
             comp.set_editor_property("attenuation_radius",2000.0)
 
         cameras={}
@@ -489,6 +637,7 @@ def cast_review_main():
             "view_sequences":sequences,"mrq_presets":presets,
             "views":list(V11_VIEWS),"frames_per_view":1,
             "source_world_unchanged":True,
+            "review_look":look,
         }
     except Exception as exc:
         result={"ok":False,"reason":str(exc)[:400],
