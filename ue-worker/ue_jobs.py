@@ -40,7 +40,7 @@ def sanitized_plan(body):
         raise JobError("invalid_fields")
     if body["task"] not in (
         "build_episode_timeline", "build_stage_cameras", "render_previs_stills",
-        "audit_ep01_assets"
+        "audit_ep01_assets", "build_ep01_scene_candidates"
     ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
@@ -83,7 +83,7 @@ def sanitized_plan(body):
     # The V0.3 stage recipe is FIXED to WaitingOffice EP01 and does not
     # modify V0.2 sequences or accept any user-authored scene/code paths.
     if body["task"] in ("build_stage_cameras", "render_previs_stills",
-                        "audit_ep01_assets"):
+                        "audit_ep01_assets", "build_ep01_scene_candidates"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
@@ -93,7 +93,9 @@ def sanitized_plan(body):
         ]:
             raise JobError("previs_requires_frozen_shot_ids")
     fmt = (
-        "director_ue_assets_v08" if body["task"] == "audit_ep01_assets"
+        "director_ue_scene_candidates_v09"
+        if body["task"] == "build_ep01_scene_candidates"
+        else "director_ue_assets_v08" if body["task"] == "audit_ep01_assets"
         else "director_ue_previs_v04" if body["task"] == "render_previs_stills"
         else "director_ue_stage_v03" if body["task"] == "build_stage_cameras"
         else "director_ue_timeline_v1"
@@ -163,7 +165,8 @@ def run_commandlet(spec, root, work, timeout=900):
     editor = find_editor_cmd()
     script_name = ("unreal_build_stage.py"
                    if spec["format"] in ("director_ue_stage_v03",
-                                         "director_ue_assets_v08")
+                                         "director_ue_assets_v08",
+                                         "director_ue_scene_candidates_v09")
                    else "unreal_build_episode.py")
     script = Path(__file__).resolve().with_name(script_name)
     if not script.is_file() or script.is_symlink():
@@ -175,6 +178,10 @@ def run_commandlet(spec, root, work, timeout=900):
     env = os.environ.copy()
     env["DIRECTOR_UE_SPEC_FILE"] = str(spec_file)
     env["DIRECTOR_UE_RESULT_FILE"] = str(result_file)
+    if spec["format"] == "director_ue_scene_candidates_v09":
+        if not re.fullmatch(r"[a-f0-9]{32}", work.name):
+            raise JobError("invalid_scene_candidate_job_id")
+        env["DIRECTOR_UE_JOB_ID"] = work.name
     command = [
         str(editor), str(project), "-run=pythonscript",
         "-script=" + str(script), "-unattended", "-nop4", "-nosplash",
@@ -191,6 +198,45 @@ def run_commandlet(spec, root, work, timeout=900):
         raise JobError("invalid_unreal_result")
     if not data["ok"]:
         raise JobError("unreal_script_failed")
+    if spec["format"] == "director_ue_scene_candidates_v09":
+        # The receipt is evidence of *saved EDITABLE DRAFT SCENES* only.
+        # Never convert it into a Studio scene approval or render-ready flag.
+        path_prefix = ("/Game/Director/Candidates/EP01/SceneBuilds/J"
+                       + work.name + "/Maps/")
+        ids = ("SCN_HALL", "SCN_HALL_ALERT", "SCN_ENTRANCE")
+        scenes = data.get("scene_candidates")
+        if (type(scenes) is not list or len(scenes) != 3 or
+                data.get("candidate_kind") != "original_editable_environment_v09" or
+                type(data.get("material_count")) is not int or
+                data["material_count"] != 10 or
+                data.get("shot_count") != 31 or
+                data.get("total_frames") != 3840 or
+                data.get("studio_scene_approval_verified") is not False or
+                data.get("character_models_bound") is not False or
+                data.get("render_ready") is not False or
+                data.get("no_existing_scene_replaced") is not True):
+            raise JobError("ue_scene_candidate_receipt_invalid")
+        for expected, scene in zip(ids, scenes):
+            if (type(scene) is not dict or set(scene) !=
+                    {"id", "path", "props", "lights", "review_cameras"} or
+                    scene["id"] != expected or
+                    scene["path"] != path_prefix + expected or
+                    any(type(scene[k]) is not int for k in
+                        ("props", "lights", "review_cameras")) or
+                    scene["props"] < 20 or scene["lights"] < 2 or
+                    scene["review_cameras"] < 2):
+                raise JobError("ue_scene_candidate_receipt_invalid")
+        return {
+            "candidate_kind": "original_editable_environment_v09",
+            "scene_candidates": scenes,
+            "material_count": 10, "shot_count": 31,
+            "total_frames": 3840,
+            "studio_scene_approval_verified": False,
+            "character_models_bound": False,
+            "render_ready": False,
+            "gpu_render_submitted": False,
+            "no_existing_scene_replaced": True,
+        }
     if spec["format"] == "director_ue_assets_v08":
         # Read-only inventory. Neither presence nor class establishes approval,
         # proper sequence binding, animation, or permission to render.
