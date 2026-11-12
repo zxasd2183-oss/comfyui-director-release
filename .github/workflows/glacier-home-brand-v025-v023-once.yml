@@ -22,7 +22,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_PROMPT_DISABLED: '1'
-      WINDOWS_QA_RUN: '43170968884'
+      WINDOWS_QA_RUN: '43171860264'
       MACOS_QA_RUN: '43171189053'
       WINDOWS_TAG: 'glacier-v0.20.25'
       MACOS_TAG: 'glacier-macos-v0.20.23'
