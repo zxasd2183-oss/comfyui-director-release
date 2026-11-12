@@ -30,11 +30,9 @@ class OwnerDirectRouterRepairTests(unittest.TestCase):
         current=subprocess.check_output(
             ["git","-C",str(ROOT),"hash-object",str(CONTROL/"hub_rpc.py")],
             text=True).strip()
-        previous=subprocess.check_output(
-            ["git","-C",str(ROOT),"rev-parse",
-             "d1b6e998e6472e3e852129b8c718dabdcc4c4a3c:vps-control/hub_rpc.py"],
-            text=True).strip()
-        self.assertEqual(old,previous)
+        # GitHub Actions checks out a shallow clone: the parent historical
+        # commit is deliberately NOT required to be fetched by this test.
+        self.assertEqual(old,"f068c62bc49ac248a2eba2031453edd79ec2dd8b")
         self.assertEqual(new,current)
         self.assertNotEqual(old,new)
         self.assertIn("installed_router_not_known_audited_pre_direct_version",script)
