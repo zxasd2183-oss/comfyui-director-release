@@ -52,7 +52,8 @@ class WorkerApiTest(unittest.TestCase):
         code, data = self.request("/v1/capabilities")
         self.assertEqual(code, 200)
         self.assertFalse(data["supports_arbitrary_commands"])
-        self.assertEqual(data["actions"], ["prepare_workspace"])
+        self.assertEqual(data["actions"], ["prepare_workspace",
+                                          "prepare_hero_metahuman_project"])
 
     def test_workspace_setup_is_idempotent(self):
         for _ in range(2):
