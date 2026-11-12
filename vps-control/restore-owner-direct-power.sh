@@ -39,7 +39,11 @@ backup_target_files(){
   for name in "${POWER_FILES[@]}"; do
     if [[ -f "$POWER/$name" && ! -L "$POWER/$name" ]]; then
       cp -p "$POWER/$name" "$BACKUP/$name"
-    elif [[ "$name" != power_direct.py || -e "$POWER/$name" || -L "$POWER/$name" ]]; then
+    elif [[ "$name" == power_direct.py &&
+            " ${ORIGINALLY_MISSING[*]} " == *" power_direct.py "* &&
+            ! -e "$POWER/$name" && ! -L "$POWER/$name" ]]; then
+      : # Only the file that was absent at preflight may have no backup.
+    else
       fail "existing_power_file_changed_before_backup"
     fi
   done
