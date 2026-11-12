@@ -102,7 +102,7 @@ class AccountCenterTests(unittest.TestCase):
         self.assertTrue(bool(menu.windowFlags() & Qt.WindowType.Popup))
         self.assertFalse(isinstance(menu, QDialog))
         self.assertTrue(menu.isVisible())
-        self.assertIn("登录 Glacier", [
+        self.assertIn("登录 Glacier 账号", [
             x.text() for x in menu.findChildren(QPushButton)
         ])
         self.assertIn("网站账号和密码", [
