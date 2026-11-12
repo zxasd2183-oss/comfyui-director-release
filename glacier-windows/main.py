@@ -245,6 +245,12 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
     status+"\n点击重连已保存线路；这里只检测本地代理端口。"
     "\n远端 Gemini HTTPS 可通过工具中心单独诊断。")
    self.proxy_label.setStyleSheet("")
+   indicator=getattr(self, "_proxy_indicator34", None)
+   if indicator is not None:
+    indicator.setIcon(shell_icon33("proxy-on" if ready else "proxy-off"))
+    indicator.setAccessibleName(
+     "本地 VLESS 已连接，点击重连" if ready else "本地 VLESS 未连接，点击重连")
+    indicator.setToolTip(self.proxy_label.toolTip())
   elif getattr(self, "_desktop_ui_ready32", False):
    # Existing pre-Chrome indicator remains available during initial setup.
    badge = "●" if ready else "○"
