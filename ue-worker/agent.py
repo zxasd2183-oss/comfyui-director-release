@@ -21,7 +21,7 @@ from pathlib import Path
 
 from ue_jobs import JobManager, JobError, inspect_episode_inputs
 from ue_logs import log_tail
-from ue_preview_images import get_preview_png
+from ue_preview_images import get_preview_png, get_cast_review_png
 
 HOST = "127.0.0.1"
 PORT = 19010
@@ -202,7 +202,7 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
-        "worker_version": "1.0.0",
+        "worker_version": "1.1.0",
     }
 
 
@@ -212,7 +212,8 @@ def capabilities():
         "actions": ["prepare_workspace"],
         "jobs": ["build_episode_timeline", "build_stage_cameras",
                  "render_previs_stills", "audit_ep01_assets",
-                 "build_ep01_scene_candidates", "build_ep01_cast_blueprints"],
+                 "build_ep01_scene_candidates", "build_ep01_cast_blueprints",
+                 "render_cast_review_stills"],
         "job_status_route": "/v2/jobs/<job_id>",
         "job_logs_route": "/v3/jobs/<job_id>/logs/<kind>",
         "job_cancel_route": "/v3/jobs/<job_id>/cancel",
@@ -222,6 +223,8 @@ def capabilities():
         "supports_ep01_native_asset_audit": True,
         "supports_ep01_scene_candidates": True,
         "supports_ep01_cast_blueprints": True,
+        "supports_ep01_cast_review_stills": True,
+        "cast_review_image_route": "/v11/jobs/<job_id>/cast-review/<view>",
         "signed_update_status_route": "/v4/update/status",
         "signed_update_request_route": "/v4/update/request",
         "supports_signed_update_request": True,
@@ -247,7 +250,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/1.0.0"
+    server_version = "DirectorUEWorker/1.1.0"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -300,6 +303,28 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(404, {"ok": False, "reason": str(exc)})
             except OSError:
                 self.send_json(500, {"ok": False, "reason": "preview_image_unavailable"})
+        elif re.fullmatch(
+            r"/v11/jobs/[a-f0-9]{32}/cast-review/(?:LINEUP|GPT|GEM|DS|CLA|ZERO)",
+            self.path
+        ):
+            parts = self.path.split("/")
+            try:
+                data, digest = get_cast_review_png(
+                    JOB_MANAGER, parts[3], parts[5])
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Disposition", "attachment")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Director-PNG-SHA256", digest)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except JobError as exc:
+                self.send_json(404, {"ok": False, "reason": str(exc)})
+            except OSError:
+                self.send_json(500, {"ok": False,
+                                     "reason": "cast_review_png_unavailable"})
         elif re.fullmatch(r"/v2/jobs/[a-f0-9]{32}", self.path):
             try:
                 self.send_json(200, JOB_MANAGER.lookup(self.path.rsplit("/", 1)[-1]))
