@@ -41,7 +41,7 @@ def sanitized_plan(body):
     if body["task"] not in (
         "build_episode_timeline", "build_stage_cameras", "render_previs_stills",
         "audit_ep01_assets", "build_ep01_scene_candidates",
-        "build_ep01_cast_blueprints"
+        "build_ep01_cast_blueprints", "render_cast_review_stills"
     ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
@@ -85,7 +85,8 @@ def sanitized_plan(body):
     # modify V0.2 sequences or accept any user-authored scene/code paths.
     if body["task"] in ("build_stage_cameras", "render_previs_stills",
                         "audit_ep01_assets", "build_ep01_scene_candidates",
-                        "build_ep01_cast_blueprints"):
+                        "build_ep01_cast_blueprints",
+                        "render_cast_review_stills"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
@@ -95,7 +96,9 @@ def sanitized_plan(body):
         ]:
             raise JobError("previs_requires_frozen_shot_ids")
     fmt = (
-        "director_ue_cast_blueprints_v100"
+        "director_ue_cast_review_v110"
+        if body["task"] == "render_cast_review_stills"
+        else "director_ue_cast_blueprints_v100"
         if body["task"] == "build_ep01_cast_blueprints"
         else "director_ue_scene_candidates_v09"
         if body["task"] == "build_ep01_scene_candidates"
@@ -441,6 +444,9 @@ class JobManager:
                 if spec["format"] == "director_ue_previs_v04":
                     from ue_previs import run_previs
                     result = run_previs(spec, root, work)
+                elif spec["format"] == "director_ue_cast_review_v110":
+                    from ue_previs import render_cast_review
+                    result = render_cast_review(spec, root, work)
                 else:
                     result = self.runner(spec, root, work)
                 if self.controller.cancel_requested.is_set():
