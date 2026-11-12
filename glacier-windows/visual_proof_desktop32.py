@@ -203,8 +203,18 @@ def main():
                 raise RuntimeError("Profile menu missing account actions")
             account = window._account_button26
             right_edge = account.mapToGlobal(account.rect().topRight()).x()
-            if abs(popup.geometry().right() - right_edge) > 40:
-                raise RuntimeError("Profile panel did not align with avatar")
+            bounds = account.screen().availableGeometry()
+            # The CI browser can be wider than the desktop backing display.
+            # A Chrome-style popup must prefer the avatar, but stay on-screen.
+            expected_right = min(right_edge, bounds.right() - 8)
+            if abs(popup.geometry().right() - expected_right) > 44:
+                raise RuntimeError(
+                    "Profile panel did not align with the visible avatar edge: "
+                    f"menu={popup.geometry()} avatar_right={right_edge} "
+                    f"screen={bounds} expected_right={expected_right}")
+            if (popup.geometry().left() < bounds.left() + 4
+                    or popup.geometry().right() > bounds.right() - 3):
+                raise RuntimeError("Profile panel escaped screen boundaries")
             if popup.width() > 380 or popup.height() > window.height():
                 raise RuntimeError("Profile popup oversized for browser chrome")
             # Assemble the independently rendered real Qt Popup over the real
