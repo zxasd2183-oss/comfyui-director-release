@@ -110,10 +110,12 @@ def main():
             if plus.width()!=32 or plus.text():
                 raise RuntimeError("New-tab geometry or legacy glyph was not replaced")
             proxy=getattr(window,"proxy_label",None)
-            if proxy is None or proxy.text() or proxy.icon().isNull():
-                raise RuntimeError("Disconnected proxy still appears as loose Unicode dot")
-            if proxy.accessibleName() != "本地 VLESS 未连接，点击重连":
-                raise RuntimeError("First frame proxy status ring was not initialized")
+            indicator=getattr(window,"_proxy_indicator34",None)
+            if (proxy is None or indicator is None or not proxy.isHidden()
+                    or indicator.icon().isNull() or indicator.text()):
+                raise RuntimeError("Visible proxy is still a loose legacy Unicode dot")
+            if indicator.accessibleName() != "本地 VLESS 未连接，点击重连":
+                raise RuntimeError("First frame status icon has wrong accessible state")
             if window.windowIcon().isNull():
                 raise RuntimeError("Glacier application title icon was not installed")
             if omni.layout().count()!=3:
