@@ -1,5 +1,5 @@
 # Signed channel publication dispatches this workflow to refresh the VPS immediately.
-# Authorized OIDC staging for v0.20.25 Windows / v0.20.23 macOS Glacier mountain UI releases.
+# Authorized OIDC staging for v0.20.26 Windows / v0.20.24 macOS integrated Chrome header releases.
 # Refresh the exact verified immutable Release assets before Ed25519 feed promotion;
 # the Windows signer requires full-byte owner VPS installer SHA256 before signing.
 name: Glacier preview mirror immediate VPS sync
