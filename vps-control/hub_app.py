@@ -28,7 +28,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.1.0"
+UE_HUB_API_VERSION = "1.1.1"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -368,6 +368,16 @@ def prepare_ue_workspace() -> dict:
     """
     return call_ue_worker("prepare_ue_workspace")
 
+
+
+@app.tool(annotations=WRITE)
+def prepare_ue_hero_metahuman_project() -> dict:
+    """Create exactly one isolated UE 5.8 MetaHuman-enabled GPT hero project.
+
+    No arbitrary paths, no downloads, no UE rendering and no changes to the
+    existing EP01 31-shot world. This creates configuration, not a 3D master.
+    """
+    return call_ue_worker("prepare_ue_hero_metahuman_project")
 
 
 @app.tool(annotations=WRITE)

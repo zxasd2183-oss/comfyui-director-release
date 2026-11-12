@@ -65,6 +65,20 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(denied["reason"], "action_denied")
         self.assertEqual(len(opener.calls), 1)
 
+    def test_only_fixed_single_hero_project_action_can_cross_tunnel(self):
+        opener = FakeOpener()
+        response = rpc.call_ue_worker(
+            "prepare_ue_hero_metahuman_project", opener, self.token)
+        self.assertTrue(response["ok"])
+        self.assertEqual(opener.calls[0].full_url,
+                         "http://127.0.0.1:18910/v1/actions")
+        self.assertEqual(json.loads(opener.calls[0].data),
+                         {"action": "prepare_hero_metahuman_project"})
+        self.assertEqual(rpc.call_ue_worker("upload_mesh", opener,
+                                            self.token)["reason"],
+                         "action_denied")
+        self.assertEqual(len(opener.calls), 1)
+
     def test_disabled_by_default(self):
         with patch.dict(os.environ, {"DIRECTOR_UE_WORKER_ENABLED": "0"}):
             self.assertEqual(rpc.call_ue_worker("get_ue_worker_status",

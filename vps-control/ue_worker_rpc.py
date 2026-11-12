@@ -19,7 +19,8 @@ READ_ROUTES = {
     "get_ue_worker_capabilities": "/v1/capabilities",
     "get_ue_episode_assembly_readiness": "/v6/episode/assembly-readiness",
 }
-WRITE_ACTIONS = {"prepare_ue_workspace": "prepare_workspace"}
+WRITE_ACTIONS = {"prepare_ue_workspace": "prepare_workspace",
+                 "prepare_ue_hero_metahuman_project": "prepare_hero_metahuman_project"}
 MAX_RESULT = 16384
 
 
@@ -51,7 +52,7 @@ def load_token(path=None):
 
 
 def call_ue_worker(name, opener=None, token_file=None):
-    """Only three known actions; do not relay arbitrary paths, commands or args."""
+    """Only pinned actions; do not relay arbitrary paths, commands or args."""
     if name not in READ_ROUTES and name not in WRITE_ACTIONS:
         return {"ok": False, "reason": "action_denied"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":

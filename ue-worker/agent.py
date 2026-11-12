@@ -81,6 +81,93 @@ def find_ue_installations():
 
 
 
+def hero_project_manifest():
+    """A fixed, separate UE 5.8 project; never alter the episode project."""
+    return {
+        "FileVersion": 3,
+        "EngineAssociation": "5.8",
+        "Category": "Film & Television",
+        "Description": "WaitingOffice EP01 CHAR_GPT MetaHuman candidate only",
+        "Plugins": [
+            {"Name": "PythonScriptPlugin", "Enabled": True},
+            {"Name": "EditorScriptingUtilities", "Enabled": True},
+            {"Name": "MetaHumanCharacter", "Enabled": True},
+        ],
+    }
+
+
+def hero_project_file():
+    return (workspace_root() / "HeroProjects" / "CHAR_GPT" /
+            "DirectorHeroGPT.uproject")
+
+
+def hero_project_state():
+    candidate = hero_project_file()
+    try:
+        if candidate.is_symlink() or getattr(candidate, "is_junction", lambda:False)():
+            return "unsafe_project_link"
+        if not candidate.exists():
+            return "missing"
+        if not candidate.is_file() or candidate.stat().st_size > 65536:
+            return "unsupported_project_file"
+        content = json.loads(candidate.read_text(encoding="utf-8"))
+        return "prepared" if content == hero_project_manifest() else "foreign_project"
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return "unreadable"
+
+
+def prepare_hero_metahuman_project():
+    """Create EXACTLY one isolated project with MetaHuman enabled, no UE launch.
+
+    This is a project *configuration* receipt, not evidence of Core Data,
+    Epic authorization, generated facial rigs, or director-approved models.
+    """
+    if JOB_MANAGER is not None:
+        with JOB_MANAGER.lock:
+            if JOB_MANAGER.active is not None:
+                raise ValueError("hero_project_busy")
+    found = False
+    for item in find_ue_installations()[:16]:
+        try:
+            exe = Path(item["editor_path"])
+            descriptor = (exe.parents[2] / "Plugins" / "MetaHuman" /
+                          "MetaHumanCharacter" / "MetaHumanCharacter.uplugin")
+            if (exe.name.lower() == "unrealeditor.exe"
+                    and descriptor.is_file() and not descriptor.is_symlink()):
+                found = True
+                break
+        except (OSError, IndexError, KeyError, TypeError, ValueError):
+            continue
+    if not found:
+        raise ValueError("metahuman_plugin_not_installed")
+    root = workspace_root()
+    target = hero_project_file()
+    for folder in (root, root / "HeroProjects", target.parent):
+        if folder.is_symlink() or getattr(folder, "is_junction", lambda:False)():
+            raise ValueError("unsafe_hero_project_directory")
+        if folder.exists() and not folder.is_dir():
+            raise ValueError("unsafe_hero_project_directory")
+    existing = hero_project_state()
+    if existing not in ("missing", "prepared"):
+        raise ValueError("hero_project_collision_" + existing)
+    if existing == "prepared":
+        return {"ok":True,"created":False,"state":"prepared",
+                "relative_project":"HeroProjects/CHAR_GPT/DirectorHeroGPT.uproject",
+                "source_episode_untouched":True,"rendered_character":False}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("x", encoding="utf-8") as output:
+        json.dump(hero_project_manifest(), output, ensure_ascii=False, indent=2)
+        output.write("\n")
+    for leaf in ("Content", "Config"):
+        folder = target.parent / leaf
+        if folder.is_symlink() or getattr(folder, "is_junction", lambda:False)():
+            raise ValueError("unsafe_hero_project_directory")
+        folder.mkdir(exist_ok=True)
+    return {"ok":True,"created":True,"state":hero_project_state(),
+            "relative_project":"HeroProjects/CHAR_GPT/DirectorHeroGPT.uproject",
+            "source_episode_untouched":True,"rendered_character":False}
+
+
 def hero_character_readiness():
     """Bounded local preflight for ONE EP01 hero; no installs or mutations.
 
@@ -137,6 +224,8 @@ def hero_character_readiness():
         "metahuman_python_examples_found": examples_detected,
         "project_state": project_state,
         "metahuman_project_plugin_enabled": enabled,
+        "isolated_hero_project_state": hero_project_state(),
+        "isolated_hero_project_enabled": hero_project_state() == "prepared",
         "creator_core_data": "not_verified_by_read_only_preflight",
         "epic_cloud_auth": "not_verified_by_read_only_preflight",
         "full_rig_and_groom": "not_created",
@@ -269,14 +358,14 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "1.2.2",
+        "worker_version": "1.2.3",
     }
 
 
 def capabilities():
     return {
         "ok": True, "node_id": NODE_ID,
-        "actions": ["prepare_workspace"],
+        "actions": ["prepare_workspace", "prepare_hero_metahuman_project"],
         "jobs": ["build_episode_timeline", "build_stage_cameras",
                  "render_previs_stills", "audit_ep01_assets",
                  "build_ep01_scene_candidates", "build_ep01_cast_blueprints",
@@ -317,7 +406,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/1.2.2"
+    server_version = "DirectorUEWorker/1.2.3"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -453,19 +542,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if type(body) is not dict or set(body) != {"action"}:
                 raise ValueError("invalid fields")
-            if body["action"] != "prepare_workspace":
+            if body["action"] not in ("prepare_workspace", "prepare_hero_metahuman_project"):
                 self.send_json(403, {"ok": False, "reason": "action_denied"})
                 return
             if not ACTION_LOCK.acquire(blocking=False):
                 self.send_json(409, {"ok": False, "reason": "busy"})
                 return
             try:
-                self.send_json(200, prepare_workspace())
+                self.send_json(200, prepare_workspace() if body["action"] == "prepare_workspace"
+                               else prepare_hero_metahuman_project())
             finally:
                 ACTION_LOCK.release()
         except (ValueError, UnicodeError, json.JSONDecodeError):
             self.send_json(400, {"ok": False, "reason": "invalid_request"})
-        except OSError:
+        except (OSError, FileExistsError):
             self.send_json(500, {"ok": False, "reason": "workspace_unavailable"})
 
 
