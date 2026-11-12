@@ -40,7 +40,8 @@ def sanitized_plan(body):
         raise JobError("invalid_fields")
     if body["task"] not in (
         "build_episode_timeline", "build_stage_cameras", "render_previs_stills",
-        "audit_ep01_assets", "build_ep01_scene_candidates"
+        "audit_ep01_assets", "build_ep01_scene_candidates",
+        "build_ep01_cast_blueprints"
     ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
@@ -83,7 +84,8 @@ def sanitized_plan(body):
     # The V0.3 stage recipe is FIXED to WaitingOffice EP01 and does not
     # modify V0.2 sequences or accept any user-authored scene/code paths.
     if body["task"] in ("build_stage_cameras", "render_previs_stills",
-                        "audit_ep01_assets", "build_ep01_scene_candidates"):
+                        "audit_ep01_assets", "build_ep01_scene_candidates",
+                        "build_ep01_cast_blueprints"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
@@ -93,7 +95,9 @@ def sanitized_plan(body):
         ]:
             raise JobError("previs_requires_frozen_shot_ids")
     fmt = (
-        "director_ue_scene_candidates_v09"
+        "director_ue_cast_blueprints_v100"
+        if body["task"] == "build_ep01_cast_blueprints"
+        else "director_ue_scene_candidates_v09"
         if body["task"] == "build_ep01_scene_candidates"
         else "director_ue_assets_v08" if body["task"] == "audit_ep01_assets"
         else "director_ue_previs_v04" if body["task"] == "render_previs_stills"
@@ -166,7 +170,8 @@ def run_commandlet(spec, root, work, timeout=900):
     script_name = ("unreal_build_stage.py"
                    if spec["format"] in ("director_ue_stage_v03",
                                          "director_ue_assets_v08",
-                                         "director_ue_scene_candidates_v09")
+                                         "director_ue_scene_candidates_v09",
+                                         "director_ue_cast_blueprints_v100")
                    else "unreal_build_episode.py")
     script = Path(__file__).resolve().with_name(script_name)
     if not script.is_file() or script.is_symlink():
@@ -178,9 +183,10 @@ def run_commandlet(spec, root, work, timeout=900):
     env = os.environ.copy()
     env["DIRECTOR_UE_SPEC_FILE"] = str(spec_file)
     env["DIRECTOR_UE_RESULT_FILE"] = str(result_file)
-    if spec["format"] == "director_ue_scene_candidates_v09":
+    if spec["format"] in ("director_ue_scene_candidates_v09",
+                          "director_ue_cast_blueprints_v100"):
         if not re.fullmatch(r"[a-f0-9]{32}", work.name):
-            raise JobError("invalid_scene_candidate_job_id")
+            raise JobError("invalid_candidate_job_id")
         env["DIRECTOR_UE_JOB_ID"] = work.name
     command = [
         str(editor), str(project), "-run=pythonscript",
@@ -198,6 +204,52 @@ def run_commandlet(spec, root, work, timeout=900):
         raise JobError("invalid_unreal_result")
     if not data["ok"]:
         raise JobError("unreal_script_failed")
+    if spec["format"] == "director_ue_cast_blueprints_v100":
+        # Static-component Blueprint candidates, NEVER skeletal MetaHumans.
+        ids = ("CHAR_GPT", "CHAR_GEM", "CHAR_DS", "CHAR_CLA", "CHAR_ZERO")
+        base = ("/Game/Director/Candidates/EP01/CastBuilds/J"
+                + work.name)
+        characters = data.get("characters")
+        if (data.get("kind") !=
+                "original_static_blueprint_character_candidates_v100" or
+                type(characters) is not list or len(characters) != 5 or
+                [v.get("id") for v in characters
+                 if type(v) is dict] != list(ids) or
+                data.get("review_map") !=
+                base + "/Maps/EP01_Five_Cast_Review" or
+                data.get("right_wrist_red_thread_character") != "CHAR_ZERO" or
+                data.get("locked_gpt_hair") != "short_dark_chestnut_bob" or
+                data.get("locked_gpt_eyes") != "amber" or
+                data.get("material_count") != 18 or
+                data.get("shot_count") != 31 or
+                data.get("total_frames") != 3840 or
+                any(data.get(field) is not False for field in (
+                    "studio_character_approval_verified",
+                    "skeletal_rig_bound", "metahuman_bound",
+                    "facial_performance_ready", "render_ready")) or
+                data.get("no_approved_asset_replaced") is not True):
+            raise JobError("ue_cast_blueprint_receipt_invalid")
+        for ident,item in zip(ids,characters):
+            if (type(item) is not dict or
+                    set(item) != {"id", "path", "editable_mesh_components"} or
+                    item["id"] != ident or
+                    item["path"] != base + "/Blueprints/BP_" + ident or
+                    type(item["editable_mesh_components"]) is not int or
+                    not 32 <= item["editable_mesh_components"] <= 100):
+                raise JobError("ue_cast_blueprint_receipt_invalid")
+        return {
+            "kind":"original_static_blueprint_character_candidates_v100",
+            "characters":characters,"review_map":data["review_map"],
+            "material_count":18,"shot_count":31,"total_frames":3840,
+            "right_wrist_red_thread_character":"CHAR_ZERO",
+            "locked_gpt_hair":"short_dark_chestnut_bob",
+            "locked_gpt_eyes":"amber",
+            "studio_character_approval_verified":False,
+            "skeletal_rig_bound":False,"metahuman_bound":False,
+            "facial_performance_ready":False,
+            "render_ready":False,"gpu_render_submitted":False,
+            "no_approved_asset_replaced":True,
+        }
     if spec["format"] == "director_ue_scene_candidates_v09":
         # The receipt is evidence of *saved EDITABLE DRAFT SCENES* only.
         # Never convert it into a Studio scene approval or render-ready flag.
