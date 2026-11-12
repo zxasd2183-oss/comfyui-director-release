@@ -5,56 +5,58 @@ VLESS routing and signed updater remain owned by their original components.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer, QEvent, QObject
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton
+from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QTabBar, QToolButton
 
 CHROME_SHELL_QSS33 = """
+/* Glacier's browser chrome uses neutral surfaces; site content is untouched. */
 QMainWindow, QWidget#GlacierBrowserRoot32 {
     background: #ffffff; color: #202124;
 }
 QWidget#GlacierTabStrip14 {
-    background: #dee1e6; border: none;
+    background: #dfe3e9; border: none;
     border-bottom: 0;
 }
 QTabBar#GlacierExternalTabs14 {
     background: transparent; border: 0;
-    font-size: 12px; color: #3c4043;
+    color: #3c4043; font-size: 12px;
 }
 QTabBar#GlacierExternalTabs14::tab {
-    background: #d0d4da; color: #3c4043;
-    border: 0; border-top-left-radius: 12px;
+    background: #cfd4dc; color: #414750;
+    border: none; border-top-left-radius: 12px;
     border-top-right-radius: 12px;
-    min-width: 128px; max-width: 230px; min-height: 32px;
-    padding: 4px 13px 1px; margin-right: 6px; margin-top: 6px;
+    min-width: 106px; max-width: 216px;
+    min-height: 31px; padding: 4px 15px 1px;
+    margin-right: 5px; margin-top: 6px;
     font-weight: normal;
 }
 QTabBar#GlacierExternalTabs14::tab:selected {
     background: #ffffff; color: #202124;
-    border: 0; font-weight: 500;
+    border: none; font-weight: 500;
 }
 QTabBar#GlacierExternalTabs14::tab:hover:!selected {
-    background: #e9ebef;
+    background: #e7ebf1;
 }
 QFrame#GlacierNavigation32 {
     background: #ffffff; border: 0;
-    border-bottom: 1px solid #dadce0;
+    border-bottom: 1px solid #e5e8ed;
 }
 QFrame#GlacierOmniboxShell33 {
-    background: #f1f3f4; border: 1px solid #f1f3f4;
-    border-radius: 19px;
+    background: #f0f2f5; border: 1px solid #f0f2f5;
+    border-radius: 20px;
 }
-QFrame#GlacierOmniboxShell33:focus-within {
-    background: #ffffff; border: 1px solid #93baf3;
+QFrame#GlacierOmniboxShell33[glacierFocus="true"] {
+    background: #ffffff; border: 2px solid #8ab4f8;
 }
 QLineEdit#GlacierOmnibox14 {
-    background: transparent; border: none; color: #202124;
+    background: transparent; border: 0; color: #202124;
     border-radius: 0; padding: 0 5px; margin: 0;
     min-height: 30px; max-height: 35px;
-    font-size: 13px; selection-background-color: #aecbfa;
+    font-size: 13px; selection-background-color: #c2d7fa;
 }
 QLineEdit#GlacierOmnibox14:focus {
-    background: transparent; border: none; padding: 0 5px;
+    background: transparent; border: 0; padding: 0 5px;
 }
 QPushButton#GlacierBack32, QPushButton#GlacierForward32,
 QPushButton#GlacierReload32, QPushButton#GlacierBookmark14,
@@ -62,7 +64,7 @@ QToolButton#GlacierSiteInfo30, QToolButton#GlacierDownloads14,
 QToolButton#GlacierHub20, QToolButton#GlacierMore14,
 QToolButton#GlacierUtilityToggle32, QPushButton#GlacierAccount26 {
     background: transparent; border: none;
-    border-radius: 17px; padding: 0;
+    border-radius: 18px; padding: 0;
     min-width: 32px; max-width: 38px;
     min-height: 32px; max-height: 38px;
     color: #5f6368;
@@ -72,24 +74,65 @@ QPushButton#GlacierReload32:hover, QPushButton#GlacierBookmark14:hover,
 QToolButton#GlacierSiteInfo30:hover, QToolButton#GlacierDownloads14:hover,
 QToolButton#GlacierHub20:hover, QToolButton#GlacierMore14:hover,
 QToolButton#GlacierUtilityToggle32:hover, QPushButton#GlacierAccount26:hover {
-    background: #e8eaed;
+    background: #edf0f4;
+}
+/* Qt menu-bearing QToolButtons draw their own dropdown triangle unless
+   both subcontrols are explicitly hidden. Keep native menu interactions. */
+QToolButton#GlacierHub20::menu-indicator,
+QToolButton#GlacierMore14::menu-indicator {
+    image: none; width: 0px; height: 0px;
+}
+QToolButton#GlacierHub20::menu-button,
+QToolButton#GlacierMore14::menu-button {
+    border: none; width: 0px; height: 0px;
+}
+QToolButton#GlacierTabClose33 {
+    background: transparent; border: none;
+    border-radius: 10px; padding: 0;
+}
+QToolButton#GlacierTabClose33:hover { background: #dfe4eb; }
+QToolButton#GlacierTabClose33:pressed { background: #cdd5df; }
+QPushButton#GlacierBack32:pressed, QPushButton#GlacierForward32:pressed,
+QPushButton#GlacierReload32:pressed, QToolButton#GlacierMore14:pressed {
+    background: #dce3ed;
+}
+QPushButton#GlacierBack32:disabled, QPushButton#GlacierForward32:disabled {
+    color: #b0b5bb;
 }
 QPushButton#GlacierAccount26 {
-    background: #e8f0fe; border-radius: 18px;
+    background: #e6effe; border-radius: 18px;
 }
 QPushButton#GlacierProxyHealth29 {
     background: transparent; border: none; color: #5f6368;
-    font-size: 17px; min-height: 30px; max-width: 32px; padding: 0;
+    font-size: 16px; min-height: 30px; max-width: 32px; padding: 0;
 }
 QLabel#GlacierProxyMac32 {
     background: transparent; border: none; color: #5f6368;
-    font-size: 15px; min-width: 19px; max-width: 24px;
-    padding: 0;
+    font-size: 14px; min-width: 19px; max-width: 24px; padding: 0;
 }
 QFrame#GlacierUtility32 {
-    background: #f8f9fa; border-bottom: 1px solid #e8eaed;
+    background: #f6f8fb; border-bottom: 1px solid #e9edf2;
 }
 QTabWidget::pane { background: #ffffff; border: 0; }
+QMenu {
+    background: #ffffff; color: #202124;
+    border: 1px solid #e0e4e9; border-radius: 10px; padding: 6px;
+}
+QMenu::item {
+    background: transparent; border-radius: 5px;
+    padding: 7px 28px 7px 16px; margin: 1px 4px;
+    font-size: 12px;
+}
+QMenu::item:selected { background: #e8f0fe; color: #174ea6; }
+QMenu::separator { height: 1px; background: #eceff3; margin: 5px 10px; }
+QToolTip {
+    background: #30343a; color: #ffffff; border: 0;
+    padding: 6px 8px; font-size: 11px;
+}
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+QScrollBar::handle:vertical { background: #c5cad2; min-height: 26px; border-radius: 5px; margin: 2px; }
+QScrollBar::handle:vertical:hover { background: #9ca4ae; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
 
 
@@ -122,6 +165,10 @@ def shell_icon33(kind):
     elif kind == "profile":
         p.drawEllipse(QRectF(17, 11, 10, 10))
         p.drawArc(QRectF(11, 21, 22, 15), 0, 180*16)
+    elif kind == "close":
+        p.setPen(QPen(QColor("#5f6368"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(15, 15), QPointF(29, 29))
+        p.drawLine(QPointF(29, 15), QPointF(15, 29))
     elif kind == "menu":
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor("#5f6368"))
@@ -132,6 +179,24 @@ def shell_icon33(kind):
         raise ValueError("Unsupported shell icon: " + kind)
     p.end()
     return QIcon(pic)
+
+
+class _OmniboxFocusGuard33(QObject):
+    """Qt does not implement CSS :focus-within; track input focus explicitly."""
+
+    def __init__(self, shell):
+        super().__init__(shell)
+        self.shell = shell
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            active = event.type() == QEvent.Type.FocusIn
+            self.shell.setProperty("glacierFocus", active)
+            style = self.shell.style()
+            style.unpolish(self.shell)
+            style.polish(self.shell)
+            self.shell.update()
+        return False
 
 
 class GlacierChromeShell33:
@@ -187,14 +252,47 @@ class GlacierChromeShell33:
             bar = self.chrome_tab14
             # Fixed-width tab content: keep the + adjacent to the last
             # actual tab, and allow native scroll buttons when crowded.
-            desired = max(150, bar.sizeHint().width() + 3)
-            available = max(210, self.width()-200)
+            desired = max(124, bar.sizeHint().width() + 3)
+            available = max(155, self.width()-180)
             bar.setMaximumWidth(min(desired, available))
 
         self._resize_tabs_to_content33 = resize_tabs_to_content
+
+        def polish_close_buttons():
+            """Use our own SVG-like gray icon, never the platform red X tile."""
+            bar = self.chrome_tab14
+            side = QTabBar.ButtonPosition.RightSide
+
+            def emit_close(button):
+                # Tabs can reorder: resolve the index when actually clicked.
+                for index in range(bar.count()):
+                    if bar.tabButton(index, side) is button:
+                        bar.tabCloseRequested.emit(index)
+                        return
+
+            for i in range(bar.count()):
+                current = bar.tabButton(i, side)
+                if isinstance(current, QToolButton) and current.objectName() == "GlacierTabClose33":
+                    continue
+                close = QToolButton(bar)
+                close.setObjectName("GlacierTabClose33")
+                close.setIcon(shell_icon33("close"))
+                close.setIconSize(QSize(13, 13))
+                close.setFixedSize(20, 20)
+                close.setToolTip("关闭标签")
+                close.setAutoRaise(True)
+                close.setCursor(Qt.CursorShape.PointingHandCursor)
+                close.clicked.connect(lambda checked=False, button=close: emit_close(button))
+                # QTabBar's auto-created close control can use a red native
+                # Windows style even after setIcon(). Replace the widget.
+                bar.setTabButton(i, side, close)
+
+        self._polish_close_buttons33 = polish_close_buttons
         self.tabs.currentChanged.connect(
-            lambda _index: QTimer.singleShot(0, resize_tabs_to_content))
+            lambda _index: QTimer.singleShot(0, lambda: (
+                resize_tabs_to_content(), polish_close_buttons())))
         QTimer.singleShot(0, resize_tabs_to_content)
+        QTimer.singleShot(0, polish_close_buttons)
 
         surface.setFixedHeight(54)
         nav.setContentsMargins(12, 5, 12, 5)
@@ -206,10 +304,10 @@ class GlacierChromeShell33:
         shell = QFrame(surface)
         shell.setObjectName("GlacierOmniboxShell33")
         shell.setMinimumWidth(220)
-        shell.setFixedHeight(39)
+        shell.setFixedHeight(40)
         shell.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         inner = QHBoxLayout(shell)
-        inner.setContentsMargins(6, 1, 5, 1)
+        inner.setContentsMargins(7, 1, 6, 1)
         inner.setSpacing(1)
         for widget in (site, address, bookmark):
             nav.removeWidget(widget)
@@ -221,7 +319,7 @@ class GlacierChromeShell33:
         address.setMaximumHeight(35)
         address.setFrame(False)
         address.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        address.setPlaceholderText("在 Google 中搜索或输入网址")
+        address.setPlaceholderText("搜索或输入网址")
         bookmark.setMinimumWidth(32)
         bookmark.setMaximumWidth(36)
         bookmark.setFixedHeight(32)
@@ -232,6 +330,8 @@ class GlacierChromeShell33:
         for widget in (site, address, bookmark):
             widget.show()
         self._chrome_omnibox_shell33 = shell
+        self._omnibox_focus_guard33 = _OmniboxFocusGuard33(shell)
+        address.installEventFilter(self._omnibox_focus_guard33)
 
         for name, kind in (("GlacierDownloads14", "download"),
                            ("GlacierHub20", "extensions"),
@@ -243,6 +343,10 @@ class GlacierChromeShell33:
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 btn.setFixedSize(36, 36)
+                # Chromium has one menu glyph; Qt's MenuButtonPopup adds an
+                # unattractive second arrow alongside the three-dot icon.
+                if name in ("GlacierHub20", "GlacierMore14") and btn.menu() is not None:
+                    btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
 
         account = getattr(self, "_account_button26", None)
         if account is not None:

@@ -141,7 +141,7 @@ QStatusBar {
 
 
 def glacier_home20():
-    """Beautiful offline HTML new tab page, no script, tracking or remote assets."""
+    """Script-free, offline Chromium-style start page with Glacier branding."""
     return """<!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
@@ -150,56 +150,125 @@ def glacier_home20():
 <style>
 :root{color-scheme:light}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:
-  radial-gradient(ellipse 58% 40% at 80% -5%,#e6f2f8 0%,transparent 100%),
-  linear-gradient(180deg,#f8fafc 0%,#fff 72%);
-  color:#273849;font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",
+html,body{height:100%}
+body{margin:0;background:#fff;color:#202124;
+  font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",
   "Microsoft YaHei UI",sans-serif}
-header{margin:0 auto;max-width:1080px;padding:36px 36px 0;display:flex;
-  justify-content:space-between;align-items:center}
-.brand{font-size:13px;letter-spacing:.13em;font-weight:700;color:#3b7899}
-.hint{color:#91a1b1;font-size:12px}
-main{max-width:700px;margin:clamp(86px,17vh,178px) auto 0;padding:0 26px}
-h1{font-size:clamp(30px,4.3vw,42px);letter-spacing:-1.4px;font-weight:600;
-  margin:0 0 12px;color:#233b4c}
-.subtitle{margin:0 0 32px;color:#788d9d;font-size:15px}
-.search{display:flex;align-items:center;gap:12px;min-height:60px;padding:0 20px;
-  background:#fff;border:1px solid #e2e9f0;border-radius:16px;
-  box-shadow:0 12px 32px #385d7510}
-.search:focus-within{border-color:#94bfd7;box-shadow:0 12px 32px #477d9c1c}
-.glass{font-size:22px;color:#7d9bab}
-input{border:0;outline:0;min-width:0;flex:1;background:transparent;
-  color:#283d4b;font:15px inherit}
-.links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
-  gap:12px;margin-top:30px}
+.top{position:absolute;top:0;right:0;display:flex;align-items:center;
+  gap:22px;padding:18px 29px;color:#3c4043;font-size:13px}
+.top a{text-decoration:none;color:inherit}
+.top a:hover{text-decoration:underline}
+.top .about{display:grid;place-items:center;width:32px;height:32px;
+  border-radius:50%;background:#e8f0fe;color:#3565a0;font-size:14px;
+  font-weight:700;text-decoration:none}
+main{width:min(100%,720px);margin:0 auto;
+  padding:clamp(120px,19vh,200px) 24px 40px;text-align:center}
+.wordmark{margin:0 auto 36px;display:flex;align-items:center;
+  justify-content:center;gap:13px;letter-spacing:-2px;
+  font-size:clamp(43px,6vw,67px);font-weight:550;line-height:1.15;
+  color:#263c50}
+.symbol{display:grid;place-items:center;width:58px;height:58px;
+  border-radius:20px;background:linear-gradient(145deg,#dceefb,#f2f8ff);
+  box-shadow:inset 0 1px 0 #fff;color:#528db5;
+  font-size:37px;letter-spacing:0;font-weight:400}
+.search{height:49px;max-width:584px;margin:0 auto;
+  display:flex;align-items:center;gap:17px;padding:0 18px;
+  border:1px solid #dfe1e5;border-radius:26px;
+  background:#fff;box-shadow:0 1px 6px #20212417}
+.search:hover,.search:focus-within{
+  border-color:transparent;box-shadow:0 1px 7px #20212433}
+.magnify{display:block;position:relative;width:15px;height:15px;
+  flex:0 0 15px;border:2px solid #80868b;border-radius:50%}
+.magnify:after{content:"";position:absolute;right:-6px;bottom:-3px;
+  width:7px;height:2px;background:#80868b;transform:rotate(48deg);
+  border-radius:1px}
+input{width:100%;min-width:0;height:100%;padding:0;margin:0;
+  color:#202124;outline:0;border:0;background:transparent;
+  font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",
+  "Microsoft YaHei UI",sans-serif}
+input::placeholder{color:#80868b;opacity:1}
+.shortcuts{margin:30px auto 0;display:grid;grid-template-columns:
+  repeat(6,96px);gap:4px;justify-content:center;max-width:600px}
 a{color:inherit;text-decoration:none}
-.link{min-height:94px;border:1px solid #ecf0f4;border-radius:13px;background:#fff;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:9px;color:#546d7f;font-size:13px;transition:background .13s}
-.link:hover{background:#f0f7fb;border-color:#d5e5ee}
-.mark{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;
-  background:#eaf3f8;color:#377da3;font-size:14px;font-weight:700}
-footer{margin-top:34px;text-align:center;color:#a4b2be;font-size:12px}
-@media(max-width:540px){header{padding:22px 22px 0}
-main{margin-top:12vh}.links{grid-template-columns:repeat(2,1fr)}
-.hint{display:none}}
+.shortcut{display:flex;flex-direction:column;align-items:center;
+  gap:12px;min-height:112px;padding:15px 4px 10px;
+  border-radius:5px;color:#3c4043;font-size:12px;
+  transition:background .12s ease}
+.shortcut:hover,.shortcut:focus-visible{background:#f1f3f4;outline:0}
+.tile{display:grid;place-items:center;width:47px;height:47px;
+  border-radius:50%;background:#f1f3f4;color:#5f6368;
+  font-size:16px;font-weight:650}
+.tile.google{color:#4285f4;background:#eaf1fd}
+.tile.youtube{color:#e94235;background:#fcefed}
+.tile.github{color:#30363d;background:#eceef0}
+.tile.chatgpt{color:#247d69;background:#e7f5f0}
+.foot{margin-top:30px;color:#9aa0a6;font-size:11px;
+  letter-spacing:.015em}
+@media(max-width:520px){
+  .top{padding:14px 17px;gap:14px}
+  main{padding:clamp(125px,22vh,190px) 14px 24px}
+  .wordmark{font-size:45px;gap:9px}
+  .symbol{width:45px;height:45px;font-size:29px;border-radius:15px}
+  .shortcuts{grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+  .shortcut{font-size:11px}
+}
 </style></head><body>
-<header><div class="brand">❄ GLACIER</div><span class="hint">专注浏览 · 轻盈自在</span></header>
-<main><h1>从这里，开启新的一页。</h1>
-<p class="subtitle">简洁、私密、专注于你想探索的内容。</p>
-<form class="search" action="https://www.google.com/search" method="get">
-<span class="glass" aria-hidden="true">⌕</span>
-<input name="q" autofocus autocomplete="off" placeholder="搜索网络..."
+<nav class="top" aria-label="快速导航">
+<a href="https://mail.google.com">Gmail</a>
+<a href="https://www.google.com/imghp">图片</a>
+<a class="about" href="https://www.google.com" aria-label="Google">G</a>
+</nav>
+<main>
+<div class="wordmark"><span class="symbol" aria-hidden="true">❄</span>Glacier</div>
+<form class="search" action="https://www.google.com/search" method="get"
  aria-label="使用 Google 搜索">
+<span class="magnify" aria-hidden="true"></span>
+<input name="q" autocomplete="off" placeholder="在 Google 中搜索或输入网址"
+ aria-label="搜索网络">
 </form>
-<div class="links">
-<a class="link" href="https://www.google.com"><span class="mark">G</span>Google</a>
-<a class="link" href="https://www.youtube.com"><span class="mark">▶</span>YouTube</a>
-<a class="link" href="https://github.com"><span class="mark">GH</span>GitHub</a>
-<a class="link" href="https://chatgpt.com"><span class="mark">AI</span>ChatGPT</a>
-</div>
-<footer>Glacier Browser · 新标签页</footer>
+<section class="shortcuts" aria-label="快捷访问">
+<a class="shortcut" href="https://www.google.com"><span class="tile google">G</span>Google</a>
+<a class="shortcut" href="https://www.youtube.com"><span class="tile youtube">▶</span>YouTube</a>
+<a class="shortcut" href="https://github.com"><span class="tile github">GH</span>GitHub</a>
+<a class="shortcut" href="https://chatgpt.com"><span class="tile chatgpt">AI</span>ChatGPT</a>
+<a class="shortcut" href="https://mail.google.com"><span class="tile">✉</span>Gmail</a>
+<a class="shortcut" href="https://www.wikipedia.org"><span class="tile">W</span>Wikipedia</a>
+</section>
+<div class="foot">Glacier Browser · 新标签页</div>
 </main></body></html>"""
+
+
+def ensure_offline_home_file(directory, html):
+    """Write only our static script-free homepage for a local WebEngine fallback.
+
+    A file URL needs no network and avoids the data: URL renderer path on
+    Windows QtWebEngine. No credentials, proxy links or user state are stored.
+    """
+    import os
+    import tempfile
+    from pathlib import Path
+
+    base = Path(directory)
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / "glacier-offline-home-v34.html"
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise PermissionError("Unsafe local Glacier homepage path")
+    payload = html.encode("utf-8")
+    if len(payload) > 200000 or b"<script" in payload.lower():
+        raise ValueError("Untrusted or oversized Glacier homepage")
+    if path.is_file() and path.read_bytes() == payload:
+        return path
+    fd, tmp = tempfile.mkstemp(prefix=".glacier-home-", dir=base)
+    try:
+        os.fchmod(fd, 0o600) if hasattr(os, "fchmod") else None
+        with os.fdopen(fd, "wb") as out:
+            out.write(payload)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    return path
 
 
 class GlacierShell20:

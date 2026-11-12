@@ -102,7 +102,7 @@ def nav_icon32(kind):
     pix.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setPen(QPen(QColor("#455c70"), 2.5, Qt.PenStyle.SolidLine,
+    painter.setPen(QPen(QColor("#5f6368"), 2.5, Qt.PenStyle.SolidLine,
                         Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     if kind == "back":
         painter.drawLine(QPointF(28, 20), QPointF(12, 20))

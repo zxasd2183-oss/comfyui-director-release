@@ -41,23 +41,36 @@ def main():
             print("omnibox group", omni.x(), omni.width(), omni.height(), flush=True)
             out=Path("ui-proof")
             out.mkdir(exist_ok=True)
-            path=out/"Glacier-Windows-v0.20.22-live-ui33.png"
+            path=out/"Glacier-Windows-v0.20.23-live-ui33.png"
             # QtWebEngine may paint into a compositor surface that is not
             # included in QWidget.grab() on a headless Windows runner.
             # First verify the actual browser DOM is NOT blank. Screenshot
             # rasterization alone cannot prove a WebEngine document loaded.
+            # A fast first toHtml callback may still return Chromium's empty
+            # placeholder document. Poll for the REAL rendered page, not just
+            # any callback, and retain the hard failure on a persistent blank.
             document=[]
-            window.current().page().toHtml(lambda html: document.append(html))
-            for _ in range(60):
-                app.processEvents()
-                if document:break
-                time.sleep(0.05)
-            html=document[0] if document else ""
-            if ("Glacier" not in html or "快捷访问" not in html
-                    or 'name="q"' not in html):
+            deadline=time.monotonic()+15
+            html=""
+            while time.monotonic()<deadline:
+                window.current().page().toHtml(lambda result: document.append(result))
+                for _ in range(12):
+                    app.processEvents()
+                    time.sleep(0.04)
+                    if document:
+                        html=document[-1]
+                        if ("Glacier" in html and "快捷访问" in html
+                                and 'name="q"' in html):
+                            break
+                if "Glacier" in html and "快捷访问" in html and 'name="q"' in html:
+                    break
+                document.clear()
+            if not ("Glacier" in html and "快捷访问" in html
+                    and 'name="q"' in html):
                 raise RuntimeError(
-                    "Startup tab did not contain real local new-tab DOM; "+
-                    "length="+str(len(html))+" url="+window.current().url().toString())
+                    "Startup tab did not render actual local homepage within 15s; "+
+                    "html_length="+str(len(html))+
+                    " url_prefix="+window.current().url().toString()[:140])
             print("SUCCESS: actual local homepage DOM loaded",len(html),"bytes")
             screen=window.grab()
             if not screen.save(str(path),"PNG"):

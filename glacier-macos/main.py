@@ -21,7 +21,7 @@ from glacier_productivity16 import GlacierProductivity16
 from glacier_workspaces17 import GlacierWorkspaces17
 from glacier_downloads17 import GlacierDownloads17
 from glacier_tabs19 import GlacierTabs19
-from glacier_shell20 import GlacierShell20
+from glacier_shell20 import GlacierShell20, ensure_offline_home_file
 from glacier_chrome_ui30 import GlacierChromeUI30
 from glacier_desktop_ui32 import GlacierDesktopUI32
 from glacier_chrome_shell33 import GlacierChromeShell33
@@ -163,7 +163,7 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.20")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.21")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -199,16 +199,42 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.setup_ui30(bar)
   self.setup_desktop_ui32(lay,bar)
   self.setup_chrome_shell33()
-  # The first WebEngine page is created while a dozen UI modules initialize.
-  # On some native systems that cancels its initial about:blank setHtml load.
-  # Repair ONLY a still-empty first tab once Qt finishes initialization.
-  QTimer.singleShot(0, self.ensure_initial_local_home33)
+  # WebEngine can cancel setHtml when UI extensions configure the first tab.
+  # Check the actual DOM after initialization, not just the URL: a completely
+  # empty document still reports about:blank and otherwise looks successful.
+  for delay in (0, 350, 950, 1550):
+   QTimer.singleShot(delay, self.ensure_initial_local_home33)
+ def _is_glacier_local_start33(self, url):
+  # Qt WebEngine represents setHtml() using a data:text/html URL, not
+  # just about:blank. Treat only Glacier's own local HTML as repairable.
+  return (url in ("", "about:blank") or
+          (url.startswith("data:text/html") and "Glacier" in url) or
+          (url.startswith("file:") and "glacier-offline-home-v34.html" in url))
  def ensure_initial_local_home33(self):
   view=self.current()
   if view is None:return
-  url=view.url()
-  if url.isEmpty() or url.toString()=="":
-   view.setHtml(self.home_markup(),QUrl("about:blank"))
+  try:
+   if not self._is_glacier_local_start33(view.url().toString()):return
+   view.page().toHtml(lambda html, target=view:self._repair_initial_home33(target,html))
+  except RuntimeError:
+   return
+ def _repair_initial_home33(self,view,html):
+  try:
+   if view is not self.current():return
+   if not self._is_glacier_local_start33(view.url().toString()):return
+   if 'name="q"' in html and "Glacier" in html:return
+   count=getattr(view,"_glacier_home_repairs33",0)
+   if count>=3:return
+   view._glacier_home_repairs33=count+1
+   if count==0:
+    # Qt may report a populated data URL even though its renderer is blank.
+    # A local file bypasses data: loading without ever using the network.
+    offline=ensure_offline_home_file(appdir(),self.home_markup())
+    view.setUrl(QUrl.fromLocalFile(str(offline)))
+   else:
+    view.reload()
+  except (RuntimeError,OSError,ValueError):
+   return
  def current(self):return self.tabs.currentWidget()
  def new_tab(self):
   v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
@@ -218,7 +244,13 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   v.urlChanged.connect(lambda _url,view=v:self.sync_url() if view is self.current() else None)
   v.loadFinished.connect(lambda ok,view=v:self.on_page_loaded(view,ok))
   self.attach_page_security(v)
-  # Always keep a readable local new-tab page while the fail-closed VLESS\n  # proxy is unavailable. Never navigate to an unreachable remote startup URL.\n  v.setHtml(self.home_markup(),QUrl("about:blank"))\n  if self.proc is not None:self.open_startup_home(v)
+  # The local first tab must render without relying on an in-memory
+  # data: URL: QtWebEngine on some Windows machines leaves those blank.
+  # A fixed, user-private file:// URL works offline, including with VLESS off.
+  offline=ensure_offline_home_file(appdir(), self.home_markup())
+  v.setUrl(QUrl.fromLocalFile(str(offline)))
+  if self.proc is not None:
+   self.open_startup_home(v)
   self.refresh_tabs14()
   self._workspace_register17(v)
   self.register_account_tab22(v)
@@ -262,7 +294,7 @@ def main():
   listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("macOS v0.20.20")
+ splash=show_glacier_splash("macOS v0.20.21")
  link=get_link(app,parse_node)
  proc=None
  try:proc=proxy_start(link,port)
