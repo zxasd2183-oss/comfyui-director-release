@@ -1,0 +1,84 @@
+name: Glacier account popover 0.20.28 and 0.20.25 signed release continuation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-account-popover-v028-v025-signing-resume.yml'
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: glacier-account-popover-v028-v025-signing-resume
+  cancel-in-progress: false
+jobs:
+  resume:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+    steps:
+      - name: Require existing immutable releases and wait for exact signed Windows feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view glacier-v0.20.28 --repo "$GITHUB_REPOSITORY" --json isDraft,assets \
+            --jq 'select(.isDraft == false and (.assets | length) == 1)' | grep -q .
+          gh release view glacier-macos-v0.20.25 --repo "$GITHUB_REPOSITORY" --json isDraft,assets \
+            --jq 'select(.isDraft == false and (.assets | length) == 1)' | grep -q .
+          python3 - <<'PY'
+          import base64,json,os,subprocess,time
+          repo=os.environ['GITHUB_REPOSITORY']
+          for attempt in range(90):
+              try:
+                  obj=json.loads(subprocess.check_output(
+                      ['gh','api',f'repos/{repo}/contents/channels/windows-x64.json?ref=glacier-browser-updates-v2']))
+                  feed=json.loads(base64.b64decode(obj['content']))
+                  current=feed['version']
+                  if current=='0.20.28':
+                      if not (feed.get('signature') and feed.get('url','').endswith('GlacierBrowser-v0.20.28-Windows-Setup-x64.exe')):
+                          raise RuntimeError('Windows signed manifest lacks expected signature or installer')
+                      print('Windows Ed25519 feed pinned at 0.20.28')
+                      break
+                  if tuple(map(int,current.split('.')))>(0,20,28):
+                      raise RuntimeError('Newer unexpected Windows feed; refusing rollback')
+              except subprocess.CalledProcessError:
+                  pass
+              if attempt==89: raise RuntimeError('Windows signer has not promoted 0.20.28')
+              time.sleep(12)
+          PY
+      - name: Dispatch missing macOS signed feed only once if required
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          obj=json.loads(subprocess.check_output([
+            'gh','api',f'repos/{repo}/contents/channels/macos-arm64.json?ref=glacier-browser-updates-v2']))
+          feed=json.loads(base64.b64decode(obj['content']))
+          version=feed['version']
+          if version=='0.20.25':
+              if not feed.get('signature'):
+                  raise RuntimeError('macOS current feed is unsigned')
+              print('macOS signed feed already matches target; nothing to dispatch')
+          elif tuple(map(int,version.split('.')))>(0,20,25):
+              raise RuntimeError('Newer signed macOS feed exists: refuse rollback')
+          else:
+              active=json.loads(subprocess.check_output([
+                  'gh','api',f'repos/{repo}/actions/workflows/glacier-macos-signed-auto.yml/runs?per_page=25']))
+              active_runs=[r for r in active.get('workflow_runs',[])
+                           if r['status'] in ('queued','in_progress','waiting','requested','pending')]
+              if active_runs:
+                  print('Existing macOS signer already active; not dispatching duplicate')
+              else:
+                  subprocess.run(['gh','workflow','run','glacier-macos-signed-auto.yml',
+                     '--ref','main','--repo',repo],check=True)
+                  print('Dispatched existing independent macOS Ed25519 signer')
+          PY
+      - name: Ask existing authorized VPS staging to synchronize
+        shell: bash
+        run: |
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Desktop profile releases already immutable; signer and VPS sync resumed without rebuilding.' >> "$GITHUB_STEP_SUMMARY"
