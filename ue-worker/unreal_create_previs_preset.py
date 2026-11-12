@@ -358,7 +358,7 @@ def apply_v120_cast_review_look(actors, actor_by_short):
             raise RuntimeError("cast_review_face_components_missing_"+short)
         for name in iris_names:
             comp=cmap[name]
-            old=comp.get_relative_location()
+            old=comp.relative_location
             x=(62 if "Highlight" in name else 57 if "Iris" in name
                else 58 if "Brow" in name else 60 if name=="Nose" else 58)
             comp.set_relative_location(
@@ -376,7 +376,7 @@ def apply_v120_cast_review_look(actors, actor_by_short):
                          "Hair_Layer_02","Hair_Layer_03"):
                 if name not in cmap:
                     raise RuntimeError("cast_review_gem_layer_missing")
-                old=cmap[name].get_relative_location()
+                old=cmap[name].relative_location
                 cmap[name].set_relative_location(
                     unreal.Vector(float(old.x+22),float(old.y),
                                   float(old.z)),False,False)
@@ -394,7 +394,7 @@ def apply_v120_cast_review_look(actors, actor_by_short):
         if short=="ZERO":
             if "Right_Wrist_Red_Thread" not in cmap:
                 raise RuntimeError("cast_review_zero_red_thread_missing")
-            wrist=cmap["Right_Wrist_Red_Thread"].get_relative_location()
+            wrist=cmap["Right_Wrist_Red_Thread"].relative_location
             if float(wrist.y)>=0:
                 raise RuntimeError("cast_review_zero_wrist_not_right")
     if override_count<52:
