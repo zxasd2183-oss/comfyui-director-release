@@ -153,7 +153,7 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
                for v in (project_id, episode_id)):
         return {"ok": False, "reason": "invalid_identifiers"}
     if task not in ("build_episode_timeline", "build_stage_cameras",
-                    "render_previs_stills"):
+                    "render_previs_stills", "audit_ep01_assets"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -227,6 +227,21 @@ def enqueue_ue_previs_stills(project_id, episode_id, studio_getter=None,
     return enqueue_ue_episode_timeline(
         project_id, episode_id, studio_getter=studio_getter,
         opener=opener, token_file=token_file, task="render_previs_stills",
+    )
+
+
+def enqueue_ue_asset_audit(project_id, episode_id, studio_getter=None,
+                           opener=None, token_file=None):
+    """Read native Unreal assets for all fixed EP01 production dependencies.
+
+    Never receive caller-supplied asset paths, code, URLs or render options.
+    This job is a technical inventory, NOT an artistic approval or render.
+    """
+    if (project_id, episode_id) != ("WaitingOffice", "EP01"):
+        return {"ok": False, "reason": "asset_audit_requires_locked_ep01"}
+    return enqueue_ue_episode_timeline(
+        project_id, episode_id, studio_getter=studio_getter,
+        opener=opener, token_file=token_file, task="audit_ep01_assets",
     )
 
 
