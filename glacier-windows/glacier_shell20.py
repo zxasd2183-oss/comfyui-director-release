@@ -188,7 +188,7 @@ input{width:100%;min-width:0;height:100%;padding:0;margin:0;
   "Microsoft YaHei UI",sans-serif}
 input::placeholder{color:#80868b;opacity:1}
 .shortcuts{margin:30px auto 0;display:grid;grid-template-columns:
-  repeat(4,112px);gap:4px;justify-content:center;max-width:580px}
+  repeat(6,96px);gap:4px;justify-content:center;max-width:600px}
 a{color:inherit;text-decoration:none}
 .shortcut{display:flex;flex-direction:column;align-items:center;
   gap:12px;min-height:112px;padding:15px 4px 10px;
@@ -209,7 +209,7 @@ a{color:inherit;text-decoration:none}
   main{padding:clamp(125px,22vh,190px) 14px 24px}
   .wordmark{font-size:45px;gap:9px}
   .symbol{width:45px;height:45px;font-size:29px;border-radius:15px}
-  .shortcuts{grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
+  .shortcuts{grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
   .shortcut{font-size:11px}
 }
 </style></head><body>
@@ -231,6 +231,8 @@ a{color:inherit;text-decoration:none}
 <a class="shortcut" href="https://www.youtube.com"><span class="tile youtube">▶</span>YouTube</a>
 <a class="shortcut" href="https://github.com"><span class="tile github">GH</span>GitHub</a>
 <a class="shortcut" href="https://chatgpt.com"><span class="tile chatgpt">AI</span>ChatGPT</a>
+<a class="shortcut" href="https://mail.google.com"><span class="tile">✉</span>Gmail</a>
+<a class="shortcut" href="https://www.wikipedia.org"><span class="tile">W</span>Wikipedia</a>
 </section>
 <div class="foot">Glacier Browser · 新标签页</div>
 </main></body></html>"""
