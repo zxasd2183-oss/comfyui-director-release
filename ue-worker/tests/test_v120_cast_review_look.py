@@ -29,7 +29,8 @@ class Component:
         self.props={}
     def get_name(self):
         return self.name
-    def get_relative_location(self):
+    @property
+    def relative_location(self):
         return self.position
     def set_relative_location(self,position,*a):
         self.position=position
