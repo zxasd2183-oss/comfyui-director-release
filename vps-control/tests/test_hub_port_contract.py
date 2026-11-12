@@ -51,7 +51,7 @@ class HubPortContractTests(unittest.TestCase):
         v05=content(VPS/"install-hub-v05.sh")
         self.assertIn("hub_brain.py hub_file_sync.py hub_sync_jobs.py hub_app.py hub_bridge.py",v05)
 
-    def test_v06_upgrade_checks_eight_core_and_fifty_hub_tools(self):
+    def test_v06_upgrade_checks_eight_core_and_fifty_two_hub_tools(self):
         script=content(VPS/"install-hub-v06.sh")
         groups=re.search(
             r'^core=(\{.*?\})\s*^hub=(\{.*?\})\s*^for attempt in range\(8\):',
@@ -60,7 +60,7 @@ class HubPortContractTests(unittest.TestCase):
         core=ast.literal_eval(groups.group(1))
         hub=ast.literal_eval(groups.group(2))
         self.assertEqual(len(core),8)
-        self.assertEqual(len(hub),50)
+        self.assertEqual(len(hub),52)
         # Guard against omitted or invented tool names at deployment.
         registered=set(re.findall(
             r'@app\.tool\([\s\S]*?\)\n(?:\#[^\n]*\n)*def\s+(\w+)\s*\(',
@@ -88,7 +88,7 @@ class HubPortContractTests(unittest.TestCase):
         self.assertIn('raise RuntimeError("Read-only status backend unavailable")',probe.group(1))
         self.assertNotIn('read(port,"start_gpu_now")',probe.group(1))
         self.assertNotIn('read(port,"stop_gpu_now")',probe.group(1))
-        self.assertIn("Hub 50 tools; no GPU power operation",probe.group(1))
+        self.assertIn("Hub 52 tools; no GPU power operation",probe.group(1))
 
 
 if __name__=="__main__":
