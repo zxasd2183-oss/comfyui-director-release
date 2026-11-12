@@ -80,6 +80,72 @@ def find_ue_installations():
     return found[:16]
 
 
+
+def hero_character_readiness():
+    """Bounded local preflight for ONE EP01 hero; no installs or mutations.
+
+    Presence of a plugin descriptor is NOT proof of MetaHuman Core Data,
+    Epic login, cloud auto-rig service availability, or a finished model.
+    """
+    installations = find_ue_installations()
+    plugin_detected = False
+    examples_detected = False
+    for item in installations[:16]:
+        try:
+            exe = Path(item["editor_path"])
+            if exe.name.lower() != "unrealeditor.exe":
+                continue
+            engine = exe.parents[2]
+            descriptor = (engine / "Plugins" / "MetaHuman" /
+                          "MetaHumanCharacter" / "MetaHumanCharacter.uplugin")
+            examples = (engine / "Plugins" / "MetaHuman" /
+                        "MetaHumanCharacter" / "Content" / "Python" /
+                        "examples" / "example_create_asset.py")
+            if descriptor.is_file() and not descriptor.is_symlink():
+                plugin_detected = True
+            if examples.is_file() and not examples.is_symlink():
+                examples_detected = True
+        except (IndexError, KeyError, TypeError, OSError, ValueError):
+            continue
+
+    project_state = "missing"
+    enabled = False
+    try:
+        project = workspace_root() / "DirectorVirtualStudio.uproject"
+        if project.is_symlink():
+            project_state = "unsafe_project_symlink"
+        elif project.is_file() and project.stat().st_size <= 65536:
+            data = json.loads(project.read_text(encoding="utf-8"))
+            if type(data) is dict and type(data.get("Plugins")) is list:
+                enabled = any(
+                    type(p) is dict and
+                    p.get("Name") in ("MetaHumanCharacter", "MetaHumanCreator") and
+                    p.get("Enabled") is True for p in data["Plugins"]
+                )
+                project_state = "valid"
+            else:
+                project_state = "invalid_project_manifest"
+        elif project.exists():
+            project_state = "unsupported_project_manifest"
+    except (OSError, UnicodeError, ValueError, TypeError):
+        project_state = "unreadable_project_manifest"
+
+    return {
+        "target": "WaitingOffice/EP01/CHAR_GPT",
+        "engine_detected": bool(installations),
+        "metahuman_character_plugin_descriptor_found": plugin_detected,
+        "metahuman_python_examples_found": examples_detected,
+        "project_state": project_state,
+        "metahuman_project_plugin_enabled": enabled,
+        "creator_core_data": "not_verified_by_read_only_preflight",
+        "epic_cloud_auth": "not_verified_by_read_only_preflight",
+        "full_rig_and_groom": "not_created",
+        "cinematic_character_master": "not_approved",
+        "character_production_ready": False,
+        "mutations_performed": False,
+    }
+
+
 def gpu_summary():
     executable = shutil.which("nvidia-smi")
     if not executable:
@@ -201,8 +267,9 @@ def status():
         "python": platform.python_version(),
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
+        "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "1.2.1",
+        "worker_version": "1.2.2",
     }
 
 
@@ -250,7 +317,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/1.2.1"
+    server_version = "DirectorUEWorker/1.2.2"
     sys_version = ""
 
     def log_message(self, fmt, *args):
