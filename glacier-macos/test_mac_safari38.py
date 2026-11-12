@@ -67,6 +67,7 @@ class SafariFixture(QMainWindow):
         self.tabs = QTabWidget(self.central)
         self.tabs.addTab(SamplePage("https://example.com/"), "示例首页")
         self.tabs.addTab(SamplePage("https://example.org/"), "示例项目")
+        self.tabs.tabBar().hide()  # Real Glacier already hides the internal row.
         root.addWidget(self.tabs, 1)
         self.bookmarks_menu = QMenu(self)
         self.bookmarks_menu.addAction("示例书签")
@@ -75,6 +76,7 @@ class SafariFixture(QMainWindow):
         self._group_button17 = QToolButton(self)
         self._group_button17.setMenu(QMenu(self))
         self._group_button17.menu().addAction("无分组")
+        self._group_button17.hide()  # In production this lives in the hidden utility shelf.
         self.statusBar()
 
     def show_history(self):
