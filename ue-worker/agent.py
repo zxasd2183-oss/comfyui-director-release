@@ -202,7 +202,7 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "control_mode": "allowlisted_only",
-        "worker_version": "0.9.0",
+        "worker_version": "1.0.0",
     }
 
 
@@ -212,7 +212,7 @@ def capabilities():
         "actions": ["prepare_workspace"],
         "jobs": ["build_episode_timeline", "build_stage_cameras",
                  "render_previs_stills", "audit_ep01_assets",
-                 "build_ep01_scene_candidates"],
+                 "build_ep01_scene_candidates", "build_ep01_cast_blueprints"],
         "job_status_route": "/v2/jobs/<job_id>",
         "job_logs_route": "/v3/jobs/<job_id>/logs/<kind>",
         "job_cancel_route": "/v3/jobs/<job_id>/cancel",
@@ -221,6 +221,7 @@ def capabilities():
         "supports_episode_assembly_inventory": True,
         "supports_ep01_native_asset_audit": True,
         "supports_ep01_scene_candidates": True,
+        "supports_ep01_cast_blueprints": True,
         "signed_update_status_route": "/v4/update/status",
         "signed_update_request_route": "/v4/update/request",
         "supports_signed_update_request": True,
@@ -246,7 +247,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/0.9.0"
+    server_version = "DirectorUEWorker/1.0.0"
     sys_version = ""
 
     def log_message(self, fmt, *args):

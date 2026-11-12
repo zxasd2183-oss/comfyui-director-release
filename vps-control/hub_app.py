@@ -16,6 +16,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_previs_stills as enqueue_ue_previs_stills_rpc,
                            enqueue_ue_asset_audit as enqueue_ue_asset_audit_rpc,
                            enqueue_ue_scene_candidates as enqueue_ue_scene_candidates_rpc,
+                           enqueue_ue_cast_blueprints as enqueue_ue_cast_blueprints_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
                            cancel_ue_job as cancel_ue_job_rpc,
@@ -25,7 +26,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "0.9.0"
+UE_HUB_API_VERSION = "1.0.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -421,6 +422,18 @@ def enqueue_ue_scene_candidates(project_id: str, episode_id: str) -> dict:
     unchanged, and no character masters or video rendering are claimed.
     """
     return enqueue_ue_scene_candidates_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_cast_blueprints(project_id: str, episode_id: str) -> dict:
+    """Create 5 original, separately editable UE 5.8 cast-design Blueprint
+    Actors with distinctive hair/clothes and Zero's RIGHT-hand red cord.
+
+    Real billed Unreal Editor job; uses only the fixed Studio EP01 main cast
+    list. No scripts, paths, face-identities, media, or user inputs forwarded.
+    Actor Blueprints are NOT rigged skeletal MetaHumans or approved masters.
+    """
+    return enqueue_ue_cast_blueprints_rpc(project_id, episode_id)
 
 
 @app.tool(annotations=READ)

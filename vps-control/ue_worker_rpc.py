@@ -154,7 +154,8 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
         return {"ok": False, "reason": "invalid_identifiers"}
     if task not in ("build_episode_timeline", "build_stage_cameras",
                     "render_previs_stills", "audit_ep01_assets",
-                    "build_ep01_scene_candidates"):
+                    "build_ep01_scene_candidates",
+                    "build_ep01_cast_blueprints"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -272,6 +273,37 @@ def enqueue_ue_scene_candidates(project_id, episode_id,
     return enqueue_ue_episode_timeline(
         project_id, episode_id, studio_getter=studio_getter,
         opener=opener, token_file=token_file, task="build_ep01_scene_candidates",
+    )
+
+
+def enqueue_ue_cast_blueprints(project_id, episode_id,
+                               studio_getter=None, cast_getter=None,
+                               opener=None, token_file=None):
+    """Build 5 ORIGINAL actor Blueprint design candidates, not MetaHumans.
+
+    Five fixed Studio role identities are mandatory. No caller-supplied
+    screenshots, scripts, paths, logos, or content references reach Worker.
+    """
+    if (project_id,episode_id) != ("WaitingOffice","EP01"):
+        return {"ok":False,"reason":"cast_requires_locked_ep01"}
+    if cast_getter is None:
+        from hub_brain import call_studio
+        cast_getter=call_studio
+    try:
+        record=cast_getter("get_project_characters",{"project_id":project_id})
+        rows=record.get("characters") if type(record) is dict and record.get("ok") is True else None
+        expected={"CHAR_GPT","CHAR_GEM","CHAR_DS","CHAR_CLA","CHAR_ZERO"}
+        if (type(rows) is not list or
+                {row["character_id"] for row in rows
+                 if type(row) is dict and row.get("role")=="main"
+                 and type(row.get("character_id")) is str} != expected):
+            return {"ok":False,"reason":"studio_main_cast_registry_mismatch"}
+    except (KeyError,ValueError,TypeError,AttributeError):
+        return {"ok":False,"reason":"studio_main_cast_unavailable"}
+    return enqueue_ue_episode_timeline(
+        project_id,episode_id,studio_getter=studio_getter,
+        opener=opener,token_file=token_file,
+        task="build_ep01_cast_blueprints",
     )
 
 
