@@ -1,10 +1,10 @@
 {
   "channel": "macos-arm64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.20.21：macOS Apple Silicon 独立签名更新；安装前确认。",
-  "sha256": "80010de78a5cf81b0bc24b1c9e67911373fff95074e527d63b9b810286fea456",
-  "signature": "UyPvkxuuFFHxs/0ZXkLR9YwhHgZGqC22g65tEQMHx6U7cCFT38zRCiL7SY7tWCxvjYDAD2vmawanV/OwMTmuDg==",
-  "size": 290534766,
-  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.21-macOS-AppleSilicon.dmg",
-  "version": "0.20.21"
+  "notes": "Glacier Browser v0.20.22：macOS Apple Silicon 独立签名更新；安装前确认。",
+  "sha256": "bf9579c74d84ebcf38856fe41630a9aad382d9f2d631347653331de4f9ddff72",
+  "signature": "g/2MIpRcgktDdj+bafhuK/sykmHMK4sPglK1b6YADlcTwkK/m0mdXsWmgtly4qfigPxAVcKXlAriRiq7pwqxDA==",
+  "size": 290318586,
+  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.22-macOS-AppleSilicon.dmg",
+  "version": "0.20.22"
 }
