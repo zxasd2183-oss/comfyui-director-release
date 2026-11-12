@@ -435,6 +435,77 @@ def get_ue_preview_png(job_id, shot_id, opener=None, token_file=None):
         return {"ok": False, "reason": str(exc)}
     except (OSError, ValueError, TypeError, urllib.error.URLError):
         return {"ok": False, "reason": "ue_worker_unavailable"}
+
+CAST_VIEWS = frozenset({"LINEUP","GPT","GEM","DS","CLA","ZERO"})
+CAST_DIMENSIONS = {
+    "LINEUP":(1280,720),
+    "GPT":(720,1280),"GEM":(720,1280),"DS":(720,1280),
+    "CLA":(720,1280),"ZERO":(720,1280),
+}
+
+
+def get_ue_cast_review_png(job_id, view, opener=None, token_file=None):
+    """Fetch exact SHA-verified real UE image bytes over private SSH bridge."""
+    import hashlib
+    import struct
+    if not isinstance(job_id,str) or not JOB_ID.fullmatch(job_id):
+        return {"ok":False,"reason":"invalid_job_id"}
+    if not isinstance(view,str) or view not in CAST_VIEWS:
+        return {"ok":False,"reason":"invalid_cast_review_view"}
+    if os.getenv("DIRECTOR_UE_WORKER_ENABLED","0")!="1":
+        return {"ok":False,"reason":"ue_worker_not_enabled"}
+    try:
+        token=load_token(token_file)
+        url=WORKER_ORIGIN+"/v11/jobs/"+job_id+"/cast-review/"+view
+        request=urllib.request.Request(
+            url,method="GET",headers={
+                "Authorization":"Bearer "+token,"Accept":"image/png",
+            })
+        with (opener or OPENER).open(request,timeout=15) as response:
+            if response.geturl()!=url:
+                raise WorkerError("redirect_not_allowed")
+            if response.headers.get("Content-Type")!="image/png":
+                raise WorkerError("cast_review_mime_mismatch")
+            declared=response.headers.get("Content-Length")
+            if (declared is None or not declared.isdecimal()
+                    or not 2048<=int(declared)<=MAX_PREVIEW_PNG):
+                raise WorkerError("cast_review_length_invalid")
+            expected_digest=response.headers.get("X-Director-PNG-SHA256")
+            if (not isinstance(expected_digest,str)
+                    or not re.fullmatch(r"[a-f0-9]{64}",expected_digest)):
+                raise WorkerError("cast_review_digest_header_invalid")
+            data=response.read(MAX_PREVIEW_PNG+1)
+        if (len(data)!=int(declared) or len(data)>MAX_PREVIEW_PNG):
+            raise WorkerError("cast_review_size_mismatch")
+        if (len(data)<24 or data[:8]!=PNG_HEADER
+                or data[12:16]!=b"IHDR" or
+                struct.unpack(">II",data[16:24])!=CAST_DIMENSIONS[view]):
+            raise WorkerError("cast_review_png_invalid")
+        digest=hashlib.sha256(data).hexdigest()
+        if digest!=expected_digest:
+            raise WorkerError("cast_review_hash_mismatch")
+        return {"ok":True,"data":data,"sha256":digest,
+                "job_id":job_id,"view":view,
+                "width":CAST_DIMENSIONS[view][0],
+                "height":CAST_DIMENSIONS[view][1]}
+    except urllib.error.HTTPError as exc:
+        try:
+            raw=exc.read(1025)
+            info=json.loads(raw)
+            if (len(raw)<=1024 and type(info) is dict
+                    and info.get("ok") is False
+                    and type(info.get("reason")) is str
+                    and re.fullmatch(r"[a-z0-9_]{1,80}",info["reason"])):
+                return {"ok":False,"reason":info["reason"]}
+        except (OSError,ValueError,UnicodeError,TypeError):
+            pass
+        return {"ok":False,"reason":"cast_review_worker_http_error"}
+    except WorkerError as exc:
+        return {"ok":False,"reason":str(exc)}
+    except (OSError,ValueError,TypeError,urllib.error.URLError):
+        return {"ok":False,"reason":"ue_worker_unavailable"}
+
+
 # The public MCP bridge rejects responses larger than 1 MiB. A verified
 # 720x1280 PNG can exceed this once portrait pixels fill the full frame
 # (Base64 alone adds ~33%). Return an explicitly labeled VIEW thumbnail,
@@ -480,7 +551,7 @@ def make_bounded_preview_thumbnail_png(original):
             w, h, depth, col, compression, filtering, interlace = struct.unpack(
                 ">IIBBBBB", body
             )
-            if ((w, h) != (720, 1280) or depth != 8 or col not in (2, 6)
+            if ((w, h) not in ((720, 1280),(1280, 720)) or depth != 8 or col not in (2, 6)
                     or compression or filtering or interlace):
                 fail()
             image_info = (w, h, 3 if col == 2 else 4, col)
