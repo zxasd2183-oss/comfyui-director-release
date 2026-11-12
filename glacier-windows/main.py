@@ -1,7 +1,7 @@
 import ctypes, json, os, re, socket, subprocess, sys, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
-from PySide6.QtCore import QUrl, QTimer
+from PySide6.QtCore import QUrl, QTimer, QSize
 from PySide6.QtNetwork import QNetworkProxy
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
@@ -232,9 +232,21 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
    return
  def refresh_proxy_status29(self):
   status, ready=proxy_status_text(self.proc,self.proxy_port)
-  if getattr(self, "_desktop_ui_ready32", False):
-   # Chrome toolbar: visible 42px connection indicator, long diagnostic in
-   # tooltip. This must not masquerade as a remote Gemini HTTPS check.
+  if getattr(self, "_chrome_ui33_ready", False):
+   # Native Chrome-like 32px connection ring, still only local proxy status.
+   from glacier_chrome_shell33 import shell_icon33
+   self.proxy_label.setText("")
+   self.proxy_label.setIcon(shell_icon33("proxy-on" if ready else "proxy-off"))
+   self.proxy_label.setIconSize(QSize(25, 25))
+   self.proxy_label.setFixedSize(32, 32)
+   self.proxy_label.setAccessibleName(
+    "本地 VLESS 已连接，点击重连" if ready else "本地 VLESS 未连接，点击重连")
+   self.proxy_label.setToolTip(
+    status+"\n点击重连已保存线路；这里只检测本地代理端口。"
+    "\n远端 Gemini HTTPS 可通过工具中心单独诊断。")
+   self.proxy_label.setStyleSheet("")
+  elif getattr(self, "_desktop_ui_ready32", False):
+   # Existing pre-Chrome indicator remains available during initial setup.
    badge = "●" if ready else "○"
    if self.proxy_label.text()!=badge:self.proxy_label.setText(badge)
    self.proxy_label.setToolTip(status+"\n点击重连已保存线路；这里只检测本地代理端口。"
