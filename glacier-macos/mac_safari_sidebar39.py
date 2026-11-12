@@ -229,7 +229,7 @@ class SafariSidebar39:
         for i in range(tabs.count()):
             title = tabs.tabText(i).strip() or "新标签页"
             page = tabs.widget(i)
-            url = _safe_history_url(page.url()) if callable(
+            url = _safe_history_url39(page.url()) if callable(
                 getattr(page, "url", None)) else ""
             result.append((title, ("tab", i, url)))
         return result
