@@ -77,7 +77,12 @@ jobs:
                   or run.get('repository',{}).get('full_name')!=repo):
                   raise RuntimeError(label+' native QA not successful on expected feature branch')
               sha=run['head_sha']
-              subprocess.run(['git','merge-base','--is-ancestor',sha,'HEAD'],check=True)
+              # Squash merges lose ancestry: verify EXACT QA bytes instead.
+              # The successful run and its pinned branch/repository are checked above.
+              if subprocess.run(['git','cat-file','-e',sha+'^{commit}'],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL).returncode:
+                  subprocess.run(['git','fetch','--no-tags','origin',sha],check=True)
               shared=(['glacier-windows/glacier_shell20.py',
                        'glacier-windows/glacier_chrome_shell33.py',
                        'glacier-windows/glacier_chrome_top35.py',
