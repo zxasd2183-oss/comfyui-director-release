@@ -212,7 +212,27 @@ class GlacierAccountCenter26:
         item("网站账号和密码", self.manage_accounts22, "site")
         workspace_button = getattr(self, "_workspace_button17", None)
         if workspace_button is not None:
-            item("切换 / 管理工作空间", workspace_button.showMenu, "hub")
+            def open_workspace_menu37():
+                # The old workspaces QToolButton can sit in a hidden utility
+                # shelf. Open its existing live QMenu beside the visible
+                # account avatar instead of calling showMenu() on hidden UI.
+                rebuild = getattr(self, "_build_workspace_menu17", None)
+                if callable(rebuild):
+                    rebuild()
+                menu = workspace_button.menu()
+                if menu is None:
+                    return
+                menu.adjustSize()
+                available = (anchor.screen() or QApplication.primaryScreen()).availableGeometry()
+                point = anchor.mapToGlobal(
+                    QPoint(anchor.width() - menu.sizeHint().width(),
+                           anchor.height() + 8))
+                x = max(available.left() + 8,
+                        min(point.x(), available.right() - menu.sizeHint().width() - 8))
+                y = max(available.top() + 8,
+                        min(point.y(), available.bottom() - menu.sizeHint().height() - 8))
+                menu.popup(QPoint(x, y))
+            item("切换 / 管理工作空间", open_workspace_menu37, "hub")
 
         if locked:
             section("同步会话已锁定")
