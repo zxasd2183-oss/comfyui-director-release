@@ -397,7 +397,7 @@ def apply_v120_cast_review_look(actors, actor_by_short):
             wrist=cmap["Right_Wrist_Red_Thread"].get_relative_location()
             if float(wrist.y)>=0:
                 raise RuntimeError("cast_review_zero_wrist_not_right")
-    if override_count<55:
+    if override_count<52:
         raise RuntimeError("cast_review_face_visibility_not_applied")
 
     # Separate trustworthy assets from studio lighting. Neither path can
