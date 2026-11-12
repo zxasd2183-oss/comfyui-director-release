@@ -157,7 +157,7 @@ def prepare_hero_metahuman_project():
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("x", encoding="utf-8") as output:
         json.dump(hero_project_manifest(), output, ensure_ascii=False, indent=2)
-        output.write("\\n")
+        output.write("\n")
     for leaf in ("Content", "Config"):
         folder = target.parent / leaf
         if folder.is_symlink() or getattr(folder, "is_junction", lambda:False)():
