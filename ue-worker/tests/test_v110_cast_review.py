@@ -114,6 +114,15 @@ class CastReviewTests(unittest.TestCase):
                         "view_sequences":seq,"mrq_presets":presets,
                         "views":list(VIEWS),"frames_per_view":1,
                         "source_world_unchanged":True,
+                        "review_look":{
+                            "face_component_overrides":52,
+                            "exposure_method":"manual",
+                            "exposure_bias":-1.5,
+                            "bloom_intensity":0.0,
+                            "floor_material":"Charcoal",
+                            "backdrop_material":"Parchment",
+                            "v120_source_master_unchanged":True,
+                        },
                     }
                     Path(env["DIRECTOR_UE_RESULT_FILE"]).write_text(
                         json.dumps(data),"utf-8")
