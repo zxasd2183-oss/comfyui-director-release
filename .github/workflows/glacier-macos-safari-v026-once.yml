@@ -1,0 +1,152 @@
+name: Glacier macOS Safari UI — verified v0.20.26 one-time release
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-macos-safari-v026-once.yml'
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: glacier-macos-safari-v026-once
+  cancel-in-progress: false
+jobs:
+  publish-verified-mac:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+      MAC_QA_RUN: '43222805715'
+      MAC_TAG: 'glacier-macos-v0.20.26'
+      MAC_ASSET: 'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg'
+    steps:
+      - name: Checkout exact candidate and check immutable release identity
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check Mac-only candidate and existing Windows identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          required={
+              'glacier-macos/mac_update_core.py':'CURRENT_VERSION = "0.20.26"',
+              'glacier-macos/main.py':'macOS v0.20.26',
+              'scripts/glacier_prepare_rotated_update.py':'"windows": "0.20.28", "macos": "0.20.26"',
+              '.github/workflows/glacier-rc-macos.yml':'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg'
+          }
+          for path,expected in required.items():
+              if expected not in Path(path).read_text(encoding='utf8'):
+                  raise RuntimeError('Mac Safari source/version mismatch: '+path)
+          if not Path('glacier-macos/mac_safari38.py').is_file():
+              raise RuntimeError('Missing actual Mac Safari UI')
+          print('Mac-only 0.20.26 identity checked; Windows remains 0.20.28')
+          PY
+          if gh release view "$MAC_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release exists; never replace"; exit 2
+          fi
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/$MAC_TAG")" ]]; then
+            echo "::error::Tag exists; never reuse"; exit 3
+          fi
+      - name: Require native Apple Silicon QA success on exact merged source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']; runid=os.environ['MAC_QA_RUN']
+          run=json.loads(subprocess.check_output(
+              ['gh','api',f'repos/{repo}/actions/runs/{runid}']))
+          if (run.get('status')!='completed' or run.get('conclusion')!='success'
+              or run.get('head_branch')!='feature/glacier-macos-safari-separated-20261112'
+              or run.get('repository',{}).get('full_name')!=repo):
+              raise RuntimeError('Pinned Mac Apple Silicon QA is not complete/successful')
+          sha=run['head_sha']
+          if subprocess.run(['git','cat-file','-e',sha+'^{commit}'],
+                   stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:
+              subprocess.run(['git','fetch','--no-tags','origin',sha],check=True)
+          # Compare actual tested bytes after a squash merge, not ancestry.
+          subprocess.run(['git','diff','--quiet',sha,'HEAD','--','glacier-macos',
+                          'scripts/glacier_prepare_rotated_update.py',
+                          '.github/workflows/glacier-rc-macos.yml'],check=True)
+          print('Exact native QA tree verified:',sha)
+          PY
+      - name: Retrieve only validated DMG and Mac Safari Qt layout proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staged/dmg staged/proof
+          gh run download "$MAC_QA_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-RC-macOS-AppleSilicon-DMG --dir staged/dmg
+          gh run download "$MAC_QA_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-macOS-Safari38-Qt-layout --dir staged/proof
+      - name: Check full native DMG bytes and layout screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,os,pathlib
+          mac=pathlib.Path('staged/dmg')/os.environ['MAC_ASSET']
+          proof=pathlib.Path('staged/proof/Glacier-macOS-Safari38-Qt-layout.png')
+          if not mac.is_file() or not 150_000_000 <= mac.stat().st_size <= 850_000_000:
+              raise RuntimeError('Expected complete native arm64 DMG not present')
+          with mac.open('rb') as f:
+              f.seek(-512,2)
+              if f.read(4)!=b'koly': raise RuntimeError('DMG UDIF trailer invalid')
+          if not proof.is_file() or proof.stat().st_size < 12_000:
+              raise RuntimeError('Mac Safari Qt layout proof missing')
+          with proof.open('rb') as f:
+              if f.read(8)!=bytes.fromhex('89504e470d0a1a0a'):
+                  raise RuntimeError('Mac layout proof is not PNG')
+          with mac.open('rb') as f:
+              digest=hashlib.file_digest(f,'sha256').hexdigest()
+          pathlib.Path('staged/digest.txt').write_text(digest)
+          print('Verified native macOS DMG SHA256',digest,
+                'size',mac.stat().st_size,'layout proof',proof.stat().st_size)
+          PY
+      - name: Create new immutable release as draft only
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$MAC_TAG" "staged/dmg/$MAC_ASSET" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Browser macOS v0.20.26 — Safari 风格窗口与侧边栏' \
+            --notes 'macOS 独立 Safari 风格 UI：地址栏置于标签栏上方，原生 macOS 标题栏与交通灯，灰白工具栏，圆角地址框，侧边栏展示标签页并链接书签、历史和分组，分享按钮复制网页链接。保留 Qt WebEngine、VLESS/REALITY、Glacier 账号与本地加密资料。Windows 仍为 v0.20.28。Mac 安装包为 ad-hoc 签名，尚未 Apple Developer ID 公证；应用内更新由 Ed25519 公钥验证。'
+      - name: Require draft release asset matches every QA byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,pathlib,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']; tag=os.environ['MAC_TAG']
+          releases=json.loads(subprocess.check_output(
+              ['gh','api',f'repos/{repo}/releases?per_page=100']))
+          matches=[r for r in releases if r['tag_name']==tag]
+          if len(matches)!=1 or not matches[0].get('draft'):
+              raise RuntimeError('Mac private draft not uniquely present')
+          r=matches[0]; assets=r.get('assets',[])
+          if len(assets)!=1 or assets[0]['name']!=os.environ['MAC_ASSET']:
+              raise RuntimeError('Mac draft has unexpected assets')
+          expected=pathlib.Path('staged/digest.txt').read_text().strip()
+          local=pathlib.Path('staged/dmg')/os.environ['MAC_ASSET']
+          if (assets[0]['size']!=local.stat().st_size
+              or assets[0].get('digest')!='sha256:'+expected
+              or assets[0].get('state')!='uploaded'):
+              raise RuntimeError('Mac draft bytes/digest mismatch')
+          pathlib.Path('staged/release-id.txt').write_text(str(r['id']))
+          print('Exact native Mac installer verified as private draft',r['id'])
+          PY
+      - name: Publish verified macOS-only release and stage existing signed VPS flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rid="$(cat staged/release-id.txt)"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$rid" \
+            -F draft=false >/dev/null
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh workflow run glacier-macos-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Published immutable Mac Safari 0.20.26; queued existing Ed25519 signer and owner VPS mirror. Windows untouched.' >> "$GITHUB_STEP_SUMMARY"
