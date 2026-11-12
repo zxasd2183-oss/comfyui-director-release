@@ -12,8 +12,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton, QDialog
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter
 from glacier_chrome_top35 import framed_top_geometry36
 import sys
 from secure_update import CURRENT_VERSION
@@ -173,6 +174,43 @@ def main():
                 raise RuntimeError("Account pill is still crowding the address bar")
             if not window.tabs.tabBar().isHidden():
                 raise RuntimeError("Legacy duplicate internal tab strip is visible")
+            # Capture the REAL Qt Popup opened by the top-right account avatar.
+            # The browser uses an empty temporary account profile, so no
+            # credential, token or user identity appears in this artifact.
+            popup = window.show_account_center26()
+            for _ in range(8):
+                app.processEvents()
+                time.sleep(0.025)
+            if (popup is None or not popup.isVisible()
+                    or popup.objectName() != "GlacierProfilePopover37"
+                    or isinstance(popup, QDialog)
+                    or not bool(popup.windowFlags() & Qt.WindowType.Popup)):
+                raise RuntimeError("Profile icon did not open a real anchored popup")
+            expected_labels = ("登录 Glacier 账号", "网站账号和密码",
+                               "创建 Glacier 账号")
+            actual_labels = [b.text() for b in popup.findChildren(QPushButton)]
+            if any(label not in actual_labels for label in expected_labels):
+                raise RuntimeError("Profile menu missing account actions")
+            account = window._account_button26
+            right_edge = account.mapToGlobal(account.rect().topRight()).x()
+            if abs(popup.geometry().right() - right_edge) > 40:
+                raise RuntimeError("Profile panel did not align with avatar")
+            if popup.width() > 380 or popup.height() > window.height():
+                raise RuntimeError("Profile popup oversized for browser chrome")
+            # Assemble the independently rendered real Qt Popup over the real
+            # browser widget screenshot, preserving measured screen placement.
+            composite = window.grab()
+            painter = QPainter(composite)
+            painter.drawPixmap(window.mapFromGlobal(popup.pos()), popup.grab())
+            painter.end()
+            pop_path = out/f"Glacier-Windows-v{CURRENT_VERSION}-profile-menu37.png"
+            if not composite.save(str(pop_path), "PNG"):
+                raise RuntimeError("Could not save real browser + profile popup proof")
+            if pop_path.stat().st_size < 12000:
+                raise RuntimeError("Native account menu screenshot unexpectedly empty")
+            print("SUCCESS: Glacier account popup anchored below real avatar",
+                  popup.pos(), popup.size(), pop_path, flush=True)
+            popup.close()
             print("SUCCESS: actual Windows browser UI33, grouped omnibox and compact shell captured")
             print("tab strip y/h",strip.y(),strip.height())
             print("navigation y/h",nav.y(),nav.height())

@@ -181,6 +181,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: GlacierBrowser-Windows-v0.20.27-Live-Chrome-UI
-          path: glacier-windows/ui-proof/Glacier-Windows-v0.20.27-live-ui33.png
+          path: |
+            glacier-windows/ui-proof/Glacier-Windows-v0.20.27-live-ui33.png
+            glacier-windows/ui-proof/Glacier-Windows-v0.20.27-profile-menu37.png
           if-no-files-found: warn
           retention-days: 20
