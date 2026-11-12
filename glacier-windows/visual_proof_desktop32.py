@@ -112,6 +112,8 @@ def main():
             proxy=getattr(window,"proxy_label",None)
             if proxy is None or proxy.text() or proxy.icon().isNull():
                 raise RuntimeError("Disconnected proxy still appears as loose Unicode dot")
+            if proxy.accessibleName() != "本地 VLESS 未连接，点击重连":
+                raise RuntimeError("First frame proxy status ring was not initialized")
             if window.windowIcon().isNull():
                 raise RuntimeError("Glacier application title icon was not installed")
             if omni.layout().count()!=3:
