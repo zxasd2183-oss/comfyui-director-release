@@ -225,6 +225,52 @@ class SceneCandidatesV090Tests(unittest.TestCase):
                 builder(ue_jobs.sanitized_plan(plan()))
         self.assertFalse(lib.assets)
 
+    def test_worker_receipt_verifies_all_three_worlds_and_rejects_spoof(self):
+        import json
+        spec = ue_jobs.sanitized_plan(plan())
+        jobid = "c" * 32
+        base = "/Game/Director/Candidates/EP01/SceneBuilds/J" + jobid + "/Maps/"
+        IDs = ("SCN_HALL", "SCN_HALL_ALERT", "SCN_ENTRANCE")
+        good = {
+            "ok":True,
+            "candidate_kind":"original_editable_environment_v09",
+            "scene_candidates":[
+                {"id":sid,"path":base+sid,"props":36,
+                 "lights":2,"review_cameras":2} for sid in IDs
+            ],
+            "material_count":10,
+            "shot_count":31,"total_frames":3840,
+            "studio_scene_approval_verified":False,
+            "character_models_bound":False,
+            "render_ready":False,
+            "no_existing_scene_replaced":True,
+        }
+        def run_receipt(data):
+            def runner(command,root,log,timeout,env,*unused):
+                Path(env["DIRECTOR_UE_RESULT_FILE"]).write_text(json.dumps(data),"utf-8")
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(ue_jobs,"find_editor_cmd",
+                                  return_value=Path("C:/UnrealEditor-Cmd.exe")),patch.object(
+                                      ue_jobs,"run_fixed",side_effect=runner):
+                    result = ue_jobs.run_commandlet(
+                        spec,Path(tmp)/"project",Path(tmp)/jobid)
+            return result
+        result = run_receipt(good)
+        self.assertEqual(len(result["scene_candidates"]),3)
+        self.assertFalse(result["studio_scene_approval_verified"])
+        self.assertFalse(result["render_ready"])
+        self.assertFalse(result["gpu_render_submitted"])
+        for error in (
+            {**good,"material_count":9},
+            {**good,"studio_scene_approval_verified":True},
+            {**good,"scene_candidates":[*good["scene_candidates"][:2],
+                   {**good["scene_candidates"][2],"path":"/Game/Director/Approved/Scenes/SCN_ENTRANCE"}]},
+        ):
+            with self.subTest(error=str(error)[:40]):
+                with self.assertRaisesRegex(ue_jobs.JobError,
+                                            "ue_scene_candidate_receipt_invalid"):
+                    run_receipt(error)
+
     def test_builder_has_no_approval_or_render_calls(self):
         source = (ROOT / "unreal_build_stage.py").read_text("utf-8")
         tree = ast.parse(source)
