@@ -6,6 +6,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QMenu, QTabBar, QToolButton, QPushButton
 from glacier_chrome_shell33 import GlacierChromeShell33, CHROME_SHELL_QSS33
+from glacier_chrome_top35 import top_icon35, TOP_CHROME_QSS35
+from PySide6.QtCore import Qt
+import sys
 from test_desktop_ui32 import BrowserShellStub
 
 
@@ -125,6 +128,26 @@ class ChromeShell33Tests(unittest.TestCase):
         w.more.menu().aboutToShow.emit()
         self.assertEqual(len([a for a in w.more.menu().actions()
                               if a.objectName() == "GlacierUtilityMenuAction33"]), 1)
+
+
+    def test_integrated_top_row_preserves_original_qt_actions(self):
+        w = self.window
+        self.assertTrue(w._glacier_top_chrome35_ready)
+        self.assertIn("GlacierCaptionClose35", TOP_CHROME_QSS35)
+        for kind in ("glacier", "hub", "back", "forward", "reload", "menu", "site", "close"):
+            self.assertFalse(top_icon35(kind).isNull())
+        for name in ("GlacierBack32", "GlacierForward32", "GlacierReload32",
+                     "GlacierDownloads14", "GlacierMore14"):
+            self.assertFalse(w.findChild(QPushButton if name.endswith("32") else QToolButton, name).icon().isNull())
+        if sys.platform == "win32":
+            self.assertTrue(w.windowFlags() & Qt.WindowType.FramelessWindowHint)
+            buttons = w._glacier_caption_buttons35
+            self.assertEqual(set(buttons), {"min", "max", "close"})
+            self.assertEqual([buttons[k].width() for k in ("min", "max", "close")], [46, 46, 46])
+            self.assertTrue(all(buttons[k].accessibleName() for k in buttons))
+            self.assertEqual(len(w._glacier_caption35.handles), 8)
+        else:
+            self.assertFalse(hasattr(w, "_glacier_caption_buttons35"))
 
     def test_styling_is_presentation_only_and_double_setup_is_rejected(self):
         self.assertIn("GlacierOmniboxShell33", CHROME_SHELL_QSS33)

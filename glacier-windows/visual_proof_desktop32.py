@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+import sys
 from secure_update import CURRENT_VERSION
 
 def main():
@@ -119,6 +121,17 @@ def main():
                 raise RuntimeError("First frame status icon has wrong accessible state")
             if window.windowIcon().isNull():
                 raise RuntimeError("Glacier application title icon was not installed")
+            if sys.platform == "win32":
+                if not (window.windowFlags() & Qt.WindowType.FramelessWindowHint):
+                    raise RuntimeError("Windows is still using an extra separate native titlebar")
+                controls = getattr(window, "_glacier_caption_buttons35", {})
+                if set(controls) != {"min", "max", "close"}:
+                    raise RuntimeError("Windows integrated caption controls missing")
+                if any(button.width() != 46 for button in controls.values()):
+                    raise RuntimeError("Windows caption buttons have incorrect geometry")
+                if not getattr(window, "_glacier_caption35", None):
+                    raise RuntimeError("Windows native drag/resize controller missing")
+                print("SUCCESS: integrated native Windows caption and tab row verified")
             if omni.layout().count()!=3:
                 raise RuntimeError("Site, address and bookmark were not grouped into omnibox")
             if window._account_button26.width()>38:

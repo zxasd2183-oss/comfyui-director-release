@@ -4,6 +4,7 @@ Presentation-only. Existing QWebEngine tabs, account handlers, download menus,
 VLESS routing and signed updater remain owned by their original components.
 """
 from __future__ import annotations
+import sys
 
 from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer, QEvent, QObject
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
@@ -316,7 +317,7 @@ class GlacierChromeShell33:
             # Fixed-width tab content: keep the + adjacent to the last
             # actual tab, and allow native scroll buttons when crowded.
             desired = max(180, bar.sizeHint().width() + 3)
-            available = max(155, self.width()-180)
+            available = max(155, self.width()-(248 if sys.platform == 'win32' else 180))
             bar.setMaximumWidth(min(desired, available))
 
         self._resize_tabs_to_content33 = resize_tabs_to_content
@@ -489,3 +490,5 @@ class GlacierChromeShell33:
         site_update = getattr(self, "update_site_info30", None)
         if callable(site_update):
             site_update()
+        from glacier_chrome_top35 import install_top_chrome35
+        install_top_chrome35(self, strip, self.chrome_tab14, nav)

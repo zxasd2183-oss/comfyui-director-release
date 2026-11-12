@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt, QEvent, QObject, QTimer, QSize, QRect
+from PySide6.QtCore import Qt, QEvent, QObject, QTimer, QSize, QRect, QRectF
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QWidget, QFrame, QHBoxLayout, QToolButton, QAbstractButton
 
@@ -146,7 +146,7 @@ def top_icon35(kind: str, *, white: bool = False) -> QIcon:
     elif kind == "hub":
         for x in (5, 13):
             for y in (5, 13):
-                p.drawRoundedRect(x, y, 6, 6, 1.3, 1.3)
+                p.drawRoundedRect(QRectF(x, y, 6, 6), 1.3, 1.3)
     elif kind == "profile":
         p.drawEllipse(9, 4, 6, 6)
         p.drawArc(5, 12, 14, 9, 0, 180 * 16)
@@ -154,7 +154,7 @@ def top_icon35(kind: str, *, white: bool = False) -> QIcon:
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(color)
         for y in (6, 12, 18):
-            p.drawEllipse(10.4, y - 1.6, 3.2, 3.2)
+            p.drawEllipse(QRectF(10.4, y - 1.6, 3.2, 3.2))
     elif kind == "min":
         p.drawLine(6, 12, 18, 12)
     elif kind == "max":
