@@ -17,6 +17,7 @@ from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
 from mac_chrome_adapter import MacChrome14
 from mac_desktop15 import MacDesktop15
+from mac_safari38 import install_mac_safari38
 from glacier_productivity16 import GlacierProductivity16
 from glacier_workspaces17 import GlacierWorkspaces17
 from glacier_downloads17 import GlacierDownloads17
@@ -199,6 +200,7 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.setup_ui30(bar)
   self.setup_desktop_ui32(lay,bar)
   self.setup_chrome_shell33()
+  install_mac_safari38(self)
   # WebEngine can cancel setHtml when UI extensions configure the first tab.
   # Check the actual DOM after initialization, not just the URL: a completely
   # empty document still reports about:blank and otherwise looks successful.

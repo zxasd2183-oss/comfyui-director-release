@@ -6,7 +6,7 @@ encrypted vault, and signed-update publisher are not replaced.
 from __future__ import annotations
 
 import sys
-from PySide6.QtCore import QPoint, Qt, QTimer, QSize
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, QSize
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QPushButton,
@@ -120,12 +120,12 @@ def safari_icon38(kind):
     p.setPen(QPen(QColor("#52708b"), 1.7, Qt.PenStyle.SolidLine,
                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     if kind == "sidebar":
-        p.drawRoundedRect(3, 5, 18, 14, 2, 2)
+        p.drawRoundedRect(QRectF(3, 5, 18, 14), 2, 2)
         p.drawLine(9, 5, 9, 19)
         p.drawLine(5, 9, 7, 9)
         p.drawLine(5, 12, 7, 12)
     elif kind == "share":
-        p.drawRoundedRect(5, 10, 14, 11, 2, 2)
+        p.drawRoundedRect(QRectF(5, 10, 14, 11), 2, 2)
         p.drawLine(12, 3, 12, 15)
         p.drawLine(8, 7, 12, 3)
         p.drawLine(16, 7, 12, 3)
