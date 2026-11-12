@@ -294,6 +294,91 @@ GPT_HERO_SOURCE_JOB = "d5253c965631447684e49613533e85ad"
 GPT_HERO_SOURCE_SHA256 = "ccbd6bc1c39cedec3fd803642f604452bad949333c94eb4c63e5504dd33fc318"
 
 
+
+def build_gpt_hero_amber_eyes(spec,root,work):
+    """One copy of the real MetaHuman with both amber-brown iris settings."""
+    from ue_jobs import JobError,find_editor_cmd
+    from agent import hero_project_manifest
+    if spec.get("format")!="director_ue_hero_eyes_v150":
+        raise JobError("hero_eyes_format_invalid")
+    if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
+         spec.get("total_ms"),spec.get("total_frames"),len(spec.get("shots",[])))
+        != ("WaitingOffice","EP01",24,160000,3840,31)):
+        raise JobError("hero_eyes_requires_locked_ep01")
+    if [x["shot_id"] for x in spec["shots"]] != [
+            "%02d"%i for i in range(1,32)]:
+        raise JobError("hero_eyes_requires_frozen_shots")
+    if not re.fullmatch(r"[a-f0-9]{32}",work.name):
+        raise JobError("hero_eyes_job_invalid")
+    if work.is_symlink() or work.exists():
+        raise JobError("hero_eyes_job_collision")
+    project=root/"HeroProjects"/"CHAR_GPT"/"DirectorHeroGPT.uproject"
+    if project.is_symlink() or not project.is_file():
+        raise JobError("hero_eyes_project_missing")
+    try:
+        if json.loads(project.read_text("utf-8"))!=hero_project_manifest():
+            raise JobError("hero_eyes_project_untrusted")
+    except (UnicodeError,ValueError,TypeError):
+        raise JobError("hero_eyes_project_invalid") from None
+    original=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+              "HeroBuilds"/("J"+GPT_HERO_SOURCE_JOB)/"MHC_CHAR_GPT.uasset")
+    if original.is_symlink() or not original.is_file():
+        raise JobError("hero_eyes_original_missing")
+    hash_before=hashlib.sha256(original.read_bytes()).hexdigest()
+    if hash_before!=GPT_HERO_SOURCE_SHA256:
+        raise JobError("hero_eyes_original_hash_changed")
+    dest=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+          "HeroLooks"/("J"+work.name)/"MHC_CHAR_GPT_AmberV1.uasset")
+    if dest.exists() or dest.is_symlink():
+        raise JobError("hero_eyes_candidate_collision")
+    work.mkdir(parents=True,exist_ok=False)
+    receipt=work/"hero_eyes_result.json"
+    env=os.environ.copy()
+    env["DIRECTOR_UE_JOB_ID"]=work.name
+    env["DIRECTOR_UE_REVIEW_MODE"]="hero_eyes_v150"
+    env["DIRECTOR_UE_RESULT_FILE"]=str(receipt)
+    script=Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if script.is_symlink() or not script.is_file():
+        raise JobError("hero_eyes_script_missing")
+    _run_unreal([
+        str(find_editor_cmd()),str(project),"-run=pythonscript",
+        "-script="+str(script),"-unattended","-nop4","-nosplash",
+        "-NoSound","-log"
+    ],root,work/"hero_eyes.log",600,env)
+    if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size>6000:
+        raise JobError("hero_eyes_result_missing")
+    data=json.loads(receipt.read_text("utf-8"))
+    expected=("/Game/Director/Candidates/EP01/HeroLooks/J"+work.name+
+              "/MHC_CHAR_GPT_AmberV1")
+    if (type(data) is not dict or data.get("ok") is not True
+        or data.get("asset_path")!=expected
+        or data.get("asset_class")!="MetaHumanCharacter"
+        or data.get("eye_tint_linear")!=[0.85,0.55,0.25,1.0]
+        or data.get("eye_saturation")!=1.25
+        or data.get("both_eyes_readback_verified") is not True
+        or data.get("original_asset_untouched") is not True
+        or any(data.get(k) is not False for k in (
+            "groom_applied","wardrobe_applied","face_rig_created",
+            "cinematic_character_ready","character_master_approved"))):
+        raise JobError("hero_eyes_result_invalid")
+    if (not dest.is_file() or dest.is_symlink()
+        or not 1024<=dest.stat().st_size<=100*1024*1024):
+        raise JobError("hero_eyes_native_uasset_missing")
+    digest=hashlib.sha256(dest.read_bytes()).hexdigest()
+    if hashlib.sha256(original.read_bytes()).hexdigest()!=hash_before:
+        raise JobError("hero_eyes_original_was_modified")
+    return {"kind":"real_native_metahuman_amber_eye_candidate_v150",
+            "character_id":"CHAR_GPT","candidate_asset_path":expected,
+            "candidate_uasset_sha256":digest,
+            "candidate_uasset_bytes":dest.stat().st_size,
+            "both_eye_parameters_verified":True,
+            "eye_tint_linear":[0.85,0.55,0.25,1.0],
+            "source_asset_preserved":True,
+            "creative_eye_color_visual_approved":False,
+            "hair_ready":False,"wardrobe_ready":False,"face_rig_ready":False,
+            "cinematic_character_ready":False,"character_master_approved":False}
+
+
 def audit_gpt_hero_metahuman_runtime(spec, root, work):
     """Probe actual UE 5.8 editor API without mutating native hero asset.
 

@@ -158,7 +158,7 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
                     "build_ep01_scene_candidates",
                     "build_ep01_cast_blueprints",
                     "render_cast_review_stills","build_ep01_hero_metahuman_seed",
-                    "audit_ep01_hero_metahuman_runtime"):
+                    "audit_ep01_hero_metahuman_runtime","build_ep01_hero_amber_eyes"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -408,13 +408,45 @@ def enqueue_ue_hero_runtime_audit(project_id,episode_id,
     )
 
 
+
+def enqueue_ue_hero_amber_eyes(project_id,episode_id,
+                               studio_getter=None,cast_getter=None,
+                               opener=None,token_file=None):
+    """Create an isolated GPT candidate with locked amber-brown irises only."""
+    if (project_id,episode_id)!=("WaitingOffice","EP01"):
+        return {"ok":False,"reason":"hero_eye_candidate_requires_locked_ep01"}
+    if cast_getter is None:
+        from hub_brain import call_studio
+        cast_getter=call_studio
+    try:
+        data=cast_getter("get_project_characters",{"project_id":project_id})
+        rows=data.get("characters") if type(data) is dict and data.get("ok") is True else None
+        items=[x for x in rows if type(x) is dict and
+               x.get("character_id")=="CHAR_GPT"] if type(rows) is list else []
+        if len(items)!=1:
+            return {"ok":False,"reason":"hero_eye_identity_missing"}
+        ch=items[0]
+        brief=ch.get("design_language")
+        if (ch.get("revision")!=2 or ch.get("master") is not None
+                or type(brief) is not str
+                or "琥珀" not in brief or "深栗色" not in brief):
+            return {"ok":False,"reason":"hero_eye_identity_lock_failed"}
+    except (TypeError,ValueError,AttributeError):
+        return {"ok":False,"reason":"hero_eye_studio_unavailable"}
+    return enqueue_ue_episode_timeline(
+        project_id,episode_id,studio_getter=studio_getter,
+        opener=opener,token_file=token_file,
+        task="build_ep01_hero_amber_eyes",
+    )
+
+
 # V0.5 operator workflow: job-bound log tails and task cancellation only.
 # No caller-supplied filenames, PIDs, shell commands, or arbitrary URLs.
 LOG_KIND = frozenset({
     "unreal", "preset", "render_01", "render_13",
     "render_26", "render_31",
     "render_lineup", "render_gpt", "render_gem",
-    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit",
+    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit", "hero_eyes",
 })
 
 

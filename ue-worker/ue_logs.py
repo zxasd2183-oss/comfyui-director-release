@@ -9,6 +9,7 @@ LOG_NAMES = {
     "preset": "preset.log",
     "hero_seed": "hero_seed.log",
     "hero_audit": "hero_audit.log",
+    "hero_eyes": "hero_eyes.log",
     "render_01": "render_01.log",
     "render_13": "render_13.log",
     "render_26": "render_26.log",

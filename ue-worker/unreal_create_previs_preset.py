@@ -779,7 +779,83 @@ def hero_metahuman_runtime_audit_main():
         unreal.log_error("GPT MetaHuman runtime audit failed "+result["reason"])
 
 
-if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_audit_v140":
+
+def hero_amber_eyes_main():
+    """Duplicate source native MetaHuman; configure both iris materials.
+
+    Only the separately reviewed candidate is modified. This is a material
+    editing pass, not a claim of an approved likeness, rig, groom or wardrobe.
+    """
+    output=Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    try:
+        ident=os.environ.get("DIRECTOR_UE_JOB_ID","")
+        if (not re.fullmatch(r"[a-f0-9]{32}",ident) or
+            os.environ.get("DIRECTOR_UE_REVIEW_MODE")!="hero_eyes_v150"):
+            raise RuntimeError("hero_eyes_job_invalid")
+        old=("d5253c965631447684e49613533e85ad")
+        source=("/Game/Director/Candidates/EP01/HeroBuilds/J"+old+
+                "/MHC_CHAR_GPT")
+        candidate=("/Game/Director/Candidates/EP01/HeroLooks/J"+ident+
+                   "/MHC_CHAR_GPT_AmberV1")
+        if unreal.EditorAssetLibrary.does_asset_exist(candidate):
+            raise RuntimeError("hero_eyes_candidate_collision")
+        if not unreal.EditorAssetLibrary.does_asset_exist(source):
+            raise RuntimeError("hero_eyes_source_missing")
+        clone=unreal.EditorAssetLibrary.duplicate_asset(source,candidate)
+        if not clone or clone.get_class().get_name()!="MetaHumanCharacter":
+            raise RuntimeError("hero_eyes_native_clone_failed")
+        eyes=clone.get_editor_property("eyes_settings")
+        # Linear amber-brown tint applied equally to both existing irises.
+        # This is an actual editable MetaHuman material parameter, not pixels.
+        tint=unreal.LinearColor(0.85,0.55,0.25,1.0)
+        saturation=1.25
+        for which in ("eye_left","eye_right"):
+            eye=eyes.get_editor_property(which)
+            iris=eye.get_editor_property("iris")
+            iris.set_editor_property("global_tint",tint)
+            iris.set_editor_property("global_saturation",saturation)
+            eye.set_editor_property("iris",iris)
+            eyes.set_editor_property(which,eye)
+        clone.set_editor_property("eyes_settings",eyes)
+        if not unreal.EditorAssetLibrary.save_loaded_asset(clone):
+            raise RuntimeError("hero_eyes_candidate_save_failed")
+        reloaded=unreal.EditorAssetLibrary.load_asset(candidate)
+        if not reloaded or reloaded.get_class().get_name()!="MetaHumanCharacter":
+            raise RuntimeError("hero_eyes_readback_failed")
+        verify=reloaded.get_editor_property("eyes_settings")
+        for which in ("eye_left","eye_right"):
+            iris=verify.get_editor_property(which).get_editor_property("iris")
+            ct=iris.get_editor_property("global_tint")
+            got=[float(ct.r),float(ct.g),float(ct.b),float(ct.a)]
+            if (any(abs(a-b)>0.002 for a,b in zip(
+                got,(0.85,0.55,0.25,1.0))) or
+                abs(float(iris.get_editor_property("global_saturation"))-
+                    saturation)>0.002):
+                raise RuntimeError("hero_eyes_tint_not_persisted_"+which)
+        result={"ok":True,"asset_path":candidate,
+                "asset_class":"MetaHumanCharacter",
+                "eye_tint_linear":[0.85,0.55,0.25,1.0],
+                "eye_saturation":1.25,
+                "both_eyes_readback_verified":True,
+                "original_asset_untouched":True,
+                "groom_applied":False,"wardrobe_applied":False,
+                "face_rig_created":False,
+                "cinematic_character_ready":False,
+                "character_master_approved":False}
+    except Exception as exc:
+        result={"ok":False,"reason":str(exc)[:220],
+                "traceback":traceback.format_exc(limit=5)[-1100:]}
+    output.write_text(json.dumps(result,ensure_ascii=False,indent=2),
+                      encoding="utf-8")
+    if result["ok"]:
+        unreal.log("GPT amber eye native MetaHuman candidate saved")
+    else:
+        unreal.log_error("GPT amber eye candidate failed "+result["reason"])
+
+
+if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_eyes_v150":
+    hero_amber_eyes_main()
+elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_audit_v140":
     hero_metahuman_runtime_audit_main()
 elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_seed_v130":
     hero_metahuman_seed_main()
