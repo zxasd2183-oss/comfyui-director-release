@@ -39,7 +39,8 @@ def sanitized_plan(body):
     }:
         raise JobError("invalid_fields")
     if body["task"] not in (
-        "build_episode_timeline", "build_stage_cameras", "render_previs_stills"
+        "build_episode_timeline", "build_stage_cameras", "render_previs_stills",
+        "audit_ep01_assets"
     ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
@@ -81,7 +82,8 @@ def sanitized_plan(body):
         raise JobError("timeline_total_mismatch")
     # The V0.3 stage recipe is FIXED to WaitingOffice EP01 and does not
     # modify V0.2 sequences or accept any user-authored scene/code paths.
-    if body["task"] in ("build_stage_cameras", "render_previs_stills"):
+    if body["task"] in ("build_stage_cameras", "render_previs_stills",
+                        "audit_ep01_assets"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
@@ -91,7 +93,8 @@ def sanitized_plan(body):
         ]:
             raise JobError("previs_requires_frozen_shot_ids")
     fmt = (
-        "director_ue_previs_v04" if body["task"] == "render_previs_stills"
+        "director_ue_assets_v08" if body["task"] == "audit_ep01_assets"
+        else "director_ue_previs_v04" if body["task"] == "render_previs_stills"
         else "director_ue_stage_v03" if body["task"] == "build_stage_cameras"
         else "director_ue_timeline_v1"
     )
@@ -159,7 +162,8 @@ def run_commandlet(spec, root, work, timeout=900):
             raise JobError("ue_executor_must_be_non_admin")
     editor = find_editor_cmd()
     script_name = ("unreal_build_stage.py"
-                   if spec["format"] == "director_ue_stage_v03"
+                   if spec["format"] in ("director_ue_stage_v03",
+                                         "director_ue_assets_v08")
                    else "unreal_build_episode.py")
     script = Path(__file__).resolve().with_name(script_name)
     if not script.is_file() or script.is_symlink():
@@ -187,6 +191,39 @@ def run_commandlet(spec, root, work, timeout=900):
         raise JobError("invalid_unreal_result")
     if not data["ok"]:
         raise JobError("unreal_script_failed")
+    if spec["format"] == "director_ue_assets_v08":
+        # Read-only inventory. Neither presence nor class establishes approval,
+        # proper sequence binding, animation, or permission to render.
+        expected = {
+            "characters": ("CHAR_GPT", "CHAR_GEM", "CHAR_DS", "CHAR_CLA", "CHAR_ZERO"),
+            "scenes": ("SCN_HALL", "SCN_ENTRANCE"),
+            "shots": tuple("SH%02d" % i for i in range(1, 32)),
+        }
+        report = data.get("asset_audit")
+        if (type(report) is not dict or set(report) != set(expected) or
+                data.get("shot_count") != 31 or data.get("total_frames") != 3840):
+            raise JobError("ue_asset_audit_invalid")
+        for kind, labels in expected.items():
+            items = report.get(kind)
+            if (type(items) is not list or len(items) != len(labels) or
+                    [a.get("id") for a in items if type(a) is dict] != list(labels) or
+                    any(type(a) is not dict or set(a) != {"id", "exists", "type_valid"}
+                        or type(a["exists"]) is not bool or
+                        type(a["type_valid"]) is not bool or
+                        (a["type_valid"] and not a["exists"]) for a in items)):
+                raise JobError("ue_asset_audit_invalid")
+        return {
+            "audit_only": True, "project_id": "WaitingOffice", "episode_id": "EP01",
+            "shot_count": 31, "total_frames": 3840,
+            "asset_audit": report,
+            "all_assets_present_and_class_valid": all(
+                a["exists"] and a["type_valid"]
+                for group in report.values() for a in group),
+            "studio_approval_verified": False,
+            "animation_binding_verified": False,
+            "render_ready": False,
+            "gpu_render_submitted": False,
+        }
     if (data.get("shot_count") != len(spec["shots"]) or
             data.get("total_frames") != spec["total_frames"]):
         raise JobError("unreal_timeline_mismatch")

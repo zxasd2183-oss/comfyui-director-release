@@ -216,18 +216,87 @@ def build(spec):
     }
 
 
+
+# V0.8: fixed, read-only inventory for the director-approved PRODUCTION assets.
+# V03 cubes and preview stages cannot satisfy these asset paths.
+APPROVED_ROOT = "/Game/Director/Approved"
+
+
+def audit_ep01_assets(spec):
+    """Inspect native Unreal assets only; never create, save, render or approve."""
+    if (spec.get("format") != "director_ue_assets_v08" or
+            (spec.get("project_id"), spec.get("episode_id"), spec.get("fps"),
+             spec.get("total_ms"), spec.get("total_frames")) !=
+            ("WaitingOffice", "EP01", 24, 160000, 3840)):
+        raise RuntimeError("audit_requires_frozen_ep01")
+    if (len(spec.get("shots", [])) != 31 or
+            [s.get("shot_id") for s in spec["shots"]] !=
+            ["%02d" % i for i in range(1,32)] or
+            sum(s["frames"] for s in spec["shots"]) != 3840):
+        raise RuntimeError("audit_requires_complete_31_shots")
+
+    expectations = {
+        "characters": [
+            ("CHAR_GPT", {"Blueprint", "SkeletalMesh"}),
+            ("CHAR_GEM", {"Blueprint", "SkeletalMesh"}),
+            ("CHAR_DS", {"Blueprint", "SkeletalMesh"}),
+            ("CHAR_CLA", {"Blueprint", "SkeletalMesh"}),
+            ("CHAR_ZERO", {"Blueprint", "SkeletalMesh"}),
+        ],
+        "scenes": [
+            ("SCN_HALL", {"World"}),
+            ("SCN_ENTRANCE", {"World"}),
+        ],
+        "shots": [
+            ("SH%02d" % i, {"LevelSequence"}) for i in range(1, 32)
+        ],
+    }
+    directories = {
+        "characters": APPROVED_ROOT + "/Characters/",
+        "scenes": APPROVED_ROOT + "/Scenes/",
+        "shots": APPROVED_ROOT + "/EP01/Shots/",
+    }
+    report = {}
+    for kind, objects in expectations.items():
+        group = []
+        for label, classes in objects:
+            path = directories[kind] + label
+            exists = bool(unreal.EditorAssetLibrary.does_asset_exist(path))
+            valid = False
+            if exists:
+                # Class inspection is necessary, NOT sufficient to call this
+                # approved, bound, playable or eligible for final rendering.
+                obj = unreal.EditorAssetLibrary.load_asset(path)
+                if obj is not None:
+                    cls = obj.get_class()
+                    valid = bool(cls is not None and cls.get_name() in classes)
+            group.append({"id":label, "exists":exists, "type_valid":valid})
+        report[kind] = group
+    return {
+        "ok": True,
+        "shot_count": 31, "total_frames": 3840,
+        "asset_audit": report,
+    }
+
+
+
 def main():
     result_path = Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
     try:
         spec_path = Path(os.environ["DIRECTOR_UE_SPEC_FILE"])
-        result = build(json.loads(spec_path.read_text(encoding="utf-8")))
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        result = (audit_ep01_assets(spec)
+                  if spec.get("format") == "director_ue_assets_v08"
+                  else build(spec))
     except Exception as exc:
         result = {"ok":False,"reason":str(exc)[:400],
                   "traceback":traceback.format_exc(limit=5)[-2000:]}
     result_path.write_text(json.dumps(result,ensure_ascii=False,indent=2),
                            encoding="utf-8")
     if result["ok"]:
-        unreal.log("V03 stage+camera assets saved")
+        unreal.log("Approved-asset inspection complete (no writes)" if
+                   result.get("asset_audit") is not None else
+                   "V03 stage+camera assets saved")
     else:
         unreal.log_error("V03 build failed: " + result["reason"])
 

@@ -14,6 +14,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_episode_timeline as enqueue_ue_episode_timeline_rpc,
                            enqueue_ue_stage_cameras as enqueue_ue_stage_cameras_rpc,
                            enqueue_ue_previs_stills as enqueue_ue_previs_stills_rpc,
+                           enqueue_ue_asset_audit as enqueue_ue_asset_audit_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
                            cancel_ue_job as cancel_ue_job_rpc,
@@ -23,7 +24,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "0.7.3"
+UE_HUB_API_VERSION = "0.8.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -395,6 +396,17 @@ def enqueue_ue_previs_stills(project_id: str, episode_id: str) -> dict:
     Runs Unreal MRQ on a metered Windows GPU. No arbitrary inputs.
     """
     return enqueue_ue_previs_stills_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_asset_audit(project_id: str, episode_id: str) -> dict:
+    """Inventory native Unreal 5.8 assets for EP01's 5 characters, 2 scenes
+    and 31 shot sequences. The Worker receives no arbitrary paths or scripts.
+
+    Unreal Editor runs on the billed GPU; the audit never renders, approves
+    drafts, replaces V03 assets, or mutates the UE project.
+    """
+    return enqueue_ue_asset_audit_rpc(project_id, episode_id)
 
 
 @app.tool(annotations=READ)
