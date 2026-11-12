@@ -530,6 +530,8 @@ def build_ep01_scene_candidates(spec):
             raise RuntimeError("approved_scene_exists_use_reviewed_revision")
     materials_dir=base+"/Materials"
     maps_dir=base+"/Maps"
+    if not unreal.EditorAssetLibrary.make_directory(base):
+        raise RuntimeError("candidate_job_directory_failed")
     if not unreal.EditorAssetLibrary.make_directory(materials_dir):
         raise RuntimeError("candidate_material_directory_failed")
     if not unreal.EditorAssetLibrary.make_directory(maps_dir):
