@@ -17,6 +17,8 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_asset_audit as enqueue_ue_asset_audit_rpc,
                            enqueue_ue_scene_candidates as enqueue_ue_scene_candidates_rpc,
                            enqueue_ue_cast_blueprints as enqueue_ue_cast_blueprints_rpc,
+                           enqueue_ue_cast_review as enqueue_ue_cast_review_rpc,
+                           get_ue_cast_review_png as get_ue_cast_review_png_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
                            cancel_ue_job as cancel_ue_job_rpc,
@@ -26,7 +28,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.0.0"
+UE_HUB_API_VERSION = "1.1.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -436,6 +438,19 @@ def enqueue_ue_cast_blueprints(project_id: str, episode_id: str) -> dict:
     return enqueue_ue_cast_blueprints_rpc(project_id, episode_id)
 
 
+@app.tool(annotations=WRITE)
+def enqueue_ue_cast_review(project_id: str, episode_id: str) -> dict:
+    """Render six REAL Unreal Engine 5.8 MRQ PNG views of the existing
+    V1.0 five original character Blueprint assets, not mockups.
+
+    One 1280x720 five-actor lineup plus five 720x1280 character portraits,
+    bound to real CineCameraActors in a job-owned cloned review World.
+    This runs paid Windows RTX4090 Unreal render operations and returns
+    a job ID. Original level and approved masters stay unchanged.
+    """
+    return enqueue_ue_cast_review_rpc(project_id,episode_id)
+
+
 @app.tool(annotations=READ)
 def get_ue_episode_job_status(job_id: str) -> dict:
     """Read actual UE Editor timeline job state and result by bounded ID."""
@@ -474,9 +489,22 @@ def get_ue_preview_image(job_id: str, shot_id: str):
     bridge-safe thumbnail; the real original PNG and receipt remain unchanged.
     This compatibility fallback also works in ChatGPT clients with an older
     cached tool list which cannot yet discover get_ue_preview_thumbnail.
-    Only shots 01,13,26,31 are allowed. No new render or arbitrary path.
+    Existing 01/13/26/31 slots also show 4 genuine V1.1 cast review
+    frames (LINEUP/GPT/DS/ZERO) when a completed cast-review job ID is used.
+    No new render or arbitrary path.
     """
-    result = get_ue_preview_png_rpc(job_id, shot_id)
+    # V1.1 backwards-compatible visual access in already-connected chat
+    # sessions whose cached 50-tool interface predates cast review images.
+    # This only maps four known V0.4 shot slots for a completed CAST job;
+    # other job types retain their original strict V0.4 stage preview path.
+    status = get_ue_episode_job_status_rpc(job_id)
+    if (status.get("ok") and status.get("task")=="render_cast_review_stills"):
+        mapping={"01":"LINEUP","13":"GPT","26":"DS","31":"ZERO"}
+        if shot_id not in mapping:
+            return {"ok":False,"reason":"invalid_cast_review_compat_slot"}
+        result=get_ue_cast_review_png_rpc(job_id,mapping[shot_id])
+    else:
+        result = get_ue_preview_png_rpc(job_id, shot_id)
     if not result.get("ok"):
         return {"ok": False, "reason": result.get("reason", "preview_unavailable")}
     try:
@@ -504,6 +532,25 @@ def get_ue_preview_thumbnail(job_id: str, shot_id: str):
     except (RuntimeError, ValueError, TypeError, OSError):
         return {"ok": False, "reason": "preview_thumbnail_unavailable"}
     return Image(data=thumb, format="png")
+
+
+@app.tool(annotations=READ)
+def get_ue_cast_review_image(job_id: str, view: str):
+    """SEE a real native UE MRQ frame of the five registered character models.
+
+    Six fixed views: LINEUP, GPT, GEM, DS, CLA, ZERO. These images are
+    SHA256 checked against a completed Windows UE job and forwarded over
+    private SSH, with bounded size-only derivation if required. No fake
+    concept art, no new rendering, no paths/URLs, no master approval.
+    """
+    result=get_ue_cast_review_png_rpc(job_id,view)
+    if not result.get("ok"):
+        return {"ok":False,"reason":result.get("reason","cast_review_unavailable")}
+    try:
+        data=choose_mcp_preview_png(result["data"])
+    except (RuntimeError,ValueError,TypeError,OSError):
+        return {"ok":False,"reason":"cast_review_transport_unavailable"}
+    return Image(data=data,format="png")
 
 
 @app.tool(annotations=READ)
