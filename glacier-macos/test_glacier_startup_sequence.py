@@ -43,8 +43,10 @@ class StartupSequenceTests(unittest.TestCase):
         self.assertTrue(calls, "Browser.new_tab must load an actual local URL")
         self.assertTrue(any("QUrl.fromLocalFile" in ast.unparse(call)
                             for call in calls))
-        self.assertTrue(any("ensure_offline_home_file" in ast.unparse(call)
-                            for call in calls))
+        self.assertTrue(any(isinstance(node, ast.Call)
+                            and isinstance(node.func, ast.Name)
+                            and node.func.id == "ensure_offline_home_file"
+                            for node in ast.walk(method)))
         self.assertFalse(any(
             isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             and node.func.attr == "setHtml" for node in ast.walk(method)))
