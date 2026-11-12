@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QMenu, QTabBar, QToolButton, QPushButton
 from glacier_chrome_shell33 import GlacierChromeShell33, CHROME_SHELL_QSS33
-from glacier_chrome_top35 import top_icon35, TOP_CHROME_QSS35
+from glacier_chrome_top35 import top_icon35, TOP_CHROME_QSS35, framed_top_geometry36, WINDOWS_FRAMED_TOP_QSS36
 from PySide6.QtCore import Qt
 import sys
 from test_desktop_ui32 import BrowserShellStub
@@ -46,7 +46,7 @@ class ChromeShell33Tests(unittest.TestCase):
         self.assertEqual([shell.layout().itemAt(i).widget() for i in range(3)],
                          [w._site_button30, w.address, w.bookmark_button])
         self.assertEqual(w._navigation_surface32.height(), 50)
-        self.assertEqual(w.chrome_tab14.parentWidget().height(), 44)
+        self.assertEqual(w.chrome_tab14.parentWidget().height(), 46 if sys.platform == "win32" else 44)
         self.assertEqual(shell.height(), 38)
         self.assertLessEqual(w.address.maximumHeight(), 35)
         self.assertEqual(w.address.placeholderText(), "搜索或输入网址")
@@ -61,6 +61,24 @@ class ChromeShell33Tests(unittest.TestCase):
         self.assertEqual(self.new_tab_clicks, 1)
         self.assertIn("GlacierNewTab34", CHROME_SHELL_QSS33)
         self.assertIn("min-width: 160px", CHROME_SHELL_QSS33)
+
+    def test_first_row_controls_stay_inside_chrome_frame(self):
+        w = self.window
+        if sys.platform != "win32":
+            self.assertFalse(hasattr(w, "_glacier_caption_group35"))
+            return
+        self.assertIn("border-bottom: 1px", WINDOWS_FRAMED_TOP_QSS36)
+        for width in (720, 1050, 1360):
+            w.resize(width, 790)
+            w.show()
+            self.app.processEvents()
+            w._resize_tabs_to_content33()
+            self.app.processEvents()
+            bounds = framed_top_geometry36(w)
+            self.assertLess(bounds["tabs"].right(), bounds["plus"].left())
+            self.assertLess(bounds["plus"].right(), bounds["caption"].left())
+            self.assertLess(bounds["caption-close"].right(),
+                            w.chrome_tab14.parentWidget().width() - 1)
 
     def test_focus_and_menu_visual_state_are_functional(self):
         w = self.window

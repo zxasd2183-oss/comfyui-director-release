@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
+from glacier_chrome_top35 import framed_top_geometry36
 import sys
 from secure_update import CURRENT_VERSION
 
@@ -128,6 +129,11 @@ def main():
                 raise RuntimeError("First frame status icon has wrong accessible state")
             if window.windowIcon().isNull():
                 raise RuntimeError("Glacier application title icon was not installed")
+            # The active tab may meet, but never cross, the bottom edge of
+            # the first-row frame. The other hitboxes stay fully inset.
+            # The Qt tabbar must not paint a native gray base line.
+            if window.chrome_tab14.drawBase():
+                raise RuntimeError("Qt added an unwanted tabbar baseline")
             # The visible external tab must show an actual small favicon,
             # not the old long 'Glacier Browser · 新标签页' placeholder.
             window._glacier_sync_tab_icons35()
@@ -145,6 +151,21 @@ def main():
                     raise RuntimeError("Windows caption buttons have incorrect geometry")
                 if not getattr(window, "_glacier_caption35", None):
                     raise RuntimeError("Windows native drag/resize controller missing")
+                # The screenshot's red comparison frame is NOT part of
+                # the product. Assert every tab/+ /caption hitbox stays inside
+                # the actual first-row widget at real Windows DPI.
+                for candidate_width in (720, 1050, 1360):
+                    window.resize(candidate_width, 890)
+                    for _ in range(5):
+                        app.processEvents()
+                    window._resize_tabs_to_content33()
+                    app.processEvents()
+                    positions = framed_top_geometry36(window)
+                    print("FRAME_INSIDE", candidate_width,
+                          {k: (v.x(), v.y(), v.width(), v.height())
+                           for k, v in positions.items()}, flush=True)
+                window.resize(1360, 890)
+                app.processEvents()
                 print("SUCCESS: integrated native Windows caption and tab row verified")
             if omni.layout().count()!=3:
                 raise RuntimeError("Site, address and bookmark were not grouped into omnibox")

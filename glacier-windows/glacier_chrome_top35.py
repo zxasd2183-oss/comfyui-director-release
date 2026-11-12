@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt, QEvent, QObject, QTimer, QSize, QRect, QRectF
+from PySide6.QtCore import Qt, QEvent, QObject, QTimer, QSize, QRect, QRectF, QPoint
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QWidget, QFrame, QHBoxLayout, QToolButton, QAbstractButton
 
@@ -99,6 +99,115 @@ QToolButton#GlacierCaptionMin35:pressed,
 QToolButton#GlacierCaptionMax35:pressed { background: #bec8d5; }
 QToolButton#GlacierCaptionClose35:pressed { background: #bf1224; }
 """
+
+
+# The reference frame around Chrome's top row is an alignment guide,
+# not a red border to draw. Every real control must stay *inside* this row.
+# These values are deliberately Windows-only: the macOS traffic-light area
+# remains Apple-native and keeps its existing geometry.
+WINDOWS_FRAMED_TOP_QSS36 = """
+QWidget#GlacierTabStrip14 {
+    background: #e5eaf1;
+    border: none;
+    border-bottom: 1px solid #d7dfe8;
+}
+QTabBar#GlacierExternalTabs14 {
+    background: transparent;
+    border: none;
+}
+QTabBar#GlacierExternalTabs14::tab {
+    background: #d8e0ea;
+    border: none;
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+    min-width: 160px;
+    max-width: 224px;
+    min-height: 25px;
+    margin: 5px 3px 0 0;
+    padding: 2px 14px 1px 13px;
+    color: #455468;
+}
+QTabBar#GlacierExternalTabs14::tab:selected {
+    background: #ffffff;
+    color: #202936;
+}
+QTabBar#GlacierExternalTabs14::tab:hover:!selected {
+    background: #eef2f8;
+}
+QAbstractButton#GlacierNewTab34 {
+    background: transparent;
+    border: 0;
+    border-radius: 16px;
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0;
+}
+QAbstractButton#GlacierNewTab34:hover { background: #cfd8e6; }
+QFrame#GlacierCaptionGroup35 {
+    background: transparent;
+    border: none;
+}
+QToolButton#GlacierCaptionMin35,
+QToolButton#GlacierCaptionMax35,
+QToolButton#GlacierCaptionClose35 {
+    background: transparent;
+    border: 0;
+    min-width: 46px;
+    max-width: 46px;
+    min-height: 38px;
+    max-height: 38px;
+    padding: 0;
+}
+QToolButton#GlacierCaptionMin35:hover,
+QToolButton#GlacierCaptionMax35:hover { background: #cdd6e3; }
+QToolButton#GlacierCaptionClose35:hover { background: #e81123; }
+"""
+
+
+def framed_top_geometry36(owner):
+    """Assert real Qt widget hitboxes cannot escape the Windows top frame.
+
+    Run after show()/resize()/processEvents; no test-only layout assumptions.
+    Returns named QRect positions relative to the actual parent strip.
+    """
+    strip = owner.chrome_tab14.parentWidget()
+    bar = owner.chrome_tab14
+    plus = getattr(owner, "_new_tab_button34", None)
+    caption = getattr(owner, "_glacier_caption_group35", None)
+    if plus is None or caption is None:
+        raise RuntimeError("Top frame missing live new-tab or caption controls")
+    if strip.height() != 46:
+        raise RuntimeError("Top frame height changed from its 46px contract")
+
+    positions = {}
+    def capture(name, widget):
+        origin = widget.mapTo(strip, QPoint(0, 0))
+        bounds = QRect(origin, widget.size())
+        # All controls and the tabbar remain inside the header bounds.
+        # Native Qt tabbar base drawing is disabled separately.
+        frame = strip.rect().adjusted(2, 2, -2, -2)
+        if not frame.contains(bounds):
+            raise RuntimeError(f"{name} escapes the first-row frame: {bounds} vs {frame}")
+        positions[name] = bounds
+
+    capture("tabs", bar)
+    capture("plus", plus)
+    capture("caption", caption)
+    for name, btn in owner._glacier_caption_buttons35.items():
+        capture("caption-" + name, btn)
+
+    if positions["tabs"].right() >= positions["plus"].left():
+        raise RuntimeError("New-tab button overlaps or escapes tab strip")
+    if positions["plus"].right() >= positions["caption"].left():
+        raise RuntimeError("New-tab button escapes into window control zone")
+    for i in range(bar.count()):
+        rect = bar.tabRect(i)
+        rect.moveTopLeft(bar.mapTo(strip, rect.topLeft()))
+        if not positions["tabs"].contains(rect):
+            raise RuntimeError(f"Tab {i} draws outside its allocated tabbar: {rect}")
+    return positions
 
 
 def top_icon35(kind: str, *, white: bool = False) -> QIcon:
@@ -308,6 +417,7 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
     tabbar.setIconSize(QSize(16, 16))
     tabbar.setUsesScrollButtons(True)
     tabbar.setExpanding(False)
+    tabbar.setDrawBase(False)
 
     # Reuse original controls. An icon swap must never replace a click handler.
     buttons = (
@@ -371,10 +481,13 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
             if hasattr(owner, "profile"):
                 raise RuntimeError("Windows frameless flag must precede Qt WebEngine creation")
             owner.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        strip_layout.setContentsMargins(9, 3, 0, 0)
+        # The container is the full frame: never position controls outside it.
+        strip_layout.setContentsMargins(8, 4, 2, 3)
+        strip_layout.setSpacing(4)
+        tabbar.setFixedHeight(38)
         group = QFrame(strip)
         group.setObjectName("GlacierCaptionGroup35")
-        group.setFixedHeight(40)
+        group.setFixedHeight(39)
         caption_layout = QHBoxLayout(group)
         caption_layout.setContentsMargins(0, 0, 0, 0)
         caption_layout.setSpacing(0)
@@ -388,7 +501,7 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
             button.setObjectName(obj)
             button.setIcon(top_icon35(key))
             button.setIconSize(QSize(17, 17))
-            button.setFixedSize(46, 39)
+            button.setFixedSize(46, 38)
             button.setToolTip(tip)
             button.setAccessibleName(tip)
             button.setCursor(Qt.CursorShape.ArrowCursor)
@@ -404,4 +517,5 @@ def install_top_chrome35(owner, strip, tabbar, navigation):
         owner._glacier_caption_group35 = group
 
     owner._glacier_top_chrome35_ready = True
-    owner.setStyleSheet(owner.styleSheet() + "\n" + TOP_CHROME_QSS35)
+    owner.setStyleSheet(owner.styleSheet() + "\n" + TOP_CHROME_QSS35
+                        + ("\n" + WINDOWS_FRAMED_TOP_QSS36 if is_windows else ""))

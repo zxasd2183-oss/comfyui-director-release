@@ -267,7 +267,9 @@ class GlacierChromeShell33:
         if strip is None or strip.objectName() != "GlacierTabStrip14":
             raise RuntimeError("Missing real Chrome tab strip")
 
-        strip.setFixedHeight(44)
+        # Only Windows owns a custom integrated caption. Keep the whole
+        # tab row (including + and window controls) inside a 46px frame.
+        strip.setFixedHeight(46 if sys.platform == "win32" else 44)
         strip_layout = strip.layout()
         if isinstance(strip_layout, QHBoxLayout):
             strip_layout.setContentsMargins(9, 3, 9, 0)
