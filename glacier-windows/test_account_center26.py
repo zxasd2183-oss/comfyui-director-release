@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtCore import QCoreApplication, QEvent, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer, Qt
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QHBoxLayout, QLineEdit, QMessageBox, QWidget
 from glacier_account_center26 import GlacierAccountCenter26, account_label26
 
@@ -55,6 +55,9 @@ class FakeWindow(QWidget, GlacierAccountCenter26):
     def show_accounts22(self):
         pass
 
+    def manage_accounts22(self):
+        pass
+
 
 class AccountCenterTests(unittest.TestCase):
     @classmethod
@@ -85,6 +88,61 @@ class AccountCenterTests(unittest.TestCase):
         self.assertIn("等待", account_label26({"token": "dummy", "approved": False})[0])
         self.assertEqual(account_label26(
             {"token": "dummy", "approved": True, "username": "user-demo"})[0], "user-demo")
+
+    def test_profile_menu_is_anchored_popup_not_separate_dialog(self):
+        window = FakeWindow()
+        window.resize(980, 600)
+        layout = QHBoxLayout()
+        window.setup_account_center26(layout)
+        window.show()
+        self.app.processEvents()
+        menu = window.show_account_center26()
+        self.app.processEvents()
+        self.assertEqual(menu.objectName(), "GlacierProfilePopover37")
+        self.assertTrue(bool(menu.windowFlags() & Qt.WindowType.Popup))
+        self.assertFalse(isinstance(menu, QDialog))
+        self.assertTrue(menu.isVisible())
+        self.assertIn("登录 Glacier", [
+            x.text() for x in menu.findChildren(QPushButton)
+        ])
+        self.assertIn("网站账号和密码", [
+            x.text() for x in menu.findChildren(QPushButton)
+        ])
+        self.assertEqual(window.logins, 0)
+        # The user can dismiss the profile menu without logging in.
+        menu.close()
+        window.close()
+
+    def test_pending_device_uses_approval_action_not_fake_success(self):
+        window = FakeWindow()
+        window.setup_account_center26(QHBoxLayout())
+        window._sync_state23 = {
+            "token": "dummy", "approved": False, "username": "demo"
+        }
+        menu = window.show_account_center26()
+        labels = [b.text() for b in menu.findChildren(QPushButton)]
+        self.assertIn("检查设备授权", labels)
+        self.assertNotIn("上传加密资料", labels)
+        self.assertNotIn("管理已授权设备", labels)
+        menu.close()
+        window.close()
+
+    def test_approved_device_lists_real_sync_actions(self):
+        window = FakeWindow()
+        window.setup_account_center26(QHBoxLayout())
+        window._sync_state23 = {
+            "token": "dummy", "approved": True,
+            "username": "demo", "auto_enabled": False
+        }
+        menu = window.show_account_center26()
+        labels = [b.text() for b in menu.findChildren(QPushButton)]
+        for label in ("网站账号和密码", "管理已授权设备",
+                      "上传加密资料", "下载加密资料", "开启自动同步",
+                      "退出 Glacier 账号"):
+            self.assertIn(label, labels)
+        self.assertNotIn("创建 Glacier 账号", labels)
+        menu.close()
+        window.close()
 
     def test_one_screen_login_collects_all_fields(self):
         window = FakeWindow()
