@@ -153,7 +153,8 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
                for v in (project_id, episode_id)):
         return {"ok": False, "reason": "invalid_identifiers"}
     if task not in ("build_episode_timeline", "build_stage_cameras",
-                    "render_previs_stills", "audit_ep01_assets"):
+                    "render_previs_stills", "audit_ep01_assets",
+                    "build_ep01_scene_candidates"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -242,6 +243,35 @@ def enqueue_ue_asset_audit(project_id, episode_id, studio_getter=None,
     return enqueue_ue_episode_timeline(
         project_id, episode_id, studio_getter=studio_getter,
         opener=opener, token_file=token_file, task="audit_ep01_assets",
+    )
+
+
+def enqueue_ue_scene_candidates(project_id, episode_id,
+                                studio_getter=None, scene_getter=None,
+                                opener=None, token_file=None):
+    """Build three original UE environment draft Worlds from fixed EP01 layout.
+
+    Require both scene draft IDs to exist in Studio; never accept authored
+    scripts/asset paths or interpret draft status as approval.
+    """
+    if (project_id, episode_id) != ("WaitingOffice", "EP01"):
+        return {"ok": False, "reason": "scene_candidates_require_locked_ep01"}
+    if scene_getter is None:
+        from hub_brain import call_studio
+        scene_getter = call_studio
+    try:
+        record = scene_getter("get_production_scenes", {"project_id": project_id})
+        items = record.get("scenes") if type(record) is dict and record.get("ok") is True else None
+        if (type(items) is not list or
+                not {"SCN-HALL", "SCN-ENTRANCE"} <= {
+                    row.get("scene_id") for row in items if type(row) is dict
+                }):
+            return {"ok": False, "reason": "studio_scene_drafts_missing"}
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return {"ok": False, "reason": "studio_scene_drafts_unavailable"}
+    return enqueue_ue_episode_timeline(
+        project_id, episode_id, studio_getter=studio_getter,
+        opener=opener, token_file=token_file, task="build_ep01_scene_candidates",
     )
 
 
