@@ -39,10 +39,15 @@ class StartupSequenceTests(unittest.TestCase):
         calls = [node for node in ast.walk(method)
                  if isinstance(node, ast.Call)
                  and isinstance(node.func, ast.Attribute)
-                 and node.func.attr == "setHtml"]
-        self.assertTrue(calls, "Browser.new_tab must call QWebEngineView.setHtml")
-        self.assertTrue(any("home_markup" in ast.unparse(call)
+                 and node.func.attr == "setUrl"]
+        self.assertTrue(calls, "Browser.new_tab must load an actual local URL")
+        self.assertTrue(any("QUrl.fromLocalFile" in ast.unparse(call)
                             for call in calls))
+        self.assertTrue(any("ensure_offline_home_file" in ast.unparse(call)
+                            for call in calls))
+        self.assertFalse(any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "setHtml" for node in ast.walk(method)))
 
     def test_splash_is_alone_then_fully_closes_before_main_window(self):
         splash = show_glacier_splash("QA")
