@@ -107,7 +107,7 @@ def top_icon35(kind: str, *, white: bool = False) -> QIcon:
     picture.setDevicePixelRatio(2)
     p = QPainter(picture)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    p.scale(2.0, 2.0)
+    # Qt already scales the painter for a pixmap with DPR=2.
     color = QColor("#ffffff" if white else "#546374")
     p.setPen(QPen(color, 1.8, Qt.PenStyle.SolidLine,
                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
