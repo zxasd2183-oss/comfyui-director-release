@@ -1,7 +1,7 @@
 import ctypes, json, os, re, socket, subprocess, sys, uuid
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
-from PySide6.QtCore import QUrl, QTimer, QSize
+from PySide6.QtCore import QUrl, QTimer, QSize, Qt
 from PySide6.QtNetwork import QNetworkProxy
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
@@ -147,10 +147,15 @@ class Page(QWebEngineView):
 class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierInput21, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, WindowsDesktop15, GlacierChrome14, GlacierTabTools13, GlacierUI12, GlacierUpdateUI, GlacierUI09, GlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
+  # Qt WebEngine must be created AFTER the final native window flags.
+  # Changing FramelessWindowHint later can recreate the HWND and leave
+  # its Chromium compositor child painting into a stale tiny surface.
+  if sys.platform == "win32":
+   self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.25")
+  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.26")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -360,7 +365,7 @@ def main():
   s.bind(("127.0.0.1",0));port=s.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("Windows v0.20.25")
+ splash=show_glacier_splash("Windows v0.20.26")
  link=get_link(app)
  proc=None
  try:proc=proxy_start(link,port)
