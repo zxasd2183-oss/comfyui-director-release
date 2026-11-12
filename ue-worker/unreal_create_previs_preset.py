@@ -306,4 +306,203 @@ def main():
         unreal.log_error("Director V04 preview preset failed: " + result["reason"])
 
 
-main()
+
+# V1.1 genuine image review: clone ONLY the known V1.0 authored cast World,
+# create job-isolated sequences with bound CineCameraActors and MRQ PNG presets.
+# The source remains unchanged, and these are NOT AI-generated concept images.
+V11_CAST_SOURCE_JOB = "f32dea96d7a94990b3eb274d1cef3de3"
+V11_CAST_SOURCE = ("/Game/Director/Candidates/EP01/CastBuilds/J"
+                   + V11_CAST_SOURCE_JOB + "/Maps/EP01_Five_Cast_Review")
+V11_VIEWS = ("LINEUP", "GPT", "GEM", "DS", "CLA", "ZERO")
+V11_MAIN_CAST = ("GPT", "GEM", "DS", "CLA", "ZERO")
+V11_CAMERA_POSES = {
+    # Portrait cameras face the front (+X) of V1.0 actor components.
+    # A 13.5 x 24 mm filmback prevents 16:9 letterbox bars in 9:16 renders.
+    "LINEUP": ((760, 0, 155), (0, 0, 105), 30.0, (36.0, 20.25)),
+    "GPT": ((350, -330, 160), (0, -330, 110), 20.0, (13.5, 24.0)),
+    "GEM": ((350, -165, 160), (0, -165, 110), 20.0, (13.5, 24.0)),
+    "DS": ((350, 0, 160), (0, 0, 110), 20.0, (13.5, 24.0)),
+    "CLA": ((350, 165, 160), (0, 165, 110), 20.0, (13.5, 24.0)),
+    "ZERO": ((350, 330, 160), (0, 330, 110), 20.0, (13.5, 24.0)),
+}
+
+
+def cast_review_main():
+    """Make 6 deterministic MRQ single-frame visual verification views."""
+    result_file = Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    try:
+        ident = os.environ["DIRECTOR_UE_JOB_ID"]
+        if not re.fullmatch(r"[a-f0-9]{32}", ident):
+            raise RuntimeError("cast_review_job_id_invalid")
+        if os.environ.get("DIRECTOR_UE_REVIEW_MODE") != "cast_v11":
+            raise RuntimeError("cast_review_mode_not_allowed")
+        output = Path(os.environ["DIRECTOR_UE_PREVIEW_OUTPUT"]).resolve()
+        project = output.parents[3]
+        if (output.name != "Previews" or output.parent.name != ident
+                or output.parent.parent.name != "V11"
+                or output.parent.parent.parent.name != "Outputs"):
+            raise RuntimeError("cast_review_output_location_invalid")
+        source_file = (
+            project / "Content" / "Director" / "Candidates" / "EP01"
+            / "CastBuilds" / ("J" + V11_CAST_SOURCE_JOB)
+            / "Maps" / "EP01_Five_Cast_Review.umap"
+        )
+        if source_file.is_symlink() or not source_file.is_file():
+            raise RuntimeError("cast_v100_review_world_missing")
+        prefix = "/Game/Director/Candidates/EP01/ReviewRenders/J" + ident
+        preview = prefix + "/Maps/WO_EP01_CastReview"
+        dest_file = (
+            project / "Content" / "Director" / "Candidates" / "EP01"
+            / "ReviewRenders" / ("J" + ident) / "Maps"
+            / "WO_EP01_CastReview.umap"
+        )
+        if dest_file.exists() or dest_file.is_symlink():
+            raise RuntimeError("cast_review_map_collision")
+        for folder in (prefix,prefix+"/Maps",prefix+"/Shots",prefix+"/Presets"):
+            if unreal.EditorAssetLibrary.does_directory_exist(folder):
+                raise RuntimeError("cast_review_directory_collision")
+            if not unreal.EditorAssetLibrary.make_directory(folder):
+                raise RuntimeError("cast_review_directory_failure")
+        editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        if not editor.new_level_from_template(preview,V11_CAST_SOURCE):
+            raise RuntimeError("cast_review_world_clone_failed")
+        actors=unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        existing=actors.get_all_level_actors()
+        known={}
+        for index,short in enumerate(V11_MAIN_CAST):
+            label="WO_CANDIDATE_CHAR_"+short
+            matched=[actor for actor in existing
+                     if actor.get_actor_label()==label]
+            if len(matched)!=1:
+                raise RuntimeError("cast_review_actor_missing_"+short)
+            loc=matched[0].get_actor_location()
+            where=(float(loc.x),float(loc.y),float(loc.z))
+            if (abs(where[0])>1 or
+                    abs(where[1]-(index-2)*165)>1 or
+                    abs(where[2])>1):
+                raise RuntimeError("cast_actor_position_mismatch_"+short)
+            known[short]=label
+
+        # Dedicated uniform front fill: source floor, static meshes and lamp
+        # remain untouched, only cloned review World receives extra lights.
+        for name,y in (("ReviewFrontL",-360),("ReviewFrontR",360)):
+            light=actors.spawn_actor_from_class(
+                unreal.PointLight,unreal.Vector(360,y,330),
+                unreal.Rotator(0,0,0))
+            if not light:
+                raise RuntimeError("cast_review_fill_light_missing")
+            light.set_actor_label("WO_V11_"+name)
+            comp=light.get_component_by_class(unreal.PointLightComponent)
+            comp.set_editor_property("intensity",5000.0)
+            comp.set_editor_property("attenuation_radius",2000.0)
+
+        cameras={}
+        for view in V11_VIEWS:
+            location,target,focal,sensor=V11_CAMERA_POSES[view]
+            position=unreal.Vector(*location)
+            camera=actors.spawn_actor_from_class(
+                unreal.CineCameraActor,position,
+                unreal.MathLibrary.find_look_at_rotation(
+                    position,unreal.Vector(*target)))
+            if not camera:
+                raise RuntimeError("cast_review_camera_spawn_failed_"+view)
+            camera.set_actor_label("WO_V11_CAM_"+view)
+            comp=camera.get_component_by_class(unreal.CineCameraComponent)
+            if not comp:
+                raise RuntimeError("cast_review_camera_component_missing_"+view)
+            comp.set_editor_property(
+                "filmback",unreal.CameraFilmbackSettings(
+                    sensor_width=sensor[0],sensor_height=sensor[1]))
+            comp.set_editor_property(
+                "crop_settings",unreal.PlateCropSettings(aspect_ratio=0.0))
+            comp.set_editor_property("constrain_aspect_ratio",True)
+            comp.set_editor_property("current_focal_length",focal)
+            actual=comp.get_editor_property("filmback")
+            if (abs(float(actual.sensor_width)-sensor[0])>.01 or
+                    abs(float(actual.sensor_height)-sensor[1])>.01):
+                raise RuntimeError("cast_review_filmback_not_applied_"+view)
+            cameras[view]=camera
+        if not editor.save_current_level():
+            raise RuntimeError("cast_review_map_save_failed")
+
+        tools=unreal.AssetToolsHelpers.get_asset_tools()
+        sequences={}
+        for view in V11_VIEWS:
+            name="WO_EP01_CAST_"+view
+            package=prefix+"/Shots"
+            seq=tools.create_asset(
+                asset_name=name,package_path=package,
+                asset_class=unreal.LevelSequence,
+                factory=unreal.LevelSequenceFactoryNew())
+            if not seq:
+                raise RuntimeError("cast_review_sequence_failed_"+view)
+            seq.set_display_rate(unreal.FrameRate(numerator=24,denominator=1))
+            seq.set_playback_start(0)
+            seq.set_playback_end(3)
+            bound=unreal.MovieSceneSequenceExtensions.add_possessable(
+                seq,cameras[view])
+            if not bound:
+                raise RuntimeError("cast_review_binding_failed_"+view)
+            track=seq.add_track(unreal.MovieSceneCameraCutTrack)
+            section=track.add_section()
+            section.set_range(0,3)
+            binding_id=unreal.MovieSceneSequenceExtensions.get_binding_id(
+                seq,bound)
+            if not binding_id:
+                raise RuntimeError("cast_review_camera_id_failed_"+view)
+            section.set_camera_binding_id(binding_id)
+            if not unreal.EditorAssetLibrary.save_loaded_asset(seq):
+                raise RuntimeError("cast_review_sequence_save_failed_"+view)
+            sequences[view]=package+"/"+name+"."+name
+
+        presets={}
+        for mode,width,height in (("wide",1280,720),("portrait",720,1280)):
+            name="WO_EP01_CastPNG_"+mode
+            preset=tools.create_asset(
+                asset_name=name,package_path=prefix+"/Presets",
+                asset_class=unreal.MoviePipelinePrimaryConfig,
+                factory=unreal.MoviePipelinePrimaryConfigFactory())
+            if not preset:
+                raise RuntimeError("cast_review_mrq_config_failed_"+mode)
+            preset.find_or_add_setting_by_class(
+                unreal.MoviePipelineDeferredPassBase)
+            preset.find_or_add_setting_by_class(
+                unreal.MoviePipelineImageSequenceOutput_PNG)
+            setting=preset.find_or_add_setting_by_class(
+                unreal.MoviePipelineOutputSetting)
+            setting.set_editor_property(
+                "output_directory",unreal.DirectoryPath(str(output)))
+            setting.set_editor_property(
+                "output_resolution",unreal.IntPoint(width,height))
+            setting.set_editor_property(
+                "file_name_format","{sequence_name}_V11_{frame_number}")
+            setting.set_editor_property("use_custom_playback_range",True)
+            setting.set_editor_property("custom_start_frame",0)
+            setting.set_editor_property("custom_end_frame",1)
+            setting.set_editor_property("override_existing_output",False)
+            if not unreal.EditorAssetLibrary.save_loaded_asset(preset):
+                raise RuntimeError("cast_review_mrq_save_failed_"+mode)
+            presets[mode]=prefix+"/Presets/"+name+"."+name
+        result={
+            "ok":True,"source_world":V11_CAST_SOURCE,
+            "review_world":preview,"cast":known,
+            "view_sequences":sequences,"mrq_presets":presets,
+            "views":list(V11_VIEWS),"frames_per_view":1,
+            "source_world_unchanged":True,
+        }
+    except Exception as exc:
+        result={"ok":False,"reason":str(exc)[:400],
+                "traceback":traceback.format_exc(limit=5)[-1800:]}
+    result_file.write_text(json.dumps(result,ensure_ascii=False,indent=2),
+                           encoding="utf-8")
+    if result["ok"]:
+        unreal.log("V11 real Unreal cast review map and camera-cut sequences saved")
+    else:
+        unreal.log_error("V11 cast-review failed: "+result["reason"])
+
+
+
+if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "cast_v11":
+    cast_review_main()
+else:
+    main()

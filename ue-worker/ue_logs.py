@@ -11,6 +11,12 @@ LOG_NAMES = {
     "render_13": "render_13.log",
     "render_26": "render_26.log",
     "render_31": "render_31.log",
+    "render_lineup": "render_lineup.log",
+    "render_gpt": "render_gpt.log",
+    "render_gem": "render_gem.log",
+    "render_ds": "render_ds.log",
+    "render_cla": "render_cla.log",
+    "render_zero": "render_zero.log",
 }
 MAX_TAIL_BYTES = 6000
 SECRET_FILTERS = (
