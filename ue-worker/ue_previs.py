@@ -288,6 +288,104 @@ def run_previs(spec,root,work):
 
 
 
+# Pinned, already-verified V1.3 UE 5.8 native MetaHuman Character candidate.
+# Never audit a caller-selected asset; this is the sole EP01 hero identity.
+GPT_HERO_SOURCE_JOB = "d5253c965631447684e49613533e85ad"
+GPT_HERO_SOURCE_SHA256 = "ccbd6bc1c39cedec3fd803642f604452bad949333c94eb4c63e5504dd33fc318"
+
+
+def audit_gpt_hero_metahuman_runtime(spec, root, work):
+    """Probe actual UE 5.8 editor API without mutating native hero asset.
+
+    The subprocess is the already-reviewed signed Unreal script and fixed
+    isolated project. No auth tokens, remote URLs or arbitrary commands.
+    """
+    from ue_jobs import JobError, find_editor_cmd
+    from agent import hero_project_manifest
+    if spec.get("format") != "director_ue_hero_audit_v140":
+        raise JobError("hero_audit_spec_invalid")
+    if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
+         spec.get("total_ms"),spec.get("total_frames"),len(spec.get("shots",[])))
+            != ("WaitingOffice","EP01",24,160000,3840,31)):
+        raise JobError("hero_audit_requires_locked_ep01")
+    if [x["shot_id"] for x in spec["shots"]] != [
+            "%02d"%i for i in range(1,32)]:
+        raise JobError("hero_audit_requires_frozen_shots")
+    if not re.fullmatch(r"[a-f0-9]{32}",work.name):
+        raise JobError("hero_audit_job_id_invalid")
+    if work.exists() or work.is_symlink():
+        raise JobError("hero_audit_job_collision")
+    project=(root/"HeroProjects"/"CHAR_GPT"/"DirectorHeroGPT.uproject")
+    if project.is_symlink() or not project.is_file():
+        raise JobError("hero_audit_project_missing")
+    try:
+        if json.loads(project.read_text("utf-8"))!=hero_project_manifest():
+            raise JobError("hero_audit_project_not_trusted")
+    except (ValueError,UnicodeError,TypeError):
+        raise JobError("hero_audit_project_invalid") from None
+    original=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+              "HeroBuilds"/("J"+GPT_HERO_SOURCE_JOB)/"MHC_CHAR_GPT.uasset")
+    if original.is_symlink() or not original.is_file():
+        raise JobError("hero_audit_source_missing")
+    digest=hashlib.sha256(original.read_bytes()).hexdigest()
+    if digest!=GPT_HERO_SOURCE_SHA256:
+        raise JobError("hero_audit_source_hash_drift")
+    work.mkdir(parents=True,exist_ok=False)
+    output=work/"hero_runtime.json"
+    env=os.environ.copy()
+    env["DIRECTOR_UE_JOB_ID"]=work.name
+    env["DIRECTOR_UE_RESULT_FILE"]=str(output)
+    env["DIRECTOR_UE_REVIEW_MODE"]="hero_audit_v140"
+    fixed_script=Path(__file__).resolve().with_name(
+        "unreal_create_previs_preset.py")
+    if not fixed_script.is_file() or fixed_script.is_symlink():
+        raise JobError("hero_audit_script_missing")
+    _run_unreal(
+        [str(find_editor_cmd()),str(project),"-run=pythonscript",
+         "-script="+str(fixed_script),"-unattended","-nop4","-nosplash",
+         "-NoSound","-log"],root,work/"hero_audit.log",480,env)
+    if output.is_symlink() or not output.is_file() or output.stat().st_size>10000:
+        raise JobError("hero_audit_runtime_receipt_missing")
+    data=json.loads(output.read_text("utf-8"))
+    if (type(data) is not dict or data.get("ok") is not True
+        or data.get("asset_path")!="/Game/Director/Candidates/EP01/"
+              "HeroBuilds/J"+GPT_HERO_SOURCE_JOB+"/MHC_CHAR_GPT"
+        or data.get("asset_class")!="MetaHumanCharacter"
+        or data.get("source_unmodified") is not True
+        or data.get("character_master_approved") is not False
+        or data.get("rigged") is not False
+        or data.get("costly_cloud_requests_executed") is not False):
+        raise JobError("hero_audit_runtime_receipt_invalid")
+    if hashlib.sha256(original.read_bytes()).hexdigest()!=digest:
+        raise JobError("hero_audit_modified_original")
+    caps=data.get("capabilities")
+    required=("character_editor_subsystem","request_auto_rigging",
+              "request_texture_sources","build_meta_human",
+              "try_add_object_to_edit","commit_eyes_settings")
+    if (type(caps) is not dict or set(caps)!=set(required)
+            or not all(type(caps[k]) is bool for k in required)):
+        raise JobError("hero_audit_capabilities_invalid")
+    examples=data.get("reference_examples")
+    required_examples=("create","texture","rig","assembly")
+    if (type(examples) is not dict
+        or set(examples)!=set(required_examples)
+        or not all(type(examples[k]) is bool for k in required_examples)):
+        raise JobError("hero_audit_examples_invalid")
+    if type(data.get("texture_source_state")) is not str:
+        raise JobError("hero_audit_textures_invalid")
+    return {"kind":"real_unreal_5_8_metahuman_runtime_audit_v140",
+            "project":"DirectorHeroGPT","character_id":"CHAR_GPT",
+            "seed_asset_verified":True,"seed_asset_sha256":digest,
+            "character_asset_class":"MetaHumanCharacter",
+            "capabilities":caps,"reference_examples":examples,
+            "texture_source_state":data["texture_source_state"],
+            "cloud_auth":"not_tested_no_cloud_request",
+            "core_data":"not_verified_until_open_for_edit",
+            "character_master_approved":False,
+            "rigging_done":False,"cinematic_character_ready":False,
+            "source_unmodified":True}
+
+
 def build_gpt_hero_metahuman_seed(spec, root, work):
     """Use real UE 5.8 MetaHuman factory in fixed isolated project.
 
