@@ -157,7 +157,8 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
                     "render_previs_stills", "audit_ep01_assets",
                     "build_ep01_scene_candidates",
                     "build_ep01_cast_blueprints",
-                    "render_cast_review_stills","build_ep01_hero_metahuman_seed"):
+                    "render_cast_review_stills","build_ep01_hero_metahuman_seed",
+                    "audit_ep01_hero_metahuman_runtime"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -377,13 +378,43 @@ def enqueue_ue_hero_metahuman_seed(project_id,episode_id,
     )
 
 
+
+def enqueue_ue_hero_runtime_audit(project_id,episode_id,
+                                  studio_getter=None,cast_getter=None,
+                                  opener=None,token_file=None):
+    """Inspect the original GPT native character in UE 5.8 read-only.
+
+    Reuse the same locked Studio identity and episode schedule as seed build.
+    No caller-supplied project, script, model, or remote URL.
+    """
+    if (project_id,episode_id)!=("WaitingOffice","EP01"):
+        return {"ok":False,"reason":"hero_audit_requires_locked_ep01"}
+    if cast_getter is None:
+        from hub_brain import call_studio
+        cast_getter=call_studio
+    try:
+        data=cast_getter("get_project_characters",{"project_id":project_id})
+        chars=data.get("characters") if type(data) is dict and data.get("ok") is True else None
+        items=[x for x in chars if type(x) is dict and
+               x.get("character_id")=="CHAR_GPT"] if type(chars) is list else []
+        if len(items)!=1 or items[0].get("revision")!=2 or items[0].get("master") is not None:
+            return {"ok":False,"reason":"hero_studio_identity_not_locked"}
+    except (TypeError,ValueError,AttributeError):
+        return {"ok":False,"reason":"hero_studio_character_unavailable"}
+    return enqueue_ue_episode_timeline(
+        project_id,episode_id,studio_getter=studio_getter,
+        opener=opener,token_file=token_file,
+        task="audit_ep01_hero_metahuman_runtime",
+    )
+
+
 # V0.5 operator workflow: job-bound log tails and task cancellation only.
 # No caller-supplied filenames, PIDs, shell commands, or arbitrary URLs.
 LOG_KIND = frozenset({
     "unreal", "preset", "render_01", "render_13",
     "render_26", "render_31",
     "render_lineup", "render_gpt", "render_gem",
-    "render_ds", "render_cla", "render_zero", "hero_seed",
+    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit",
 })
 
 
