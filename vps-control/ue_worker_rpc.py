@@ -340,6 +340,43 @@ def enqueue_ue_cast_review(project_id,episode_id,
     )
 
 
+
+def enqueue_ue_hero_metahuman_seed(project_id,episode_id,
+                                  studio_getter=None,cast_getter=None,
+                                  opener=None,token_file=None):
+    """Create ONE native MetaHumanCharacter asset in isolated candidate project.
+
+    The Studio character is validated, but no user-supplied images, scripts,
+    project paths, Meshes, DCC files, or outfit references reach the worker.
+    """
+    if (project_id,episode_id)!=("WaitingOffice","EP01"):
+        return {"ok":False,"reason":"hero_seed_requires_locked_ep01"}
+    if cast_getter is None:
+        from hub_brain import call_studio
+        cast_getter=call_studio
+    try:
+        data=cast_getter("get_project_characters",{"project_id":project_id})
+        rows=data.get("characters") if type(data) is dict and data.get("ok") is True else None
+        target=[x for x in rows if type(x) is dict
+                and x.get("character_id")=="CHAR_GPT"] if type(rows) is list else []
+        if len(target)!=1:
+            return {"ok":False,"reason":"hero_studio_character_missing"}
+        character=target[0]
+        brief=character.get("design_language")
+        if (character.get("revision")!=2 or character.get("master") is not None
+            or character.get("role")!="main" or
+            type(brief) is not str or
+            any(part not in brief for part in ("深栗色","琥珀","象牙白","青绿"))):
+            return {"ok":False,"reason":"hero_studio_design_lock_not_verified"}
+    except (ValueError,TypeError,KeyError,AttributeError):
+        return {"ok":False,"reason":"hero_studio_character_unavailable"}
+    return enqueue_ue_episode_timeline(
+        project_id,episode_id,studio_getter=studio_getter,
+        opener=opener,token_file=token_file,
+        task="build_ep01_hero_metahuman_seed",
+    )
+
+
 # V0.5 operator workflow: job-bound log tails and task cancellation only.
 # No caller-supplied filenames, PIDs, shell commands, or arbitrary URLs.
 LOG_KIND = frozenset({
