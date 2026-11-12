@@ -1,4 +1,6 @@
 # Signed channel publication dispatches this workflow to refresh the VPS immediately.
+# Re-run OIDC staging after the immutable UI polish v0.20.23 / v0.20.21 releases;
+# the independent Windows signer requires full VPS installer SHA256 before signing.
 name: Glacier preview mirror immediate VPS sync
 
 on:
