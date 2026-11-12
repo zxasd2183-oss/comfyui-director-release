@@ -5,7 +5,7 @@ created while hidden, and is revealed only after the splash is fully hidden.
 """
 from time import monotonic
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPixmap, QPen
 from PySide6.QtWidgets import QApplication, QSplashScreen
 
 
@@ -21,27 +21,42 @@ def show_glacier_splash(version):
     background.setColorAt(1, QColor("#d9edf9"))
     painter.fillRect(0, 0, width, height, background)
 
-    # Stylized ice peak: original geometric brand mark, drawn locally.
+    # Same three-peak mark as the offline home and browser window icon.
     center_x, center_y = width / 2, 102
     peak = QPainterPath()
-    peak.moveTo(center_x - 67, center_y + 44)
-    peak.lineTo(center_x - 15, center_y - 40)
-    peak.lineTo(center_x + 5, center_y - 7)
-    peak.lineTo(center_x + 26, center_y - 29)
-    peak.lineTo(center_x + 78, center_y + 44)
+    peak.moveTo(center_x - 79, center_y + 43)
+    peak.lineTo(center_x - 33, center_y - 30)
+    peak.lineTo(center_x - 13, center_y + 2)
+    peak.lineTo(center_x + 17, center_y - 49)
+    peak.lineTo(center_x + 82, center_y + 43)
     peak.closeSubpath()
-    painter.fillPath(peak, QColor("#67b2d9"))
-    ridge = QPainterPath()
-    ridge.moveTo(center_x - 15, center_y - 40)
-    ridge.lineTo(center_x + 5, center_y - 7)
-    ridge.lineTo(center_x + 26, center_y - 29)
-    ridge.lineTo(center_x + 10, center_y + 10)
-    ridge.closeSubpath()
-    painter.fillPath(ridge, QColor("#dff5ff"))
-    painter.setPen(QColor("#254e68"))
-    title = QFont("Arial", 33, QFont.Weight.DemiBold)
+    painter.fillPath(peak, QColor("#378fe6"))
+    left_snow = QPainterPath()
+    left_snow.moveTo(center_x - 33, center_y - 30)
+    left_snow.lineTo(center_x - 13, center_y + 2)
+    left_snow.lineTo(center_x - 28, center_y - 5)
+    left_snow.lineTo(center_x - 46, center_y + 13)
+    left_snow.closeSubpath()
+    painter.fillPath(left_snow, QColor("#d6f5ff"))
+    top_snow = QPainterPath()
+    top_snow.moveTo(center_x + 17, center_y - 49)
+    top_snow.lineTo(center_x + 49, center_y - 6)
+    top_snow.lineTo(center_x + 24, center_y - 24)
+    top_snow.lineTo(center_x + 11, center_y - 6)
+    top_snow.lineTo(center_x + 1, center_y - 23)
+    top_snow.closeSubpath()
+    painter.fillPath(top_snow, QColor("#f0fbff"))
+    wave = QPainterPath()
+    wave.moveTo(center_x - 83, center_y + 50)
+    wave.cubicTo(center_x - 38, center_y + 30,
+                 center_x + 19, center_y + 64, center_x + 84, center_y + 43)
+    painter.setPen(QPen(QColor("#57b7e9"), 4))
+    painter.drawPath(wave)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setPen(QColor("#193e66"))
+    title = QFont("Arial", 30, QFont.Weight.DemiBold)
     painter.setFont(title)
-    painter.drawText(0, 185, width, 55, Qt.AlignmentFlag.AlignHCenter, "Glacier")
+    painter.drawText(0, 185, width, 55, Qt.AlignmentFlag.AlignHCenter, "Glacier Browser")
     painter.setPen(QColor("#60859b"))
     painter.setFont(QFont("Arial", 12))
     painter.drawText(0, 247, width, 30, Qt.AlignmentFlag.AlignHCenter,
