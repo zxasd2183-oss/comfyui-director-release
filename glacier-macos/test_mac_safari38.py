@@ -150,6 +150,25 @@ class MacSafari38Tests(unittest.TestCase):
         self.assertFalse(safari_icon38("share").isNull())
         self.assertIn("GlacierSafariSidebar38", SAFARI_MAC_QSS38)
 
+    def test_safari_native_layout_preview(self):
+        # Qt fixture proof (not a screenshot of a production browser session).
+        # The real main.py installs the same layout after its complete shell.
+        target = os.environ.get("GLACIER_SAFARI_PROOF_DIR", "").strip()
+        if not target:
+            return
+        from pathlib import Path
+        win = self.window
+        win._safari_sidebar_button38.click()
+        self.app.processEvents()
+        win._safari_refresh38()
+        self.app.processEvents()
+        folder = Path(target)
+        folder.mkdir(parents=True, exist_ok=True)
+        image = folder / "Glacier-macOS-Safari38-Qt-layout.png"
+        self.assertTrue(win.grab().save(str(image)))
+        self.assertGreater(image.stat().st_size, 12000)
+        print("macOS Safari Qt fixture layout proof:", image)
+
     def test_second_install_is_rejected(self):
         with self.assertRaises(RuntimeError):
             install_mac_safari38(self.window)
