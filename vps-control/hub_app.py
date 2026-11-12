@@ -15,6 +15,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_stage_cameras as enqueue_ue_stage_cameras_rpc,
                            enqueue_ue_previs_stills as enqueue_ue_previs_stills_rpc,
                            enqueue_ue_asset_audit as enqueue_ue_asset_audit_rpc,
+                           enqueue_ue_scene_candidates as enqueue_ue_scene_candidates_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
                            cancel_ue_job as cancel_ue_job_rpc,
@@ -24,7 +25,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "0.8.0"
+UE_HUB_API_VERSION = "0.9.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -407,6 +408,19 @@ def enqueue_ue_asset_audit(project_id: str, episode_id: str) -> dict:
     drafts, replaces V03 assets, or mutates the UE project.
     """
     return enqueue_ue_asset_audit_rpc(project_id, episode_id)
+
+
+@app.tool(annotations=WRITE)
+def enqueue_ue_scene_candidates(project_id: str, episode_id: str) -> dict:
+    """Build three editable, colored UE 5.8 environment drafts: office hall,
+    the same hall's alarm-light variant, and glass-door entrance.
+
+    Inputs come from locked Studio EP01 and its existing scene drafts, never
+    from an arbitrary script/asset path. This starts billed UE Editor work.
+    Only job-isolated Candidate assets are created; approved assets remain
+    unchanged, and no character masters or video rendering are claimed.
+    """
+    return enqueue_ue_scene_candidates_rpc(project_id, episode_id)
 
 
 @app.tool(annotations=READ)
