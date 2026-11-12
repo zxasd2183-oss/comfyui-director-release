@@ -11,6 +11,7 @@ on:
       - feature/glacier-native-topbar-35-20261112
       - feature/glacier-framed-tabstrip-36-20261112
       - feature/glacier-account-popover-20261112
+      - feature/glacier-macos-safari-separated-20261112
       - feature/glacier-home-brand-20261112
     paths:
       - 'glacier-macos/**'
@@ -92,18 +93,26 @@ jobs:
           cp ../glacier-windows/test_productivity16.py test_productivity16.py
           for file in glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_chrome_ui30.py test_chrome_ui30.py glacier_site_diagnostic31.py test_site_diagnostic31.py glacier_desktop_ui32.py test_desktop_ui32.py glacier_chrome_shell33.py glacier_chrome_top35.py test_chrome_shell33.py glacier_proxy_health29.py; do cp ../glacier-windows/"$file" "$file"; done
           python ../scripts/glacier_prepare_rotated_update.py macos .
-          python -m py_compile glacier_chrome_top35.py glacier_chrome_shell33.py test_chrome_shell33.py glacier_splash.py test_glacier_startup_sequence.py mac_local_vault.py test_mac_local_vault.py test_mac_keychain_startup.py mac_xray_reality.py test_mac_xray_reality.py test_mac_xray_integration.py main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_proxy_diagnostics.py test_mac_proxy_diagnostics.py test_mac_core_log_integration.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_chrome_ui30.py test_chrome_ui30.py glacier_site_diagnostic31.py test_site_diagnostic31.py glacier_proxy_health29.py glacier_accounts22.py glacier_account_center26.py test_account_center26.py glacier_sync23.py glacier_sync_auto24.py test_accounts22.py test_sync23.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
+          python -m py_compile mac_safari38.py test_mac_safari38.py glacier_chrome_top35.py glacier_chrome_shell33.py test_chrome_shell33.py glacier_splash.py test_glacier_startup_sequence.py mac_local_vault.py test_mac_local_vault.py test_mac_keychain_startup.py mac_xray_reality.py test_mac_xray_reality.py test_mac_xray_integration.py main.py mac_platform.py mac_update.py mac_update_core.py mac_chrome_adapter.py mac_https_probe.py mac_proxy_diagnostics.py test_mac_proxy_diagnostics.py test_mac_core_log_integration.py mac_ui08.py mac_desktop15.py test_mac_desktop15.py glacier_productivity16.py test_productivity16.py glacier_workspaces17.py glacier_downloads17.py test_workspaces17.py test_downloads17.py glacier_tabs19.py test_tabs19.py test_downloads19.py test_workspaces19.py glacier_shell20.py test_shell20.py glacier_chrome_ui30.py test_chrome_ui30.py glacier_site_diagnostic31.py test_site_diagnostic31.py glacier_proxy_health29.py glacier_accounts22.py glacier_account_center26.py test_account_center26.py glacier_sync23.py glacier_sync_auto24.py test_accounts22.py test_sync23.py features.py ui08.py ui09.py ui12.py tabtools13.py chrome14.py
           python -m unittest -v test_mac_update
           python -m unittest -v test_mac_https_probe
           python -m unittest -v test_mac_proxy_diagnostics
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_xray_reality
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_vless_config
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_gui_start
+          GLACIER_SAFARI_PROOF_DIR=qa-mac-safari QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_safari38
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_mac_desktop15
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_productivity16
           QT_QPA_PLATFORM=offscreen python -m unittest -v test_workspaces17 test_downloads17 test_tabs19 test_downloads19 test_workspaces19 test_shell20 test_chrome_ui30 test_chrome_shell33 test_glacier_startup_sequence test_site_diagnostic31 test_desktop_ui32 test_account_center26 test_accounts22 test_sync23
           python -c "from mac_update_core import FEED_URL,signed_update_session; assert FEED_URL == 'https://sync.borealos.cn/downloads/macos-arm64.json'; s=signed_update_session(1080); assert not s.trust_env and s.proxies['https']=='socks5h://127.0.0.1:1080'; s.close(); print('VLESS HTTPS signed updater checks passed')"
           python -c "from PySide6.QtWebEngineWidgets import QWebEngineView; import keyring.backends.macOS; import mac_update; print('Qt WebEngine / optional Keychain migration / updater imports passed')"
+      - name: Upload actual macOS Qt Safari layout QA screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlacierBrowser-macOS-Safari38-Qt-layout
+          path: glacier-macos/qa-mac-safari/Glacier-macOS-Safari38-Qt-layout.png
+          if-no-files-found: error
+          retention-days: 14
       - name: Download and SHA256-verify official sing-box 1.14.4 darwin arm64
         working-directory: glacier-macos
         run: |
@@ -229,10 +238,10 @@ jobs:
           test "$(find dist/GlacierBrowser.app -type f -name sing-box | wc -l | tr -d ' ')" -ge 1
           test "$(find dist/GlacierBrowser.app -type f -name xray | wc -l | tr -d ' ')" -ge 1
           test "$(find dist/GlacierBrowser.app -type f -name LICENSE-Xray-core.txt | wc -l | tr -d ' ')" -ge 1
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.20.25' dist/GlacierBrowser.app/Contents/Info.plist || \
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.20.25' dist/GlacierBrowser.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.20.25' dist/GlacierBrowser.app/Contents/Info.plist || \
-            /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 0.20.25' dist/GlacierBrowser.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.20.26' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 0.20.26' dist/GlacierBrowser.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 0.20.26' dist/GlacierBrowser.app/Contents/Info.plist || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 0.20.26' dist/GlacierBrowser.app/Contents/Info.plist
           # Local ad-hoc signature is for Apple Silicon execution only, NOT Developer ID notarization.
           codesign --force --deep --sign - dist/GlacierBrowser.app
           codesign --verify --deep --verbose=2 dist/GlacierBrowser.app
@@ -244,7 +253,7 @@ jobs:
           ditto dist/GlacierBrowser.app dmg-stage/GlacierBrowser.app
           ln -s /Applications dmg-stage/Applications
           cat > dmg-stage/README-安装说明.txt <<'EOF'
-          Glacier Browser v0.20.25 · macOS Apple Silicon 版本
+          Glacier Browser v0.20.26 · macOS Apple Silicon 版本
           1. 将 GlacierBrowser.app 拖到 Applications 文件夹。
           2. 该版本未经过 Apple Developer ID 签名/公证，macOS 可能拒绝首次打开。
              请核对发布来源，并在 系统设置 > 隐私与安全性 中按系统提示授权。
@@ -255,19 +264,19 @@ jobs:
           5. 工作区、标签分组、下载历史本地加密存储，覆盖安装不会主动清除数据。
           6. 书签、历史及应用设置使用 Mac 本地数据目录；
              Windows 上的线路/历史不会自动迁移到 Mac。
-          版本：0.20.25，架构：Apple Silicon (arm64)
+          版本：0.20.26，架构：Apple Silicon (arm64)
           EOF
           hdiutil create -volname 'Glacier Browser' -srcfolder dmg-stage \
-            -ov -format UDZO 'GlacierBrowser-v0.20.25-macOS-AppleSilicon.dmg'
-          test -s 'GlacierBrowser-v0.20.25-macOS-AppleSilicon.dmg'
-          hdiutil verify 'GlacierBrowser-v0.20.25-macOS-AppleSilicon.dmg'
-          shasum -a 256 'GlacierBrowser-v0.20.25-macOS-AppleSilicon.dmg' > 'GlacierBrowser-v0.20.25-macOS-AppleSilicon.dmg.sha256'
-          cat 'GlacierBrowser-v0.20.25-macOS-AppleSilicon.dmg.sha256'
+            -ov -format UDZO 'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg'
+          test -s 'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg'
+          hdiutil verify 'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg'
+          shasum -a 256 'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg' > 'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg.sha256'
+          cat 'GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg.sha256'
       - name: Upload actual DMG for inspection
         uses: actions/upload-artifact@v4
         with:
           name: GlacierBrowser-RC-macOS-AppleSilicon-DMG
-          path: glacier-macos/GlacierBrowser-v0.20.25-macOS-AppleSilicon.dmg
+          path: glacier-macos/GlacierBrowser-v0.20.26-macOS-AppleSilicon.dmg
           if-no-files-found: error
           retention-days: 30
           compression-level: 0

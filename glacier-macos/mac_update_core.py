@@ -18,7 +18,7 @@ import requests
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-CURRENT_VERSION = "0.20.25"
+CURRENT_VERSION = "0.20.26"
 CHANNEL = "macos-arm64"
 KEY_ID = "cf9452226375ff7d"
 PUBLIC_KEY = bytes.fromhex("7c375bfd04b4941a662a9a66e9c3f980653cb01b9e5df286ec651eca84e26dab")

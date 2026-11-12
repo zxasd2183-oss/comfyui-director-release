@@ -17,6 +17,7 @@ from ui12 import GlacierUI12
 from tabtools13 import GlacierTabTools13
 from mac_chrome_adapter import MacChrome14
 from mac_desktop15 import MacDesktop15
+from mac_safari38 import install_mac_safari38
 from glacier_productivity16 import GlacierProductivity16
 from glacier_workspaces17 import GlacierWorkspaces17
 from glacier_downloads17 import GlacierDownloads17
@@ -163,7 +164,7 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.25")
+  self.setWindowTitle("❄ Glacier Browser · macOS v0.20.26")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -199,6 +200,7 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.setup_ui30(bar)
   self.setup_desktop_ui32(lay,bar)
   self.setup_chrome_shell33()
+  install_mac_safari38(self)
   # WebEngine can cancel setHtml when UI extensions configure the first tab.
   # Check the actual DOM after initialization, not just the URL: a completely
   # empty document still reports about:blank and otherwise looks successful.
@@ -294,7 +296,7 @@ def main():
   listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("macOS v0.20.25")
+ splash=show_glacier_splash("macOS v0.20.26")
  link=get_link(app,parse_node)
  proc=None
  try:proc=proxy_start(link,port)
