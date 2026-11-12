@@ -380,6 +380,16 @@ def render_cast_review(spec, root, work):
             or data.get("frames_per_view") != 1
             or data.get("source_world_unchanged") is not True):
         raise JobError("cast_review_preset_receipt_invalid")
+    look=data.get("review_look")
+    if (type(look) is not dict or
+            look.get("face_component_overrides") != 52 or
+            look.get("exposure_method") != "manual" or
+            look.get("exposure_bias") != -1.5 or
+            look.get("bloom_intensity") != 0.0 or
+            look.get("floor_material") != "Charcoal" or
+            look.get("backdrop_material") != "Parchment" or
+            look.get("v120_source_master_unchanged") is not True):
+        raise JobError("cast_review_v120_look_receipt_invalid")
     if hashlib.sha256(source.read_bytes()).hexdigest()!=source_hash_before:
         raise JobError("original_character_review_world_modified")
     images=[]
@@ -420,6 +430,7 @@ def render_cast_review(spec, root, work):
         "source_cast_world":data["source_world"],
         "source_cast_sha256":source_hash_before,
         "source_cast_unchanged":True,
+        "review_look":look,
         "render_world":expected_world,
         "bound_review_sequences":expected_sequences,
         "preview_count":len(images),
