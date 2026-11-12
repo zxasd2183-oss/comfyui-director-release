@@ -568,6 +568,313 @@ def build_ep01_scene_candidates(spec):
 
 
 
+
+# V1.0: authored, ORIGINAL, EDITABLE character-design Blueprint candidates.
+# These are component-based 3D *design maquettes*, not rigged MetaHumans,
+# skeletal animation, lip sync, owner-approved masters, or finished film.
+CAST_IDS = ("CHAR_GPT", "CHAR_GEM", "CHAR_DS", "CHAR_CLA", "CHAR_ZERO")
+CAST_PALETTE = {
+    "Skin": (0.88, 0.67, 0.56),
+    "SkinShade": (0.73, 0.48, 0.39),
+    "Ivory": (0.94, 0.91, 0.84),
+    "Charcoal": (0.18, 0.22, 0.25),
+    "Teal": (0.12, 0.55, 0.51),
+    "Chestnut": (0.22, 0.105, 0.075),
+    "Amber": (0.42, 0.25, 0.13),
+    "Lilac": (0.51, 0.36, 0.78),
+    "Magenta": (0.86, 0.34, 0.64),
+    "OceanBlue": (0.05, 0.22, 0.48),
+    "IceBlue": (0.39, 0.74, 0.88),
+    "Clay": (0.70, 0.30, 0.18),
+    "Caramel": (0.48, 0.24, 0.12),
+    "Parchment": (0.78, 0.73, 0.61),
+    "Black": (0.035, 0.045, 0.055),
+    "RedRope": (0.91, 0.09, 0.065),
+    "White": (0.98, 0.97, 0.95),
+    "Mouth": (0.58, 0.23, 0.26),
+}
+# All characters face +X. Actor RIGHT arm is world-local Y=-45.
+CAST_STYLES = {
+    "CHAR_GPT": {"eyes":"Amber", "hair":"Chestnut", "coat":"Ivory",
+                 "lining":"Teal", "pants":"Charcoal", "shoes":"Charcoal",
+                 "hair_style":"side_part_bob"},
+    "CHAR_GEM": {"eyes":"Lilac", "hair":"Lilac", "coat":"Lilac",
+                 "lining":"Magenta", "pants":"Charcoal", "shoes":"Magenta",
+                 "hair_style":"asym_short_layers"},
+    "CHAR_DS": {"eyes":"IceBlue", "hair":"OceanBlue", "coat":"OceanBlue",
+                 "lining":"White", "pants":"IceBlue", "shoes":"OceanBlue",
+                 "hair_style":"long_blue_braid"},
+    "CHAR_CLA": {"eyes":"Amber", "hair":"Clay", "coat":"Ivory",
+                 "lining":"Caramel", "pants":"Caramel", "shoes":"Caramel",
+                 "hair_style":"clay_bun"},
+    "CHAR_ZERO": {"eyes":"Charcoal", "hair":"Black", "coat":"Parchment",
+                 "lining":"Ivory", "pants":"Charcoal", "shoes":"Black",
+                 "hair_style":"low_black_ponytail"},
+}
+
+
+def _cast_parts(character_id):
+    """Named, separately editable character components in UE centimetres.
+
+    These are design maquettes, intentionally incapable of pretending to be
+    skeletal or facial-animation-ready. No logos, printed text, or AI marks.
+    """
+    if character_id not in CAST_STYLES:
+        raise RuntimeError("unknown_cast_character")
+    st = CAST_STYLES[character_id]
+    parts = []
+    def p(label, shape, xyz, scale, color):
+        if (color not in CAST_PALETTE or shape not in SCENE_GEOMETRY
+                or any(item[0] == label for item in parts)):
+            raise RuntimeError("cast_part_invalid")
+        parts.append((label, shape, xyz, scale, color))
+
+    # Readable feminine silhouette; 180cm head-to-toe original character.
+    p("Torso_Coat", "Sphere", (0,0,108), (.34,.30,.57),st["coat"])
+    p("Coat_Lower", "Cube", (-1,0,71), (.56,.49,.47),st["coat"])
+    p("Inner_Contrast", "Cube", (27,0,110),(.045,.18,.47),st["lining"])
+    p("Neck", "Cylinder", (0,0,145),(.15,.15,.27),"Skin")
+    p("Face_Head", "Sphere", (0,0,166),(.55,.48,.59),"Skin")
+    p("Nose", "Sphere", (28,0,160),(.11,.11,.12),"SkinShade")
+    p("Mouth_Center", "Sphere", (28,0,147),(.027,.17,.03),"Mouth")
+    for name,y in (("Right",-13),("Left",13)):
+        p(name+"_Eye_Iris","Sphere",(25,y,168),(.072,.11,.113),st["eyes"])
+        p(name+"_Eye_Highlight","Sphere",(30,y-2,172),(.022,.028,.025),"White")
+        p(name+"_Brow","Cube",(27,y,181),(.03,.19,.025),st["hair"])
+        p(name+"_Ear","Sphere",(0,-24 if name=="Right" else 24,165),
+          (.14,.14,.20),"Skin")
+        side=-1 if name=="Right" else 1
+        p(name+"_Shoulder","Sphere",(0,side*30,130),(.24,.23,.22),st["coat"])
+        p(name+"_Sleeve","Cylinder",(0,side*40,106),(.16,.16,.43),st["coat"])
+        p(name+"_Hand","Sphere",(0,side*43,78),(.14,.135,.19),"Skin")
+        p(name+"_TrouserLeg","Cylinder",(0,side*17,39),(.16,.17,.65),st["pants"])
+        p(name+"_Boot","Cube",(8,side*17,10),(.42,.22,.20),st["shoes"])
+    p("Coat_Collar_Right","Cube",(21,-19,139),(.10,.17,.22),st["lining"])
+    p("Coat_Collar_Left","Cube",(21,19,139),(.10,.17,.22),st["lining"])
+    p("Hair_Crown","Sphere",(-4,0,193),(.58,.53,.22),st["hair"])
+    p("Hair_Back","Sphere",(-22,0,175),(.38,.54,.57),st["hair"])
+
+    if st["hair_style"] == "side_part_bob":
+        # GPT: locked short dark chestnut bob, amber eyes, NEVER silver hair.
+        p("Hair_Bob_Right","Sphere",(-3,-25,160),(.26,.20,.46),"Chestnut")
+        p("Hair_Bob_Left","Sphere",(-3,25,160),(.26,.20,.46),"Chestnut")
+        p("Hair_SidePart_Fringe","Sphere",(19,11,188),(.34,.33,.19),"Chestnut")
+        p("Coat_Seam_A","Cube",(29,-10,100),(.028,.025,.32),"Teal")
+        p("Coat_Seam_B","Cube",(29,10,100),(.028,.025,.32),"Teal")
+    elif st["hair_style"] == "asym_short_layers":
+        for idx,(x,y,z) in enumerate(((4,-29,182),(-4,-31,170),
+                                      (11,25,190),(17,14,195))):
+            p("Hair_Layer_%02d"%idx,"Sphere",(x,y,z),
+              (.28,.19,.14),"Magenta" if idx%2 else "Lilac")
+        p("Jacket_Gradient_Accent","Cube",(29,-14,99),
+          (.024,.11,.48),"Magenta")
+    elif st["hair_style"] == "long_blue_braid":
+        for idx in range(7):
+            p("Hair_Braid_%02d"%idx,"Sphere",
+              (-24,-26,148-idx*12),(.15,.16,.19),
+              "OceanBlue" if idx%2==0 else "IceBlue")
+        p("Ocean_Coat_Slash","Cube",(29,0,113),(.024,.33,.10),"IceBlue")
+        p("Ocean_Coat_Flap","Cube",(29,-14,85),(.024,.28,.10),"White")
+    elif st["hair_style"] == "clay_bun":
+        p("Hair_Bun","Sphere",(-28,0,204),(.32,.33,.32),"Clay")
+        p("Hair_Twist","Sphere",(-28,0,216),(.23,.22,.13),"Caramel")
+        p("Coat_Bookish_Belt","Cube",(27,0,84),(.04,.47,.075),"Caramel")
+    elif st["hair_style"] == "low_black_ponytail":
+        p("Hair_Ponytail_Tie","Sphere",(-27,0,142),(.16,.17,.14),"Black")
+        p("Hair_Low_Ponytail","Cylinder",(-29,0,113),
+          (.14,.14,.55),"Black")
+        # Episode continuity: red wrist-thread stays on RIGHT hand (Y=-).
+        p("Right_Wrist_Red_Thread","Cylinder",
+          (0,-43,88),(.164,.16,.045),"RedRope")
+        p("Old_Canvas_Bag","Cube",(-8,53,69),(.33,.15,.39),"Parchment")
+        p("Canvas_Strap","Cube",(0,46,119),(.10,.09,.64),"Caramel")
+
+    return parts
+
+
+def _create_cast_materials(directory):
+    """Creates unbranded original flat colors as native Material assets."""
+    tools = unreal.AssetToolsHelpers.get_asset_tools()
+    out = {}
+    for label, rgb in CAST_PALETTE.items():
+        path = directory + "/M_" + label
+        if unreal.EditorAssetLibrary.does_asset_exist(path):
+            raise RuntimeError("cast_material_collision")
+        mat = tools.create_asset(
+            asset_name="M_"+label, package_path=directory,
+            asset_class=unreal.Material, factory=unreal.MaterialFactoryNew())
+        if not mat:
+            raise RuntimeError("cast_material_creation_failed_"+label)
+        base = unreal.MaterialEditingLibrary.create_material_expression(
+            mat, unreal.MaterialExpressionConstant3Vector)
+        rough = unreal.MaterialEditingLibrary.create_material_expression(
+            mat, unreal.MaterialExpressionConstant)
+        if not base or not rough:
+            raise RuntimeError("cast_material_expression_failed_"+label)
+        base.set_editor_property("constant",
+                                 unreal.LinearColor(*rgb,1.0))
+        rough.set_editor_property("r",0.88)
+        unreal.MaterialEditingLibrary.connect_material_property(
+            base,"",unreal.MaterialProperty.MP_BASE_COLOR)
+        unreal.MaterialEditingLibrary.connect_material_property(
+            rough,"",unreal.MaterialProperty.MP_ROUGHNESS)
+        unreal.MaterialEditingLibrary.recompile_material(mat)
+        if not unreal.EditorAssetLibrary.save_loaded_asset(mat):
+            raise RuntimeError("cast_material_save_failed_"+label)
+        out[label] = mat
+    return out
+
+
+def _build_cast_blueprint(directory, ident, mats, meshes):
+    """An actual Blueprint Actor with named StaticMeshComponents, not a map."""
+    path=directory+"/BP_"+ident
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        raise RuntimeError("cast_blueprint_collision_"+ident)
+    factory=unreal.BlueprintFactory()
+    factory.set_editor_property("parent_class",unreal.Actor)
+    factory.set_editor_property("edit_after_new",False)
+    bp=unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+        asset_name="BP_"+ident,package_path=directory,
+        asset_class=unreal.Blueprint,factory=factory)
+    if not bp:
+        raise RuntimeError("cast_blueprint_create_failed_"+ident)
+    subsystem=unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+    handles=subsystem.k2_gather_subobject_data_for_blueprint(bp)
+    if not handles:
+        raise RuntimeError("cast_blueprint_root_handle_missing")
+    root_handle=handles[0]
+    count=0
+    for name,shape,position,scale,color in _cast_parts(ident):
+        handle,reason=subsystem.add_new_subobject(
+            params=unreal.AddNewSubobjectParams(
+                parent_handle=root_handle,
+                new_class=unreal.StaticMeshComponent,
+                blueprint_context=bp))
+        data=unreal.SubobjectDataBlueprintFunctionLibrary.get_data(handle)
+        comp=unreal.SubobjectDataBlueprintFunctionLibrary.get_object(data)
+        if comp is None:
+            raise RuntimeError("cast_component_create_failed_"+ident+"_"+name)
+        if not subsystem.rename_subobject(
+                handle=handle,new_name=unreal.Text(name)):
+            raise RuntimeError("cast_component_rename_failed_"+ident+"_"+name)
+        comp.set_editor_property("static_mesh",meshes[shape])
+        comp.set_material(0,mats[color])
+        comp.set_relative_location(vec(position),False,False)
+        comp.set_relative_scale3d(vec(scale))
+        count+=1
+    if count < 32:
+        raise RuntimeError("cast_blueprint_too_few_components")
+    if not unreal.EditorAssetLibrary.save_loaded_asset(bp):
+        raise RuntimeError("cast_blueprint_save_failed_"+ident)
+    bp_class=unreal.EditorAssetLibrary.load_blueprint_class(path)
+    if not bp_class:
+        raise RuntimeError("cast_blueprint_class_unavailable_"+ident)
+    return bp_class,count,path
+
+
+def build_ep01_cast_blueprints(spec):
+    """5 independent actor Blueprints and one preview World, never Approved."""
+    import re
+    if (spec.get("format")!="director_ue_cast_blueprints_v100" or
+            (spec.get("project_id"),spec.get("episode_id"),
+             spec.get("fps"),spec.get("total_frames"),spec.get("total_ms"))!=
+            ("WaitingOffice","EP01",24,3840,160000)):
+        raise RuntimeError("cast_requires_locked_ep01")
+    if (len(spec.get("shots",[])) != 31 or
+            [s.get("shot_id") for s in spec["shots"]] !=
+            ["%02d"%i for i in range(1,32)] or
+            sum(s["frames"] for s in spec["shots"]) != 3840):
+        raise RuntimeError("cast_frozen_shot_plan_invalid")
+    job_id=os.environ.get("DIRECTOR_UE_JOB_ID","")
+    if not re.fullmatch(r"[a-f0-9]{32}",job_id):
+        raise RuntimeError("cast_job_id_invalid")
+    root="/Game/Director/Candidates/EP01/CastBuilds/J"+job_id
+    if unreal.EditorAssetLibrary.does_directory_exist(root):
+        raise RuntimeError("cast_job_namespace_collision")
+    if any(unreal.EditorAssetLibrary.does_asset_exist(
+            APPROVED_ROOT+"/Characters/"+name) for name in CAST_IDS):
+        raise RuntimeError("approved_character_exists")
+    mats_dir=root+"/Materials"
+    bp_dir=root+"/Blueprints"
+    maps_dir=root+"/Maps"
+    for directory in (root,mats_dir,bp_dir,maps_dir):
+        if not unreal.EditorAssetLibrary.make_directory(directory):
+            raise RuntimeError("cast_directory_creation_failed")
+    materials=_create_cast_materials(mats_dir)
+    meshes={shape:unreal.EditorAssetLibrary.load_asset(asset)
+            for shape,asset in SCENE_GEOMETRY.items()}
+    if any(value is None for value in meshes.values()):
+        raise RuntimeError("cast_engine_mesh_missing")
+    classes=[]
+    receipts=[]
+    for ident in CAST_IDS:
+        klass,nparts,path=_build_cast_blueprint(
+            bp_dir,ident,materials,meshes)
+        classes.append(klass)
+        receipts.append({"id":ident,"path":path,
+                         "editable_mesh_components":nparts})
+    preview_map=maps_dir+"/EP01_Five_Cast_Review"
+    if unreal.EditorAssetLibrary.does_asset_exist(preview_map):
+        raise RuntimeError("cast_review_map_collision")
+    editor=unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+    if not editor.new_level(preview_map):
+        raise RuntimeError("cast_review_level_creation_failed")
+    actor_subsystem=unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    # Intentional individual actor pivots for future Sequencer staging.
+    for index,(ident,klass) in enumerate(zip(CAST_IDS,classes)):
+        actor=actor_subsystem.spawn_actor_from_class(
+            klass,vec((0,(index-2)*165,0)),rot())
+        if actor is None:
+            raise RuntimeError("cast_preview_spawn_failed_"+ident)
+        actor.set_actor_label("WO_CANDIDATE_"+ident)
+    floor=actor_subsystem.spawn_actor_from_class(
+        unreal.StaticMeshActor,vec((0,0,-25)),rot())
+    if not floor:
+        raise RuntimeError("cast_review_floor_missing")
+    floor.set_actor_label("WO_CANDIDATE_ReviewFloor")
+    comp=floor.get_component_by_class(unreal.StaticMeshComponent)
+    if not comp or not comp.set_static_mesh(meshes["Cube"]):
+        raise RuntimeError("cast_review_floor_mesh_missing")
+    comp.set_material(0,materials["Ivory"])
+    floor.set_actor_scale3d(vec((5,11,.3)))
+    light=actor_subsystem.spawn_actor_from_class(
+        unreal.PointLight,vec((200,0,500)),rot())
+    if not light:
+        raise RuntimeError("cast_review_light_missing")
+    light.set_actor_label("WO_CANDIDATE_ReviewLight")
+    lc=light.get_component_by_class(unreal.PointLightComponent)
+    if not lc:
+        raise RuntimeError("cast_review_light_component_missing")
+    lc.set_editor_property("intensity",1200.0)
+    lc.set_editor_property("attenuation_radius",2400.0)
+    camera=actor_subsystem.spawn_actor_from_class(
+        unreal.CineCameraActor,vec((780,0,170)),
+        unreal.MathLibrary.find_look_at_rotation(
+            vec((780,0,170)),vec((0,0,110))))
+    if not camera:
+        raise RuntimeError("cast_review_camera_missing")
+    camera.set_actor_label("WO_CANDIDATE_CastLineupCamera")
+    if not editor.save_current_level():
+        raise RuntimeError("cast_review_level_save_failed")
+    if not unreal.EditorAssetLibrary.does_asset_exist(preview_map):
+        raise RuntimeError("cast_review_level_asset_missing")
+    return {
+        "ok":True,"kind":"original_static_blueprint_character_candidates_v100",
+        "characters":receipts,
+        "review_map":preview_map,
+        "material_count":len(materials),
+        "right_wrist_red_thread_character":"CHAR_ZERO",
+        "locked_gpt_hair":"short_dark_chestnut_bob",
+        "locked_gpt_eyes":"amber",
+        "shot_count":31,"total_frames":3840,
+        "studio_character_approval_verified":False,
+        "skeletal_rig_bound":False,"metahuman_bound":False,
+        "facial_performance_ready":False,"render_ready":False,
+        "no_approved_asset_replaced":True,
+    }
+
+
+
 def main():
     result_path = Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
     try:
@@ -577,6 +884,8 @@ def main():
                   if spec.get("format") == "director_ue_assets_v08"
                   else build_ep01_scene_candidates(spec)
                   if spec.get("format") == "director_ue_scene_candidates_v09"
+                  else build_ep01_cast_blueprints(spec)
+                  if spec.get("format") == "director_ue_cast_blueprints_v100"
                   else build(spec))
     except Exception as exc:
         result = {"ok":False,"reason":str(exc)[:400],
@@ -584,7 +893,9 @@ def main():
     result_path.write_text(json.dumps(result,ensure_ascii=False,indent=2),
                            encoding="utf-8")
     if result["ok"]:
-        unreal.log("Scene candidates created under job-owned namespace" if
+        unreal.log("Five character Blueprints created as unapproved design candidates" if
+                   result.get("characters") is not None else
+                   "Scene candidates created under job-owned namespace" if
                    result.get("scene_candidates") is not None else
                    "Approved-asset inspection complete (no writes)" if
                    result.get("asset_audit") is not None else
