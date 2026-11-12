@@ -76,6 +76,7 @@ class SafariFixture(QMainWindow):
         self._group_button17 = QToolButton(self)
         self._group_button17.setMenu(QMenu(self))
         self._group_button17.menu().addAction("无分组")
+        self._group_menu17 = self._group_button17.menu()
         self._group_button17.hide()  # In production this lives in the hidden utility shelf.
         self.statusBar()
 
