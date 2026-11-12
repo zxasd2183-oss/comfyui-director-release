@@ -3,10 +3,11 @@
 This is a presentation adapter only: existing login, registration, device
 approval and sync routines remain the single source of truth.
 """
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint, QSize, QTimer
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
+    QApplication, QDialog, QDialogButtonBox, QFormLayout, QFrame,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 
@@ -43,120 +44,257 @@ class GlacierAccountCenter26:
             button.setToolTip(title + " · " + subtitle)
 
     def show_account_center26(self):
+        """Show an anchored Chrome-like profile menu, not a separate dialog.
+
+        All actions delegate to the existing encrypted vault, device approval
+        and account sync methods. Neither credentials nor OTPs appear here.
+        """
+        old = getattr(self, "_account_popover37", None)
+        if old is not None:
+            try:
+                if old.isVisible():
+                    old.close()
+                    return None
+            except RuntimeError:
+                pass
+
+        from glacier_chrome_top35 import top_icon35
         state = getattr(self, "_sync_state23", {})
         title, subtitle = account_label26(state)
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Glacier · 账号中心")
-        dialog.setObjectName("GlacierAccountCenter26")
-        dialog.setMinimumSize(480, 500)
-        dialog.resize(520, 560)
-        dialog.setStyleSheet("""
-            QDialog#GlacierAccountCenter26 {
-                background:#f7fbfe; color:#263949;
-            }
-            QLabel#GlacierAccountTitle26 {
-                font-size:23px; font-weight:700; color:#264c67;
-            }
-            QLabel#GlacierAccountDesc26 {
-                color:#708b9e; font-size:12px;
-            }
-            QFrame#GlacierAccountPanel26 {
-                border:1px solid #deebf4; border-radius:16px;
-                background:white;
-            }
-            QPushButton#GlacierAccountAction26 {
-                text-align:left; padding:11px 16px;
-                background:#fff; border:1px solid #e1eaf1;
-                border-radius:10px; color:#2b506b; font-size:13px;
-            }
-            QPushButton#GlacierAccountAction26:hover {
-                background:#edf7fe; border-color:#a9cfe5;
-            }
-            QPushButton#GlacierAccountMain26 {
-                padding:12px; border:0; border-radius:11px;
-                background:#327da7; color:white; font-weight:600;
-            }
-            QPushButton#GlacierAccountMain26:hover {
-                background:#286b92;
-            }
-        """)
-        root = QVBoxLayout(dialog)
-        root.setContentsMargins(26, 25, 26, 20)
-        root.setSpacing(11)
-        emblem = QLabel("❄  GLACIER ACCOUNT", dialog)
-        emblem.setStyleSheet("color:#3985ac; font-size:12px; font-weight:700;")
-        root.addWidget(emblem)
-        headline = QLabel(title, dialog)
-        headline.setObjectName("GlacierAccountTitle26")
-        root.addWidget(headline)
-        description = QLabel(subtitle + "\n服务器 · sync.borealos.cn", dialog)
-        description.setObjectName("GlacierAccountDesc26")
-        root.addWidget(description)
-        root.addSpacing(10)
-
-        panel = QFrame(dialog)
-        panel.setObjectName("GlacierAccountPanel26")
-        column = QVBoxLayout(panel)
-        column.setContentsMargins(15, 15, 15, 15)
-        column.setSpacing(8)
-        root.addWidget(panel, 1)
-
         locked = bool(state.get("locked"))
         logged = bool(state.get("token"))
         approved = bool(state.get("approved"))
+        anchor = self._account_button26
 
-        def action(text, handler, primary=False):
-            btn = QPushButton(text, panel)
-            btn.setObjectName("GlacierAccountMain26" if primary else "GlacierAccountAction26")
-            btn.clicked.connect(lambda: execute(handler))
-            column.addWidget(btn)
-            return btn
+        panel = QFrame(self, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        panel.setObjectName("GlacierProfilePopover37")
+        panel.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        panel.setFixedWidth(344)
+        panel.setStyleSheet("""
+            QFrame#GlacierProfilePopover37 {
+                background: #ffffff;
+                color: #27354a;
+                border: 1px solid #dce4ef;
+                border-radius: 15px;
+            }
+            QFrame#GlacierProfileHero37 {
+                background: #edf3fc;
+                border: 0;
+                border-radius: 12px;
+            }
+            QFrame#GlacierProfileHero37 QLabel {
+                background: transparent; border: none;
+            }
+            QLabel#GlacierProfileAvatar37,
+            QLabel#GlacierProfileBrand37,
+            QLabel#GlacierProfileName37,
+            QLabel#GlacierProfileStatus37 {
+                background: transparent; border: none;
+            }
+            QLabel#GlacierProfileBrand37 {
+                font-size: 11px; font-weight: 700;
+                color: #587da9;
+            }
+            QLabel#GlacierProfileName37 {
+                font-size: 16px; font-weight: 650;
+                color: #203854;
+            }
+            QLabel#GlacierProfileStatus37 {
+                font-size: 11px; color: #607a97;
+            }
+            QLabel#GlacierProfileSection37 {
+                font-size: 11px; font-weight: 600;
+                color: #71829a; padding: 8px 7px 3px;
+            }
+            QLabel#GlacierProfileFooter37 {
+                font-size: 10px; color: #7f8d9e;
+                padding: 10px 4px 4px;
+            }
+            QPushButton#GlacierProfileMain37 {
+                background: #1764d8; color: white;
+                font-size: 12px; font-weight: 600;
+                border: none; border-radius: 18px;
+                padding: 8px 12px; min-height: 21px;
+            }
+            QPushButton#GlacierProfileMain37:hover { background: #0e56bd; }
+            QPushButton#GlacierProfileRow37 {
+                color: #32445d; background: transparent;
+                border: 0; border-radius: 8px;
+                text-align: left; padding: 7px 10px;
+                min-height: 24px; font-size: 12px;
+            }
+            QPushButton#GlacierProfileRow37:hover { background: #eff4fa; }
+            QPushButton#GlacierProfileRow37:pressed { background: #e1ebf7; }
+            QScrollArea#GlacierProfileScroll37 {
+                background: #ffffff; border: 0;
+            }
+            QWidget#GlacierProfileRows37 { background: white; }
+        """)
+        root = QVBoxLayout(panel)
+        root.setContentsMargins(11, 11, 11, 10)
+        root.setSpacing(0)
+
+        hero = QFrame(panel)
+        hero.setObjectName("GlacierProfileHero37")
+        header = QVBoxLayout(hero)
+        header.setContentsMargins(13, 12, 13, 13)
+        header.setSpacing(4)
+        mark = QLabel(hero)
+        mark.setObjectName("GlacierProfileAvatar37")
+        mark.setPixmap(top_icon35("glacier").pixmap(QSize(40, 40)))
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.addWidget(mark, alignment=Qt.AlignmentFlag.AlignHCenter)
+        brand = QLabel("GLACIER BROWSER", hero)
+        brand.setObjectName("GlacierProfileBrand37")
+        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.addWidget(brand)
+        name = QLabel(title, hero)
+        name.setTextFormat(Qt.TextFormat.PlainText)
+        name.setObjectName("GlacierProfileName37")
+        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name.setWordWrap(True)
+        header.addWidget(name)
+        status = QLabel(subtitle, hero)
+        status.setTextFormat(Qt.TextFormat.PlainText)
+        status.setObjectName("GlacierProfileStatus37")
+        status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status.setWordWrap(True)
+        header.addWidget(status)
 
         def execute(handler):
-            # Account operations may open their own form. Cancellation must
-            # leave this center visible, without discarding account state.
-            try:
-                result = handler()
-            except Exception as exc:
-                self._sync_error23(type(exc).__name__ + "，操作未完成")
-                return
-            if result is False:
-                return
-            dialog.accept()
-            self.refresh_account_center26()
+            # Hide the popup before showing any login form, system workspace
+            # menu or confirmation dialog. The Qt event loop then opens it.
+            panel.close()
+            def run():
+                try:
+                    handler()
+                except Exception as exc:
+                    self._sync_error23(type(exc).__name__ + "，操作未完成")
+                finally:
+                    self.refresh_account_center26()
+            QTimer.singleShot(0, run)
 
         if locked:
-            note = QLabel("本机账号会话已锁定。不会自动删除或覆盖任何保存的数据。", panel)
-            note.setWordWrap(True)
-            column.addWidget(note)
+            main_label, main_handler = "管理本机网站账号", self.manage_accounts22
         elif not logged:
-            action("登录已有 Glacier 账号", lambda: self._account_form26(False), True)
-            action("注册新的 Glacier 账号", lambda: self._account_form26(True))
-            note = QLabel("注册需要私密邀请码。密码和验证码不会自动填入网页。", panel)
-            note.setWordWrap(True)
-            note.setStyleSheet("color:#71889a; padding:9px;")
-            column.addWidget(note)
+            main_label, main_handler = "登录 Glacier 账号", lambda: self._account_form26(False)
+        elif not approved:
+            main_label, main_handler = "检查设备授权", self._sync_activate23
         else:
-            action("检查当前设备授权", self._sync_activate23, not approved)
+            main_label, main_handler = "管理网站账号", self.manage_accounts22
+
+        main = QPushButton(main_label, hero)
+        main.setObjectName("GlacierProfileMain37")
+        main.setAccessibleName(main_label)
+        main.clicked.connect(lambda _checked=False: execute(main_handler))
+        header.addSpacing(8)
+        header.addWidget(main)
+        root.addWidget(hero)
+
+        scroll = QScrollArea(panel)
+        scroll.setObjectName("GlacierProfileScroll37")
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        body = QWidget()
+        body.setObjectName("GlacierProfileRows37")
+        rows = QVBoxLayout(body)
+        rows.setContentsMargins(6, 7, 6, 4)
+        rows.setSpacing(2)
+
+        def section(label):
+            heading = QLabel(label, body)
+            heading.setObjectName("GlacierProfileSection37")
+            rows.addWidget(heading)
+
+        def item(label, handler, glyph):
+            btn = QPushButton(label, body)
+            btn.setObjectName("GlacierProfileRow37")
+            btn.setIcon(top_icon35(glyph))
+            btn.setIconSize(QSize(18, 18))
+            btn.setMinimumHeight(38)
+            btn.setAccessibleName(label)
+            btn.clicked.connect(lambda _checked=False, h=handler: execute(h))
+            rows.addWidget(btn)
+
+        section("网站与个人资料")
+        item("网站账号和密码", self.manage_accounts22, "site")
+        workspace_button = getattr(self, "_workspace_button17", None)
+        if workspace_button is not None:
+            def open_workspace_menu37():
+                # The old workspaces QToolButton can sit in a hidden utility
+                # shelf. Open its existing live QMenu beside the visible
+                # account avatar instead of calling showMenu() on hidden UI.
+                rebuild = getattr(self, "_build_workspace_menu17", None)
+                if callable(rebuild):
+                    rebuild()
+                menu = workspace_button.menu()
+                if menu is None:
+                    return
+                menu.adjustSize()
+                available = (anchor.screen() or QApplication.primaryScreen()).availableGeometry()
+                point = anchor.mapToGlobal(
+                    QPoint(anchor.width() - menu.sizeHint().width(),
+                           anchor.height() + 8))
+                x = max(available.left() + 8,
+                        min(point.x(), available.right() - menu.sizeHint().width() - 8))
+                y = max(available.top() + 8,
+                        min(point.y(), available.bottom() - menu.sizeHint().height() - 8))
+                menu.popup(QPoint(x, y))
+            item("切换 / 管理工作空间", open_workspace_menu37, "hub")
+
+        if locked:
+            section("同步会话已锁定")
+            info = QLabel("原有加密会话已保留，不会自动覆盖。", body)
+            info.setWordWrap(True)
+            rows.addWidget(info)
+        elif not logged:
+            section("Glacier 账号")
+            item("创建 Glacier 账号", lambda: self._account_form26(True), "profile")
+        else:
+            section("设备授权与加密同步")
             if approved:
-                action("管理和批准其他设备", self._sync_devices23)
-                action("上传当前空间（加密）", self._sync_push23)
-                action("下载当前空间（解密）", self._sync_pull23)
+                item("管理已授权设备", self._sync_devices23, "profile")
+                item("上传加密资料", self._sync_push23, "download")
+                item("下载加密资料", self._sync_pull23, "download")
                 if state.get("auto_enabled"):
-                    action("关闭自动同步", self._sync_disable_auto23)
+                    item("关闭自动同步", self._sync_disable_auto23, "reload")
                 else:
-                    action("开启自动加密同步", self._sync_enable_auto23)
-                action("网站账号卡片", lambda: self.show_accounts22())
-            action("退出当前设备账号", self._sync_logout23)
-        column.addStretch(1)
-        footer = QLabel("私人 / 工作空间隔离 · 加密凭据仅由授权设备访问", dialog)
-        footer.setStyleSheet("color:#8095a4;font-size:11px;")
+                    item("开启自动同步", self._sync_enable_auto23, "reload")
+            else:
+                item("重新检查设备授权", self._sync_activate23, "reload")
+            item("退出 Glacier 账号", self._sync_logout23, "back")
+
+        rows.addStretch(1)
+        scroll.setWidget(body)
+        root.addWidget(scroll)
+
+        footer = QLabel("网站密码仅手动复制 · 验证码仅点击获取", panel)
+        footer.setObjectName("GlacierProfileFooter37")
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer.setWordWrap(True)
         root.addWidget(footer)
-        close = QPushButton("完成", dialog)
-        close.clicked.connect(dialog.accept)
-        root.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
-        dialog.exec()
-        self.refresh_account_center26()
+
+        screen = anchor.screen() or QApplication.primaryScreen()
+        available = screen.availableGeometry()
+        scroll.setFixedHeight(min(body.sizeHint().height() + 8,
+                                  max(120, available.height() - 230)))
+        panel.adjustSize()
+        panel_height = min(panel.sizeHint().height(), available.height() - 16)
+        panel.resize(344, panel_height)
+        desired = anchor.mapToGlobal(QPoint(anchor.width() - panel.width(),
+                                            anchor.height() + 8))
+        x = max(available.left() + 8,
+                min(desired.x(), available.right() - panel.width() - 8))
+        y = desired.y()
+        if y + panel.height() > available.bottom() - 8:
+            y = max(available.top() + 8,
+                    anchor.mapToGlobal(QPoint(0, 0)).y() - panel.height() - 8)
+        panel.move(x, y)
+        self._account_popover37 = panel
+        panel.show()
+        panel.raise_()
+        return panel
 
     def _account_form26(self, register=False):
         """One coherent register/login form, not a series of prompt dialogs."""

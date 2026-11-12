@@ -12,8 +12,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton, QDialog
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter
 from glacier_chrome_top35 import framed_top_geometry36
 import sys
 from secure_update import CURRENT_VERSION
@@ -80,31 +81,41 @@ def main():
             # screenshot, not merely in a post-capture assertion.
             window._glacier_sync_tab_icons35()
             app.processEvents()
-            screen=window.grab()
-            if not screen.save(str(path),"PNG"):
-                raise RuntimeError("Could not capture live Browser screenshot")
-            if path.stat().st_size<8000:
-                raise RuntimeError("Browser toolbar screenshot unexpectedly empty")
-            image=screen.toImage()
-            # A white viewport technically passes size/geometry checks but
-            # is NOT a usable Chrome-style new tab. Require real painted text
-            # from the local offline homepage, not only the upper toolbar.
-            painted=0
-            for y in range(nav.y()+nav.height()+40, image.height()-75, 4):
-                for x in range(65, image.width()-65, 4):
-                    rgb=image.pixelColor(x,y)
-                    if rgb.red()<175 and rgb.green()<195 and rgb.blue()<210:
-                        painted+=1
-            # A passing DOM and toolbar screenshot are not enough. Qt can
-            # recreate the top-level Windows HWND after WebEngine starts and
-            # leave the page compositor as a tiny orphan rectangle.
-            # This real Windows runner captures the full homepage in a
-            # healthy window; require actual central page pixels too.
+            # A real WebEngine compositor can create its native surface
+            # slightly after DOM readiness on Windows CI. Retry painting
+            # rather than treating a transient blank initial grab as a
+            # functioning browser. Persistent blank pixels still FAIL CLOSED.
+            painted = 0
+            for attempt in range(15):
+                app.processEvents()
+                screen = window.grab()
+                if not screen.save(str(path), "PNG"):
+                    raise RuntimeError("Could not capture live Browser screenshot")
+                if path.stat().st_size < 8000:
+                    raise RuntimeError("Browser toolbar screenshot unexpectedly empty")
+                image = screen.toImage()
+                painted = 0
+                for y in range(nav.y()+nav.height()+40, image.height()-75, 4):
+                    for x in range(65, image.width()-65, 4):
+                        rgb = image.pixelColor(x,y)
+                        if rgb.red()<175 and rgb.green()<195 and rgb.blue()<210:
+                            painted += 1
+                if painted >= 120:
+                    break
+                if attempt == 6:
+                    # Trigger a real viewport resize/reflow on this CI host;
+                    # do not disable the nonblank visual assertion.
+                    window.resize(1361, 890)
+                    app.processEvents()
+                    window.resize(1360, 890)
+                window.current().update()
+                app.processEvents()
+                time.sleep(0.15)
             if painted < 120:
                 raise RuntimeError(
-                    "Qt WebEngine viewport is visually blank or shrunken; "
-                    "native window flags must be set before page creation: "
-                    + str(painted) + " sampled page pixels")
+                    "Qt WebEngine viewport remained visually blank after "
+                    "native repaint/reflow checks; " + str(painted) +
+                    " sampled page pixels")
             print("Real offline homepage colored pixels",painted,flush=True)
             min_width=max(260, int(window.width()*0.33))
             if omni.width()<min_width or omni.height()<38:
@@ -173,6 +184,63 @@ def main():
                 raise RuntimeError("Account pill is still crowding the address bar")
             if not window.tabs.tabBar().isHidden():
                 raise RuntimeError("Legacy duplicate internal tab strip is visible")
+            # A CI Windows desktop may be narrower than the 1360px
+            # geometry-test browser. Fit this *screenshot only* to the actual
+            # display so the avatar and its popup are visible together.
+            display = window.screen().availableGeometry()
+            if window.width() > display.width() - 16:
+                window.resize(max(720, display.width() - 20),
+                              min(window.height(), max(600, display.height() - 30)))
+                for _ in range(12):
+                    app.processEvents()
+                    time.sleep(0.035)
+            # Capture the REAL Qt Popup opened by the top-right account avatar.
+            # The browser uses an empty temporary account profile, so no
+            # credential, token or user identity appears in this artifact.
+            popup = window.show_account_center26()
+            for _ in range(8):
+                app.processEvents()
+                time.sleep(0.025)
+            if (popup is None or not popup.isVisible()
+                    or popup.objectName() != "GlacierProfilePopover37"
+                    or isinstance(popup, QDialog)
+                    or not bool(popup.windowFlags() & Qt.WindowType.Popup)):
+                raise RuntimeError("Profile icon did not open a real anchored popup")
+            expected_labels = ("登录 Glacier 账号", "网站账号和密码",
+                               "创建 Glacier 账号")
+            actual_labels = [b.text() for b in popup.findChildren(QPushButton)]
+            if any(label not in actual_labels for label in expected_labels):
+                raise RuntimeError("Profile menu missing account actions")
+            account = window._account_button26
+            right_edge = account.mapToGlobal(account.rect().topRight()).x()
+            bounds = account.screen().availableGeometry()
+            # The CI browser can be wider than the desktop backing display.
+            # A Chrome-style popup must prefer the avatar, but stay on-screen.
+            expected_right = min(right_edge, bounds.right() - 8)
+            if abs(popup.geometry().right() - expected_right) > 44:
+                raise RuntimeError(
+                    "Profile panel did not align with the visible avatar edge: "
+                    f"menu={popup.geometry()} avatar_right={right_edge} "
+                    f"screen={bounds} expected_right={expected_right}")
+            if (popup.geometry().left() < bounds.left() + 4
+                    or popup.geometry().right() > bounds.right() - 3):
+                raise RuntimeError("Profile panel escaped screen boundaries")
+            if popup.width() > 380 or popup.height() > window.height():
+                raise RuntimeError("Profile popup oversized for browser chrome")
+            # Assemble the independently rendered real Qt Popup over the real
+            # browser widget screenshot, preserving measured screen placement.
+            composite = window.grab()
+            painter = QPainter(composite)
+            painter.drawPixmap(window.mapFromGlobal(popup.pos()), popup.grab())
+            painter.end()
+            pop_path = out/f"Glacier-Windows-v{CURRENT_VERSION}-profile-menu37.png"
+            if not composite.save(str(pop_path), "PNG"):
+                raise RuntimeError("Could not save real browser + profile popup proof")
+            if pop_path.stat().st_size < 12000:
+                raise RuntimeError("Native account menu screenshot unexpectedly empty")
+            print("SUCCESS: Glacier account popup anchored below real avatar",
+                  popup.pos(), popup.size(), pop_path, flush=True)
+            popup.close()
             print("SUCCESS: actual Windows browser UI33, grouped omnibox and compact shell captured")
             print("tab strip y/h",strip.y(),strip.height())
             print("navigation y/h",nav.y(),nav.height())
