@@ -125,6 +125,7 @@ def fake_ue():
         MaterialExpressionConstant3Vector=object(),
         MaterialExpressionConstant=object(),
         LinearColor=lambda *p:p,
+        Color=lambda *p:p,
         Vector=lambda *p:p, Rotator=lambda *p:p,
         StaticMeshActor=object(), StaticMeshComponent=object(),
         PointLight=object(), PointLightComponent=object(),
@@ -190,6 +191,8 @@ class SceneCandidatesV090Tests(unittest.TestCase):
         self.assertEqual([r["id"] for r in result["scene_candidates"]],
                          ["SCN_HALL","SCN_HALL_ALERT","SCN_ENTRANCE"])
         self.assertEqual(len(level.levels),3)
+        self.assertEqual(result["scene_candidates"][0]["props"],
+                         result["scene_candidates"][1]["props"])
         for item in result["scene_candidates"]:
             self.assertIn("/SceneBuilds/J"+jobid+"/Maps/",item["path"])
             self.assertIn(item["path"],lib.assets)
