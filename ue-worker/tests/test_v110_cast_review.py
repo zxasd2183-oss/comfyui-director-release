@@ -128,7 +128,7 @@ class CastReviewTests(unittest.TestCase):
                     (output/("WO_EP01_CAST_"+view+"_V11_0000.png")).write_bytes(
                         png(width,height))
             work=root/"Jobs"/job
-            with patch.object(ue_previs,"find_editor_cmd",
+            with patch.object(ue_jobs,"find_editor_cmd",
                     return_value=Path("C:/FakeUnrealEditor-Cmd.exe")),patch.object(
                     ue_previs,"ensure_mrq_plugin",
                     side_effect=lambda p,w:None),patch.object(
