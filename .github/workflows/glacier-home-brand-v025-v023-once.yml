@@ -225,7 +225,7 @@ jobs:
               if current=='0.20.25':
                   print('Pinned signed Windows v0.20.25 channel published.')
                   break
-              if tuple(map(int,current.split('.')))>(0,20,23):
+              if tuple(map(int,current.split('.')))>(0,20,25):
                   raise RuntimeError('Unexpected newer Windows signed feed; no Mac signer dispatch')
               if attempt==89:
                   raise RuntimeError('Windows signed publisher not ready; Mac will remain unscheduled')
