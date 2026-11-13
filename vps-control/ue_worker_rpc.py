@@ -548,7 +548,7 @@ def cancel_ue_job(job_id, opener=None, token_file=None):
 # Director Desktop (RDP, human-consent, view-only) private SSH bridge.
 # The 128-bit PIN is never placed in URLs or logs. Only the dedicated
 # interactive companion can capture the live Windows desktop.
-DESKTOP_PIN_RE = re.compile(r"[a-f0-9]{32}\\Z")
+DESKTOP_PIN_RE = re.compile(r"[a-f0-9]{32}")
 
 
 def pair_ue_desktop(code, opener=None, token_file=None):
