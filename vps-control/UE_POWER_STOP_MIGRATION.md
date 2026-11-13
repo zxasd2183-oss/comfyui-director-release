@@ -54,6 +54,6 @@ Unreal processes, wrong node, stale or spoofed responses, redirect, missing
 token, wrong OS, inaccessible process enumeration, and old ComfyUI responses.
 
 For a full end-to-end proof without actually stopping the VM, an operator
-must verify the new power core version from its installed root-owned file and
+must verify core status reports `version: 0.7.0` and `stop_guard: ue_worker_tasklist_v1` and
 a fresh UE readiness receipt. A Worker/Hub version alone does **not** prove
 that the VPS power core has been upgraded.
