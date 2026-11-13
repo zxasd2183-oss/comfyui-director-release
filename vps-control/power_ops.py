@@ -151,6 +151,7 @@ def get_provider_state(config: dict, client=None) -> dict:
 UE_WORKER_POWER_URL = "http://127.0.0.1:18910/v7/power/readiness"
 UE_WORKER_TOKEN_PATH = Path("/etc/director-ue-worker.token")
 UE_WORKER_NODE_ID = "ue-worker-01"
+UE_POWER_STOP_GUARD_VERSION = "ue_worker_tasklist_v1"
 UE_READINESS_MAX_BYTES = 4096
 
 
