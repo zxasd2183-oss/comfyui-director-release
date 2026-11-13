@@ -31,7 +31,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.6.0"
+UE_HUB_API_VERSION = "1.7.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
