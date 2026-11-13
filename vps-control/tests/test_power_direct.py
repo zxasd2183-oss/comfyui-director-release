@@ -35,12 +35,12 @@ class DirectPowerTests(unittest.TestCase):
             row = db.execute("SELECT state FROM requests").fetchone()
             self.assertEqual(row["state"], "submitted")
 
-    def test_stop_blocked_when_queue_not_verified(self):
+    def test_stop_blocked_when_ue_not_verified(self):
         def blocked(action, config):
-            return {"allowed": False, "reason": "comfyui_queue_not_verified"}
+            return {"allowed": False, "reason": "ue_worker_readiness_not_verified"}
         result = execute_direct("stop", {}, self.db, plan_fn=blocked,
                                 submit_fn=self.submit, now=1000)
-        self.assertEqual(result["reason"], "comfyui_queue_not_verified")
+        self.assertEqual(result["reason"], "ue_worker_readiness_not_verified")
         self.assertEqual(self.submissions, [])
 
     def test_second_preflight_failure_prevents_submission(self):
@@ -48,7 +48,7 @@ class DirectPowerTests(unittest.TestCase):
         def changed(action, config):
             calls[0] += 1
             return {"allowed": calls[0] == 1,
-                    "reason": "comfyui_queue_not_empty"}
+                    "reason": "ue_worker_busy"}
         result = execute_direct("stop", {}, self.db, plan_fn=changed,
                                 submit_fn=self.submit, now=1000)
         self.assertEqual(result["state"], "blocked")
