@@ -37,6 +37,8 @@ class UnifiedVpsV06Tests(unittest.TestCase):
         result = status.control_center_status(config)
         self.assertTrue(result["configured"])
         self.assertTrue(result["gpu_control_enabled"])
+        self.assertEqual(result["version"],"0.7.0")
+        self.assertEqual(result["stop_guard"],"ue_worker_tasklist_v1")
         self.assertEqual(result["mode"], "owner_direct")
         self.assertNotIn("COMP_PRIVATE_KEY", str(result))
         self.assertNotIn("not-for-logs", str(result))
