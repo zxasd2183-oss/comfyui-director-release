@@ -22,6 +22,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_hero_runtime_audit as enqueue_ue_hero_runtime_audit_rpc,
                            enqueue_ue_hero_amber_eyes as enqueue_ue_hero_amber_eyes_rpc,
                            enqueue_ue_hero_face_contour as enqueue_ue_hero_face_contour_rpc,
+                           enqueue_ue_hero_cloud_rig as enqueue_ue_hero_cloud_rig_rpc,
                            get_ue_cast_review_png as get_ue_cast_review_png_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
@@ -32,7 +33,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.7.0"
+UE_HUB_API_VERSION = "1.8.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -513,6 +514,7 @@ def enqueue_ue_hero_amber_eyes(project_id: str, episode_id: str) -> dict:
 # This is NOT a generic executor, no arbitrary scripts/code/URLs/asset paths.
 DIRECTOR_TASK_ALLOWLIST = {
     "hero_face_contour_v1": enqueue_ue_hero_face_contour_rpc,
+    "hero_full_face_rig_v1": enqueue_ue_hero_cloud_rig_rpc,
     "hero_amber_eyes_v1": enqueue_ue_hero_amber_eyes_rpc,
     "hero_runtime_audit_v1": enqueue_ue_hero_runtime_audit_rpc,
 }
