@@ -32,11 +32,12 @@ done
 [[ -x "$PYTHON" && -f "$DB" && ! -L "$DB" ]] || fail "Existing Python or approval DB missing"
 [[ -d "$HUB" && ! -L "$HUB" && -d "$POWER" && ! -L "$POWER" ]] || fail "Existing installation missing"
 for name in power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py \
-            hub_rpc.py hub_brain.py hub_file_sync.py hub_sync_jobs.py hub_app.py hub_bridge.py director-hub-mcp.service; do
+            hub_rpc.py hub_brain.py hub_file_sync.py hub_sync_jobs.py hub_app.py hub_bridge.py director-hub-mcp.service director-power-mcp.service; do
     [[ -f "$SRC/$name" && ! -L "$SRC/$name" ]] || fail "Missing source $name"
 done
 for item in "$POWER/power_ops.py" "$POWER/power_write_mcp.py" \
-            "$HUB/hub_rpc.py" "$HUB/hub_app.py" "$HUB/hub_bridge.py" "$UNIT"; do
+            "$HUB/hub_rpc.py" "$HUB/hub_app.py" "$HUB/hub_bridge.py" "$UNIT" \
+            /etc/systemd/system/director-power-mcp.service; do
     [[ -f "$item" && ! -L "$item" ]] || fail "Installed file missing or symlink"
 done
 # Refuse upgrade while a biometric approval may be underway.
@@ -86,6 +87,7 @@ if [[ -f "$HUB/hub_brain.py" && ! -L "$HUB/hub_brain.py" ]]; then
     cp -p "$HUB/hub_brain.py" "$BACKUP/hub_brain.py"
 fi
 cp -p "$UNIT" "$BACKUP/director-hub-mcp.service"
+cp -p /etc/systemd/system/director-power-mcp.service "$BACKUP/director-power-mcp.service"
 HAD_STATUS=0
 if [[ -f "$POWER/vps_unified_status.py" ]]; then
     HAD_STATUS=1
@@ -123,6 +125,7 @@ restore_on_exit() {
             rm -f "$HUB/hub_brain.py" || :
         fi
         cp -p "$BACKUP/director-hub-mcp.service" "$UNIT" || :
+        cp -p "$BACKUP/director-power-mcp.service" /etc/systemd/system/director-power-mcp.service || :
         if (( HAD_STATUS )); then
             cp -p "$BACKUP/vps_unified_status.py" "$POWER/vps_unified_status.py" || :
         else
@@ -153,6 +156,7 @@ install -o root -g root -m 0644 "$SRC/hub_sync_jobs.py" "$HUB/hub_sync_jobs.py"
 install -o root -g root -m 0644 "$SRC/hub_app.py" "$HUB/hub_app.py"
 install -o root -g root -m 0644 "$SRC/hub_bridge.py" "$HUB/hub_bridge.py"
 install -o root -g root -m 0644 "$SRC/director-hub-mcp.service" "$UNIT"
+install -o root -g root -m 0644 "$SRC/director-power-mcp.service" /etc/systemd/system/director-power-mcp.service
 "$PYTHON" -m py_compile "$POWER"/power_ops.py "$POWER"/power_write_mcp.py \
     "$POWER"/vps_unified_status.py "$POWER"/power_direct.py "$HUB"/hub_rpc.py "$HUB"/hub_brain.py "$HUB"/hub_file_sync.py "$HUB"/hub_sync_jobs.py "$HUB"/hub_app.py "$HUB"/hub_bridge.py
 systemctl daemon-reload
@@ -198,7 +202,7 @@ hub={
      "create_production_project","create_production_episode","add_production_shot","save_production_outline",
      "get_project_characters","create_project_character","update_project_character","link_project_character_visual",
      "sync_chatgpt_visual_to_studio","enqueue_chatgpt_visual_to_studio","get_chatgpt_visual_sync_status","list_recent_chatgpt_visual_syncs",
-     "get_ue_worker_status","get_ue_worker_capabilities","get_ue_episode_assembly_readiness","prepare_ue_workspace","prepare_ue_hero_metahuman_project",
+     "get_ue_worker_status","get_ue_worker_power_readiness","get_ue_worker_capabilities","get_ue_episode_assembly_readiness","prepare_ue_workspace","prepare_ue_hero_metahuman_project",
      "enqueue_ue_episode_timeline","enqueue_ue_stage_cameras","enqueue_ue_previs_stills","enqueue_ue_asset_audit","enqueue_ue_scene_candidates","enqueue_ue_cast_blueprints","enqueue_ue_cast_review","enqueue_ue_hero_metahuman_seed","enqueue_ue_hero_runtime_audit","enqueue_ue_hero_amber_eyes","get_ue_episode_job_status",
      "get_ue_job_logs","cancel_ue_job","get_ue_preview_image","get_ue_preview_thumbnail","get_ue_cast_review_image",
      "get_ue_signed_update_status","request_ue_signed_update","get_ue_hub_signed_update_status"
@@ -228,7 +232,7 @@ for attempt in range(8):
             else:
                 # Any enabled power controller must prove the real provider state.
                 raise RuntimeError("Read-only status backend unavailable")
-        print("PASS: VPS core 8 tools; Hub 56 tools; no GPU power operation")
+        print("PASS: VPS core 8 tools; Hub 57 tools; no GPU power operation")
         break
     except Exception:
         if attempt==7: raise
