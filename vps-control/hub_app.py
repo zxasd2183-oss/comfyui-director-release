@@ -30,10 +30,14 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_preview_png as get_ue_preview_png_rpc,
                            make_bounded_preview_thumbnail_png,
                            choose_mcp_preview_png,
+                           pair_ue_desktop as pair_ue_desktop_rpc,
+                           get_ue_desktop_status as get_ue_desktop_status_rpc,
+                           unpair_ue_desktop as unpair_ue_desktop_rpc,
+                           get_ue_desktop_snapshot as get_ue_desktop_snapshot_rpc,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.8.0"
+UE_HUB_API_VERSION = "1.9.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -639,6 +643,40 @@ def get_ue_cast_review_image(job_id: str, view: str):
     except (RuntimeError,ValueError,TypeError,OSError):
         return {"ok":False,"reason":"cast_review_transport_unavailable"}
     return Image(data=data,format="png")
+
+
+@app.tool(annotations=WRITE)
+def pair_ue_desktop(code: str) -> dict:
+    """Pair only with a human-opened RDP Desktop Share companion via 128-bit
+    one-time code shown in the desktop window. No Epic login credentials.
+    Screenshot-only; pairing expires in under ten minutes.
+    """
+    return pair_ue_desktop_rpc(code)
+
+
+@app.tool(annotations=READ)
+def get_ue_desktop_status() -> dict:
+    """Read explicit RDP sharing consent and pairing status; no screen pixels."""
+    return get_ue_desktop_status_rpc()
+
+
+@app.tool(annotations=READ)
+def get_ue_desktop_snapshot():
+    """Retrieve ONE on-demand 800px JPEG of the user's currently shared RDP
+    desktop. Human must first open a visible local companion and press Start.
+    Max 1 frame per 3 seconds, 10-minute expiry, no files or live recording.
+    No mouse/keyboard control, login or background capture.
+    """
+    r=get_ue_desktop_snapshot_rpc()
+    if not r.get("ok"):
+        return {"ok":False,"reason":r.get("reason","desktop_unavailable")}
+    return Image(data=r["data"],format="jpeg")
+
+
+@app.tool(annotations=WRITE)
+def unpair_ue_desktop() -> dict:
+    """Forget the RDP desktop pairing immediately. Local Stop always works."""
+    return unpair_ue_desktop_rpc()
 
 
 @app.tool(annotations=READ)
