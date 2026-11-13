@@ -482,7 +482,7 @@ LOG_KIND = frozenset({
     "unreal", "preset", "render_01", "render_13",
     "render_26", "render_31",
     "render_lineup", "render_gpt", "render_gem",
-    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit", "hero_eyes", "hero_face",
+    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit", "hero_eyes", "hero_face", "hero_rig",
 })
 
 
