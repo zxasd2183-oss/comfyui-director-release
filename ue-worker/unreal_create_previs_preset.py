@@ -1029,7 +1029,93 @@ def hero_face_contour_main():
         unreal.log_warning("GPT face sculpt blocked "+result["reason"])
 
 
-if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_face_v170":
+
+def hero_cloud_face_rig_main():
+    """Request full face joints + blendshapes for a new isolated MetaHuman.
+
+    This is one metered *Epic MetaHuman Cloud* operation. First use may need
+    Epic sign-in; the commandlet is bounded by the Worker process timeout.
+    No UI automation, credentials, arbitrary files, or preset replacement.
+    """
+    output=Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    report={"ok":False,"reason":"hero_rig_not_started"}
+    phase="identity"
+    registered=False
+    subsystem=None
+    clone=None
+    try:
+        job=os.environ.get("DIRECTOR_UE_JOB_ID","")
+        if (os.environ.get("DIRECTOR_UE_REVIEW_MODE")!="hero_rig_v200"
+                or not re.fullmatch(r"[a-f0-9]{32}",job)):
+            raise RuntimeError("invalid_fixed_task")
+        source=("/Game/Director/Candidates/EP01/HeroFaces/"
+                "J47cc188f03b9410fb8c94b085b739469/"
+                "MHC_CHAR_GPT_FaceContourV1")
+        target=("/Game/Director/Candidates/EP01/HeroRigs/J"+job+
+                "/MHC_CHAR_GPT_RigV1")
+        phase="source"
+        if (not unreal.EditorAssetLibrary.does_asset_exist(source)
+                or unreal.EditorAssetLibrary.does_asset_exist(target)):
+            raise RuntimeError("source_unavailable_or_target_collision")
+        phase="clone"
+        clone=unreal.EditorAssetLibrary.duplicate_asset(source,target)
+        if not clone or clone.get_class().get_name()!="MetaHumanCharacter":
+            raise RuntimeError("native_clone_failed")
+        phase="register"
+        subsystem=unreal.get_editor_subsystem(unreal.MetaHumanCharacterEditorSubsystem)
+        if not subsystem or not subsystem.try_add_object_to_edit(clone):
+            raise RuntimeError("metahuman_registration_failed")
+        registered=True
+        phase="cloud_request"
+        params=unreal.MetaHumanCharacterAutoRiggingRequestParams()
+        params.blocking=True
+        params.report_progress=False
+        params.rig_type=unreal.MetaHumanRigType.JOINTS_AND_BLENDSHAPES
+        # First request can prompt for Epic credentials. The commandlet is
+        # bounded externally and we never attempt to inject credentials.
+        subsystem.request_auto_rigging(clone,params)
+        phase="rig_readback"
+        checker=getattr(subsystem,"is_auto_rigged",None)
+        if not callable(checker) or checker(clone) is not True:
+            raise RuntimeError("metahuman_rig_not_verified")
+        phase="save"
+        if not unreal.EditorAssetLibrary.save_loaded_asset(clone):
+            raise RuntimeError("rigged_character_save_failed")
+        report={
+            "ok":True,"character_id":"CHAR_GPT",
+            "asset_path":target,"asset_class":"MetaHumanCharacter",
+            "rig_type":"JOINTS_AND_BLENDSHAPES",
+            "full_face_rig_verified":True,
+            "cloud_auto_rig_request_executed":True,
+            "texture_request_executed":False,
+            "source_asset_preserved":True,
+            "full_texture_sources_ready":False,
+            "hair_ready":False,"wardrobe_ready":False,
+            "cinematic_character_ready":False,
+            "character_master_approved":False,
+        }
+    except Exception as exc:
+        # Return only the finite allowed stage and exception class; do not
+        # expose Epic network errors, OAuth tokens, URLs or secret messages.
+        report={"ok":False,"reason":"hero_rig_failed_"+phase}
+        unreal.log_warning("Director Hero Rig blocked phase="+phase+
+                           " exception_class="+type(exc).__name__)
+    finally:
+        if registered:
+            try:
+                subsystem.remove_object_to_edit(clone)
+            except Exception:
+                report={"ok":False,"reason":"hero_rig_failed_release"}
+        output.write_text(json.dumps(report,ensure_ascii=False),encoding="utf-8")
+    if report["ok"]:
+        unreal.log("Director MetaHuman rigged candidate saved")
+    else:
+        unreal.log_warning("Director MetaHuman rig task "+report["reason"])
+
+
+if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_rig_v200":
+    hero_cloud_face_rig_main()
+elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_face_v170":
     hero_face_contour_main()
 elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_eyes_v150":
     hero_amber_eyes_main()
