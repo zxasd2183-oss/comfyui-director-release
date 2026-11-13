@@ -80,6 +80,7 @@ jobs:
               (Resolve-Path $path).Path, [ref]$tokens, [ref]$issues
             ) | Out-Null
             if ($issues.Count -gt 0) {
+              $issues | ForEach-Object { Write-Host ("PS5 parser error: " + $_.Message + " line " + $_.Extent.StartLineNumber) }
               throw "Windows PowerShell 5.1 parse failure: $path"
             }
           }
