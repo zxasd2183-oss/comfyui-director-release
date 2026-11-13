@@ -11,6 +11,7 @@ LOG_NAMES = {
     "hero_audit": "hero_audit.log",
     "hero_eyes": "hero_eyes.log",
     "hero_face": "hero_face.log",
+    "hero_rig": "hero_rig.log",
     "render_01": "render_01.log",
     "render_13": "render_13.log",
     "render_26": "render_26.log",
