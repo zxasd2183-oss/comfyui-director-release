@@ -160,7 +160,8 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
                     "build_ep01_cast_blueprints",
                     "render_cast_review_stills","build_ep01_hero_metahuman_seed",
                     "audit_ep01_hero_metahuman_runtime","build_ep01_hero_amber_eyes",
-                    "build_ep01_hero_face_contour"):
+                    "build_ep01_hero_face_contour",
+                    "build_ep01_hero_cloud_rig"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
