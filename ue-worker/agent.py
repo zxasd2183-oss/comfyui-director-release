@@ -5,7 +5,9 @@ The SSH -R tunnel is the only intended path from VPS to this process.
 """
 from __future__ import annotations
 
+import csv
 import hmac
+import io
 import json
 import os
 import platform
@@ -358,8 +360,86 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "1.5.0",
+        "worker_version": "1.6.0",
     }
+
+
+
+# An explicit allowlist of process names that can modify or compile UE assets.
+# This inventory must be authoritative for the *entire* Windows host, not
+# limited to jobs owned by this Worker. It is used only to deny unsafe stops.
+UE_POWER_BUSY_IMAGES = frozenset({
+    "unrealeditor.exe", "unrealeditor-cmd.exe", "unrealbuildtool.exe",
+    "shadercompileworker.exe", "unreallightmass.exe",
+})
+
+
+def count_windows_ue_processes():
+    """Read Windows tasklist via fixed system executable, no injected commands.
+
+    Failure to enumerate *all* host processes is a stop blocker. The result
+    is only a count; no process command lines or PIDs leave the Worker.
+    """
+    system_root = Path(os.environ.get("SystemRoot", r"C:\\Windows"))
+    executable = system_root / "System32" / "tasklist.exe"
+    try:
+        result = subprocess.run(
+            [str(executable), "/FO", "CSV", "/NH"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            errors="replace", timeout=15, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if (result.returncode != 0 or not result.stdout
+                or len(result.stdout) > 2 * 1024 * 1024):
+            raise RuntimeError("ue_process_inventory_unavailable")
+        rows = csv.reader(io.StringIO(result.stdout))
+        count, total = 0, 0
+        for row in rows:
+            total += 1
+            if (len(row) != 5 or not row[0].strip()
+                    or not row[1].strip().isdigit()):
+                raise RuntimeError("ue_process_inventory_invalid")
+            if row[0].strip().casefold() in UE_POWER_BUSY_IMAGES:
+                count += 1
+        if total == 0:
+            raise RuntimeError("ue_process_inventory_empty")
+        return count
+    except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired,
+            csv.Error) as exc:
+        raise RuntimeError("ue_process_inventory_unavailable") from exc
+
+
+def ue_power_readiness():
+    """Authenticated, read-only shutdown guard for the one RTX4090 UE node.
+
+    Never starts/stops power, never inspects ComfyUI, and never treats an
+    unreachable or incomplete process inventory as permission to stop.
+    """
+    base = {
+        "kind": "director_ue_windows_power_readiness_v1",
+        "node_id": NODE_ID, "platform": platform.system(),
+        "checked_at": utcnow(),
+        "ok": False, "verified": False, "safe_to_stop": False,
+        "active_job_id": None, "unreal_process_count": None,
+        "process_inventory_verified": False,
+    }
+    if platform.system() != "Windows" or JOB_MANAGER is None:
+        return {**base, "reason": "ue_power_worker_not_ready"}
+    try:
+        processes = count_windows_ue_processes()
+        with JOB_MANAGER.lock:
+            active = JOB_MANAGER.active
+        if active is not None and (
+                type(active) is not str or
+                not re.fullmatch(r"[a-f0-9]{32}", active)):
+            return {**base, "reason": "ue_job_state_invalid"}
+        safe = processes == 0 and active is None
+        return {**base, "ok": True, "verified": True,
+                "process_inventory_verified": True,
+                "unreal_process_count": processes,
+                "active_job_id": active, "safe_to_stop": safe}
+    except (OSError, RuntimeError, ValueError, TypeError):
+        return {**base, "reason": "ue_process_inventory_unavailable"}
 
 
 def capabilities():
@@ -385,6 +465,8 @@ def capabilities():
         "supports_hero_metahuman_seed": True,
         "supports_hero_runtime_audit": True,
         "supports_hero_amber_eyes_candidate": True,
+        "supports_ue_power_readiness": True,
+        "power_readiness_route": "/v7/power/readiness",
         "cast_review_image_route": "/v11/jobs/<job_id>/cast-review/<view>",
         "signed_update_status_route": "/v4/update/status",
         "signed_update_request_route": "/v4/update/request",
@@ -411,7 +493,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/1.5.0"
+    server_version = "DirectorUEWorker/1.6.0"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -440,6 +522,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, status())
         elif self.path == "/v1/capabilities":
             self.send_json(200, capabilities())
+        elif self.path == "/v7/power/readiness":
+            readiness = ue_power_readiness()
+            self.send_json(200 if readiness["ok"] else 503, readiness)
         elif self.path == "/v4/update/status":
             self.send_json(200, update_status())
         elif self.path == "/v6/episode/assembly-readiness":
