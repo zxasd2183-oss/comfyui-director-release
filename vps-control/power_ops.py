@@ -10,14 +10,12 @@ import logging
 import re
 import stat
 from pathlib import Path
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+import urllib.error
+import urllib.request
 
 VALID_ACTIONS = {"start", "stop"}
 ENV_KEYS = {"COMP_PUBLIC_KEY", "COMP_PRIVATE_KEY", "COMP_UHOST_ID",
-            "COMP_REGION", "COMP_ZONE", "DIRECTOR_GPU_MCP_URL", "DIRECTOR_GPU_QUEUE_URL",
-            "DIRECTOR_GPU_QUEUE_BEARER"}
-QUEUE_LIMIT_BYTES = 65536
+            "COMP_REGION", "COMP_ZONE"}
 
 class PowerError(Exception):
     """Safe failure; the message never includes provider response or credentials."""
@@ -148,69 +146,85 @@ def get_provider_state(config: dict, client=None) -> dict:
         raise PowerError("Instance status request failed") from None
 
 
-def get_queue_state(config: dict, opener=urlopen) -> dict:
-    """Use the existing read-only H3 Director V3 MCP tool if configured.
+# One protected, locally tunneled Windows UE node — never a caller URL.
+# The underlying provider control still addresses its pinned COMP_UHOST_ID.
+UE_WORKER_POWER_URL = "http://127.0.0.1:18910/v7/power/readiness"
+UE_WORKER_TOKEN_PATH = Path("/etc/director-ue-worker.token")
+UE_WORKER_NODE_ID = "ue-worker-01"
+UE_READINESS_MAX_BYTES = 4096
 
-    A URL here is a bearer credential and MUST be in the root-only VPS env file.
-    Fall back to a separately authenticated HTTPS ComfyUI /queue endpoint.
+
+class NoPowerRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise PowerError("ue_readiness_redirect_denied")
+
+
+def get_queue_state(config: dict, opener=None, token_file=None) -> dict:
+    """Return a *UE Worker* verified workload gate for power-off.
+
+    Retains the historic function name only for internal build_plan callers.
+    ComfyUI/H3 is NOT queried and may NOT authorize a UE instance stop.
+    Unavailable tunnel, unverifiable process list or stale data fail closed.
     """
-    mcp_url = config.get("DIRECTOR_GPU_MCP_URL", "")
-    url = mcp_url or config.get("DIRECTOR_GPU_QUEUE_URL", "")
-    if not url:
-        return {"verified": False, "reason": "queue_endpoint_not_configured"}
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-        return {"verified": False, "reason": "queue_endpoint_must_use_https"}
-    if parsed.query or parsed.fragment:
-        return {"verified": False, "reason": "queue_endpoint_invalid"}
-    headers = {"Accept": "application/json"}
-    data = None
-    if mcp_url:
-        headers["Content-Type"] = "application/json"
-        import json
-        data = json.dumps({
-            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": "get_queue_summary", "arguments": {}}
-        }).encode("utf-8")
-    elif config.get("DIRECTOR_GPU_QUEUE_BEARER"):
-        headers["Authorization"] = "Bearer " + config["DIRECTOR_GPU_QUEUE_BEARER"]
+    path = Path(token_file) if token_file is not None else UE_WORKER_TOKEN_PATH
     try:
-        req = Request(url, data=data, headers=headers,
-                      method="POST" if mcp_url else "GET")
-        with opener(req, timeout=8) as response:
-            final_url = urlparse(response.geturl())
-            if (final_url.scheme != "https" or final_url.hostname != parsed.hostname
-                    or final_url.path != parsed.path):
-                return {"verified": False, "reason": "queue_endpoint_redirected"}
-            payload_bytes = response.read(QUEUE_LIMIT_BYTES + 1)
-        if len(payload_bytes) > QUEUE_LIMIT_BYTES:
-            return {"verified": False, "reason": "queue_response_too_large"}
+        if path.is_symlink() or not path.is_file():
+            raise PowerError("ue_worker_token_unavailable")
+        info = path.stat()
+        if info.st_size > 128 or info.st_size < 64 or (
+                stat.S_IMODE(info.st_mode) & 0o007):
+            raise PowerError("ue_worker_token_unavailable")
+        token = path.read_text("ascii").strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", token):
+            raise PowerError("ue_worker_token_invalid")
+        req = urllib.request.Request(
+            UE_WORKER_POWER_URL, method="GET",
+            headers={"Accept": "application/json",
+                     "Authorization": "Bearer " + token,
+                     "Cache-Control": "no-store"},
+        )
+        request_open = opener or urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), NoPowerRedirect()).open
+        with request_open(req, timeout=8) as response:
+            if response.geturl() != UE_WORKER_POWER_URL:
+                raise PowerError("ue_worker_readiness_redirected")
+            if getattr(response, "status", 200) != 200:
+                raise PowerError("ue_worker_readiness_not_verified")
+            content = response.read(UE_READINESS_MAX_BYTES + 1)
+        if len(content) > UE_READINESS_MAX_BYTES:
+            raise PowerError("ue_worker_readiness_too_large")
         import json
-        payload = json.loads(payload_bytes)
-        if mcp_url:
-            result = payload["result"]
-            if result.get("isError"):
-                return {"verified": False, "reason": "mcp_queue_tool_error"}
-            data = result.get("structuredContent")
-            if not isinstance(data, dict):
-                text_parts = [x.get("text") for x in result.get("content", [])
-                              if isinstance(x, dict) and x.get("type") == "text"]
-                data = json.loads(text_parts[0]) if text_parts else None
-            if not isinstance(data, dict) or data.get("ok") is not True:
-                return {"verified": False, "reason": "mcp_queue_unavailable"}
-            running, pending = data["running"], data["pending"]
-            if (type(running) is not int or type(pending) is not int
-                    or running < 0 or pending < 0):
-                raise ValueError("Invalid queue counts")
-        else:
-            running, pending = payload["queue_running"], payload["queue_pending"]
-            if not isinstance(running, list) or not isinstance(pending, list):
-                raise ValueError("Invalid queue values")
-            running, pending = len(running), len(pending)
-        return {"verified": True, "running": running, "pending": pending,
-                "empty": running == 0 and pending == 0}
-    except Exception:
-        return {"verified": False, "reason": "queue_unreachable_or_invalid"}
+        data = json.loads(content)
+        if (type(data) is not dict or data.get("ok") is not True or
+            data.get("verified") is not True or
+            data.get("process_inventory_verified") is not True or
+            data.get("kind") != "director_ue_windows_power_readiness_v1" or
+            data.get("node_id") != UE_WORKER_NODE_ID or
+            data.get("platform") != "Windows"):
+            raise PowerError("ue_worker_readiness_not_verified")
+        processes = data.get("unreal_process_count")
+        job = data.get("active_job_id")
+        if (type(processes) is not int or processes < 0 or processes > 65535
+                or (job is not None and
+                    (type(job) is not str or not re.fullmatch(r"[a-f0-9]{32}",job)))
+                or type(data.get("safe_to_stop")) is not bool
+                or data["safe_to_stop"] != (processes == 0 and job is None)):
+            raise PowerError("ue_worker_readiness_invalid")
+        from datetime import datetime, timezone
+        checked = datetime.fromisoformat(data["checked_at"])
+        if (checked.tzinfo is None or
+                abs((datetime.now(timezone.utc) - checked).total_seconds()) > 30):
+            raise PowerError("ue_worker_readiness_stale")
+        busy = processes > 0 or job is not None
+        return {"verified": True, "empty": not busy,
+                "running": processes + int(job is not None),
+                "pending": 0, "source": "ue_worker",
+                "node_id": UE_WORKER_NODE_ID}
+    except (PowerError, OSError, ValueError, UnicodeError, TypeError,
+            KeyError, urllib.error.URLError):
+        return {"verified": False, "reason": "ue_worker_readiness_not_verified"}
+
+
 
 def evaluate_action(action: str, state: dict, queue: dict | None) -> dict:
     if action not in VALID_ACTIONS:
@@ -226,14 +240,14 @@ def evaluate_action(action: str, state: dict, queue: dict | None) -> dict:
                     "reason": "spot_instance_manual_stop_not_supported"}
         if not queue or not queue.get("verified"):
             return {"allowed": False, "action": action, "state": current,
-                    "reason": "comfyui_queue_not_verified"}
+                    "reason": "ue_worker_readiness_not_verified"}
         if not queue.get("empty"):
             return {"allowed": False, "action": action, "state": current,
-                    "reason": "comfyui_queue_not_empty",
+                    "reason": "ue_worker_busy",
                     "running": queue.get("running"),
                     "pending": queue.get("pending")}
     return {"allowed": True, "action": action, "state": current,
-            "queue_verified": bool(queue and queue.get("verified")),
+            "ue_workload_verified": bool(queue and queue.get("verified")),
             "message": "Approved for local interactive confirmation; NOT executed"}
 
 
@@ -246,7 +260,7 @@ def build_plan(action: str, config: dict, client=None, queue_check=get_queue_sta
                          "region": state["region"], "zone": state["zone"],
                          "charge_type": state.get("charge_type"),
                          "state": state["state"]},
-            "queue": queue, **decision}
+            "workload": queue, **decision}
 
 
 def submit_power_request(action: str, config: dict, client=None) -> dict:
