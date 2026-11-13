@@ -389,7 +389,7 @@ def build_gpt_hero_cloud_rig(spec,root,work):
     if (data.get("asset_path")!=expected or
         data.get("character_id")!="CHAR_GPT" or
         data.get("asset_class")!="MetaHumanCharacter" or
-        data.get("rig_type")!="JOINTS_AND_BLENDSHAPES" or
+        data.get("rig_type")!="JOINTS_AND_BLEND_SHAPES" or
         data.get("full_face_rig_verified") is not True or
         data.get("cloud_auto_rig_request_executed") is not True or
         data.get("source_asset_preserved") is not True or
@@ -413,7 +413,7 @@ def build_gpt_hero_cloud_rig(spec,root,work):
         "candidate_asset_path":expected,
         "candidate_uasset_sha256":digest,
         "candidate_uasset_bytes":dest.stat().st_size,
-        "rig_type":"JOINTS_AND_BLENDSHAPES",
+        "rig_type":"JOINTS_AND_BLEND_SHAPES",
         "full_face_rig_verified":True,
         "source_face_asset_sha256":GPT_HERO_FACE_SOURCE_SHA256,
         "face_source_preserved":True,

@@ -76,7 +76,7 @@ class HeroMetaHumanPreflightTests(unittest.TestCase):
              patch.object(agent, "workspace_root", return_value=Path("/not_a_workspace")), \
              patch.object(agent, "signed_update_status", return_value={"status": "ok"}):
             state = agent.status()
-        self.assertEqual(state["worker_version"], "2.0.0")
+        self.assertEqual(state["worker_version"], "2.0.1")
         self.assertIn("hero_character_readiness", state)
         self.assertFalse(state["hero_character_readiness"]["character_production_ready"])
 

@@ -1070,21 +1070,23 @@ def hero_cloud_face_rig_main():
         params=unreal.MetaHumanCharacterAutoRiggingRequestParams()
         params.blocking=True
         params.report_progress=False
-        params.rig_type=unreal.MetaHumanRigType.JOINTS_AND_BLENDSHAPES
+        params.rig_type=unreal.MetaHumanRigType.JOINTS_AND_BLEND_SHAPES
         # First request can prompt for Epic credentials. The commandlet is
         # bounded externally and we never attempt to inject credentials.
         subsystem.request_auto_rigging(clone,params)
         phase="rig_readback"
-        checker=getattr(subsystem,"is_auto_rigged",None)
-        if not callable(checker) or checker(clone) is not True:
-            raise RuntimeError("metahuman_rig_not_verified")
+        # UE 5.8 exposes the DNA blendshape presence as an asset property;
+        # is_auto_rigged is not guaranteed to be a Python subsystem method.
+        # Require a positive serialized DNA capability, not just a request.
+        if clone.get_editor_property("has_face_dna_blendshapes") is not True:
+            raise RuntimeError("metahuman_blendshape_dna_not_verified")
         phase="save"
         if not unreal.EditorAssetLibrary.save_loaded_asset(clone):
             raise RuntimeError("rigged_character_save_failed")
         report={
             "ok":True,"character_id":"CHAR_GPT",
             "asset_path":target,"asset_class":"MetaHumanCharacter",
-            "rig_type":"JOINTS_AND_BLENDSHAPES",
+            "rig_type":"JOINTS_AND_BLEND_SHAPES",
             "full_face_rig_verified":True,
             "cloud_auto_rig_request_executed":True,
             "texture_request_executed":False,
