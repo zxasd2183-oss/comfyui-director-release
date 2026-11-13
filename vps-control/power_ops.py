@@ -238,10 +238,14 @@ def evaluate_action(action: str, state: dict, queue: dict | None) -> dict:
         if state.get("is_spot"):
             return {"allowed": False, "action": action, "state": current,
                     "reason": "spot_instance_manual_stop_not_supported"}
-        if not queue or not queue.get("verified"):
+        if (not queue or queue.get("verified") is not True
+                or queue.get("source") != "ue_worker"):
             return {"allowed": False, "action": action, "state": current,
                     "reason": "ue_worker_readiness_not_verified"}
-        if not queue.get("empty"):
+        if (queue.get("empty") is not True or
+                type(queue.get("running")) is not int or
+                type(queue.get("pending")) is not int or
+                queue["running"] != 0 or queue["pending"] != 0):
             return {"allowed": False, "action": action, "state": current,
                     "reason": "ue_worker_busy",
                     "running": queue.get("running"),
