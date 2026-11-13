@@ -224,6 +224,8 @@ for attempt in range(8):
                     readiness.get("node_id")!="ue-worker-01"):
                     raise RuntimeError("UE Worker power readiness unavailable")
             controller=read(port,"get_control_center_status")
+            if controller.get("stop_guard")!="ue_worker_tasklist_v1":
+                raise RuntimeError("Legacy power core still installed")
             if not controller.get("configured") or not controller.get("instance_selected"):
                 raise RuntimeError("Provider configuration unavailable")
             stat=read(port,"get_gpu_power_status")
