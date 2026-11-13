@@ -380,7 +380,7 @@ def count_windows_ue_processes():
     Failure to enumerate *all* host processes is a stop blocker. The result
     is only a count; no process command lines or PIDs leave the Worker.
     """
-    executable = Path(r"C:\\Windows\System32\tasklist.exe")
+    executable = Path(r"C:\Windows\System32\tasklist.exe")
     try:
         result = subprocess.run(
             [str(executable), "/FO", "CSV", "/NH"],
