@@ -70,7 +70,7 @@ class V170FaceRpcTests(unittest.TestCase):
             {"ok":False,"reason":"director_task_requires_locked_ep01"})
         self.assertEqual(set(hub_app.DIRECTOR_TASK_ALLOWLIST),{
             "hero_face_contour_v1","hero_amber_eyes_v1",
-            "hero_runtime_audit_v1"})
+            "hero_runtime_audit_v1","hero_full_face_rig_v1"})
         with patch.dict(hub_app.DIRECTOR_TASK_ALLOWLIST,{
             "hero_face_contour_v1":lambda p,e:{"ok":True,"task":"face",
                                                "project_id":p,"episode_id":e}}):
