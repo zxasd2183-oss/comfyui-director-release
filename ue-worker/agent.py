@@ -6,6 +6,10 @@ The SSH -R tunnel is the only intended path from VPS to this process.
 from __future__ import annotations
 
 import csv
+import hashlib
+import time
+import urllib.error
+import urllib.request
 import hmac
 import io
 import json
@@ -345,6 +349,100 @@ def request_signed_update_check():
                 "state": "pending_next_signed_poll", "duplicate": False}
 
 
+
+# The GUI companion runs only when the human launches DesktopShare.ps1
+# inside their own logged-in RDP session. Never capture Session 0.
+DESKTOP_PIN = None
+DESKTOP_PIN_EXPIRES = 0.0
+DESKTOP_LOCK = threading.RLock()
+DESKTOP_ORIGIN = "http://127.0.0.1:19017"
+DESKTOP_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _desktop_http(path, code, max_bytes=1024):
+    if path not in ("/v1/status", "/v1/frame"):
+        raise ValueError("desktop_route_not_allowed")
+    request = urllib.request.Request(
+        DESKTOP_ORIGIN + path, method="GET",
+        headers={"X-Director-Desktop-Code":code,"Accept":"image/jpeg,application/json"})
+    try:
+        with DESKTOP_HTTP.open(request, timeout=6) as response:
+            if response.geturl()!=DESKTOP_ORIGIN+path:
+                raise ValueError("desktop_redirect_denied")
+            data=response.read(max_bytes+1)
+            if len(data)>max_bytes:
+                raise ValueError("desktop_response_too_large")
+            return response.headers.get("Content-Type",""),data
+    except (OSError, urllib.error.URLError) as exc:
+        raise ValueError("desktop_companion_unavailable") from exc
+
+
+def pair_desktop(code):
+    global DESKTOP_PIN,DESKTOP_PIN_EXPIRES
+    if type(code) is not str or not re.fullmatch(r"[0-9a-f]{32}",code):
+        return {"ok":False,"reason":"desktop_pair_code_invalid"}
+    try:
+        kind,raw=_desktop_http("/v1/status",code)
+        if not kind.startswith("application/json"):
+            raise ValueError("desktop_pair_protocol_invalid")
+        body=json.loads(raw)
+        if (type(body) is not dict or body.get("ok") is not True or
+                body.get("sharing") is not True):
+            raise ValueError("desktop_not_sharing")
+        with DESKTOP_LOCK:
+            DESKTOP_PIN=code
+            DESKTOP_PIN_EXPIRES=time.monotonic()+590
+        return {"ok":True,"paired":True,"sharing":True,
+                "seconds_remaining_max":590,"control_enabled":False}
+    except (ValueError,TypeError,UnicodeError):
+        return {"ok":False,"reason":"desktop_pair_unavailable_or_not_sharing"}
+
+
+def _desktop_pair_code():
+    with DESKTOP_LOCK:
+        if DESKTOP_PIN is None or time.monotonic()>=DESKTOP_PIN_EXPIRES:
+            return None
+        return DESKTOP_PIN
+
+
+def desktop_status():
+    code=_desktop_pair_code()
+    if code is None:
+        return {"ok":True,"paired":False,"sharing":False,"control_enabled":False}
+    try:
+        kind,raw=_desktop_http("/v1/status",code)
+        body=json.loads(raw)
+        if not kind.startswith("application/json") or type(body) is not dict:
+            raise ValueError("desktop_status_invalid")
+        return {"ok":True,"paired":True,"sharing":body.get("ok") is True and
+                body.get("sharing") is True,"control_enabled":False}
+    except (OSError,ValueError,UnicodeError,TypeError):
+        return {"ok":True,"paired":True,"sharing":False,"control_enabled":False}
+
+
+def unpair_desktop():
+    global DESKTOP_PIN,DESKTOP_PIN_EXPIRES
+    with DESKTOP_LOCK:
+        DESKTOP_PIN=None
+        DESKTOP_PIN_EXPIRES=0.0
+    return {"ok":True,"paired":False,"sharing":False,"control_enabled":False}
+
+
+def desktop_frame():
+    code=_desktop_pair_code()
+    if code is None:
+        raise ValueError("desktop_not_paired")
+    try:
+        kind,data=_desktop_http("/v1/frame",code,max_bytes=400000)
+        if (not kind.startswith("image/jpeg") or len(data)<200 or
+                not data.startswith(b"\\xff\\xd8") or
+                not data.endswith(b"\\xff\\xd9")):
+            raise ValueError("desktop_jpeg_invalid")
+        return data,hashlib.sha256(data).hexdigest()
+    except (OSError,ValueError,UnicodeError,TypeError) as exc:
+        raise ValueError("desktop_frame_unavailable") from exc
+
+
 def status():
     active_job_id = None
     if JOB_MANAGER is not None:
@@ -353,6 +451,7 @@ def status():
     return {
         "active_job_id": active_job_id,
         "signed_update": signed_update_status(),
+        "desktop_sharing": desktop_status(),
         "ok": True, "node_id": NODE_ID, "platform": platform.system(),
         "hostname": platform.node()[:128], "timestamp": utcnow(),
         "python": platform.python_version(),
@@ -360,7 +459,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.0.1",
+        "worker_version": "2.1.0",
     }
 
 
@@ -475,6 +574,8 @@ def capabilities():
         "signed_update_request_route": "/v4/update/request",
         "supports_signed_update_request": True,
         "supports_job_cancel": True,
+        "supports_desktop_view_only": True,
+        "supports_desktop_keyboard_or_mouse": False,
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
         "supports_rendering": False,
@@ -496,7 +597,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/2.0.1"
+    server_version = "DirectorUEWorker/2.1.0"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -528,6 +629,21 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v7/power/readiness":
             readiness = ue_power_readiness()
             self.send_json(200 if readiness["ok"] else 503, readiness)
+        elif self.path == "/v14/desktop/status":
+            self.send_json(200,desktop_status())
+        elif self.path == "/v14/desktop/frame":
+            try:
+                data,digest=desktop_frame()
+                self.send_response(200)
+                self.send_header("Content-Type","image/jpeg")
+                self.send_header("X-Content-Type-Options","nosniff")
+                self.send_header("Cache-Control","no-store")
+                self.send_header("Content-Length",str(len(data)))
+                self.send_header("X-Director-JPEG-SHA256",digest)
+                self.end_headers()
+                self.wfile.write(data)
+            except ValueError:
+                self.send_json(403,{"ok":False,"reason":"desktop_frame_unavailable"})
         elif self.path == "/v4/update/status":
             self.send_json(200, update_status())
         elif self.path == "/v6/episode/assembly-readiness":
@@ -593,6 +709,26 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.authorize():
             self.send_json(401, {"ok": False, "reason": "unauthorized"})
+            return
+        if self.path == "/v14/desktop/unpair":
+            if (self.headers.get("Content-Length","0")!="0" or
+                    self.headers.get("Transfer-Encoding")):
+                self.send_json(400,{"ok":False,"reason":"invalid_request"})
+            else:
+                self.send_json(200,unpair_desktop())
+            return
+        if self.path == "/v14/desktop/pair":
+            try:
+                if (self.headers.get("Transfer-Encoding") or
+                        not 0<int(self.headers.get("Content-Length","0"))<=128):
+                    raise ValueError("invalid_length")
+                item=json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if type(item) is not dict or set(item)!={"code"}:
+                    raise ValueError("invalid_body")
+                result=pair_desktop(item["code"])
+                self.send_json(200 if result["ok"] else 409,result)
+            except (ValueError,TypeError,UnicodeError):
+                self.send_json(400,{"ok":False,"reason":"invalid_request"})
             return
         if self.path == "/v4/update/request":
             if (self.headers.get("Content-Length", "0") != "0" or
