@@ -302,6 +302,129 @@ GPT_HERO_AMBER_SOURCE_SHA256 = (
 )
 
 
+# Real face candidate saved by RTX4090 UE 5.8 on 2026-11-13.
+GPT_HERO_FACE_SOURCE_JOB = "47cc188f03b9410fb8c94b085b739469"
+GPT_HERO_FACE_SOURCE_SHA256 = (
+    "812fcabd3544cc273789841433cae1f0d07ceb59815693eb492c03ef3f9f8816"
+)
+
+
+def build_gpt_hero_cloud_rig(spec,root,work):
+    """One bounded cloud auto-rig request, only on verified GPT face clone.
+
+    No user-supplied account details, URLs, paths, code or file writes outside
+    a new job candidate. Epic sign-in might be required: fail closed.
+    """
+    from ue_jobs import JobError,find_editor_cmd
+    from agent import hero_project_manifest
+    if spec.get("format") != "director_ue_hero_rig_v200":
+        raise JobError("hero_rig_format_invalid")
+    if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
+         spec.get("total_ms"),spec.get("total_frames"),
+         len(spec.get("shots",[])))
+        != ("WaitingOffice","EP01",24,160000,3840,31)
+        or [x["shot_id"] for x in spec["shots"]] != [
+            "%02d"%i for i in range(1,32)]):
+        raise JobError("hero_rig_requires_locked_ep01")
+    if not re.fullmatch(r"[a-f0-9]{32}",work.name):
+        raise JobError("hero_rig_job_id_invalid")
+    if work.is_symlink() or work.exists():
+        raise JobError("hero_rig_job_collision")
+    project=root/"HeroProjects"/"CHAR_GPT"/"DirectorHeroGPT.uproject"
+    if project.is_symlink() or not project.is_file():
+        raise JobError("hero_rig_project_missing")
+    try:
+        if json.loads(project.read_text("utf-8")) != hero_project_manifest():
+            raise JobError("hero_rig_project_untrusted")
+    except (TypeError,ValueError,UnicodeError):
+        raise JobError("hero_rig_project_invalid") from None
+    original=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+              "HeroFaces"/("J"+GPT_HERO_FACE_SOURCE_JOB)/
+              "MHC_CHAR_GPT_FaceContourV1.uasset")
+    amber=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+           "HeroLooks"/("J"+GPT_HERO_AMBER_SOURCE_JOB)/
+           "MHC_CHAR_GPT_AmberV1.uasset")
+    seed=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+          "HeroBuilds"/("J"+GPT_HERO_SOURCE_JOB)/
+          "MHC_CHAR_GPT.uasset")
+    sources=((original,GPT_HERO_FACE_SOURCE_SHA256),
+             (amber,GPT_HERO_AMBER_SOURCE_SHA256),
+             (seed,GPT_HERO_SOURCE_SHA256))
+    if any(p.is_symlink() or not p.is_file() for p,_ in sources):
+        raise JobError("hero_rig_source_unavailable")
+    if any(hashlib.sha256(p.read_bytes()).hexdigest()!=digest
+           for p,digest in sources):
+        raise JobError("hero_rig_source_hash_changed")
+    dest=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+          "HeroRigs"/("J"+work.name)/"MHC_CHAR_GPT_RigV1.uasset")
+    if dest.exists() or dest.is_symlink():
+        raise JobError("hero_rig_candidate_collision")
+    script=Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if script.is_symlink() or not script.is_file():
+        raise JobError("hero_rig_script_missing")
+    work.mkdir(parents=True,exist_ok=False)
+    receipt=work/"hero_rig_result.json"
+    env=os.environ.copy()
+    env["DIRECTOR_UE_JOB_ID"]=work.name
+    env["DIRECTOR_UE_REVIEW_MODE"]="hero_rig_v200"
+    env["DIRECTOR_UE_RESULT_FILE"]=str(receipt)
+    _run_unreal([str(find_editor_cmd()),str(project),"-run=pythonscript",
+                 "-script="+str(script),"-unattended","-nop4",
+                 "-nosplash","-NoSound","-log"],root,work/"hero_rig.log",
+                780,env)
+    if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size>6000:
+        raise JobError("hero_rig_receipt_missing")
+    data=json.loads(receipt.read_text("utf-8"))
+    if type(data) is not dict:
+        raise JobError("hero_rig_receipt_invalid")
+    if data.get("ok") is not True:
+        reason=data.get("reason")
+        if (type(reason) is str and re.fullmatch(
+            r"hero_rig_failed_(?:identity|source|clone|register|"
+            r"cloud_request|rig_readback|save|release)",reason)):
+            raise JobError(reason)
+        raise JobError("hero_rig_unverified")
+    expected=("/Game/Director/Candidates/EP01/HeroRigs/J"+work.name+
+              "/MHC_CHAR_GPT_RigV1")
+    if (data.get("asset_path")!=expected or
+        data.get("character_id")!="CHAR_GPT" or
+        data.get("asset_class")!="MetaHumanCharacter" or
+        data.get("rig_type")!="JOINTS_AND_BLENDSHAPES" or
+        data.get("full_face_rig_verified") is not True or
+        data.get("cloud_auto_rig_request_executed") is not True or
+        data.get("source_asset_preserved") is not True or
+        any(data.get(k) is not False for k in (
+            "texture_request_executed","full_texture_sources_ready",
+            "hair_ready","wardrobe_ready","cinematic_character_ready",
+            "character_master_approved"))):
+        raise JobError("hero_rig_receipt_inconsistent")
+    if (dest.is_symlink() or not dest.is_file() or
+            not 1024<=dest.stat().st_size<=250*1024*1024):
+        raise JobError("hero_rig_uasset_missing")
+    if any(hashlib.sha256(p.read_bytes()).hexdigest()!=digest
+           for p,digest in sources):
+        raise JobError("hero_rig_modified_source")
+    digest=hashlib.sha256(dest.read_bytes()).hexdigest()
+    if digest==GPT_HERO_FACE_SOURCE_SHA256:
+        raise JobError("hero_rig_candidate_unchanged")
+    return {
+        "kind":"real_native_metahuman_full_face_cloud_rig_v200",
+        "character_id":"CHAR_GPT",
+        "candidate_asset_path":expected,
+        "candidate_uasset_sha256":digest,
+        "candidate_uasset_bytes":dest.stat().st_size,
+        "rig_type":"JOINTS_AND_BLENDSHAPES",
+        "full_face_rig_verified":True,
+        "source_face_asset_sha256":GPT_HERO_FACE_SOURCE_SHA256,
+        "face_source_preserved":True,
+        "amber_source_preserved":True,"seed_source_preserved":True,
+        "cloud_auto_rig_request_executed":True,
+        "texture_sources_ready":False,
+        "groom_ready":False,"wardrobe_ready":False,
+        "cinematic_character_ready":False,"character_master_approved":False,
+    }
+
+
 def build_gpt_hero_face_contour(spec,root,work):
     """Unrigged MetaHuman contour on a NEW candidate; preserves amber source."""
     from ue_jobs import JobError,find_editor_cmd
