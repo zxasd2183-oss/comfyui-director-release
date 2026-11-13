@@ -30,6 +30,8 @@ for name in director-hub-mcp director-hub-bridge director-power-mcp director-mob
     systemctl is-active --quiet "$name" || fail "Required service $name inactive"
 done
 [[ -x "$PYTHON" && -f "$DB" && ! -L "$DB" ]] || fail "Existing Python or approval DB missing"
+[[ -f /etc/director-ue-worker.token && ! -L /etc/director-ue-worker.token ]] || \
+    fail "Authenticated UE Worker token missing or symlink"
 [[ -d "$HUB" && ! -L "$HUB" && -d "$POWER" && ! -L "$POWER" ]] || fail "Existing installation missing"
 for name in power_ops.py power_direct.py power_write_mcp.py vps_unified_status.py \
             hub_rpc.py hub_brain.py hub_file_sync.py hub_sync_jobs.py hub_app.py hub_bridge.py director-hub-mcp.service director-power-mcp.service; do
@@ -212,6 +214,15 @@ for attempt in range(8):
         for port,expected in ((8892,core),(8898,hub)):
             actual={item["name"] for item in rpc(port,"tools/list",{})["tools"]}
             if actual!=expected: raise RuntimeError("Unexpected registry at "+str(port))
+            if port==8898:
+                readiness=read(port,"get_ue_worker_power_readiness")
+                # The UE node may be busy; the *verification* must work,
+                # and no power operation is performed in this installer.
+                if (readiness.get("ok") is not True or
+                    readiness.get("verified") is not True or
+                    readiness.get("process_inventory_verified") is not True or
+                    readiness.get("node_id")!="ue-worker-01"):
+                    raise RuntimeError("UE Worker power readiness unavailable")
             controller=read(port,"get_control_center_status")
             if not controller.get("configured") or not controller.get("instance_selected"):
                 raise RuntimeError("Provider configuration unavailable")
