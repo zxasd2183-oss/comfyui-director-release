@@ -854,6 +854,56 @@ def hero_amber_eyes_main():
 
 
 
+
+def select_lower_jaw_symmetric_landmarks(coords):
+    """Choose limited, balanced lower-face points from local jaw coordinates.
+
+    The full head extrema are NOT the mandibular midline: live UE 5.8
+    returned 79 landmarks, with only 1 left and 12 right candidates when
+    compared against the whole-face midline. Use the lower band's *median*,
+    retain the outermost 8 on either side, and fail closed if ambiguous.
+    Pure math: unit-tested without importing Unreal in CI.
+    """
+    import math
+    if not 20 <= len(coords) <= 1000:
+        raise ValueError("landmark_count_outside_bounds")
+    z_values=sorted(p[2] for p in coords)
+    z_cut=z_values[int(len(z_values)*0.38)]
+    lower=[(i,p) for i,p in enumerate(coords) if p[2]<=z_cut]
+    if not 18<=len(lower)<=400:
+        raise ValueError("lower_face_insufficient")
+    lower_ys=sorted(p[1] for _,p in lower)
+    length=len(lower_ys)
+    center=(lower_ys[(length-1)//2]+lower_ys[length//2])*0.5
+    span=lower_ys[-1]-lower_ys[0]
+    if not (2.0<=span<=50.0):
+        raise ValueError("lower_face_width_invalid")
+    keep_out=max(0.05,span*0.06)
+    left=sorted(((i,p[1]) for i,p in lower
+                 if p[1] < center-keep_out),key=lambda x:x[1])[:8]
+    right=sorted(((i,p[1]) for i,p in lower
+                  if p[1] > center+keep_out),
+                 key=lambda x:x[1],reverse=True)[:8]
+    if len(left)<4 or len(right)<4:
+        raise ValueError("lower_face_not_bilateral")
+    selected=sorted(i for i,_ in left+right)
+    if len(selected)!=len(set(selected)) or not 8<=len(selected)<=16:
+        raise ValueError("lower_face_selection_not_unique")
+    shifts=[]
+    for i in selected:
+        side=coords[i][1]-center
+        # Local midline, outer lower-face band, at most 0.1cm per point.
+        shift=-math.copysign(min(0.10,abs(side)*0.015),side)
+        if not math.isfinite(shift) or not 0.0<abs(shift)<=0.10:
+            raise ValueError("invalid_sculpt_delta")
+        shifts.append(shift)
+    return selected,shifts,{
+        "lower_left":len(left),"lower_right":len(right),
+        "lower_span":round(span,3),
+        "local_center":round(center,3),
+    }
+
+
 def hero_face_contour_main():
     """Sculpt a subtle lower-face contour on a NEW native MetaHuman copy.
 
@@ -908,33 +958,17 @@ def hero_face_contour_main():
             coords.append((x,y,z))
         ys=[item[1] for item in coords]
         zs=sorted(item[2] for item in coords)
-        mid_y=(max(ys)+min(ys))/2.0
-        half_width=(max(ys)-min(ys))/2.0
-        height=zs[-1]-zs[0]
-        diagnostic["y_span"]=round(2.0*half_width,3)
-        diagnostic["z_span"]=round(height,3)
+        diagnostic["y_span"]=round(max(ys)-min(ys),3)
+        diagnostic["z_span"]=round(zs[-1]-zs[0],3)
         phase="landmark_scale"
-        if not (0.5<=half_width<=100.0 and 1.0<=height<=150.0):
+        if not (1.0<=diagnostic["y_span"]<=200.0 and
+                1.0<=diagnostic["z_span"]<=150.0):
             raise RuntimeError("face_landmark_scale_unusable")
-        z_cut=zs[int(len(zs)*0.38)]
-        left=[(i, abs(v[1]-mid_y)) for i,v in enumerate(coords)
-              if v[2]<=z_cut and v[1]<mid_y-half_width*0.28]
-        right=[(i, abs(v[1]-mid_y)) for i,v in enumerate(coords)
-               if v[2]<=z_cut and v[1]>mid_y+half_width*0.28]
-        left=sorted(left,key=lambda x:x[1],reverse=True)[:12]
-        right=sorted(right,key=lambda x:x[1],reverse=True)[:12]
-        diagnostic["lower_left"]=len(left)
-        diagnostic["lower_right"]=len(right)
         phase="landmark_jaw_selection"
-        if len(left)<3 or len(right)<3:
-            raise RuntimeError("jaw_landmarks_not_symmetric")
-        selected=sorted([i for i,_ in left+right])
-        deltas=[]
-        for index in selected:
-            side=coords[index][1]-mid_y
-            # Max 1 mm/side, gentle 1.5% width reduction in lower face.
-            shift=-math.copysign(min(0.10,abs(side)*0.015),side)
-            deltas.append(unreal.Vector(0.0,shift,0.0))
+        selected,shifts,selection_info=select_lower_jaw_symmetric_landmarks(coords)
+        diagnostic["lower_left"]=selection_info["lower_left"]
+        diagnostic["lower_right"]=selection_info["lower_right"]
+        deltas=[unreal.Vector(0.0,shift,0.0) for shift in shifts]
         phase="sculpt"
         subsystem.translate_face_landmarks(clone,selected,deltas)
         subsystem.commit_face_state(clone)
