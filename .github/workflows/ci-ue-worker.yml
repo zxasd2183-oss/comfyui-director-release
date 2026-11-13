@@ -54,7 +54,7 @@ jobs:
       - name: Verify Windows PowerShell bootstrap syntax
         shell: pwsh
         run: |
-          foreach ($path in @("ue-worker/WindowsBootstrap.ps1", "ue-worker/install-v02.ps1", "ue-worker/install-v03.ps1", "ue-worker/install-v04.ps1", "ue-worker/install-v05.ps1", "ue-worker/install-v051.ps1", "ue-worker/install-v052.ps1", "ue-worker/install-signed-updater.ps1", "ue-worker/setup-signed-auto-updates-once.ps1", "ue-worker/bootstrap-vps-updater-only.ps1")) {
+          foreach ($path in @("ue-worker/WindowsBootstrap.ps1", "ue-worker/install-v02.ps1", "ue-worker/install-v03.ps1", "ue-worker/install-v04.ps1", "ue-worker/install-v05.ps1", "ue-worker/install-v051.ps1", "ue-worker/install-v052.ps1", "ue-worker/install-signed-updater.ps1", "ue-worker/setup-signed-auto-updates-once.ps1", "ue-worker/bootstrap-vps-updater-only.ps1", "ue-worker/DirectorDesktopShare.ps1")) {
             $tokens = $null
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
@@ -73,7 +73,7 @@ jobs:
           if ($PSVersionTable.PSVersion.Major -ne 5) {
             throw "Expected inbox Windows PowerShell 5.1"
           }
-          foreach ($path in @("ue-worker/setup-signed-auto-updates-once.ps1", "ue-worker/install-signed-updater.ps1", "ue-worker/install-v052.ps1", "ue-worker/bootstrap-vps-updater-only.ps1")) {
+          foreach ($path in @("ue-worker/setup-signed-auto-updates-once.ps1", "ue-worker/install-signed-updater.ps1", "ue-worker/install-v052.ps1", "ue-worker/bootstrap-vps-updater-only.ps1", "ue-worker/DirectorDesktopShare.ps1")) {
             $tokens = $null
             $issues = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
