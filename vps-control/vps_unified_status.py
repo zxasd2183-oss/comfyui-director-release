@@ -5,7 +5,7 @@ systemd LoadCredential-protected config. No provider secret is returned.
 """
 from __future__ import annotations
 
-from power_ops import PowerError, get_provider_state
+from power_ops import PowerError, get_provider_state, UE_POWER_STOP_GUARD_VERSION
 
 
 def control_center_status(config_fn):
@@ -17,7 +17,8 @@ def control_center_status(config_fn):
     except Exception:
         valid = False
     return {
-        "version": "0.6.0",
+        "version": "0.7.0",
+        "stop_guard": UE_POWER_STOP_GUARD_VERSION,
         "configured": valid,
         "instance_selected": valid,
         "gpu_control_enabled": valid,
