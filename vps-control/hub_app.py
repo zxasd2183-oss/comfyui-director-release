@@ -21,6 +21,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_hero_metahuman_seed as enqueue_ue_hero_metahuman_seed_rpc,
                            enqueue_ue_hero_runtime_audit as enqueue_ue_hero_runtime_audit_rpc,
                            enqueue_ue_hero_amber_eyes as enqueue_ue_hero_amber_eyes_rpc,
+                           enqueue_ue_hero_face_contour as enqueue_ue_hero_face_contour_rpc,
                            get_ue_cast_review_png as get_ue_cast_review_png_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
@@ -31,7 +32,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.6.0"
+UE_HUB_API_VERSION = "1.7.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -505,6 +506,35 @@ def enqueue_ue_hero_amber_eyes(project_id: str, episode_id: str) -> dict:
     no arbitrary assets, no models, no cloud auth/rigging, no master approval.
     """
     return enqueue_ue_hero_amber_eyes_rpc(project_id,episode_id)
+
+
+# Stable schema: future reviewed tasks can be allowlisted in server code
+# without forcing ChatGPT to reload a new MCP tool for each individual step.
+# This is NOT a generic executor, no arbitrary scripts/code/URLs/asset paths.
+DIRECTOR_TASK_ALLOWLIST = {
+    "hero_face_contour_v1": enqueue_ue_hero_face_contour_rpc,
+    "hero_amber_eyes_v1": enqueue_ue_hero_amber_eyes_rpc,
+    "hero_runtime_audit_v1": enqueue_ue_hero_runtime_audit_rpc,
+}
+
+
+@app.tool(annotations=WRITE)
+def submit_director_task(task_type: str, project_id: str, episode_id: str) -> dict:
+    """Submit one reviewed, versioned Director Studio operation.
+
+    Stable MCP schema across future upgrades. Every added task must be
+    explicitly server-allowlisted, Studio-identity checked, signed for Windows,
+    and confined to one frozen episode. Never runs arbitrary commands.
+    """
+    if (type(task_type) is not str or type(project_id) is not str
+            or type(episode_id) is not str):
+        return {"ok":False,"reason":"director_task_invalid_arguments"}
+    handler = DIRECTOR_TASK_ALLOWLIST.get(task_type)
+    if handler is None:
+        return {"ok":False,"reason":"director_task_not_allowlisted"}
+    if (project_id,episode_id)!=("WaitingOffice","EP01"):
+        return {"ok":False,"reason":"director_task_requires_locked_ep01"}
+    return handler(project_id,episode_id)
 
 
 @app.tool(annotations=READ)

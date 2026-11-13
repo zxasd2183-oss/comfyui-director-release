@@ -295,6 +295,128 @@ GPT_HERO_SOURCE_SHA256 = "ccbd6bc1c39cedec3fd803642f604452bad949333c94eb4c63e550
 
 
 
+# Real UE5.8 left/right iris edit from the succeeded RTX4090 job.
+GPT_HERO_AMBER_SOURCE_JOB = "da7a5a59132d4e279f0433f4af1b94ce"
+GPT_HERO_AMBER_SOURCE_SHA256 = (
+    "358562baac529a1714489aa6de078038a94c491ff86c012c12df3c82ebcfccf5"
+)
+
+
+def build_gpt_hero_face_contour(spec,root,work):
+    """Unrigged MetaHuman contour on a NEW candidate; preserves amber source."""
+    from ue_jobs import JobError,find_editor_cmd
+    from agent import hero_project_manifest
+    if spec.get("format")!="director_ue_hero_face_v170":
+        raise JobError("hero_face_spec_invalid")
+    if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
+         spec.get("total_ms"),spec.get("total_frames"),len(spec.get("shots",[])))
+            != ("WaitingOffice","EP01",24,160000,3840,31)
+        or [x["shot_id"] for x in spec["shots"]] != [
+            "%02d"%i for i in range(1,32)]):
+        raise JobError("hero_face_requires_locked_ep01")
+    if not re.fullmatch(r"[a-f0-9]{32}",work.name):
+        raise JobError("hero_face_job_id_invalid")
+    if work.exists() or work.is_symlink():
+        raise JobError("hero_face_job_collision")
+    project=root/"HeroProjects"/"CHAR_GPT"/"DirectorHeroGPT.uproject"
+    if project.is_symlink() or not project.is_file():
+        raise JobError("hero_face_project_missing")
+    try:
+        if json.loads(project.read_text("utf-8"))!=hero_project_manifest():
+            raise JobError("hero_face_project_untrusted")
+    except (UnicodeError,TypeError,ValueError):
+        raise JobError("hero_face_project_unreadable") from None
+    original=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+              "HeroLooks"/("J"+GPT_HERO_AMBER_SOURCE_JOB)/
+              "MHC_CHAR_GPT_AmberV1.uasset")
+    seed=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+          "HeroBuilds"/("J"+GPT_HERO_SOURCE_JOB)/"MHC_CHAR_GPT.uasset")
+    if (original.is_symlink() or not original.is_file() or
+        seed.is_symlink() or not seed.is_file()):
+        raise JobError("hero_face_sources_unavailable")
+    base=hashlib.sha256(original.read_bytes()).hexdigest()
+    seed_hash=hashlib.sha256(seed.read_bytes()).hexdigest()
+    if base!=GPT_HERO_AMBER_SOURCE_SHA256 or seed_hash!=GPT_HERO_SOURCE_SHA256:
+        raise JobError("hero_face_source_hash_drift")
+    dest=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
+          "HeroFaces"/("J"+work.name)/"MHC_CHAR_GPT_FaceContourV1.uasset")
+    if dest.is_symlink() or dest.exists():
+        raise JobError("hero_face_candidate_collision")
+    work.mkdir(parents=True,exist_ok=False)
+    output=work/"hero_face_result.json"
+    env=os.environ.copy()
+    env["DIRECTOR_UE_JOB_ID"]=work.name
+    env["DIRECTOR_UE_REVIEW_MODE"]="hero_face_v170"
+    env["DIRECTOR_UE_RESULT_FILE"]=str(output)
+    script=Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if script.is_symlink() or not script.is_file():
+        raise JobError("hero_face_script_unavailable")
+    _run_unreal([str(find_editor_cmd()),str(project),"-run=pythonscript",
+                 "-script="+str(script),"-unattended","-nop4",
+                 "-nosplash","-NoSound","-log"],
+                root,work/"hero_face.log",720,env)
+    if output.is_symlink() or not output.is_file() or output.stat().st_size>6000:
+        raise JobError("hero_face_receipt_missing")
+    data=json.loads(output.read_text("utf-8"))
+    if type(data) is not dict:
+        raise JobError("hero_face_receipt_invalid")
+    if data.get("ok") is not True:
+        reason=data.get("reason")
+        if type(reason) is str and re.fullmatch(
+                r"hero_face_(?:step_failed_(?:identity|source|duplicate|register|"
+                r"landmarks|sculpt|save)|unregister_failed)",reason):
+            raise JobError(reason)
+        raise JobError("hero_face_editor_failed")
+    name=("/Game/Director/Candidates/EP01/HeroFaces/J"+work.name+
+          "/MHC_CHAR_GPT_FaceContourV1")
+    if (data.get("character_id")!="CHAR_GPT" or
+        data.get("asset_path")!=name or
+        data.get("asset_class")!="MetaHumanCharacter" or
+        data.get("face_edit_api")!="translate_face_landmarks_commit_face_state" or
+        type(data.get("landmark_count")) is not int or
+        not 20<=data["landmark_count"]<=1000 or
+        type(data.get("landmarks_selected")) is not int or
+        not 6<=data["landmarks_selected"]<=24 or
+        type(data.get("live_landmarks_changed")) is not int or
+        not 2<=data["live_landmarks_changed"]<=data["landmarks_selected"] or
+        data.get("max_lateral_delta_cm")!=0.10 or
+        data.get("jaw_style")!="subtle_symmetric_lower_face_narrowing_v1" or
+        data.get("real_ue_sculpt_committed") is not True or
+        data.get("original_asset_untouched") is not True or
+        any(data.get(k) is not False for k in (
+            "cloud_requests_executed","rigging_done",
+            "high_res_textures_downloaded","groom_applied","wardrobe_applied",
+            "cinematic_character_ready","character_master_approved",
+            "visual_approved"))):
+        raise JobError("hero_face_receipt_invalid")
+    if dest.is_symlink() or not dest.is_file() or not (
+            1024<=dest.stat().st_size<=100*1024*1024):
+        raise JobError("hero_face_native_uasset_missing")
+    digest=hashlib.sha256(dest.read_bytes()).hexdigest()
+    if (hashlib.sha256(original.read_bytes()).hexdigest()!=base or
+        hashlib.sha256(seed.read_bytes()).hexdigest()!=seed_hash):
+        raise JobError("hero_face_source_modified")
+    if digest==base:
+        raise JobError("hero_face_asset_not_changed")
+    return {
+        "kind":"native_metahuman_face_contour_candidate_v170",
+        "character_id":"CHAR_GPT","candidate_asset_path":name,
+        "candidate_uasset_sha256":digest,
+        "candidate_uasset_bytes":dest.stat().st_size,
+        "live_landmarks_changed":data["live_landmarks_changed"],
+        "landmarks_selected":data["landmarks_selected"],
+        "real_ue_face_edit_committed":True,
+        "source_amber_asset_sha256":base,
+        "source_amber_asset_preserved":True,
+        "original_seed_preserved":True,
+        "face_sculpt_style":"subtle_lower_face_narrowing",
+        "creative_face_visual_approved":False,
+        "texture_sources_ready":False,"full_face_rig_ready":False,
+        "groom_ready":False,"wardrobe_ready":False,
+        "cinematic_character_ready":False,"character_master_approved":False,
+    }
+
+
 def build_gpt_hero_amber_eyes(spec,root,work):
     """One copy of the real MetaHuman with both amber-brown iris settings."""
     from ue_jobs import JobError,find_editor_cmd
