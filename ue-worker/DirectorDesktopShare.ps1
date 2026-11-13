@@ -88,7 +88,7 @@ function Json-Bytes([bool]$ok, [string]$reason) {
 }
 Reset-Consent
 $form = New-Object Windows.Forms.Form
-$form.Text = 'Director Desktop - RDP 只读协作'
+$form.Text = 'Director Desktop - RDP View Only'
 $form.Width = 500
 $form.Height = 255
 $form.TopMost = $true
@@ -96,7 +96,7 @@ $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = [Windows.Forms.FormBorderStyle]::FixedDialog
 $form.MaximizeBox = $false
 $note = New-Object Windows.Forms.Label
-$note.Text = '仅在当前 RDP 主屏幕截图。开始共享后最多 10 分钟。登录/输入密码前按停止。'
+$note.Text = 'Shares current RDP primary screen ONLY, up to 10 minutes. STOP before passwords.'
 $note.SetBounds(12, 12, 462, 36)
 $form.Controls.Add($note)
 $field = New-Object Windows.Forms.TextBox
@@ -107,34 +107,34 @@ $field.Text = $script:code
 $form.Controls.Add($field)
 $status = New-Object Windows.Forms.Label
 $status.SetBounds(12, 94, 462, 25)
-$status.Text = '未共享：复制上方一次性配对码给 ChatGPT，启动后可停止'
+$status.Text = 'OFF: Copy the temporary code to ChatGPT, then click Start.'
 $form.Controls.Add($status)
 $start = New-Object Windows.Forms.Button
-$start.Text = '开始只读共享'
+$start.Text = 'Start View-Only'
 $start.SetBounds(12, 135, 145, 32)
 $start.Add_Click({
     if ([DateTime]::UtcNow -lt $script:expires) {
         $script:enabled = $true
-        $status.Text = '共享中：仅按请求返回一张 800px JPEG。可随时停止'
+        $status.Text = 'ON: One 800px JPEG per request. Click Stop anytime.'
     }
 })
 $form.Controls.Add($start)
 $stop = New-Object Windows.Forms.Button
-$stop.Text = '立即停止共享'
+$stop.Text = 'Stop Immediately'
 $stop.SetBounds(173, 135, 145, 32)
-$stop.Add_Click({ $script:enabled = $false; $status.Text = '已停止共享' })
+$stop.Add_Click({ $script:enabled = $false; $status.Text = 'Sharing stopped' })
 $form.Controls.Add($stop)
 $rotate = New-Object Windows.Forms.Button
-$rotate.Text = '换配对码'
+$rotate.Text = 'New Code'
 $rotate.SetBounds(335, 135, 139, 32)
-$rotate.Add_Click({ Reset-Consent; $field.Text=$script:code; $status.Text='未共享：新配对码已生成' })
+$rotate.Add_Click({ Reset-Consent; $field.Text=$script:code; $status.Text='OFF: New pairing code generated' })
 $form.Controls.Add($rotate)
 $timer = New-Object Windows.Forms.Timer
 $timer.Interval = 150
 $timer.Add_Tick({
     if ([DateTime]::UtcNow -ge $script:expires) {
         $script:enabled = $false
-        $status.Text = '配对码已过期，请点击换配对码'
+        $status.Text = 'Expired: click New Code'
     }
     if (-not $listener.Pending()) { return }
     $client = $null
@@ -170,7 +170,7 @@ $timer.Add_Tick({
         }
     } catch {
         # Do not show HTTP bodies, auth codes or sensitive exception details.
-        $status.Text = '共享端连接错误；可停止并重新启动'
+        $status.Text = 'Connection error. Stop and restart.'
     } finally {
         if ($client) { $client.Dispose() }
     }
