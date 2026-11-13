@@ -84,7 +84,7 @@ class UnifiedVpsV06Tests(unittest.TestCase):
         self.assertEqual(result["reason"], "instance_state_not_running")
         result = power_ops.evaluate_action("stop", {"state": "Running"}, {
             "verified": False, "empty": True})
-        self.assertEqual(result["reason"], "comfyui_queue_not_verified")
+        self.assertEqual(result["reason"], "ue_worker_readiness_not_verified")
 
 
 if __name__ == "__main__":
