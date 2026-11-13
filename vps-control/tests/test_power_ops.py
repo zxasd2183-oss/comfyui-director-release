@@ -199,6 +199,29 @@ class PowerTests(unittest.TestCase):
                 opener=lambda req,timeout:Redirect(json.dumps(base).encode()))
             self.assertFalse(state["verified"])
 
+    def test_power_service_reads_private_worker_credential_copy(self):
+        import io
+        from datetime import datetime,timezone
+        from power_ops import UE_WORKER_POWER_URL
+        class Reply(io.BytesIO):
+            status=200
+            def geturl(self):return UE_WORKER_POWER_URL
+        sample={"ok":True,"verified":True,"process_inventory_verified":True,
+                "kind":"director_ue_windows_power_readiness_v1",
+                "node_id":"ue-worker-01","platform":"Windows",
+                "unreal_process_count":0,"active_job_id":None,
+                "safe_to_stop":True,
+                "checked_at":datetime.now(timezone.utc).isoformat()}
+        with tempfile.TemporaryDirectory() as td:
+            credential=Path(td)/"ueworkertoken"
+            credential.write_text("d"*64,encoding="ascii")
+            credential.chmod(0o400)
+            with patch.dict(os.environ,{"CREDENTIALS_DIRECTORY":td}):
+                result=get_queue_state(CFG,opener=lambda req,timeout:
+                                       Reply(json.dumps(sample).encode()))
+        self.assertEqual(result["source"],"ue_worker")
+        self.assertTrue(result["empty"])
+
     def test_read_env_file_needs_root_only_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "env"
