@@ -364,7 +364,9 @@ def build_gpt_hero_face_contour(spec,root,work):
         reason=data.get("reason")
         if type(reason) is str and re.fullmatch(
                 r"hero_face_(?:step_failed_(?:identity|source|duplicate|register|"
-                r"landmarks|sculpt|save)|unregister_failed)",reason):
+                r"get_landmarks|landmark_count|landmark_coordinates|"
+                r"landmark_scale|landmark_jaw_selection|sculpt|save)|"
+                r"unregister_failed)",reason):
             raise JobError(reason)
         raise JobError("hero_face_editor_failed")
     name=("/Game/Director/Candidates/EP01/HeroFaces/J"+work.name+

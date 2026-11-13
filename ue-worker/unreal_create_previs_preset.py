@@ -864,6 +864,8 @@ def hero_face_contour_main():
     output=Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
     result={"ok":False,"reason":"hero_face_not_started"}
     phase="identity"
+    diagnostic={"landmark_count":None,"y_span":None,"z_span":None,
+                "lower_left":None,"lower_right":None}
     subsystem=None
     clone=None
     registered=False
@@ -891,10 +893,13 @@ def hero_face_contour_main():
         if not subsystem or not subsystem.try_add_object_to_edit(clone):
             raise RuntimeError("metahuman_core_data_or_registration_unavailable")
         registered=True
-        phase="landmarks"
+        phase="get_landmarks"
         landmarks=list(subsystem.get_face_landmarks(clone))
+        diagnostic["landmark_count"]=len(landmarks)
+        phase="landmark_count"
         if not 20<=len(landmarks)<=1000:
             raise RuntimeError("unexpected_landmark_count")
+        phase="landmark_coordinates"
         coords=[]
         for point in landmarks:
             x,y,z=float(point.x),float(point.y),float(point.z)
@@ -906,6 +911,9 @@ def hero_face_contour_main():
         mid_y=(max(ys)+min(ys))/2.0
         half_width=(max(ys)-min(ys))/2.0
         height=zs[-1]-zs[0]
+        diagnostic["y_span"]=round(2.0*half_width,3)
+        diagnostic["z_span"]=round(height,3)
+        phase="landmark_scale"
         if not (0.5<=half_width<=100.0 and 1.0<=height<=150.0):
             raise RuntimeError("face_landmark_scale_unusable")
         z_cut=zs[int(len(zs)*0.38)]
@@ -915,6 +923,9 @@ def hero_face_contour_main():
                if v[2]<=z_cut and v[1]>mid_y+half_width*0.28]
         left=sorted(left,key=lambda x:x[1],reverse=True)[:12]
         right=sorted(right,key=lambda x:x[1],reverse=True)[:12]
+        diagnostic["lower_left"]=len(left)
+        diagnostic["lower_right"]=len(right)
+        phase="landmark_jaw_selection"
         if len(left)<3 or len(right)<3:
             raise RuntimeError("jaw_landmarks_not_symmetric")
         selected=sorted([i for i,_ in left+right])
@@ -955,10 +966,19 @@ def hero_face_contour_main():
                 "cinematic_character_ready":False,
                 "character_master_approved":False,
                 "visual_approved":False}
-    except Exception:
-        # Never copy arbitrary SDK/Epic error strings or secrets to the
-        # authenticated-but-forwardable receipt.
-        result={"ok":False,"reason":"hero_face_step_failed_"+phase}
+    except Exception as exc:
+        # Only an allowlisted phase, an exception CLASS and bounded numeric
+        # landmark counts/spans may enter local worker logs. No exception
+        # messages, URLs, command lines, tokens, or filesystem paths.
+        reason="hero_face_step_failed_"+phase
+        result={"ok":False,"reason":reason}
+        unreal.log_warning("Director Face Probe phase="+phase+
+            " exception="+type(exc).__name__+
+            " landmark_count="+str(diagnostic["landmark_count"])+
+            " y_span="+str(diagnostic["y_span"])+
+            " z_span="+str(diagnostic["z_span"])+
+            " lower_left="+str(diagnostic["lower_left"])+
+            " lower_right="+str(diagnostic["lower_right"]))
     finally:
         if registered:
             try:
@@ -970,7 +990,9 @@ def hero_face_contour_main():
     if result["ok"]:
         unreal.log("GPT MetaHuman native lower-face contour candidate committed")
     else:
-        unreal.log_error("GPT face sculpt blocked "+result["reason"])
+        # Script failure is reported via a signed-worker receipt; do not
+        # turn expected preflight failures into opaque commandlet exit codes.
+        unreal.log_warning("GPT face sculpt blocked "+result["reason"])
 
 
 if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_face_v170":
