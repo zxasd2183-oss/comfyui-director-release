@@ -360,7 +360,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "1.8.0",
+        "worker_version": "1.9.0",
     }
 
 
@@ -494,7 +494,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/1.8.0"
+    server_version = "DirectorUEWorker/1.9.0"
     sys_version = ""
 
     def log_message(self, fmt, *args):
