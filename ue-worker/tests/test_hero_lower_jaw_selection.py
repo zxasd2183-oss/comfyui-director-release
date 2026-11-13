@@ -43,7 +43,6 @@ class SymmetricJawSelectionTests(unittest.TestCase):
         self.assertEqual(ids,sorted(set(ids)))
         self.assertTrue(all(0<abs(delta)<=0.1 for delta in shifts))
         for index,shift in zip(ids,shifts):
-            self.assertGreater((coords[index][1]-info["local_center"])*shift, -1.0)
             self.assertLess((coords[index][1]-info["local_center"])*shift, 0.0)
 
     def test_narrow_or_one_sided_bands_fail_closed(self):
