@@ -166,7 +166,13 @@ def get_queue_state(config: dict, opener=None, token_file=None) -> dict:
     ComfyUI/H3 is NOT queried and may NOT authorize a UE instance stop.
     Unavailable tunnel, unverifiable process list or stale data fail closed.
     """
-    path = Path(token_file) if token_file is not None else UE_WORKER_TOKEN_PATH
+    if token_file is not None:
+        path = Path(token_file)
+    elif os.environ.get("CREDENTIALS_DIRECTORY"):
+        # Read systemd's private LoadCredential copy of the root-owned token.
+        path = Path(os.environ["CREDENTIALS_DIRECTORY"]) / "ueworkertoken"
+    else:
+        path = UE_WORKER_TOKEN_PATH
     try:
         if path.is_symlink() or not path.is_file():
             raise PowerError("ue_worker_token_unavailable")
