@@ -68,7 +68,7 @@ class CloudRigTests(unittest.TestCase):
                     "asset_path":"/Game/Director/Candidates/EP01/HeroRigs/J"+
                         work.name+"/MHC_CHAR_GPT_RigV1",
                     "asset_class":"MetaHumanCharacter",
-                    "rig_type":"JOINTS_AND_BLENDSHAPES",
+                    "rig_type":"JOINTS_AND_BLEND_SHAPES",
                     "full_face_rig_verified":True,
                     "cloud_auto_rig_request_executed":True,
                     "texture_request_executed":False,
@@ -111,8 +111,9 @@ class CloudRigTests(unittest.TestCase):
         begin=src.index("def hero_cloud_face_rig_main():")
         end=src.index('if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_rig_v200":')
         code=src[begin:end]
-        self.assertIn("MetaHumanRigType.JOINTS_AND_BLENDSHAPES",code)
+        self.assertIn("MetaHumanRigType.JOINTS_AND_BLEND_SHAPES",code)
         self.assertIn("params.blocking=True",code)
+        self.assertIn('get_editor_property("has_face_dna_blendshapes")',code)
         self.assertIn("subsystem.request_auto_rigging(clone,params)",code)
         self.assertIn('subsystem.remove_object_to_edit(clone)',code)
         self.assertNotIn("request_texture_sources",code)
