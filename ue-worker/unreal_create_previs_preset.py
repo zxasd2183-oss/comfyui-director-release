@@ -853,7 +853,129 @@ def hero_amber_eyes_main():
         unreal.log_error("GPT amber eye candidate failed "+result["reason"])
 
 
-if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_eyes_v150":
+
+def hero_face_contour_main():
+    """Sculpt a subtle lower-face contour on a NEW native MetaHuman copy.
+
+    Use UE's documented MetaHuman Editor landmark/commit API. This does not
+    request cloud data, rig or texture services, nor approve the creative look.
+    """
+    import math
+    output=Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    result={"ok":False,"reason":"hero_face_not_started"}
+    phase="identity"
+    subsystem=None
+    clone=None
+    registered=False
+    try:
+        job=os.environ.get("DIRECTOR_UE_JOB_ID","")
+        if (os.environ.get("DIRECTOR_UE_REVIEW_MODE")!="hero_face_v170"
+                or not re.fullmatch(r"[a-f0-9]{32}",job)):
+            raise RuntimeError("invalid_job")
+        old="da7a5a59132d4e279f0433f4af1b94ce"
+        source=("/Game/Director/Candidates/EP01/HeroLooks/J"+old+
+                "/MHC_CHAR_GPT_AmberV1")
+        candidate=("/Game/Director/Candidates/EP01/HeroFaces/J"+job+
+                   "/MHC_CHAR_GPT_FaceContourV1")
+        phase="source"
+        if (not unreal.EditorAssetLibrary.does_asset_exist(source)
+                or unreal.EditorAssetLibrary.does_asset_exist(candidate)):
+            raise RuntimeError("asset_missing_or_collision")
+        phase="duplicate"
+        clone=unreal.EditorAssetLibrary.duplicate_asset(source,candidate)
+        if not clone or clone.get_class().get_name()!="MetaHumanCharacter":
+            raise RuntimeError("native_duplicate_failed")
+        phase="register"
+        subsystem=unreal.get_editor_subsystem(
+            unreal.MetaHumanCharacterEditorSubsystem)
+        if not subsystem or not subsystem.try_add_object_to_edit(clone):
+            raise RuntimeError("metahuman_core_data_or_registration_unavailable")
+        registered=True
+        phase="landmarks"
+        landmarks=list(subsystem.get_face_landmarks(clone))
+        if not 20<=len(landmarks)<=1000:
+            raise RuntimeError("unexpected_landmark_count")
+        coords=[]
+        for point in landmarks:
+            x,y,z=float(point.x),float(point.y),float(point.z)
+            if not all(math.isfinite(q) and abs(q)<=1000 for q in (x,y,z)):
+                raise RuntimeError("invalid_landmark_coordinate")
+            coords.append((x,y,z))
+        ys=[item[1] for item in coords]
+        zs=sorted(item[2] for item in coords)
+        mid_y=(max(ys)+min(ys))/2.0
+        half_width=(max(ys)-min(ys))/2.0
+        height=zs[-1]-zs[0]
+        if not (0.5<=half_width<=100.0 and 1.0<=height<=150.0):
+            raise RuntimeError("face_landmark_scale_unusable")
+        z_cut=zs[int(len(zs)*0.38)]
+        left=[(i, abs(v[1]-mid_y)) for i,v in enumerate(coords)
+              if v[2]<=z_cut and v[1]<mid_y-half_width*0.28]
+        right=[(i, abs(v[1]-mid_y)) for i,v in enumerate(coords)
+               if v[2]<=z_cut and v[1]>mid_y+half_width*0.28]
+        left=sorted(left,key=lambda x:x[1],reverse=True)[:12]
+        right=sorted(right,key=lambda x:x[1],reverse=True)[:12]
+        if len(left)<3 or len(right)<3:
+            raise RuntimeError("jaw_landmarks_not_symmetric")
+        selected=sorted([i for i,_ in left+right])
+        deltas=[]
+        for index in selected:
+            side=coords[index][1]-mid_y
+            # Max 1 mm/side, gentle 1.5% width reduction in lower face.
+            shift=-math.copysign(min(0.10,abs(side)*0.015),side)
+            deltas.append(unreal.Vector(0.0,shift,0.0))
+        phase="sculpt"
+        subsystem.translate_face_landmarks(clone,selected,deltas)
+        subsystem.commit_face_state(clone)
+        after=list(subsystem.get_face_landmarks(clone))
+        if len(after)!=len(landmarks):
+            raise RuntimeError("landmark_count_changed")
+        changed=sum(
+            1 for i in selected
+            if abs(float(after[i].y)-coords[i][1])>0.00001
+        )
+        if changed<2:
+            raise RuntimeError("sculpt_not_applied")
+        phase="save"
+        if not unreal.EditorAssetLibrary.save_loaded_asset(clone):
+            raise RuntimeError("candidate_save_failed")
+        result={"ok":True,"character_id":"CHAR_GPT","asset_path":candidate,
+                "asset_class":"MetaHumanCharacter",
+                "face_edit_api":"translate_face_landmarks_commit_face_state",
+                "landmark_count":len(landmarks),
+                "landmarks_selected":len(selected),
+                "live_landmarks_changed":changed,
+                "max_lateral_delta_cm":0.10,
+                "jaw_style":"subtle_symmetric_lower_face_narrowing_v1",
+                "real_ue_sculpt_committed":True,
+                "original_asset_untouched":True,
+                "cloud_requests_executed":False,
+                "rigging_done":False,"high_res_textures_downloaded":False,
+                "groom_applied":False,"wardrobe_applied":False,
+                "cinematic_character_ready":False,
+                "character_master_approved":False,
+                "visual_approved":False}
+    except Exception:
+        # Never copy arbitrary SDK/Epic error strings or secrets to the
+        # authenticated-but-forwardable receipt.
+        result={"ok":False,"reason":"hero_face_step_failed_"+phase}
+    finally:
+        if registered:
+            try:
+                subsystem.remove_object_to_edit(clone)
+            except Exception:
+                result={"ok":False,"reason":"hero_face_unregister_failed"}
+        output.write_text(json.dumps(result,ensure_ascii=False,indent=2),
+                          encoding="utf-8")
+    if result["ok"]:
+        unreal.log("GPT MetaHuman native lower-face contour candidate committed")
+    else:
+        unreal.log_error("GPT face sculpt blocked "+result["reason"])
+
+
+if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_face_v170":
+    hero_face_contour_main()
+elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_eyes_v150":
     hero_amber_eyes_main()
 elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_audit_v140":
     hero_metahuman_runtime_audit_main()
