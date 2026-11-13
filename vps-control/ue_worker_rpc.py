@@ -159,7 +159,8 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
                     "build_ep01_scene_candidates",
                     "build_ep01_cast_blueprints",
                     "render_cast_review_stills","build_ep01_hero_metahuman_seed",
-                    "audit_ep01_hero_metahuman_runtime","build_ep01_hero_amber_eyes"):
+                    "audit_ep01_hero_metahuman_runtime","build_ep01_hero_amber_eyes",
+                    "build_ep01_hero_face_contour"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -447,7 +448,7 @@ LOG_KIND = frozenset({
     "unreal", "preset", "render_01", "render_13",
     "render_26", "render_31",
     "render_lineup", "render_gpt", "render_gem",
-    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit", "hero_eyes",
+    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit", "hero_eyes", "hero_face",
 })
 
 
