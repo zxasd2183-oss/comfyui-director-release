@@ -31,7 +31,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.4.0"
+UE_HUB_API_VERSION = "1.5.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -114,7 +114,7 @@ def start_gpu_now() -> dict:
 @app.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True,
                                       idempotentHint=False, openWorldHint=False))
 def stop_gpu_now() -> dict:
-    """Stop GPU immediately only when its ComfyUI queue is verified empty.
+    """Stop the pinned Windows UE GPU only after Worker task/process safety check.
 
     Confirm that generated results are already saved to persistent storage.
     No separate phone/browser approval.
@@ -345,6 +345,16 @@ def list_recent_chatgpt_visual_syncs(project_id: str, episode_id: str) -> dict:
 def get_ue_worker_status() -> dict:
     """Read authenticated Windows UE node/GPU/engine health over the private tunnel."""
     return call_ue_worker("get_ue_worker_status")
+
+
+@app.tool(annotations=READ)
+def get_ue_worker_power_readiness() -> dict:
+    """Read authenticated Windows RTX4090 UE job and process safety status.
+
+    This does NOT switch GPU power or bypass the VPS power guard. Any missing
+    process inventory is NOT safe for shutdown. No PIDs or command lines.
+    """
+    return call_ue_worker("get_ue_worker_power_readiness")
 
 
 @app.tool(annotations=READ)
