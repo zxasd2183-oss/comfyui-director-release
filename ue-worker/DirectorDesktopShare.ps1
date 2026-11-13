@@ -36,14 +36,14 @@ function Equal-Code([string]$left, [string]$right) {
 function Encode-Snapshot {
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     if ($screen.Width -lt 320 -or $screen.Height -lt 200) { throw 'Screen unavailable' }
-    $size = New-Object System.Drawing.Size($screen.Width, $screen.Height)
-    $original = New-Object System.Drawing.Bitmap($size.Width, $size.Height)
+    $size = [System.Drawing.Size]::new($screen.Width, $screen.Height)
+    $original = [System.Drawing.Bitmap]::new($size.Width, $size.Height)
     $g = [System.Drawing.Graphics]::FromImage($original)
     try { $g.CopyFromScreen($screen.X, $screen.Y, 0, 0, $size) }
     finally { $g.Dispose() }
     $w = [Math]::Min(800, $screen.Width)
     $h = [Math]::Max(1, [int][Math]::Round($screen.Height * $w / $screen.Width))
-    $small = New-Object System.Drawing.Bitmap($w, $h)
+    $small = [System.Drawing.Bitmap]::new($w, $h)
     $g2 = [System.Drawing.Graphics]::FromImage($small)
     try {
         $g2.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
@@ -53,10 +53,10 @@ function Encode-Snapshot {
             $encoder = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() |
                 Where-Object { $_.MimeType -eq 'image/jpeg' } | Select-Object -First 1
             if (-not $encoder) { throw 'JPEG encoder missing' }
-            $parameters = New-Object Drawing.Imaging.EncoderParameters(1)
+            $parameters = [System.Drawing.Imaging.EncoderParameters]::new(1)
             try {
-                $parameters.Param[0] = New-Object Drawing.Imaging.EncoderParameter(
-                    [Drawing.Imaging.Encoder]::Quality, [long]55)
+                $parameters.Param[0] = [System.Drawing.Imaging.EncoderParameter]::new(
+                    [System.Drawing.Imaging.Encoder]::Quality, [long]55)
                 $small.Save($stream, $encoder, $parameters)
                 $bytes = $stream.ToArray()
             } finally { $parameters.Dispose() }
@@ -102,7 +102,7 @@ $form.Controls.Add($note)
 $field = New-Object Windows.Forms.TextBox
 $field.ReadOnly = $true
 $field.SetBounds(12, 56, 462, 28)
-$field.Font = New-Object Drawing.Font('Consolas', 12)
+$field.Font = [System.Drawing.Font]::new('Consolas', 12)
 $field.Text = $script:code
 $form.Controls.Add($field)
 $status = New-Object Windows.Forms.Label
