@@ -54,9 +54,9 @@ def execute_direct(action: str, config: dict, db_path: str = DB_DEFAULT, *,
         _audit(db, request_id, action, "direct_initiated", current)
         db.execute("COMMIT")
 
-    state, result = "blocked", "state_or_queue_changed"
+    state, result = "blocked", "state_or_ue_workload_changed"
     try:
-        # A STOP still needs a verified empty ComfyUI queue at this instant.
+        # A STOP still needs a verified idle Windows UE Worker at this instant.
         # This prevents turning off an actively rendering instance.
         updated = plan_fn(action, config)
         if updated.get("allowed") is True:
