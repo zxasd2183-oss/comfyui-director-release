@@ -9,6 +9,7 @@ User=directorpower
 Group=directorpower
 WorkingDirectory=/opt/comfyui-director-power
 LoadCredential=directorenv:/etc/comfyui-director-control.env
+LoadCredential=ueworkertoken:/etc/director-ue-worker.token
 Environment=DIRECTOR_POWER_CONFIG=%d/directorenv
 Environment=DIRECTOR_POWER_DB=/var/lib/comfyui-director-power/requests.db
 StateDirectory=comfyui-director-power

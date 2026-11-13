@@ -65,9 +65,9 @@ class PowerV03Tests(unittest.TestCase):
 
     def test_blocked_preflight_makes_no_ticket(self):
         r = self.request(plan=lambda *_: {"allowed": False,
-                                           "reason": "comfyui_queue_not_verified"})
+                                           "reason": "ue_worker_readiness_not_verified"})
         self.assertFalse(r["ok"])
-        self.assertEqual(r["reason"], "comfyui_queue_not_verified")
+        self.assertEqual(r["reason"], "ue_worker_readiness_not_verified")
         with connect(self.db) as db:
             self.assertEqual(db.execute("SELECT count(*) FROM requests").fetchone()[0], 0)
 

@@ -56,6 +56,19 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(request.full_url, "http://127.0.0.1:18910/v1/status")
         self.assertTrue(request.get_header("Authorization").startswith("Bearer "))
 
+    def test_power_readiness_is_fixed_read_only_worker_route(self):
+        opener = FakeOpener()
+        response = rpc.call_ue_worker(
+            "get_ue_worker_power_readiness", opener, self.token)
+        self.assertTrue(response["ok"])
+        request = opener.calls[0]
+        self.assertEqual(
+            request.full_url,"http://127.0.0.1:18910/v7/power/readiness")
+        self.assertEqual(request.get_method(),"GET")
+        self.assertIsNone(request.data)
+        self.assertTrue(request.get_header("Authorization").startswith("Bearer "))
+        self.assertEqual(len(opener.calls),1)
+
     def test_only_named_workspace_action(self):
         opener = FakeOpener()
         response = rpc.call_ue_worker("prepare_ue_workspace", opener, self.token)

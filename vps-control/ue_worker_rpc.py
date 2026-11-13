@@ -16,6 +16,7 @@ from pathlib import Path
 WORKER_ORIGIN = "http://127.0.0.1:18910"
 READ_ROUTES = {
     "get_ue_worker_status": "/v1/status",
+    "get_ue_worker_power_readiness": "/v7/power/readiness",
     "get_ue_worker_capabilities": "/v1/capabilities",
     "get_ue_episode_assembly_readiness": "/v6/episode/assembly-readiness",
 }

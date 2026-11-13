@@ -72,7 +72,7 @@ def plan_and_request(action: str, config: dict, db_path: str = DB_DEFAULT,
         return {"ok": False, "reason": "preflight_unavailable"}
     if not plan.get("allowed"):
         return {"ok": False, "reason": plan.get("reason", "preflight_blocked"),
-                "queue": plan.get("queue")}
+                "workload": plan.get("workload")}
     req_id = secrets.token_urlsafe(24)
     with connect(db_path) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -177,7 +177,7 @@ def approve_request(request_id: str, digits: str, typed_phrase: str, seed: str,
     # The credential never reaches ChatGPT and the transaction is consumed.
     # A crash or network timeout here leaves the request in "executing".
     state = "blocked"
-    result = "state_or_queue_changed"
+    result = "state_or_ue_workload_changed"
     try:
         plan = plan_fn(action, config)
         if plan.get("allowed"):

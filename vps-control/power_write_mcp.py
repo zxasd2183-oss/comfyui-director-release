@@ -1,4 +1,4 @@
-"""V0.6 unified VPS status + staged power requests MCP. MCP cannot power GPU.
+"""V0.6 VPS status and owner-authenticated GPU power actions.
 
 Authentication boundary: bind to localhost only; use authenticated Director Hub
 private bridge for immediate operator actions. Legacy approval remains optional.
@@ -15,7 +15,7 @@ from power_v03 import DB_DEFAULT, plan_and_request, request_status
 from power_direct import execute_direct
 from vps_unified_status import control_center_status, gpu_power_status
 
-app = FastMCP("ComfyUI Director VPS - Power Requests",
+app = FastMCP("Director VPS - UE Worker Power Control",
               host="127.0.0.1", port=8892,
               stateless_http=True, json_response=True)
 
@@ -131,7 +131,7 @@ def start_gpu_now() -> dict:
                                       idempotentHint=False,
                                       openWorldHint=False))
 def stop_gpu_now() -> dict:
-    """Immediately submit GPU STOP if ComfyUI queue is VERIFIED empty.
+    """Submit GPU STOP only if Windows UE Worker task/process inventory is verified idle.
 
     Does not independently attest that all output files are persisted.
     Never auto-retries uncertain cloud outcomes.
@@ -162,7 +162,7 @@ def request_gpu_start() -> dict:
                                       openWorldHint=False))
 def request_gpu_stop() -> dict:
     """Submit a GPU STOP application; DOES NOT turn hardware off.
-    Rejects when ComfyUI queue cannot be verified or is busy.
+    Rejects when UE Worker process inventory cannot be verified or is busy.
     Owner must separately check saved files and approve on Jipite.
     """
     try:
