@@ -442,6 +442,40 @@ def enqueue_ue_hero_amber_eyes(project_id,episode_id,
     )
 
 
+
+def enqueue_ue_hero_face_contour(project_id,episode_id,
+                                 studio_getter=None,cast_getter=None,
+                                 opener=None,token_file=None):
+    """Sculpt only a new AmberV1-derived GPT candidate, not approved EP01.
+
+    The caller cannot select source assets, geometry, scripts, or deltas.
+    """
+    if (project_id,episode_id)!=("WaitingOffice","EP01"):
+        return {"ok":False,"reason":"hero_face_requires_locked_ep01"}
+    if cast_getter is None:
+        from hub_brain import call_studio
+        cast_getter=call_studio
+    try:
+        data=cast_getter("get_project_characters",{"project_id":project_id})
+        rows=data.get("characters") if type(data) is dict and data.get("ok") is True else None
+        matches=[x for x in rows if type(x) is dict and
+                 x.get("character_id")=="CHAR_GPT"] if type(rows) is list else []
+        if len(matches)!=1:
+            return {"ok":False,"reason":"hero_face_studio_missing"}
+        actor=matches[0]
+        brief=actor.get("design_language")
+        if (actor.get("revision")!=2 or actor.get("master") is not None
+                or actor.get("role")!="main" or type(brief) is not str
+                or any(x not in brief for x in ("深栗色","琥珀","象牙白","青绿"))):
+            return {"ok":False,"reason":"hero_face_studio_lock_failed"}
+    except (ValueError,KeyError,TypeError,AttributeError):
+        return {"ok":False,"reason":"hero_face_studio_unavailable"}
+    return enqueue_ue_episode_timeline(
+        project_id,episode_id,studio_getter=studio_getter,
+        opener=opener,token_file=token_file,
+        task="build_ep01_hero_face_contour")
+
+
 # V0.5 operator workflow: job-bound log tails and task cancellation only.
 # No caller-supplied filenames, PIDs, shell commands, or arbitrary URLs.
 LOG_KIND = frozenset({
