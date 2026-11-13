@@ -43,7 +43,8 @@ def sanitized_plan(body):
         "audit_ep01_assets", "build_ep01_scene_candidates",
         "build_ep01_cast_blueprints", "render_cast_review_stills",
         "build_ep01_hero_metahuman_seed", "audit_ep01_hero_metahuman_runtime",
-        "build_ep01_hero_amber_eyes", "build_ep01_hero_face_contour"
+        "build_ep01_hero_amber_eyes", "build_ep01_hero_face_contour",
+        "build_ep01_hero_cloud_rig"
     ):
         raise JobError("task_not_allowlisted")
     project_id, episode_id = body["project_id"], body["episode_id"]
@@ -91,7 +92,8 @@ def sanitized_plan(body):
                         "render_cast_review_stills",
                         "build_ep01_hero_metahuman_seed",
                         "audit_ep01_hero_metahuman_runtime",
-                        "build_ep01_hero_amber_eyes", "build_ep01_hero_face_contour"):
+                        "build_ep01_hero_amber_eyes", "build_ep01_hero_face_contour",
+                        "build_ep01_hero_cloud_rig"):
         if (project_id, episode_id, fps, len(validated), total_ms) != (
             "WaitingOffice", "EP01", 24, 31, 160000
         ):
@@ -101,7 +103,9 @@ def sanitized_plan(body):
         ]:
             raise JobError("previs_requires_frozen_shot_ids")
     fmt = (
-        "director_ue_hero_face_v170"
+        "director_ue_hero_rig_v200"
+        if body["task"] == "build_ep01_hero_cloud_rig"
+        else "director_ue_hero_face_v170"
         if body["task"] == "build_ep01_hero_face_contour"
         else "director_ue_hero_eyes_v150"
         if body["task"] == "build_ep01_hero_amber_eyes"
@@ -472,6 +476,9 @@ class JobManager:
                 elif spec["format"] == "director_ue_hero_face_v170":
                     from ue_previs import build_gpt_hero_face_contour
                     result = build_gpt_hero_face_contour(spec, root, work)
+                elif spec["format"] == "director_ue_hero_rig_v200":
+                    from ue_previs import build_gpt_hero_cloud_rig
+                    result = build_gpt_hero_cloud_rig(spec, root, work)
                 else:
                     result = self.runner(spec, root, work)
                 if self.controller.cancel_requested.is_set():

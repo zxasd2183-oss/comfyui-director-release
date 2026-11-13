@@ -360,7 +360,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "1.9.0",
+        "worker_version": "2.0.0",
     }
 
 
@@ -451,7 +451,8 @@ def capabilities():
                  "render_cast_review_stills","build_ep01_hero_metahuman_seed",
                  "audit_ep01_hero_metahuman_runtime",
                  "build_ep01_hero_amber_eyes",
-                 "build_ep01_hero_face_contour"],
+                 "build_ep01_hero_face_contour",
+                 "build_ep01_hero_cloud_rig"],
         "job_status_route": "/v2/jobs/<job_id>",
         "job_logs_route": "/v3/jobs/<job_id>/logs/<kind>",
         "job_cancel_route": "/v3/jobs/<job_id>/cancel",
@@ -466,6 +467,7 @@ def capabilities():
         "supports_hero_runtime_audit": True,
         "supports_hero_amber_eyes_candidate": True,
         "supports_hero_face_contour_candidate": True,
+        "supports_hero_cloud_rig_candidate": True,
         "supports_ue_power_readiness": True,
         "power_readiness_route": "/v7/power/readiness",
         "cast_review_image_route": "/v11/jobs/<job_id>/cast-review/<view>",
@@ -494,7 +496,7 @@ def prepare_workspace():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DirectorUEWorker/1.9.0"
+    server_version = "DirectorUEWorker/2.0.0"
     sys_version = ""
 
     def log_message(self, fmt, *args):
