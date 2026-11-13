@@ -435,8 +435,8 @@ def desktop_frame():
     try:
         kind,data=_desktop_http("/v1/frame",code,max_bytes=400000)
         if (not kind.startswith("image/jpeg") or len(data)<200 or
-                not data.startswith(b"\\xff\\xd8") or
-                not data.endswith(b"\\xff\\xd9")):
+                not data.startswith(bytes((255,216))) or
+                not data.endswith(bytes((255,217)))):
             raise ValueError("desktop_jpeg_invalid")
         return data,hashlib.sha256(data).hexdigest()
     except (OSError,ValueError,UnicodeError,TypeError) as exc:
