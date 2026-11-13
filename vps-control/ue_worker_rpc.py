@@ -544,6 +544,63 @@ def cancel_ue_job(job_id, opener=None, token_file=None):
     )
 
 
+
+# Director Desktop (RDP, human-consent, view-only) private SSH bridge.
+# The 128-bit PIN is never placed in URLs or logs. Only the dedicated
+# interactive companion can capture the live Windows desktop.
+DESKTOP_PIN_RE = re.compile(r"[a-f0-9]{32}")
+
+
+def pair_ue_desktop(code, opener=None, token_file=None):
+    if type(code) is not str or not DESKTOP_PIN_RE.fullmatch(code):
+        return {"ok":False,"reason":"invalid_desktop_pairing_code"}
+    return _v2_request("/v14/desktop/pair","POST",{"code":code},
+                       opener,token_file)
+
+
+def get_ue_desktop_status(opener=None, token_file=None):
+    return _v2_request("/v14/desktop/status","GET",None,opener,token_file)
+
+
+def unpair_ue_desktop(opener=None, token_file=None):
+    return _v2_request("/v14/desktop/unpair","POST",None,opener,token_file)
+
+
+def get_ue_desktop_snapshot(opener=None, token_file=None):
+    import hashlib
+    if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
+        return {"ok":False,"reason":"ue_worker_not_enabled"}
+    try:
+        token=load_token(token_file)
+        url=WORKER_ORIGIN+"/v14/desktop/frame"
+        req=urllib.request.Request(url,method="GET",
+            headers={"Authorization":"Bearer "+token,
+                     "Accept":"image/jpeg"})
+        with (opener or OPENER).open(req,timeout=12) as response:
+            if response.geturl()!=url:
+                raise WorkerError("desktop_redirect_denied")
+            if response.headers.get("Content-Type")!="image/jpeg":
+                raise WorkerError("desktop_mime_invalid")
+            size=response.headers.get("Content-Length")
+            if size is None or not size.isdecimal() or not 200<=int(size)<=400000:
+                raise WorkerError("desktop_size_invalid")
+            expected=response.headers.get("X-Director-JPEG-SHA256")
+            if not isinstance(expected,str) or not re.fullmatch(r"[a-f0-9]{64}",expected):
+                raise WorkerError("desktop_digest_invalid")
+            data=response.read(400001)
+        if (len(data)!=int(size) or not data.startswith(bytes((255,216)))
+                or not data.endswith(bytes((255,217)))
+                or hashlib.sha256(data).hexdigest()!=expected):
+            raise WorkerError("desktop_frame_integrity_failed")
+        return {"ok":True,"data":data,"sha256":expected}
+    except urllib.error.HTTPError as exc:
+        return {"ok":False,"reason":"desktop_not_sharing_or_unavailable"}
+    except WorkerError as exc:
+        return {"ok":False,"reason":str(exc)}
+    except (OSError,ValueError,TypeError,urllib.error.URLError):
+        return {"ok":False,"reason":"ue_worker_unavailable"}
+
+
 # V0.5.2: exact one-frame image forwarding over the existing private SSH
 # tunnel. This is deliberately separate from bounded JSON job-status RPCs.
 PREVIEW_SHOTS = frozenset({"01", "13", "26", "31"})
