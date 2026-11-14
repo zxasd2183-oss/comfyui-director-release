@@ -105,8 +105,9 @@ function Invoke-DesktopAction($item) {
     $names = @($item.PSObject.Properties.Name)
     switch ([string]$item.action) {
         'click' {
-            if ($names.Count -ne 4 -or @('action','x','y','clicks') |
-                Where-Object {$_ -notin $names}) { throw 'invalid_click_fields' }
+            if ($names.Count -ne 4 -or @($names | Where-Object {
+                $_ -notin @('action','x','y','clicks')
+            }).Count -gt 0) { throw 'invalid_click_fields' }
             if ($item.x -isnot [int] -or $item.y -isnot [int] -or
                 $item.clicks -isnot [int] -or $item.x -lt 0 -or
                 $item.x -gt 999 -or $item.y -lt 0 -or $item.y -gt 999 -or
