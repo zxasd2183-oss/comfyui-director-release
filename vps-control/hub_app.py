@@ -34,10 +34,11 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_desktop_status as get_ue_desktop_status_rpc,
                            unpair_ue_desktop as unpair_ue_desktop_rpc,
                            get_ue_desktop_snapshot as get_ue_desktop_snapshot_rpc,
+                           send_ue_desktop_action as send_ue_desktop_action_rpc,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
                            request_ue_signed_update as request_ue_signed_update_rpc)
 
-UE_HUB_API_VERSION = "1.9.0"
+UE_HUB_API_VERSION = "1.10.0"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -649,7 +650,8 @@ def get_ue_cast_review_image(job_id: str, view: str):
 def pair_ue_desktop(code: str) -> dict:
     """Pair only with a human-opened RDP Desktop Share companion via 128-bit
     one-time code shown in the desktop window. No Epic login credentials.
-    Screenshot-only; pairing expires in under ten minutes.
+    View remains valid until local Stop or RDP session end. Input is a
+    separate, visible, locally armed feature; no authentication credentials.
     """
     return pair_ue_desktop_rpc(code)
 
@@ -664,13 +666,47 @@ def get_ue_desktop_status() -> dict:
 def get_ue_desktop_snapshot():
     """Retrieve ONE on-demand 800px JPEG of the user's currently shared RDP
     desktop. Human must first open a visible local companion and press Start.
-    Max 1 frame per 3 seconds, 10-minute expiry, no files or live recording.
-    No mouse/keyboard control, login or background capture.
+    Max 1 frame per 3 seconds; no recording, background capture or
+    screen access after local Stop or RDP lock/disconnect.
     """
     r=get_ue_desktop_snapshot_rpc()
     if not r.get("ok"):
         return {"ok":False,"reason":r.get("reason","desktop_unavailable")}
     return Image(data=r["data"],format="jpeg")
+
+
+@app.tool(annotations=WRITE)
+def ue_desktop_click(x: int, y: int, clicks: int = 1) -> dict:
+    """Click the currently shared RDP desktop at normalized coordinates 0..999.
+
+    Requires a human to separately press Enable Input in the visible
+    Director Desktop companion. 1 or 2 LEFT clicks only, no drag, remote
+    commands or privileged interactions. Stop/Disable Input works locally.
+    """
+    return send_ue_desktop_action_rpc({
+        "action": "click", "x": x, "y": y, "clicks": clicks,
+    })
+
+
+@app.tool(annotations=WRITE)
+def ue_desktop_key(key: str) -> dict:
+    """Send ONE permitted basic key to the explicitly armed RDP desktop.
+
+    Allowed: ENTER, ESC, TAB, BACKSPACE, arrows, SPACE, DELETE, HOME, END,
+    F2. No Windows shortcuts, Ctrl/Alt combinations, or secret entry.
+    """
+    return send_ue_desktop_action_rpc({"action": "key", "key": key})
+
+
+@app.tool(annotations=WRITE)
+def ue_desktop_text(text: str) -> dict:
+    """Enter at most 100 simple nonsecret ASCII characters in the armed RDP UI.
+
+    Letters, digits, spaces, dots, underscore, slash, @ and hyphen only.
+    Never use for passwords, private tokens, MFA, terminals or commands.
+    Local Disable Input and Stop immediately revoke all input.
+    """
+    return send_ue_desktop_action_rpc({"action": "text", "text": text})
 
 
 @app.tool(annotations=WRITE)
