@@ -5,6 +5,7 @@ The SSH -R tunnel is the only intended path from VPS to this process.
 """
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
 import time
@@ -369,12 +370,16 @@ def _desktop_http(path, secret, max_bytes=1024, *, pairing=False, payload=None):
                                  not 1 <= len(payload) <= 512):
         raise ValueError("desktop_action_invalid")
     header = "X-Director-Desktop-Code" if pairing else "X-Director-Desktop-Session"
+    headers = {header: secret, "Accept": "image/jpeg,application/json"}
+    if payload is not None:
+        # Bound validated JSON is carried in a loopback-only header, not a
+        # streamed body: compatible with the tiny interactive PS5 companion.
+        headers["X-Director-Desktop-Action"] = base64.b64encode(payload).decode("ascii")
     request = urllib.request.Request(
         DESKTOP_ORIGIN + path,
         method="POST" if pairing or payload is not None else "GET",
-        headers={header: secret, "Accept": "image/jpeg,application/json",
-                 "Content-Type": "application/json"},
-        data=b"" if pairing else payload)
+        headers=headers,
+        data=b"" if pairing or payload is not None else None)
     try:
         with DESKTOP_HTTP.open(request, timeout=6) as response:
             if response.geturl() != DESKTOP_ORIGIN + path:
