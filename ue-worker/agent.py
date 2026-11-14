@@ -352,94 +352,104 @@ def request_signed_update_check():
 
 # The GUI companion runs only when the human launches DesktopShare.ps1
 # inside their own logged-in RDP session. Never capture Session 0.
-DESKTOP_PIN = None
-DESKTOP_PIN_EXPIRES = 0.0
+# The short visible code authorizes ONE pairing. The companion returns a new
+# private session capability over loopback; only this token is retained by the
+# Worker. It is never returned to MCP clients or written to disk.
+DESKTOP_SESSION = None
 DESKTOP_LOCK = threading.RLock()
 DESKTOP_ORIGIN = "http://127.0.0.1:19017"
 DESKTOP_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def _desktop_http(path, code, max_bytes=1024):
-    if path not in ("/v1/status", "/v1/frame"):
+def _desktop_http(path, secret, max_bytes=1024, *, pairing=False):
+    if (pairing and path != "/v1/pair") or (
+            not pairing and path not in ("/v1/status", "/v1/frame")):
         raise ValueError("desktop_route_not_allowed")
+    header = "X-Director-Desktop-Code" if pairing else "X-Director-Desktop-Session"
     request = urllib.request.Request(
-        DESKTOP_ORIGIN + path, method="GET",
-        headers={"X-Director-Desktop-Code":code,"Accept":"image/jpeg,application/json"})
+        DESKTOP_ORIGIN + path, method="POST" if pairing else "GET",
+        headers={header: secret, "Accept": "image/jpeg,application/json"},
+        data=b"" if pairing else None)
     try:
         with DESKTOP_HTTP.open(request, timeout=6) as response:
-            if response.geturl()!=DESKTOP_ORIGIN+path:
+            if response.geturl() != DESKTOP_ORIGIN + path:
                 raise ValueError("desktop_redirect_denied")
-            data=response.read(max_bytes+1)
-            if len(data)>max_bytes:
+            data = response.read(max_bytes + 1)
+            if len(data) > max_bytes:
                 raise ValueError("desktop_response_too_large")
-            return response.headers.get("Content-Type",""),data
+            return response.headers.get("Content-Type", ""), data
     except (OSError, urllib.error.URLError) as exc:
         raise ValueError("desktop_companion_unavailable") from exc
 
 
 def pair_desktop(code):
-    global DESKTOP_PIN,DESKTOP_PIN_EXPIRES
-    if type(code) is not str or not re.fullmatch(r"[0-9a-f]{32}",code):
-        return {"ok":False,"reason":"desktop_pair_code_invalid"}
+    global DESKTOP_SESSION
+    if type(code) is not str or not re.fullmatch(r"[0-9a-f]{32}", code):
+        return {"ok": False, "reason": "desktop_pair_code_invalid"}
     try:
-        kind,raw=_desktop_http("/v1/status",code)
+        kind, raw = _desktop_http("/v1/pair", code, pairing=True)
         if not kind.startswith("application/json"):
             raise ValueError("desktop_pair_protocol_invalid")
-        body=json.loads(raw)
+        body = json.loads(raw)
+        session = body.get("session_token") if type(body) is dict else None
         if (type(body) is not dict or body.get("ok") is not True or
-                body.get("sharing") is not True):
-            raise ValueError("desktop_not_sharing")
+                body.get("sharing") is not True or
+                type(session) is not str or not re.fullmatch(r"[0-9a-f]{32}", session)):
+            raise ValueError("desktop_pair_protocol_invalid")
         with DESKTOP_LOCK:
-            DESKTOP_PIN=code
-            DESKTOP_PIN_EXPIRES=time.monotonic()+590
-        return {"ok":True,"paired":True,"sharing":True,
-                "seconds_remaining_max":590,"control_enabled":False}
-    except (ValueError,TypeError,UnicodeError):
-        return {"ok":False,"reason":"desktop_pair_unavailable_or_not_sharing"}
+            DESKTOP_SESSION = session
+        return {"ok": True, "paired": True, "sharing": True,
+                "control_enabled": False, "session_expires": "local_stop_or_rdp_end"}
+    except (ValueError, TypeError, UnicodeError):
+        return {"ok": False, "reason": "desktop_pair_unavailable_or_not_sharing"}
 
 
-def _desktop_pair_code():
+def _desktop_session_token():
     with DESKTOP_LOCK:
-        if DESKTOP_PIN is None or time.monotonic()>=DESKTOP_PIN_EXPIRES:
-            return None
-        return DESKTOP_PIN
+        return DESKTOP_SESSION
 
 
 def desktop_status():
-    code=_desktop_pair_code()
-    if code is None:
-        return {"ok":True,"paired":False,"sharing":False,"control_enabled":False}
+    session = _desktop_session_token()
+    if session is None:
+        return {"ok": True, "paired": False, "sharing": False,
+                "control_enabled": False}
     try:
-        kind,raw=_desktop_http("/v1/status",code)
-        body=json.loads(raw)
-        if not kind.startswith("application/json") or type(body) is not dict:
-            raise ValueError("desktop_status_invalid")
-        return {"ok":True,"paired":True,"sharing":body.get("ok") is True and
-                body.get("sharing") is True,"control_enabled":False}
-    except (OSError,ValueError,UnicodeError,TypeError):
-        return {"ok":True,"paired":True,"sharing":False,"control_enabled":False}
+        kind, raw = _desktop_http("/v1/status", session)
+        body = json.loads(raw)
+        if (not kind.startswith("application/json") or type(body) is not dict or
+                body.get("ok") is not True or body.get("sharing") is not True):
+            raise ValueError("desktop_session_ended")
+        return {"ok": True, "paired": True, "sharing": True,
+                "control_enabled": False}
+    except (OSError, ValueError, UnicodeError, TypeError):
+        # A locked/disconnected/Stopped desktop invalidates the in-memory
+        # pairing; reconnection requires a NEW visible user-approved code.
+        unpair_desktop()
+        return {"ok": True, "paired": False, "sharing": False,
+                "control_enabled": False}
 
 
 def unpair_desktop():
-    global DESKTOP_PIN,DESKTOP_PIN_EXPIRES
+    global DESKTOP_SESSION
     with DESKTOP_LOCK:
-        DESKTOP_PIN=None
-        DESKTOP_PIN_EXPIRES=0.0
-    return {"ok":True,"paired":False,"sharing":False,"control_enabled":False}
+        DESKTOP_SESSION = None
+    return {"ok": True, "paired": False, "sharing": False,
+            "control_enabled": False}
 
 
 def desktop_frame():
-    code=_desktop_pair_code()
-    if code is None:
+    session = _desktop_session_token()
+    if session is None:
         raise ValueError("desktop_not_paired")
     try:
-        kind,data=_desktop_http("/v1/frame",code,max_bytes=400000)
-        if (not kind.startswith("image/jpeg") or len(data)<200 or
-                not data.startswith(bytes((255,216))) or
-                not data.endswith(bytes((255,217)))):
+        kind, data = _desktop_http("/v1/frame", session, max_bytes=400000)
+        if (not kind.startswith("image/jpeg") or len(data) < 200 or
+                not data.startswith(bytes((255, 216))) or
+                not data.endswith(bytes((255, 217)))):
             raise ValueError("desktop_jpeg_invalid")
-        return data,hashlib.sha256(data).hexdigest()
-    except (OSError,ValueError,UnicodeError,TypeError) as exc:
+        return data, hashlib.sha256(data).hexdigest()
+    except (OSError, ValueError, UnicodeError, TypeError) as exc:
         raise ValueError("desktop_frame_unavailable") from exc
 
 
@@ -459,7 +469,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.1.0",
+        "worker_version": "2.2.0",
     }
 
 
