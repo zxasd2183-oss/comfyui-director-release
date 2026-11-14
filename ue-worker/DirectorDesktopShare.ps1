@@ -333,6 +333,44 @@ $timer.Add_Tick({
                 $script:lastFrame = [DateTime]::UtcNow
                 Send-Reply $stream 200 'image/jpeg' $snapshot
             }
+        } elseif ($header.StartsWith('POST /v1/action HTTP/1.1')) {
+            if (-not (Get-ControlActive)) {
+                Send-Reply $stream 403 'application/json' (Json-Bytes $false 'control_not_armed')
+            } else {
+                try {
+                    $encoded = [regex]::Match($header,
+                        '(?im)^X-Director-Desktop-Action:\s*([A-Za-z0-9+/=]{1,704})\s*
+        }
+    } catch {
+        # Never show secrets, HTTP bodies, or desktop contents in exceptions.
+        $status.Text = 'Connection error. Stop and restart.'
+    } finally {
+        if ($client) { $client.Dispose() }
+    }
+})
+$form.Add_FormClosed({
+    $timer.Stop()
+    $listener.Stop()
+    $script:code=''
+    $script:sessionToken=''
+    $script:enabled=$false
+    $script:controlEnabled=$false
+    $script:paired=$false
+})
+$timer.Start()
+try { [void]$form.ShowDialog() }
+finally { $timer.Stop();$listener.Stop();$timer.Dispose();$form.Dispose() }
+)
+                    if (-not $encoded.Success) { throw 'no_action_header' }
+                    $raw = [Convert]::FromBase64String($encoded.Groups[1].Value)
+                    if ($raw.Length -lt 10 -or $raw.Length -gt 512) { throw 'action_too_large' }
+                    $item = [Text.Encoding]::UTF8.GetString($raw) | ConvertFrom-Json
+                    Invoke-DirectorInput $item
+                    Send-Reply $stream 200 'application/json' (Json-Bytes $true '')
+                } catch {
+                    Send-Reply $stream 400 'application/json' (Json-Bytes $false 'input_rejected')
+                }
+            }
         } else {
             Send-Reply $stream 404 'application/json' (Json-Bytes $false 'not_found')
         }
