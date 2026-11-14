@@ -361,15 +361,20 @@ DESKTOP_ORIGIN = "http://127.0.0.1:19017"
 DESKTOP_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def _desktop_http(path, secret, max_bytes=1024, *, pairing=False):
-    if (pairing and path != "/v1/pair") or (
-            not pairing and path not in ("/v1/status", "/v1/frame")):
+def _desktop_http(path, secret, max_bytes=1024, *, pairing=False, payload=None):
+    if (pairing and (path != "/v1/pair" or payload is not None)) or (
+            not pairing and path not in ("/v1/status", "/v1/frame", "/v1/action")):
         raise ValueError("desktop_route_not_allowed")
+    if path == "/v1/action" and (type(payload) is not bytes or
+                                 not 1 <= len(payload) <= 512):
+        raise ValueError("desktop_action_invalid")
     header = "X-Director-Desktop-Code" if pairing else "X-Director-Desktop-Session"
     request = urllib.request.Request(
-        DESKTOP_ORIGIN + path, method="POST" if pairing else "GET",
-        headers={header: secret, "Accept": "image/jpeg,application/json"},
-        data=b"" if pairing else None)
+        DESKTOP_ORIGIN + path,
+        method="POST" if pairing or payload is not None else "GET",
+        headers={header: secret, "Accept": "image/jpeg,application/json",
+                 "Content-Type": "application/json"},
+        data=b"" if pairing else payload)
     try:
         with DESKTOP_HTTP.open(request, timeout=6) as response:
             if response.geturl() != DESKTOP_ORIGIN + path:
@@ -421,7 +426,7 @@ def desktop_status():
                 body.get("ok") is not True or body.get("sharing") is not True):
             raise ValueError("desktop_session_ended")
         return {"ok": True, "paired": True, "sharing": True,
-                "control_enabled": False}
+                "control_enabled": body.get("control_enabled") is True}
     except (OSError, ValueError, UnicodeError, TypeError):
         # A locked/disconnected/Stopped desktop invalidates the in-memory
         # pairing; reconnection requires a NEW visible user-approved code.
@@ -453,6 +458,64 @@ def desktop_frame():
         raise ValueError("desktop_frame_unavailable") from exc
 
 
+
+# Deliberately narrow desktop-input API. Never accepts scripts, URLs,
+# shortcuts, window handles, arbitrary virtual key codes or clipboard data.
+DESKTOP_KEYS = frozenset({
+    "ENTER", "ESC", "TAB", "BACKSPACE", "UP", "DOWN",
+    "LEFT", "RIGHT", "SPACE", "DELETE", "HOME", "END", "F2",
+})
+DESKTOP_TEXT_RE = re.compile(r"[A-Za-z0-9 ._/@-]{1,100}\Z")
+
+
+def validate_desktop_action(item):
+    if type(item) is not dict:
+        raise ValueError("desktop_action_invalid")
+    action = item.get("action")
+    if action == "click" and set(item) == {"action", "x", "y", "clicks"}:
+        if (type(item["x"]) is int and type(item["y"]) is int and
+                type(item["clicks"]) is int and
+                0 <= item["x"] <= 999 and 0 <= item["y"] <= 999 and
+                item["clicks"] in (1, 2)):
+            return dict(item)
+    elif action == "key" and set(item) == {"action", "key"}:
+        if type(item["key"]) is str and item["key"] in DESKTOP_KEYS:
+            return dict(item)
+    elif action == "text" and set(item) == {"action", "text"}:
+        if type(item["text"]) is str and DESKTOP_TEXT_RE.fullmatch(item["text"]):
+            return dict(item)
+    raise ValueError("desktop_action_invalid")
+
+
+def desktop_input_action(item):
+    try:
+        sanitized = validate_desktop_action(item)
+    except (ValueError, TypeError):
+        return {"ok": False, "reason": "desktop_action_invalid"}
+    state = desktop_status()
+    if not state.get("paired") or not state.get("sharing"):
+        return {"ok": False, "reason": "desktop_not_paired"}
+    if state.get("control_enabled") is not True:
+        return {"ok": False, "reason": "desktop_control_not_authorized"}
+    session = _desktop_session_token()
+    if session is None:
+        return {"ok": False, "reason": "desktop_not_paired"}
+    try:
+        body = json.dumps(sanitized, separators=(",", ":")).encode("ascii")
+        kind, data = _desktop_http("/v1/action", session, max_bytes=512,
+                                   payload=body)
+        result = json.loads(data)
+        if (not kind.startswith("application/json") or
+                type(result) is not dict or result.get("ok") is not True or
+                result.get("control_enabled") is not True):
+            raise ValueError("desktop_action_rejected")
+        # Do not reflect typed input, private session IDs or screenshots.
+        return {"ok": True, "action": sanitized["action"],
+                "control_enabled": True}
+    except (ValueError, OSError, TypeError, UnicodeError):
+        return {"ok": False, "reason": "desktop_input_unavailable"}
+
+
 def status():
     active_job_id = None
     if JOB_MANAGER is not None:
@@ -469,7 +532,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.2.0",
+        "worker_version": "2.3.0",
     }
 
 
@@ -585,7 +648,8 @@ def capabilities():
         "supports_signed_update_request": True,
         "supports_job_cancel": True,
         "supports_desktop_view_only": True,
-        "supports_desktop_keyboard_or_mouse": False,
+        "supports_desktop_keyboard_or_mouse": True,
+        "supports_desktop_input_only_when_local_armed": True,
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
         "supports_rendering": False,
@@ -719,6 +783,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.authorize():
             self.send_json(401, {"ok": False, "reason": "unauthorized"})
+            return
+        if self.path == "/v15/desktop/action":
+            try:
+                if (self.headers.get("Transfer-Encoding") or
+                        not 0 < int(self.headers.get("Content-Length","0")) <= 512):
+                    raise ValueError("invalid_length")
+                raw = self.rfile.read(int(self.headers["Content-Length"]))
+                item = json.loads(raw)
+                result = desktop_input_action(item)
+                self.send_json(200 if result["ok"] else 403, result)
+            except (ValueError, TypeError, UnicodeError):
+                self.send_json(400, {"ok": False, "reason": "desktop_action_invalid"})
             return
         if self.path == "/v14/desktop/unpair":
             if (self.headers.get("Content-Length","0")!="0" or
