@@ -203,6 +203,26 @@ $rotate.Add_Click({
     $status.Text='OFF: New one-time pairing code generated'
 })
 $form.Controls.Add($rotate)
+$arm = New-Object Windows.Forms.Button
+$arm.Text = 'Enable Input'
+$arm.SetBounds(12,184,145,32)
+$arm.Add_Click({
+    if (Get-ShareActive) {
+        $script:controlEnabled = $true
+        $status.Text = 'CONTROL ON: Click Disable Input or Stop to revoke.'
+    } else {
+        $status.Text = 'Start View-Only and pair first.'
+    }
+})
+$form.Controls.Add($arm)
+$disarm = New-Object Windows.Forms.Button
+$disarm.Text = 'Disable Input'
+$disarm.SetBounds(173,184,145,32)
+$disarm.Add_Click({
+    $script:controlEnabled = $false
+    $status.Text = 'VIEW ONLY: Remote input is OFF.'
+})
+$form.Controls.Add($disarm)
 $form.add_SessionGone({
     Reset-Consent
     $field.Text = $script:code
