@@ -45,6 +45,16 @@ public sealed class DirectorSessionForm : Form {
 }
 '@ -ReferencedAssemblies @('System.Windows.Forms.dll','System.Drawing.dll')
 
+# Separate local Enable Input is required before these APIs can run.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DirectorDesktopInput {
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+}
+'@
+
 $port = 19017
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
 $listener.Start()
@@ -52,6 +62,7 @@ $script:code = ''
 $script:pairDeadline = [DateTime]::MinValue
 $script:sessionToken = ''
 $script:enabled = $false
+$script:controlEnabled = $false
 $script:paired = $false
 $script:denials = 0
 $script:lastFrame = [DateTime]::MinValue
@@ -67,6 +78,7 @@ function Reset-Consent {
     $script:pairDeadline = [DateTime]::UtcNow.AddMinutes(10)
     $script:sessionToken = ''
     $script:enabled = $false
+    $script:controlEnabled = $false
     $script:paired = $false
     $script:denials = 0
     $script:lastFrame = [DateTime]::MinValue
@@ -82,6 +94,7 @@ function Equal-Secret([string]$left, [string]$right) {
 function Get-ShareActive {
     return ($script:enabled -and $script:paired -and $script:sessionToken.Length -eq 32)
 }
+function Get-ControlActive { return ((Get-ShareActive) -and $script:controlEnabled) }
 function Encode-Snapshot {
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     if ($screen.Width -lt 320 -or $screen.Height -lt 200) { throw 'Screen unavailable' }
@@ -131,7 +144,7 @@ function Send-Reply($stream, [int]$status, [string]$type, [byte[]]$body) {
     if ($body.Length) { $stream.Write($body, 0, $body.Length) }
 }
 function Json-Bytes([bool]$ok, [string]$reason) {
-    $obj = @{ok=$ok; sharing=(Get-ShareActive)}
+    $obj = @{ok=$ok; sharing=(Get-ShareActive); control_enabled=(Get-ControlActive)}
     if ($reason) { $obj.reason = $reason }
     return ,[Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress))
 }
@@ -139,13 +152,13 @@ Reset-Consent
 $form = New-Object DirectorSessionForm
 $form.Text = 'Director Desktop - RDP View Only'
 $form.Width = 500
-$form.Height = 255
+$form.Height = 305
 $form.TopMost = $true
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = [Windows.Forms.FormBorderStyle]::FixedDialog
 $form.MaximizeBox = $false
 $note = New-Object Windows.Forms.Label
-$note.Text = 'Shares THIS RDP session until Stop/lock/disconnect. STOP before passwords.'
+$note.Text = 'View until Stop/lock/disconnect. Control requires Enable Input. Never share passwords.'
 $note.SetBounds(12, 12, 462, 36)
 $form.Controls.Add($note)
 $field = New-Object Windows.Forms.TextBox
@@ -264,6 +277,7 @@ $form.Add_FormClosed({
     $script:code=''
     $script:sessionToken=''
     $script:enabled=$false
+    $script:controlEnabled=$false
     $script:paired=$false
 })
 $timer.Start()
