@@ -97,6 +97,20 @@ jobs:
             throw "RDP session revocation handler failed to compile"
           }
           Write-Host "Session notification handler compiles on Windows PowerShell 5.1"
+          # Compile the second native input helper as well. Do not execute input.
+          $second = $companion.IndexOf($start, $b + $end.Length)
+          $finish = $companion.IndexOf("'@", $second + $start.Length)
+          if ($second -lt 0 -or $finish -lt 0) {
+            throw "Missing native desktop input helper"
+          }
+          $inputDefinition = $companion.Substring(
+            $second + $start.Length, $finish - $second - $start.Length
+          ).Trim()
+          Add-Type -TypeDefinition $inputDefinition -ErrorAction Stop
+          if (-not ('DirectorDesktopInput' -as [type])) {
+            throw "Native desktop input helper failed to compile"
+          }
+          Write-Host "Desktop input helper compiles on Windows PowerShell 5.1"
           # Build a task definition only; do not register it or touch SYSTEM.
           $args = '"C:\Program Files\Director UE\ue_signed_updater.py"'
           $action = New-ScheduledTaskAction -Execute "C:\Program Files\Python\python.exe" -Argument $args
