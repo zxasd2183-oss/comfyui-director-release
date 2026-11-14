@@ -566,6 +566,33 @@ def unpair_ue_desktop(opener=None, token_file=None):
     return _v2_request("/v14/desktop/unpair","POST",None,opener,token_file)
 
 
+# Strictly limited interactive input forwarded to the authenticated Worker.
+# Input is blocked unless the owner armed control in their RDP desktop.
+def send_ue_desktop_action(item, opener=None, token_file=None):
+    # Worker enforces the same allowlist again; reject all extra fields here.
+    if type(item) is not dict:
+        return {"ok":False, "reason":"desktop_action_invalid"}
+    action = item.get("action")
+    if action == "click" and set(item)=={"action","x","y","clicks"}:
+        if not (type(item["x"]) is int and type(item["y"]) is int
+                and type(item["clicks"]) is int and
+                0<=item["x"]<=999 and 0<=item["y"]<=999 and
+                item["clicks"] in (1,2)):
+            return {"ok":False,"reason":"desktop_action_invalid"}
+    elif action == "key" and set(item)=={"action","key"}:
+        keys={"ENTER","ESC","TAB","BACKSPACE","UP","DOWN","LEFT",
+              "RIGHT","SPACE","DELETE","HOME","END","F2"}
+        if type(item["key"]) is not str or item["key"] not in keys:
+            return {"ok":False,"reason":"desktop_action_invalid"}
+    elif action == "text" and set(item)=={"action","text"}:
+        if (type(item["text"]) is not str or
+                re.fullmatch(r"[A-Za-z0-9 ._/@-]{1,100}",item["text"]) is None):
+            return {"ok":False,"reason":"desktop_action_invalid"}
+    else:
+        return {"ok":False,"reason":"desktop_action_invalid"}
+    return _v2_request("/v15/desktop/action","POST",item,opener,token_file)
+
+
 def get_ue_desktop_snapshot(opener=None, token_file=None):
     import hashlib
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
