@@ -339,7 +339,19 @@ $timer.Add_Tick({
             } else {
                 try {
                     $encoded = [regex]::Match($header,
-                        '(?im)^X-Director-Desktop-Action:\s*([A-Za-z0-9+/=]{1,704})\s*
+                        '(?im)^X-Director-Desktop-Action:[ \t]*([A-Za-z0-9+/=]{1,704})[ \t]*(?=\r?\n)')
+                    if (-not $encoded.Success) { throw 'no_action_header' }
+                    $raw = [Convert]::FromBase64String($encoded.Groups[1].Value)
+                    if ($raw.Length -lt 10 -or $raw.Length -gt 512) { throw 'action_too_large' }
+                    $item = [Text.Encoding]::UTF8.GetString($raw) | ConvertFrom-Json
+                    Invoke-DirectorInput $item
+                    Send-Reply $stream 200 'application/json' (Json-Bytes $true '')
+                } catch {
+                    Send-Reply $stream 400 'application/json' (Json-Bytes $false 'input_rejected')
+                }
+            }
+        } else {
+            Send-Reply $stream 404 'application/json' (Json-Bytes $false 'not_found')
         }
     } catch {
         # Never show secrets, HTTP bodies, or desktop contents in exceptions.
