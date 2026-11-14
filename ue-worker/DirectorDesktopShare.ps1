@@ -95,6 +95,58 @@ function Get-ShareActive {
     return ($script:enabled -and $script:paired -and $script:sessionToken.Length -eq 32)
 }
 function Get-ControlActive { return ((Get-ShareActive) -and $script:controlEnabled) }
+function Test-ExactFields($obj, [string[]]$expected) {
+    if ($null -eq $obj) { return $false }
+    $names = @($obj.PSObject.Properties.Name)
+    if ($names.Count -ne $expected.Count) { return $false }
+    foreach ($name in $expected) { if ($name -notin $names) { return $false } }
+    return $true
+}
+function Invoke-DirectorInput($item) {
+    if (-not (Get-ControlActive)) { throw 'input_not_armed' }
+    switch ([string]$item.action) {
+        'click' {
+            if (-not (Test-ExactFields $item @('action','x','y','clicks'))) { throw 'bad_fields' }
+            if ($item.x -isnot [int] -or $item.y -isnot [int] -or
+                $item.clicks -isnot [int] -or $item.x -lt 0 -or
+                $item.x -gt 999 -or $item.y -lt 0 -or
+                $item.y -gt 999 -or $item.clicks -notin @(1,2)) { throw 'bad_click' }
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            if ($bounds.Width -lt 320 -or $bounds.Height -lt 200) { throw 'screen_unavailable' }
+            $x = $bounds.X + [int][Math]::Round($item.x * ($bounds.Width-1) / 999.0)
+            $y = $bounds.Y + [int][Math]::Round($item.y * ($bounds.Height-1) / 999.0)
+            [System.Windows.Forms.Cursor]::Position = [System.Drawing.Point]::new($x,$y)
+            for ($i=0; $i -lt $item.clicks; $i++) {
+                [DirectorDesktopInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+                [DirectorDesktopInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+                if ($i -eq 0 -and $item.clicks -eq 2) { Start-Sleep -Milliseconds 75 }
+            }
+        }
+        'key' {
+            if (-not (Test-ExactFields $item @('action','key')) -or
+                $item.key -isnot [string]) { throw 'bad_fields' }
+            $keys = @{
+                ENTER='{ENTER}'; ESC='{ESC}'; TAB='{TAB}'; BACKSPACE='{BACKSPACE}';
+                UP='{UP}'; DOWN='{DOWN}'; LEFT='{LEFT}'; RIGHT='{RIGHT}';
+                SPACE=' '; DELETE='{DELETE}'; HOME='{HOME}'; END='{END}'; F2='{F2}'
+            }
+            if (-not $keys.ContainsKey($item.key)) { throw 'bad_key' }
+            [System.Windows.Forms.SendKeys]::SendWait([string]$keys[$item.key])
+        }
+        'text' {
+            if (-not (Test-ExactFields $item @('action','text')) -or
+                $item.text -isnot [string] -or
+                -not [regex]::IsMatch($item.text,'\A[A-Za-z0-9 ._/@-]{1,100}\z')) {
+                throw 'bad_text'
+            }
+            foreach ($c in $item.text.ToCharArray()) {
+                [System.Windows.Forms.SendKeys]::SendWait([string]$c)
+            }
+        }
+        default { throw 'bad_action' }
+    }
+}
+
 function Encode-Snapshot {
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     if ($screen.Width -lt 320 -or $screen.Height -lt 200) { throw 'Screen unavailable' }
