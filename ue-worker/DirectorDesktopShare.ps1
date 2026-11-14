@@ -45,6 +45,16 @@ public sealed class DirectorSessionForm : Form {
 }
 '@ -ReferencedAssemblies @('System.Windows.Forms.dll','System.Drawing.dll')
 
+# Separate local Enable Input is required before these APIs can run.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DirectorDesktopInput {
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+}
+'@
+
 $port = 19017
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
 $listener.Start()
@@ -52,6 +62,7 @@ $script:code = ''
 $script:pairDeadline = [DateTime]::MinValue
 $script:sessionToken = ''
 $script:enabled = $false
+$script:controlEnabled = $false
 $script:paired = $false
 $script:denials = 0
 $script:lastFrame = [DateTime]::MinValue
@@ -67,6 +78,7 @@ function Reset-Consent {
     $script:pairDeadline = [DateTime]::UtcNow.AddMinutes(10)
     $script:sessionToken = ''
     $script:enabled = $false
+    $script:controlEnabled = $false
     $script:paired = $false
     $script:denials = 0
     $script:lastFrame = [DateTime]::MinValue
@@ -82,6 +94,59 @@ function Equal-Secret([string]$left, [string]$right) {
 function Get-ShareActive {
     return ($script:enabled -and $script:paired -and $script:sessionToken.Length -eq 32)
 }
+function Get-ControlActive { return ((Get-ShareActive) -and $script:controlEnabled) }
+function Test-ExactFields($obj, [string[]]$expected) {
+    if ($null -eq $obj) { return $false }
+    $names = @($obj.PSObject.Properties.Name)
+    if ($names.Count -ne $expected.Count) { return $false }
+    foreach ($name in $expected) { if ($name -notin $names) { return $false } }
+    return $true
+}
+function Invoke-DirectorInput($item) {
+    if (-not (Get-ControlActive)) { throw 'input_not_armed' }
+    switch ([string]$item.action) {
+        'click' {
+            if (-not (Test-ExactFields $item @('action','x','y','clicks'))) { throw 'bad_fields' }
+            if ($item.x -isnot [int] -or $item.y -isnot [int] -or
+                $item.clicks -isnot [int] -or $item.x -lt 0 -or
+                $item.x -gt 999 -or $item.y -lt 0 -or
+                $item.y -gt 999 -or $item.clicks -notin @(1,2)) { throw 'bad_click' }
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            if ($bounds.Width -lt 320 -or $bounds.Height -lt 200) { throw 'screen_unavailable' }
+            $x = $bounds.X + [int][Math]::Round($item.x * ($bounds.Width-1) / 999.0)
+            $y = $bounds.Y + [int][Math]::Round($item.y * ($bounds.Height-1) / 999.0)
+            [System.Windows.Forms.Cursor]::Position = [System.Drawing.Point]::new($x,$y)
+            for ($i=0; $i -lt $item.clicks; $i++) {
+                [DirectorDesktopInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+                [DirectorDesktopInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+                if ($i -eq 0 -and $item.clicks -eq 2) { Start-Sleep -Milliseconds 75 }
+            }
+        }
+        'key' {
+            if (-not (Test-ExactFields $item @('action','key')) -or
+                $item.key -isnot [string]) { throw 'bad_fields' }
+            $keys = @{
+                ENTER='{ENTER}'; ESC='{ESC}'; TAB='{TAB}'; BACKSPACE='{BACKSPACE}';
+                UP='{UP}'; DOWN='{DOWN}'; LEFT='{LEFT}'; RIGHT='{RIGHT}';
+                SPACE=' '; DELETE='{DELETE}'; HOME='{HOME}'; END='{END}'; F2='{F2}'
+            }
+            if (-not $keys.ContainsKey($item.key)) { throw 'bad_key' }
+            [System.Windows.Forms.SendKeys]::SendWait([string]$keys[$item.key])
+        }
+        'text' {
+            if (-not (Test-ExactFields $item @('action','text')) -or
+                $item.text -isnot [string] -or
+                -not [regex]::IsMatch($item.text,'\A[A-Za-z0-9 ._/@-]{1,100}\z')) {
+                throw 'bad_text'
+            }
+            foreach ($c in $item.text.ToCharArray()) {
+                [System.Windows.Forms.SendKeys]::SendWait([string]$c)
+            }
+        }
+        default { throw 'bad_action' }
+    }
+}
+
 function Encode-Snapshot {
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     if ($screen.Width -lt 320 -or $screen.Height -lt 200) { throw 'Screen unavailable' }
@@ -131,7 +196,7 @@ function Send-Reply($stream, [int]$status, [string]$type, [byte[]]$body) {
     if ($body.Length) { $stream.Write($body, 0, $body.Length) }
 }
 function Json-Bytes([bool]$ok, [string]$reason) {
-    $obj = @{ok=$ok; sharing=(Get-ShareActive)}
+    $obj = @{ok=$ok; sharing=(Get-ShareActive); control_enabled=(Get-ControlActive)}
     if ($reason) { $obj.reason = $reason }
     return ,[Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress))
 }
@@ -139,13 +204,13 @@ Reset-Consent
 $form = New-Object DirectorSessionForm
 $form.Text = 'Director Desktop - RDP View Only'
 $form.Width = 500
-$form.Height = 255
+$form.Height = 305
 $form.TopMost = $true
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = [Windows.Forms.FormBorderStyle]::FixedDialog
 $form.MaximizeBox = $false
 $note = New-Object Windows.Forms.Label
-$note.Text = 'Shares THIS RDP session until Stop/lock/disconnect. STOP before passwords.'
+$note.Text = 'View until Stop/lock/disconnect. Control requires Enable Input. Never share passwords.'
 $note.SetBounds(12, 12, 462, 36)
 $form.Controls.Add($note)
 $field = New-Object Windows.Forms.TextBox
@@ -190,6 +255,26 @@ $rotate.Add_Click({
     $status.Text='OFF: New one-time pairing code generated'
 })
 $form.Controls.Add($rotate)
+$arm = New-Object Windows.Forms.Button
+$arm.Text = 'Enable Input'
+$arm.SetBounds(12,184,145,32)
+$arm.Add_Click({
+    if (Get-ShareActive) {
+        $script:controlEnabled = $true
+        $status.Text = 'CONTROL ON: Click Disable Input or Stop to revoke.'
+    } else {
+        $status.Text = 'Start View-Only and pair first.'
+    }
+})
+$form.Controls.Add($arm)
+$disarm = New-Object Windows.Forms.Button
+$disarm.Text = 'Disable Input'
+$disarm.SetBounds(173,184,145,32)
+$disarm.Add_Click({
+    $script:controlEnabled = $false
+    $status.Text = 'VIEW ONLY: Remote input is OFF.'
+})
+$form.Controls.Add($disarm)
 $form.add_SessionGone({
     Reset-Consent
     $field.Text = $script:code
@@ -248,6 +333,23 @@ $timer.Add_Tick({
                 $script:lastFrame = [DateTime]::UtcNow
                 Send-Reply $stream 200 'image/jpeg' $snapshot
             }
+        } elseif ($header.StartsWith('POST /v1/action HTTP/1.1')) {
+            if (-not (Get-ControlActive)) {
+                Send-Reply $stream 403 'application/json' (Json-Bytes $false 'control_not_armed')
+            } else {
+                try {
+                    $encoded = [regex]::Match($header,
+                        '(?im)^X-Director-Desktop-Action:[ \t]*([A-Za-z0-9+/=]{1,704})[ \t]*(?=\r?\n)')
+                    if (-not $encoded.Success) { throw 'no_action_header' }
+                    $raw = [Convert]::FromBase64String($encoded.Groups[1].Value)
+                    if ($raw.Length -lt 10 -or $raw.Length -gt 512) { throw 'action_too_large' }
+                    $item = [Text.Encoding]::UTF8.GetString($raw) | ConvertFrom-Json
+                    Invoke-DirectorInput $item
+                    Send-Reply $stream 200 'application/json' (Json-Bytes $true '')
+                } catch {
+                    Send-Reply $stream 400 'application/json' (Json-Bytes $false 'input_rejected')
+                }
+            }
         } else {
             Send-Reply $stream 404 'application/json' (Json-Bytes $false 'not_found')
         }
@@ -264,6 +366,7 @@ $form.Add_FormClosed({
     $script:code=''
     $script:sessionToken=''
     $script:enabled=$false
+    $script:controlEnabled=$false
     $script:paired=$false
 })
 $timer.Start()

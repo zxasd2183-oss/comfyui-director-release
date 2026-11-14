@@ -65,7 +65,11 @@ class HubPortContractTests(unittest.TestCase):
         registered=set(re.findall(
             r'@app\.tool\([\s\S]*?\)\n(?:\#[^\n]*\n)*def\s+(\w+)\s*\(',
             content(VPS/"hub_app.py")))
-        self.assertEqual(hub,registered)
+        # Historical V0.6 installer remains frozen at 62 tools. The live
+        # Hub may add only the explicit locally-armed RDP input tools.
+        self.assertEqual(registered, hub | {
+            'ue_desktop_click', 'ue_desktop_key', 'ue_desktop_text',
+        })
         self.assertTrue(core<=hub|{"get_power_service_health"})
         self.assertIn('((8892,core),(8898,hub))',script)
         self.assertIn('"$SRC/hub_bridge.py" "$HUB/hub_bridge.py"',script)

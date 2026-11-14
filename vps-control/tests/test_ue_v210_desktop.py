@@ -1,4 +1,4 @@
-"""Director Desktop RDP sharing remains opt-in, loopback-only and read-only."""
+"""Director Desktop: view-only by default, constrained local-arm input."""
 import hashlib
 import json
 import sys
@@ -31,6 +31,42 @@ class BridgeTests(unittest.TestCase):
         self.assertIn("unpair_ue_desktop",dir(hub_app))
         self.assertNotIn("desktop_click",dir(hub_app))
         self.assertNotIn("desktop_type",dir(hub_app))
+
+    def test_desktop_action_requires_exact_allowlisted_fields(self):
+        with patch.object(rpc, "_v2_request", return_value={"ok": True}) as backend:
+            for item in (
+                {"action": "click", "x": -1, "y": 5, "clicks": 1},
+                {"action": "click", "x": True, "y": 5, "clicks": 1},
+                {"action": "click", "x": 20, "y": 40, "clicks": 1, "url": "secret"},
+                {"action": "text", "text": "echo $env:SECRET"},
+                {"action": "text", "text": "some\ncommand"},
+                {"action": "key", "key": "CTRL_ALT_DEL"},
+                {"action": "shell", "command": "powershell.exe"},
+            ):
+                self.assertEqual(rpc.send_ue_desktop_action(item)["reason"],
+                                 "desktop_action_invalid")
+            backend.assert_not_called()
+            data = {"action": "click", "x": 500, "y": 240, "clicks": 2}
+            self.assertTrue(rpc.send_ue_desktop_action(data)["ok"])
+            self.assertEqual(backend.call_args.args[:3],
+                             ("/v15/desktop/action", "POST", data))
+
+    def test_hub_tools_only_relay_narrow_actions(self):
+        with patch.object(hub_app, "send_ue_desktop_action_rpc",
+                          return_value={"ok": False,
+                                        "reason": "desktop_control_not_authorized"}) as backend:
+            self.assertEqual(hub_app.ue_desktop_click(250, 750)["reason"],
+                             "desktop_control_not_authorized")
+            self.assertEqual(backend.call_args.args[0], {
+                "action": "click", "x": 250, "y": 750, "clicks": 1})
+            hub_app.ue_desktop_key("ESC")
+            self.assertEqual(backend.call_args.args[0],
+                             {"action": "key", "key": "ESC"})
+            hub_app.ue_desktop_text("MetaHuman 5.8")
+            self.assertEqual(backend.call_args.args[0],
+                             {"action": "text", "text": "MetaHuman 5.8"})
+        self.assertFalse(hasattr(hub_app, "desktop_shell"))
+        self.assertFalse(hasattr(hub_app, "desktop_execute"))
 
     def test_no_snapshot_transport_without_worker_gate(self):
         with patch.dict("os.environ",{"DIRECTOR_UE_WORKER_ENABLED":"0"}):
