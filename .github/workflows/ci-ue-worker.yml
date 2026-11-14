@@ -84,6 +84,19 @@ jobs:
               throw "Windows PowerShell 5.1 parse failure: $path"
             }
           }
+          # Compile the RDP native session-event handler without opening a GUI.
+          $companion = Get-Content "ue-worker/DirectorDesktopShare.ps1" -Raw
+          $start = "Add-Type -TypeDefinition @'"
+          $end = "'@ -ReferencedAssemblies"
+          $a = $companion.IndexOf($start)
+          $b = $companion.IndexOf($end, $a + $start.Length)
+          if ($a -lt 0 -or $b -lt 0) { throw "Missing native RDP session handler" }
+          $definition = $companion.Substring($a + $start.Length, $b - $a - $start.Length).Trim()
+          Add-Type -TypeDefinition $definition -ReferencedAssemblies @('System.Windows.Forms.dll','System.Drawing.dll') -ErrorAction Stop
+          if (-not ('DirectorSessionForm' -as [type])) {
+            throw "RDP session revocation handler failed to compile"
+          }
+          Write-Host "Session notification handler compiles on Windows PowerShell 5.1"
           # Build a task definition only; do not register it or touch SYSTEM.
           $args = '"C:\Program Files\Director UE\ue_signed_updater.py"'
           $action = New-ScheduledTaskAction -Execute "C:\Program Files\Python\python.exe" -Argument $args

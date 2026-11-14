@@ -1,37 +1,86 @@
-# Director Desktop Companion 0.1 - manually launched in the current RDP session.
-# This file is NOT installed as a service, cannot see other sessions, cannot
-# control mouse/keyboard, and never uploads frames without visible consent.
-# Runs with this desktop user's permissions; no administrator rights needed.
+# Director Desktop Companion 0.2 - view-only, human-armed RDP session sharing.
+# Runs interactively inside the existing RDP session, never as SYSTEM.
+# Local manual Stop, session Lock/Disconnect/Logoff revoke access immediately.
+# A visible 128-bit PIN is good for ONE initial pairing for up to ten minutes;
+# a separate private session credential lasts only until Stop/session exit.
+# This script has NO keyboard/mouse command endpoint or Internet listener.
 #Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 if (-not [Environment]::UserInteractive) { throw 'Interactive RDP desktop required' }
+
+# Native session-change notifications: fail closed if the OS cannot register.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+public sealed class DirectorSessionForm : Form {
+    [DllImport("wtsapi32.dll", SetLastError=true)]
+    private static extern bool WTSRegisterSessionNotification(IntPtr hWnd, int flags);
+    [DllImport("wtsapi32.dll", SetLastError=true)]
+    private static extern bool WTSUnRegisterSessionNotification(IntPtr hWnd);
+    private const int WM_WTSSESSION_CHANGE = 0x02B1;
+    public event EventHandler SessionGone;
+    protected override void OnHandleCreated(EventArgs e) {
+        base.OnHandleCreated(e);
+        if (!WTSRegisterSessionNotification(this.Handle, 0))
+            throw new InvalidOperationException("RDP session notification unavailable");
+    }
+    protected override void OnHandleDestroyed(EventArgs e) {
+        if (this.IsHandleCreated) WTSUnRegisterSessionNotification(this.Handle);
+        base.OnHandleDestroyed(e);
+    }
+    protected override void WndProc(ref Message message) {
+        // Remote/console disconnect, logoff and session lock all revoke access.
+        if (message.Msg == WM_WTSSESSION_CHANGE) {
+            int reason = message.WParam.ToInt32();
+            if (reason == 2 || reason == 4 || reason == 6 || reason == 7) {
+                EventHandler handler = SessionGone;
+                if (handler != null) handler(this, EventArgs.Empty);
+            }
+        }
+        base.WndProc(ref message);
+    }
+}
+'@ -ReferencedAssemblies @('System.Windows.Forms.dll','System.Drawing.dll')
+
 $port = 19017
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
 $listener.Start()
 $script:code = ''
-$script:expires = [DateTime]::MinValue
+$script:pairDeadline = [DateTime]::MinValue
+$script:sessionToken = ''
 $script:enabled = $false
+$script:paired = $false
 $script:denials = 0
 $script:lastFrame = [DateTime]::MinValue
-function Reset-Consent {
-    $random = [byte[]]::new(16)
+
+function New-Secret {
+    $buffer = [byte[]]::new(16)
     $crypto = [Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $crypto.GetBytes($random) } finally { $crypto.Dispose() }
-    $script:code = [BitConverter]::ToString($random).Replace('-', '').ToLowerInvariant()
-    $script:expires = [DateTime]::UtcNow.AddMinutes(10)
+    try { $crypto.GetBytes($buffer) } finally { $crypto.Dispose() }
+    return [BitConverter]::ToString($buffer).Replace('-', '').ToLowerInvariant()
+}
+function Reset-Consent {
+    $script:code = New-Secret
+    $script:pairDeadline = [DateTime]::UtcNow.AddMinutes(10)
+    $script:sessionToken = ''
     $script:enabled = $false
+    $script:paired = $false
     $script:denials = 0
     $script:lastFrame = [DateTime]::MinValue
 }
-function Equal-Code([string]$left, [string]$right) {
+function Equal-Secret([string]$left, [string]$right) {
     if ($left.Length -ne 32 -or $right.Length -ne 32) { return $false }
     $difference = 0
     for ($i=0; $i -lt 32; $i++) {
         $difference = $difference -bor ([int][char]$left[$i] -bxor [int][char]$right[$i])
     }
     return $difference -eq 0
+}
+function Get-ShareActive {
+    return ($script:enabled -and $script:paired -and $script:sessionToken.Length -eq 32)
 }
 function Encode-Snapshot {
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -68,7 +117,7 @@ function Encode-Snapshot {
     return ,$bytes
 }
 function Send-Reply($stream, [int]$status, [string]$type, [byte[]]$body) {
-    $label = @{200='OK';401='Unauthorized';403='Forbidden';404='Not Found';429='Too Many Requests';503='Unavailable'}[$status]
+    $label = @{200='OK';401='Unauthorized';403='Forbidden';404='Not Found';409='Conflict';429='Too Many Requests';503='Unavailable'}[$status]
     if (-not $label) { $label = 'Error' }
     $crlf = [string][char]13 + [char]10
     $head = "HTTP/1.1 $status $label" + $crlf +
@@ -82,12 +131,12 @@ function Send-Reply($stream, [int]$status, [string]$type, [byte[]]$body) {
     if ($body.Length) { $stream.Write($body, 0, $body.Length) }
 }
 function Json-Bytes([bool]$ok, [string]$reason) {
-    $obj = @{ok=$ok; sharing=($script:enabled -and [DateTime]::UtcNow -lt $script:expires)}
+    $obj = @{ok=$ok; sharing=(Get-ShareActive)}
     if ($reason) { $obj.reason = $reason }
     return ,[Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress))
 }
 Reset-Consent
-$form = New-Object Windows.Forms.Form
+$form = New-Object DirectorSessionForm
 $form.Text = 'Director Desktop - RDP View Only'
 $form.Width = 500
 $form.Height = 255
@@ -96,7 +145,7 @@ $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = [Windows.Forms.FormBorderStyle]::FixedDialog
 $form.MaximizeBox = $false
 $note = New-Object Windows.Forms.Label
-$note.Text = 'Shares current RDP primary screen ONLY, up to 10 minutes. STOP before passwords.'
+$note.Text = 'Shares THIS RDP session until Stop/lock/disconnect. STOP before passwords.'
 $note.SetBounds(12, 12, 462, 36)
 $form.Controls.Add($note)
 $field = New-Object Windows.Forms.TextBox
@@ -107,34 +156,51 @@ $field.Text = $script:code
 $form.Controls.Add($field)
 $status = New-Object Windows.Forms.Label
 $status.SetBounds(12, 94, 462, 25)
-$status.Text = 'OFF: Copy the temporary code to ChatGPT, then click Start.'
+$status.Text = 'OFF: Share code in ChatGPT, click Start, then pair.'
 $form.Controls.Add($status)
 $start = New-Object Windows.Forms.Button
 $start.Text = 'Start View-Only'
 $start.SetBounds(12, 135, 145, 32)
 $start.Add_Click({
-    if ([DateTime]::UtcNow -lt $script:expires) {
+    if ($script:paired) {
+        $status.Text = 'Already paired. Use Stop to revoke session.'
+    } elseif ([DateTime]::UtcNow -lt $script:pairDeadline) {
         $script:enabled = $true
-        $status.Text = 'ON: One 800px JPEG per request. Click Stop anytime.'
+        $status.Text = 'Awaiting pairing. Code works only once.'
+    } else {
+        $status.Text = 'Pair code expired. Click New Code.'
     }
 })
 $form.Controls.Add($start)
 $stop = New-Object Windows.Forms.Button
 $stop.Text = 'Stop Immediately'
 $stop.SetBounds(173, 135, 145, 32)
-$stop.Add_Click({ $script:enabled = $false; $status.Text = 'Sharing stopped' })
+$stop.Add_Click({
+    Reset-Consent
+    $field.Text = $script:code
+    $status.Text = 'OFF: Stopped and old session revoked.'
+})
 $form.Controls.Add($stop)
 $rotate = New-Object Windows.Forms.Button
 $rotate.Text = 'New Code'
 $rotate.SetBounds(335, 135, 139, 32)
-$rotate.Add_Click({ Reset-Consent; $field.Text=$script:code; $status.Text='OFF: New pairing code generated' })
+$rotate.Add_Click({
+    Reset-Consent
+    $field.Text=$script:code
+    $status.Text='OFF: New one-time pairing code generated'
+})
 $form.Controls.Add($rotate)
+$form.add_SessionGone({
+    Reset-Consent
+    $field.Text = $script:code
+    $status.Text = 'PAUSED: RDP locked/disconnected. New authorization required.'
+})
 $timer = New-Object Windows.Forms.Timer
 $timer.Interval = 150
 $timer.Add_Tick({
-    if ([DateTime]::UtcNow -ge $script:expires) {
+    if (-not $script:paired -and [DateTime]::UtcNow -ge $script:pairDeadline) {
         $script:enabled = $false
-        $status.Text = 'Expired: click New Code'
+        $status.Text = 'Code expired: click New Code'
     }
     if (-not $listener.Pending()) { return }
     $client = $null
@@ -144,38 +210,62 @@ $timer.Add_Tick({
         $client.SendTimeout = 1500
         $stream = $client.GetStream()
         $buffer = [byte[]]::new(2048)
-        $len = $stream.Read($buffer,0,$buffer.Length)
-        $header = [Text.Encoding]::ASCII.GetString($buffer,0,$len)
-        $match = [regex]::Match($header, '(?im)^X-Director-Desktop-Code:\s*([0-9a-f]{32})\s*$')
-        $supplied = if ($match.Success) { $match.Groups[1].Value } else { '' }
-        if (-not (Equal-Code $supplied $script:code)) {
+        $len = $stream.Read($buffer, 0, $buffer.Length)
+        $header = [Text.Encoding]::ASCII.GetString($buffer, 0, $len)
+        $pin = [regex]::Match($header, '(?im)^X-Director-Desktop-Code:\s*([0-9a-f]{32})\s*$')
+        $session = [regex]::Match($header, '(?im)^X-Director-Desktop-Session:\s*([0-9a-f]{32})\s*$')
+        if ($header.StartsWith('POST /v1/pair HTTP/1.1')) {
+            if (-not $pin.Success -or -not (Equal-Secret $pin.Groups[1].Value $script:code)) {
+                $script:denials++
+                Send-Reply $stream 401 'application/json' (Json-Bytes $false 'unauthorized')
+            } elseif (-not $script:enabled -or $script:paired -or
+                      [DateTime]::UtcNow -ge $script:pairDeadline -or $script:denials -ge 12) {
+                Send-Reply $stream 403 'application/json' (Json-Bytes $false 'not_accepting_pairing')
+            } else {
+                $script:sessionToken = New-Secret
+                $script:paired = $true
+                $script:code = ''
+                $field.Text = '(paired; one-time code consumed)'
+                $status.Text = 'ON: Shared until Stop, RDP lock, or disconnect.'
+                $payload = [Text.Encoding]::UTF8.GetBytes((@{
+                    ok=$true; sharing=$true; session_token=$script:sessionToken
+                } | ConvertTo-Json -Compress))
+                Send-Reply $stream 200 'application/json' $payload
+            }
+        } elseif (-not $session.Success -or
+                  -not (Equal-Secret $session.Groups[1].Value $script:sessionToken)) {
             $script:denials++
             Send-Reply $stream 401 'application/json' (Json-Bytes $false 'unauthorized')
-        } elseif ([DateTime]::UtcNow -ge $script:expires -or $script:denials -ge 12) {
-            Send-Reply $stream 403 'application/json' (Json-Bytes $false 'expired_or_locked')
         } elseif ($header.StartsWith('GET /v1/status HTTP/1.1')) {
             Send-Reply $stream 200 'application/json' (Json-Bytes $true '')
         } elseif ($header.StartsWith('GET /v1/frame HTTP/1.1')) {
-            if (-not $script:enabled) {
+            if (-not (Get-ShareActive)) {
                 Send-Reply $stream 403 'application/json' (Json-Bytes $false 'not_sharing')
             } elseif (([DateTime]::UtcNow - $script:lastFrame).TotalSeconds -lt 3) {
                 Send-Reply $stream 429 'application/json' (Json-Bytes $false 'rate_limited')
             } else {
-                $image = Encode-Snapshot
+                $snapshot = Encode-Snapshot
                 $script:lastFrame = [DateTime]::UtcNow
-                Send-Reply $stream 200 'image/jpeg' $image
+                Send-Reply $stream 200 'image/jpeg' $snapshot
             }
         } else {
             Send-Reply $stream 404 'application/json' (Json-Bytes $false 'not_found')
         }
     } catch {
-        # Do not show HTTP bodies, auth codes or sensitive exception details.
+        # Never show secrets, HTTP bodies, or desktop contents in exceptions.
         $status.Text = 'Connection error. Stop and restart.'
     } finally {
         if ($client) { $client.Dispose() }
     }
 })
-$form.Add_FormClosed({$timer.Stop();$listener.Stop();$script:code='';$script:enabled=$false})
+$form.Add_FormClosed({
+    $timer.Stop()
+    $listener.Stop()
+    $script:code=''
+    $script:sessionToken=''
+    $script:enabled=$false
+    $script:paired=$false
+})
 $timer.Start()
 try { [void]$form.ShowDialog() }
 finally { $timer.Stop();$listener.Stop();$timer.Dispose();$form.Dispose() }
