@@ -1176,8 +1176,8 @@ public final class MainActivity extends Activity {
             throw new IllegalArgumentException("Invalid account");
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] raw = digest.digest((card.profile + "\\u0000" + card.site
-                    + "\\u0000" + card.username).getBytes(StandardCharsets.UTF_8));
+            byte[] raw = digest.digest((card.profile + (char) 0 + card.site
+                    + (char) 0 + card.username).getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder("glacier-account-")
                     .append(card.profile).append("-");
             for (int i = 0; i < 16; i++)
