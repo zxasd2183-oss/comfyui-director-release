@@ -152,11 +152,16 @@ def proxy_start(link,port):
  except OSError:pass
  return process
 class Page(QWebEngineView):
- def __init__(self,win):
+ def __init__(self,win,account_profile=None):
   super().__init__(win)
   self.win=win
-  self.setPage(QWebEnginePage(win.profile,self))
- def createWindow(self,typ):return self.win.new_tab()
+  profile=account_profile if isinstance(account_profile,QWebEngineProfile) else win.profile
+  self._glacier_account_profile22=profile if profile is account_profile else None
+  self.setPage(QWebEnginePage(profile,self))
+ def createWindow(self,typ):
+  profile=self._glacier_account_profile22
+  return (self.win.new_tab(account_profile=profile)
+          if profile is not None else self.win.new_tab())
 class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
@@ -237,8 +242,8 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   except (RuntimeError,OSError,ValueError):
    return
  def current(self):return self.tabs.currentWidget()
- def new_tab(self):
-  v=Page(self);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
+ def new_tab(self,account_profile=None):
+  v=Page(self,account_profile);i=self.tabs.addTab(v,"新标签");self.tabs.setCurrentIndex(i)
   self.attach_tab13(v)
   v.titleChanged.connect(lambda _title: self.refresh_tabs14())
   v.iconChanged.connect(lambda _icon: self.refresh_tabs14())
