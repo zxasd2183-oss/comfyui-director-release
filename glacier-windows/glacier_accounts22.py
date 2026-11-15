@@ -652,7 +652,7 @@ class GlacierAccounts22:
                 code_button.clicked.connect(
                     lambda checked=False, ep=record["code_api"]: self.request_account_code22(ep, dialog))
                 row.addWidget(code_button)
-            own_session = QPushButton("独立登录", dialog)
+            own_session = QPushButton("在独立会话中打开", dialog)
             own_session.setToolTip("此账号使用自己的 Cookie 和网站存储；不会覆盖同站其他账号")
             def open_current_account(checked=False, r=dict(record)):
                 if self.open_account_session22(r):
