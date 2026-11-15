@@ -122,13 +122,13 @@ class AccountCardTests(unittest.TestCase):
             showMessage=lambda message, duration: statuses.append(message))
         callbacks = []
         with patch("glacier_accounts22.QTimer.singleShot",
-                   side_effect=lambda ms, callback: callbacks.append(callback)), \\
+                   side_effect=lambda ms, callback: callbacks.append(callback)), \
              patch("glacier_accounts22.QMessageBox.question",
                    return_value=QMessageBox.StandardButton.No):
             self.assertFalse(host.clear_site_cookies22("chatgpt.com"))
         self.assertFalse(store.loaded)
         with patch("glacier_accounts22.QTimer.singleShot",
-                   side_effect=lambda ms, callback: callbacks.append(callback)), \\
+                   side_effect=lambda ms, callback: callbacks.append(callback)), \
              patch("glacier_accounts22.QMessageBox.question",
                    return_value=QMessageBox.StandardButton.Yes):
             self.assertTrue(host.clear_site_cookies22("chatgpt.com"))
