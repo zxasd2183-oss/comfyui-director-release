@@ -572,6 +572,25 @@ class GlacierAccounts22:
         self._account_profiles22[token] = profile
         return profile
 
+    def clear_account_session_cookies22(self, record):
+        """Clear only a saved login's dedicated local Cookie jar on demand."""
+        profile = self._profile_for_saved_account22(record)
+        if profile is None:
+            return False
+        decision = QMessageBox.question(
+            self, "清除独立登录 Cookie",
+            "这只会清除该账号专属浏览器会话的 Cookie，不会删除账号密码，"
+            "也不会影响其他网站账号或普通工作空间。确定继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if decision != QMessageBox.StandardButton.Yes:
+            return False
+        profile.cookieStore().deleteAllCookies()
+        self.statusBar().showMessage(
+            "已提交此账号独立 Cookie 清除请求；网站可能需要重新登录。", 8500)
+        return True
+
     def open_account_session22(self, record):
         """Open a saved site in its own Cookie/localStorage context.
 
@@ -640,6 +659,10 @@ class GlacierAccounts22:
                     dialog.accept()
             own_session.clicked.connect(open_current_account)
             row.addWidget(own_session)
+            clear_session = QPushButton("清除此账号 Cookie", dialog)
+            clear_session.clicked.connect(
+                lambda _checked=False, r=dict(record): self.clear_account_session_cookies22(r))
+            row.addWidget(clear_session)
             edit = QPushButton("编辑", dialog)
             def edit_current(checked=False, s=site, r=dict(record)):
                 if self.edit_account22(s, r):
