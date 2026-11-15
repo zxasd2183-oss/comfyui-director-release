@@ -1,0 +1,36 @@
+name: Glacier direct launch no-splash checks
+on:
+  pull_request:
+    paths:
+      - 'glacier-windows/main.py'
+      - 'glacier-macos/main.py'
+      - 'glacier-android-gecko/**'
+      - 'glacier-windows/test_glacier_startup_sequence.py'
+      - 'glacier-macos/test_glacier_startup_sequence.py'
+      - '.github/workflows/glacier-direct-launch-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'glacier-windows/main.py'
+      - 'glacier-macos/main.py'
+      - 'glacier-android-gecko/**'
+      - '.github/workflows/glacier-direct-launch-ci.yml'
+permissions:
+  contents: read
+jobs:
+  splash-free-source-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Python syntax
+        run: python -m py_compile glacier-windows/main.py glacier-macos/main.py
+      - name: Verify Windows direct launch
+        run: python -m unittest discover -s glacier-windows -p test_glacier_startup_sequence.py -v
+      - name: Verify macOS direct launch
+        run: python -m unittest discover -s glacier-macos -p test_glacier_startup_sequence.py -v
+      - name: Verify Android browser launch without custom splash
+        run: python -m unittest discover -s glacier-android-gecko/scripts -p test_gecko_mainthread_guards.py -v

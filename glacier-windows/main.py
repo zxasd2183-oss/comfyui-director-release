@@ -28,7 +28,6 @@ from glacier_input21 import GlacierInput21
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
-from glacier_splash import show_glacier_splash, reveal_browser_after_splash
 from glacier_proxy_health29 import (ephemeral_proxy_config, await_proxy_ready,
                                     proxy_status_text)
 
@@ -365,7 +364,6 @@ def main():
   s.bind(("127.0.0.1",0));port=s.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("Windows v0.20.28")
  link=get_link(app)
  proc=None
  try:proc=proxy_start(link,port)
@@ -375,7 +373,6 @@ def main():
  try:
   win=Browser(proc,port)
  except Exception as exc:
-  splash.close()
   # Avoid exposing proxy links, account entries or saved credentials in dialogs.
   import traceback
   frames=traceback.extract_tb(exc.__traceback__)
@@ -388,8 +385,8 @@ def main():
   QMessageBox.critical(None,APP,"Windows 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- # Main window was built hidden; show it only after splash is gone.
- reveal_browser_after_splash(splash, win)
+ # Show the main browser window immediately; no separate launch splash.
+ win.show()
  code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code

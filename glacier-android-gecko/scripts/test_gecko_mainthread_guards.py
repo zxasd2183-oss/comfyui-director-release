@@ -18,5 +18,19 @@ class GeckoMainThreadGuards(unittest.TestCase):
         self.assertIn("Bitmap.createScaledBitmap", capture)
         self.assertIn("runOnUiThread", capture)
 
+    def test_android_opens_browser_without_custom_splash(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "app/src/main/java/cn/borealos/glacier/geckopreview/MainActivity.java").read_text(encoding="utf-8")
+        manifest = (root / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+        styles = (root / "app/src/main/res/values/styles.xml").read_text(encoding="utf-8")
+        self.assertNotIn("showGlacierStartup(", source)
+        self.assertNotIn("startupShown", source)
+        self.assertIn("buildChrome()", source)
+        self.assertIn('android:theme="@style/GlacierBrowserTheme"', manifest)
+        self.assertIn('@android:color/white', styles)
+        self.assertNotIn("glacier_startup_background", styles)
+        # The browser home/new-tab page must still exist.
+        self.assertIn("createNewTabPage()", source)
+
 if __name__ == "__main__":
     unittest.main()

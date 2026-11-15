@@ -30,7 +30,6 @@ from glacier_site_diagnostic31 import GlacierSiteDiagnostic31
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
-from glacier_splash import show_glacier_splash, reveal_browser_after_splash
 from mac_proxy_diagnostics import start_capture, latest_hint, classify
 from glacier_proxy_health29 import ephemeral_proxy_config
 from mac_xray_reality import build_xray_reality_config
@@ -296,7 +295,6 @@ def main():
   listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
  app=QApplication(sys.argv);app.setApplicationName(APP)
- splash=show_glacier_splash("macOS v0.20.27")
  link=get_link(app,parse_node)
  proc=None
  try:proc=proxy_start(link,port)
@@ -306,7 +304,6 @@ def main():
  try:
   win=Browser(proc,port)
  except Exception as exc:
-  splash.close()
   # Expose a startup error instead of a silent macOS .app exit.
   # Never write VLESS credentials or raw traceback values to logs.
   import traceback
@@ -320,10 +317,9 @@ def main():
   QMessageBox.critical(None,APP,"Mac 浏览器初始化失败：\\n"+safe_error+"\\n请保留 startup-error.txt 以便排查。")
   if proc and proc.poll() is None:proc.terminate()
   return 1
- # Main window remains hidden until the splash is completely dismissed.
- # Start remote HTTPS probing only after it becomes visible.
- on_reveal=(lambda: QTimer.singleShot(350, win.start_connection_check)) if proc else None
- reveal_browser_after_splash(splash, win, on_reveal=on_reveal)
+ # Show Safari-style browser immediately; keep proxy checks after UI appears.
+ win.show()
+ if proc: QTimer.singleShot(350, win.start_connection_check)
  code=app.exec()
  if proc and proc.poll() is None:proc.terminate()
  return code
