@@ -15,6 +15,8 @@ import android.widget.ProgressBar;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.ByteArrayOutputStream;
 import java.util.UUID;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import android.graphics.Color;
@@ -116,6 +118,7 @@ public final class MainActivity extends Activity {
         final GeckoSession session;
         final String profile;
         final String id;
+        final String contextId;
         String url = START_URL;
         String title = "新标签页";
         String geckoState;
@@ -127,12 +130,16 @@ public final class MainActivity extends Activity {
         boolean canForward = false;
 
         Tab(GeckoSession session, String profile) {
-            this(session, profile, UUID.randomUUID().toString());
+            this(session, profile, UUID.randomUUID().toString(), "glacier-" + profile);
         }
         Tab(GeckoSession session, String profile, String id) {
+            this(session, profile, id, "glacier-" + profile);
+        }
+        Tab(GeckoSession session, String profile, String id, String contextId) {
             this.session = session;
             this.profile = profile;
             this.id = id;
+            this.contextId = contextId;
         }
     }
 
@@ -505,7 +512,8 @@ public final class MainActivity extends Activity {
         for (Tab tab : tabs) {
             snapshot.tabs.add(new BrowserTabStore.TabRecord(
                     tab.id, tab.profile, tab.url, tab.title,
-                    tab.geckoState, tab.thumbnail == null ? null : tab.thumbnail.clone()));
+                    tab.geckoState, tab.thumbnail == null ? null : tab.thumbnail.clone(),
+                    tab.contextId));
         }
         return snapshot;
     }
@@ -538,7 +546,8 @@ public final class MainActivity extends Activity {
             Tab resume = null;
             for (BrowserTabStore.TabRecord row : snapshot.tabs) {
                 // Profile/contextId is selected BEFORE opening the GeckoSession.
-                Tab tab = new Tab(createSession(row.profile), row.profile, row.id);
+                Tab tab = new Tab(createSession(row.profile, row.contextId),
+                        row.profile, row.id, row.contextId);
                 tab.url = row.url;
                 tab.title = row.title == null || row.title.isEmpty()
                         ? row.url : row.title;
@@ -1162,11 +1171,42 @@ public final class MainActivity extends Activity {
                 }).show();
     }
 
+    private static String accountCookieContext(BrowserAccountsStore.Card card) {
+        if (!BrowserAccountsStore.valid(card))
+            throw new IllegalArgumentException("Invalid account");
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] raw = digest.digest((card.profile + "\\u0000" + card.site
+                    + "\\u0000" + card.username).getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder("glacier-account-")
+                    .append(card.profile).append("-");
+            for (int i = 0; i < 16; i++)
+                hex.append(String.format(Locale.ROOT, "%02x", raw[i] & 255));
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is required", ex);
+        }
+    }
+
+    private void openSavedAccountSession(BrowserAccountsStore.Card card) {
+        if (runtime == null || !accountCards.contains(card)
+                || !BrowserAccountsStore.valid(card)) return;
+        String context = accountCookieContext(card);
+        if (!BrowserTabStore.validContextId(card.profile, context)) return;
+        Tab tab = createTab(card.profile, context);
+        tab.url = "https://" + card.site + "/";
+        tab.title = card.name;
+        switchTo(tab);
+        tab.session.loadUri(tab.url);
+        scheduleTabsSave();
+    }
+
     private void showAccountCard(BrowserAccountsStore.Card card) {
         List<String> actions=new ArrayList<>();
         actions.add("复制账号");
         if(!card.password.isEmpty())actions.add("复制密码");
         if(!card.codeApi.isEmpty())actions.add("点击获取验证码");
+        actions.add("在独立会话中打开");
         actions.add("编辑");
         actions.add("删除");
         new AlertDialog.Builder(this)
@@ -1176,6 +1216,7 @@ public final class MainActivity extends Activity {
                     if("复制账号".equals(item))copyAccountValue(card.username);
                     else if("复制密码".equals(item))copyAccountValue(card.password);
                     else if("点击获取验证码".equals(item))fetchAccountCode(card.codeApi);
+                    else if("在独立会话中打开".equals(item))openSavedAccountSession(card);
                     else if("编辑".equals(item))editAccountCard(card,card.profile,card.site);
                     else if("删除".equals(item)) {
                         new AlertDialog.Builder(this).setTitle("删除本机账号卡片")
@@ -1813,8 +1854,14 @@ public final class MainActivity extends Activity {
     }
 
     private GeckoSession createSession(final String profile) {
+        return createSession(profile, "glacier-" + profile);
+    }
+
+    private GeckoSession createSession(final String profile, final String contextId) {
+        if (!BrowserTabStore.validContextId(profile, contextId))
+            throw new IllegalArgumentException("Unknown browser Cookie context");
         GeckoSessionSettings settings = new GeckoSessionSettings.Builder()
-                .contextId("glacier-" + profile)
+                .contextId(contextId)
                 .usePrivateMode(false)
                 .build();
         GeckoSession session = new GeckoSession(settings);
@@ -1977,7 +2024,8 @@ public final class MainActivity extends Activity {
                 // Popup pages inherit the source profile, never cross identities.
                 Tab parent = findBySession(source);
                 String owner = parent == null ? profile : parent.profile;
-                Tab child = createTab(owner);
+                String inheritedContext = parent == null ? contextId : parent.contextId;
+                Tab child = createTab(owner, inheritedContext);
                 switchTo(child);
                 return GeckoResult.fromValue(child.session);
             }
@@ -1987,7 +2035,12 @@ public final class MainActivity extends Activity {
     }
 
     private Tab createTab(String profile) {
-        Tab t = new Tab(createSession(profile), profile);
+        return createTab(profile, "glacier-" + profile);
+    }
+
+    private Tab createTab(String profile, String contextId) {
+        Tab t = new Tab(createSession(profile, contextId), profile,
+                UUID.randomUUID().toString(), contextId);
         tabs.add(t);
         return t;
     }
