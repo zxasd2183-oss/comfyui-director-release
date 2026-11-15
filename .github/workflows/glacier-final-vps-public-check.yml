@@ -1,44 +1,124 @@
-name: Glacier final public VPS signed-feed end-to-end verification
+name: Glacier public VPS signed-feed integrity (read-only)
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/glacier-final-vps-public-check.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   public-vps:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 10
     steps:
-      - name: Confirm both public HTTPS feeds are exact final versions
+      - name: Install public-key signature verifier
+        run: python3 -m pip install 'cryptography>=43,<47'
+      - name: Verify live VPS feeds, Ed25519 signatures and release files
+        env:
+          GLACIER_UPDATE_PUBLIC_HEX: ${{ vars.GLACIER_UPDATE_SIGNING_PUBLIC_HEX }}
+        shell: bash
         run: |
           python3 - <<'PY'
-          import json,time,urllib.request
-          expected={
-             'windows-x64':('0.20.20','05c103895d2ecf5634046b63b928b4857309b7a81c2c5214860a679a8ea68654',175947525),
-             'macos-arm64':('0.20.17','3ab7a17518f84bdf36230530d8be77cfaaa4c1802e12de7c24f76f58d26e7810',287169487),
+          import base64
+          import hashlib
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+          ROOT = 'https://sync.borealos.cn/downloads/'
+          REPO = 'zxasd2183-oss/comfyui-director-release'
+          SIGNED_BRANCH = 'glacier-browser-updates-v2'
+          PLATFORMS = {
+              'windows-x64': ('glacier-v', 'Windows-Setup-x64.exe'),
+              'macos-arm64': ('glacier-macos-v', 'macOS-AppleSilicon.dmg'),
           }
-          for channel,(version,sha,size) in expected.items():
-              source='https://sync.borealos.cn/downloads/'+channel+'.json?nonce='+str(time.time_ns())
-              request=urllib.request.Request(source,headers={
-                  'Cache-Control':'no-cache','Pragma':'no-cache'})
-              with urllib.request.urlopen(request,timeout=25) as response:
-                  actual=json.load(response)
-              print('Public VPS',channel,'reports version',actual.get('version'),flush=True)
-              if (actual.get('channel')!=channel or actual.get('version')!=version or
-                  actual.get('sha256')!=sha or actual.get('size')!=size or
-                  actual.get('key_id')!='v2-259ea4a7b9da4bea' or
-                  not actual.get('signature')):
-                  raise RuntimeError(channel+' signed feed is not yet final')
-              package=actual.get('url','')
-              if not package.startswith('https://sync.borealos.cn/downloads/'):
-                  raise RuntimeError('Public installer is not bound to owner VPS')
-              check=urllib.request.Request(package,method='HEAD',headers={'Cache-Control':'no-cache'})
-              with urllib.request.urlopen(check,timeout=25) as response:
-                  if response.status!=200 or response.geturl()!=package:
-                      raise RuntimeError('VPS installer not available')
-                  if response.headers.get('Content-Length') is not None and int(response.headers['Content-Length'])!=size:
-                      raise RuntimeError('VPS installer HEAD length mismatch')
-              print('PASS',channel,version,'signed metadata and installer HTTPS HEAD',flush=True)
+          REQUIRED_FIELDS = {
+              'channel', 'key_id', 'notes', 'sha256', 'signature',
+              'size', 'url', 'version',
+          }
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise RuntimeError('Unexpected redirect for ' + req.full_url)
+
+          client = urllib.request.build_opener(NoRedirect())
+
+          def request(url, method='GET'):
+              req = urllib.request.Request(url, method=method, headers={
+                  'User-Agent': 'Glacier-public-feed-audit/1',
+                  'Cache-Control': 'no-cache',
+                  'Accept': 'application/json' if method == 'GET' else '*/*',
+              })
+              return client.open(req, timeout=35)
+
+          def read_json(url):
+              with request(url) as response:
+                  if response.status != 200 or response.geturl() != url:
+                      raise RuntimeError('Unexpected response for ' + url)
+                  raw = response.read(65537)
+              if len(raw) > 65536:
+                  raise RuntimeError('Oversized JSON response for ' + url)
+              return json.loads(raw)
+
+          public_hex = os.environ.get('GLACIER_UPDATE_PUBLIC_HEX', '').strip().lower()
+          if not re.fullmatch(r'[a-f0-9]{64}', public_hex):
+              raise RuntimeError('Pinned Glacier v2 public key is missing')
+          pub_bytes = bytes.fromhex(public_hex)
+          key_id = 'v2-' + hashlib.sha256(pub_bytes).hexdigest()[:16]
+          verifier = Ed25519PublicKey.from_public_bytes(pub_bytes)
+          results = []
+          for channel, (prefix, suffix) in PLATFORMS.items():
+              canonical_url = (
+                  f'https://raw.githubusercontent.com/{REPO}/'
+                  f'{SIGNED_BRANCH}/channels/{channel}.json'
+              )
+              vps_url = ROOT + channel + '.json'
+              canonical = read_json(canonical_url)
+              live = read_json(vps_url)
+              if live != canonical:
+                  raise RuntimeError(channel + ': VPS feed differs from canonical signed feed')
+              if not isinstance(live, dict) or set(live) != REQUIRED_FIELDS:
+                  raise RuntimeError(channel + ': malformed signed manifest')
+              if live['channel'] != channel or live['key_id'] != key_id:
+                  raise RuntimeError(channel + ': channel or pinned key ID mismatch')
+              payload = {k: v for k, v in live.items() if k != 'signature'}
+              encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                                   separators=(',', ':'), allow_nan=False).encode()
+              verifier.verify(base64.b64decode(live['signature'], validate=True), encoded)
+              version = live['version']
+              if not isinstance(version, str) or not re.fullmatch(r'\d+\.\d+\.\d+', version):
+                  raise RuntimeError(channel + ': invalid version')
+              filename = 'GlacierBrowser-v' + version + '-' + suffix
+              package_url = ROOT + filename
+              if live['url'] != package_url:
+                  raise RuntimeError(channel + ': signed package URL mismatch')
+              size = live['size']
+              if type(size) is not int or not 1_000_000 <= size <= 1_073_741_824:
+                  raise RuntimeError(channel + ': invalid signed package size')
+              if not isinstance(live['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', live['sha256']):
+                  raise RuntimeError(channel + ': invalid signed SHA256')
+              release_url = f'https://api.github.com/repos/{REPO}/releases/tags/{prefix}{version}'
+              release = read_json(release_url)
+              if release.get('draft') or release.get('prerelease'):
+                  raise RuntimeError(channel + ': release is not stable')
+              matches = [a for a in release.get('assets', []) if a.get('name') == filename]
+              if len(matches) != 1 or matches[0].get('size') != size or matches[0].get('digest') != 'sha256:' + live['sha256']:
+                  raise RuntimeError(channel + ': signed installer differs from published release')
+              with request(package_url, 'HEAD') as response:
+                  if response.status != 200 or response.geturl() != package_url:
+                      raise RuntimeError(channel + ': VPS installer HEAD unavailable')
+                  length = response.headers.get('Content-Length')
+                  if length is None or int(length) != size:
+                      raise RuntimeError(channel + ': VPS installer length mismatch')
+              print('PASS', channel, version, 'Ed25519, GitHub digest and public VPS HEAD', flush=True)
+              results.append((channel, version))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write('### Glacier VPS read-only public update verification\n\n')
+              for channel, version in results:
+                  f.write(f'- {channel}: **v{version}** — signature, canonical feed, release digest and VPS installer HEAD verified\n')
           PY
