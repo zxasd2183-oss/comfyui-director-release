@@ -5,6 +5,7 @@ Accounts are matched by exact canonical HTTPS hostname, never page text.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -13,6 +14,7 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkProxy, QNetworkRequest
+from PySide6.QtWebEngineCore import QWebEngineProfile
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMessageBox, QPushButton, QListWidget, QVBoxLayout, QWidget,
@@ -165,6 +167,8 @@ class GlacierAccounts22:
 
     def setup_accounts22(self, directory, encrypt, decrypt):
         self._accounts_path22 = Path(directory) / "accounts-d03.dpapi"
+        self._account_profiles22 = {}
+        self._account_profiles_root22 = Path(directory) / "account-profiles-v1"
         self._accounts_encrypt22 = encrypt
         self._accounts_decrypt22 = decrypt
         self._accounts_readonly22 = False
@@ -535,6 +539,73 @@ class GlacierAccounts22:
         QTimer.singleShot(1800, finish)
         return True
 
+    def _profile_for_saved_account22(self, record):
+        """Create a dedicated persistent WebEngine profile for one saved login.
+
+        Account passwords and Cookie bytes never appear in file or profile names.
+        Separate account identities and workspaces cannot share Cookie jars.
+        No existing default-workspace profiles are changed or migrated.
+        """
+        if not isinstance(record, dict):
+            return None
+        site, username = record.get("site"), record.get("username")
+        space = self._account_space22()
+        current_ws = getattr(self, "_workspace_doc17", {}).get("active", "default")
+        if (not isinstance(site, str) or not site or safe_site22(site) != site
+                or not isinstance(username, str) or not username
+                or not isinstance(current_ws, str) or not current_ws
+                or record.get("space", "private") != space
+                or record not in self._accounts_doc22["accounts"]):
+            return None
+        identity = json.dumps([current_ws, space, site, username],
+                              separators=(",", ":"), ensure_ascii=False)
+        token = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
+        existing = self._account_profiles22.get(token)
+        if existing is not None:
+            return existing
+        root = self._account_profiles_root22 / token
+        profile = QWebEngineProfile("Glacier-account-" + token, self)
+        profile.setPersistentStoragePath(str(root / "profile"))
+        profile.setCachePath(str(root / "cache"))
+        profile.setPersistentCookiesPolicy(
+            QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+        self._account_profiles22[token] = profile
+        return profile
+
+    def clear_account_session_cookies22(self, record):
+        """Clear only a saved login's dedicated local Cookie jar on demand."""
+        profile = self._profile_for_saved_account22(record)
+        if profile is None:
+            return False
+        decision = QMessageBox.question(
+            self, "清除独立登录 Cookie",
+            "这只会清除该账号专属浏览器会话的 Cookie，不会删除账号密码，"
+            "也不会影响其他网站账号或普通工作空间。确定继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if decision != QMessageBox.StandardButton.Yes:
+            return False
+        profile.cookieStore().deleteAllCookies()
+        self.statusBar().showMessage(
+            "已提交此账号独立 Cookie 清除请求；网站可能需要重新登录。", 8500)
+        return True
+
+    def open_account_session22(self, record):
+        """Open a saved site in its own Cookie/localStorage context.
+
+        This does not auto-inject credentials, impersonate a remote session,
+        or share website session tokens between devices.
+        """
+        profile = self._profile_for_saved_account22(record)
+        if profile is None:
+            return False
+        page = self.new_tab(account_profile=profile)
+        if page is None:
+            return False
+        page.setUrl(QUrl("https://" + record["site"] + "/"))
+        return True
+
     def open_account_site22(self, site):
         """Open the recorded HTTPS site in the active workspace, without login injection."""
         site = site.strip().lower() if isinstance(site, str) else ""
@@ -581,6 +652,17 @@ class GlacierAccounts22:
                 code_button.clicked.connect(
                     lambda checked=False, ep=record["code_api"]: self.request_account_code22(ep, dialog))
                 row.addWidget(code_button)
+            own_session = QPushButton("在独立会话中打开", dialog)
+            own_session.setToolTip("此账号使用自己的 Cookie 和网站存储；不会覆盖同站其他账号")
+            def open_current_account(checked=False, r=dict(record)):
+                if self.open_account_session22(r):
+                    dialog.accept()
+            own_session.clicked.connect(open_current_account)
+            row.addWidget(own_session)
+            clear_session = QPushButton("清除此账号 Cookie", dialog)
+            clear_session.clicked.connect(
+                lambda _checked=False, r=dict(record): self.clear_account_session_cookies22(r))
+            row.addWidget(clear_session)
             edit = QPushButton("编辑", dialog)
             def edit_current(checked=False, s=site, r=dict(record)):
                 if self.edit_account22(s, r):

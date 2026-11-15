@@ -44,7 +44,10 @@ class GlacierTabs19:
             self.statusBar().showMessage("此页面不是可复制的 HTTPS/HTTP 网页", 3000)
             return False
         group_id = getattr(self, "_workspace_group_by_view17", {}).get(id(view))
-        page = self.new_tab()
+        # A duplicated website-account tab must keep its own Cookie jar.
+        account_profile = getattr(view, "_glacier_account_profile22", None)
+        page = (self.new_tab(account_profile=account_profile)
+                if account_profile is not None else self.new_tab())
         if page is None:
             return False
         page.setUrl(QUrl(url))
