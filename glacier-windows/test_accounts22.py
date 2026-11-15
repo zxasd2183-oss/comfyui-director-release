@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QUrl
 from glacier_accounts22 import (
     GlacierAccounts22, account_site_summary22, clean_accounts22, page_site22, safe_site22,
+    cookie_host_matches22,
 )
 
 
@@ -69,6 +70,88 @@ class AccountCardTests(unittest.TestCase):
             host.current = lambda: background
             host._schedule_site_account22(background, "chatgpt.com")
             schedule.assert_called_once()
+
+    def test_site_cookie_host_matching_does_not_touch_other_domains(self):
+        for domain in ("chatgpt.com", ".chatgpt.com", "www.chatgpt.com",
+                       ".www.chatgpt.com", "CHATGPT.COM"):
+            self.assertTrue(cookie_host_matches22(domain, "chatgpt.com"), domain)
+        for domain in ("evilchatgpt.com", ".other.chatgpt.com",
+                       "chatgpt.com.evil.example", ".github.com", "",
+                       "example.com"):
+            self.assertFalse(cookie_host_matches22(domain, "chatgpt.com"), domain)
+        self.assertFalse(cookie_host_matches22(".chatgpt.com", "co.uk:443"))
+
+    def test_clear_site_cookies_requires_consent_and_only_current_profile(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from PySide6.QtWidgets import QMessageBox
+
+        class Cookie:
+            def __init__(self, domain):
+                self._domain = domain
+            def domain(self):
+                return self._domain
+
+        class Signal:
+            def __init__(self):
+                self.callback = None
+            def connect(self, callback):
+                self.callback = callback
+            def disconnect(self, callback):
+                if self.callback is callback:
+                    self.callback = None
+
+        class Store:
+            def __init__(self):
+                self.cookieAdded = Signal()
+                self.loaded = False
+                self.deleted = []
+            def loadAllCookies(self):
+                self.loaded = True
+                for domain in ("chatgpt.com", ".chatgpt.com", ".github.com",
+                               "maliciouschatgpt.com", "www.chatgpt.com"):
+                    self.cookieAdded.callback(Cookie(domain))
+            def deleteCookie(self, cookie):
+                self.deleted.append(cookie.domain())
+
+        host = Host()
+        store = Store()
+        host.profile = SimpleNamespace(cookieStore=lambda: store)
+        statuses = []
+        host.statusBar = lambda: SimpleNamespace(
+            showMessage=lambda message, duration: statuses.append(message))
+        callbacks = []
+        with patch("glacier_accounts22.QTimer.singleShot",
+                   side_effect=lambda ms, callback: callbacks.append(callback)), \
+             patch("glacier_accounts22.QMessageBox.question",
+                   return_value=QMessageBox.StandardButton.No):
+            self.assertFalse(host.clear_site_cookies22("chatgpt.com"))
+        self.assertFalse(store.loaded)
+        with patch("glacier_accounts22.QTimer.singleShot",
+                   side_effect=lambda ms, callback: callbacks.append(callback)), \
+             patch("glacier_accounts22.QMessageBox.question",
+                   return_value=QMessageBox.StandardButton.Yes):
+            self.assertTrue(host.clear_site_cookies22("chatgpt.com"))
+        self.assertTrue(store.loaded)
+        self.assertEqual(store.deleted,
+                         ["chatgpt.com", ".chatgpt.com", "www.chatgpt.com"])
+        self.assertEqual(len(callbacks), 1)
+        callbacks[0]()
+        self.assertIsNone(store.cookieAdded.callback)
+        self.assertEqual(len(statuses), 1)
+        self.assertIn("3 条 Cookie 删除请求", statuses[0])
+
+    def test_open_site_from_saved_card_uses_https_only(self):
+        host = Host()
+        urls = []
+        class View:
+            def setUrl(self, url):
+                urls.append(url.toString())
+        host.new_tab = View
+        self.assertTrue(host.open_account_site22("chatgpt.com"))
+        self.assertEqual(urls, ["https://chatgpt.com/"])
+        self.assertFalse(host.open_account_site22("chatgpt.com.evil/path"))
+        self.assertEqual(len(urls), 1)
 
     def test_global_vault_search_never_indexes_credentials(self):
         records = [

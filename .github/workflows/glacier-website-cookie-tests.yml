@@ -1,0 +1,34 @@
+name: Glacier website account and Cookie safety tests
+on:
+  pull_request:
+    paths:
+      - 'glacier-windows/glacier_accounts22.py'
+      - 'glacier-windows/test_accounts22.py'
+      - '.github/workflows/glacier-website-cookie-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'glacier-windows/glacier_accounts22.py'
+      - 'glacier-windows/test_accounts22.py'
+      - '.github/workflows/glacier-website-cookie-tests.yml'
+permissions:
+  contents: read
+jobs:
+  account-cookie-safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Qt headless runtime libraries
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon0
+      - name: Install Qt Python bindings
+        run: python -m pip install 'PySide6>=6.8,<7'
+      - name: Check Python syntax
+        run: python -m py_compile glacier-windows/glacier_accounts22.py glacier-windows/test_accounts22.py
+      - name: Test encrypted accounts and host-scoped Cookie controls
+        run: python -m unittest discover -s glacier-windows -p 'test_accounts22.py' -v
