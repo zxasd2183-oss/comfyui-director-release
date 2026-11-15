@@ -43,6 +43,22 @@ def safe_site22(raw):
     return raw
 
 
+
+def cookie_host_matches22(cookie_domain, site):
+    """Scope user-requested deletion to this site's exact cookie host.
+
+    Never use an eTLD suffix or a substring match; that could log other
+    sites out. A leading RFC 6265 dot is a cookie-domain attribute, not
+    permission to broaden this operation to every subdomain.
+    """
+    if not isinstance(cookie_domain, str) or not isinstance(site, str):
+        return False
+    if safe_site22(site) != site:
+        return False
+    domain = cookie_domain.lstrip(".").lower()
+    return domain == site or domain == "www." + site
+
+
 def page_site22(url):
     if not isinstance(url, QUrl) or not url.isValid() or url.scheme().lower() != "https":
         return ""
@@ -473,6 +489,63 @@ class GlacierAccounts22:
                 reply.deleteLater()
         reply.finished.connect(finished)
 
+    def clear_site_cookies22(self, site):
+        """Explicit local-only cookie deletion in the active workspace profile.
+
+        Qt's cookie store loads asynchronously; the signal can report all
+        cookies already held by this profile. Never log/read cookie values,
+        upload cookies, or touch another workspace's cookie store.
+        """
+        site = site.strip().lower() if isinstance(site, str) else ""
+        if safe_site22(site) != site:
+            return False
+        profile = getattr(self, "profile", None)
+        if profile is None or not callable(getattr(profile, "cookieStore", None)):
+            QMessageBox.warning(self, "Glacier", "当前工作空间 Cookie 存储不可用。")
+            return False
+        decision = QMessageBox.question(
+            self, "清除网站 Cookie · " + site,
+            "只清除当前工作空间中此域名的 Cookie；不会删除保存的网站账号或密码。"
+            "\\n该网站可能因此退出登录，且网页可能立即重新创建 Cookie。确定继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if decision != QMessageBox.StandardButton.Yes:
+            return False
+        store = profile.cookieStore()
+        requested = {"count": 0}
+        def on_cookie(cookie):
+            try:
+                if cookie_host_matches22(cookie.domain(), site):
+                    requested["count"] += 1
+                    store.deleteCookie(cookie)
+            except (RuntimeError, AttributeError, TypeError):
+                return
+        store.cookieAdded.connect(on_cookie)
+        store.loadAllCookies()
+        def finish():
+            try:
+                store.cookieAdded.disconnect(on_cookie)
+            except (RuntimeError, TypeError):
+                pass
+            # Delete requests are asynchronous: don't falsely report completion.
+            self.statusBar().showMessage(
+                f"{site}：已提交 {requested['count']} 条 Cookie 删除请求（仅当前空间）。"
+                "如网站仍保持登录，请关闭相关标签页后重试。", 8500)
+        QTimer.singleShot(1800, finish)
+        return True
+
+    def open_account_site22(self, site):
+        """Open the recorded HTTPS site in the active workspace, without login injection."""
+        site = site.strip().lower() if isinstance(site, str) else ""
+        if safe_site22(site) != site:
+            return False
+        tab = self.new_tab()
+        if tab is None:
+            return False
+        tab.setUrl(QUrl("https://" + site + "/"))
+        return True
+
     def show_accounts22(self, site=None):
         if site is None:
             view = self.current()
@@ -530,6 +603,17 @@ class GlacierAccounts22:
             delete.clicked.connect(remove_current)
             row.addWidget(delete)
             layout.addLayout(row)
+        site_actions = QHBoxLayout()
+        open_site = QPushButton("在当前空间打开网站", dialog)
+        open_site.clicked.connect(
+            lambda _checked=False, s=site: (dialog.accept(), self.open_account_site22(s)))
+        site_actions.addWidget(open_site)
+        clear_cookie = QPushButton("清除本网站 Cookie", dialog)
+        clear_cookie.setToolTip("只影响当前工作空间里的此网站；不会清除保存的账号和密码")
+        clear_cookie.clicked.connect(
+            lambda _checked=False, s=site: self.clear_site_cookies22(s))
+        site_actions.addWidget(clear_cookie)
+        layout.addLayout(site_actions)
         close = QPushButton("关闭", dialog)
         close.clicked.connect(dialog.accept)
         layout.addWidget(close)
