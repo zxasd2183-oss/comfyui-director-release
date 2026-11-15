@@ -7,7 +7,7 @@
         android:icon="@drawable/glacier_mark"
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
-        android:theme="@style/GlacierStartupTheme">
+        android:theme="@style/GlacierBrowserTheme">
         <provider android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"
             android:exported="false"
