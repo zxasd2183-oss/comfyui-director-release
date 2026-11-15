@@ -506,7 +506,7 @@ class GlacierAccounts22:
         decision = QMessageBox.question(
             self, "清除网站 Cookie · " + site,
             "只清除当前工作空间中此域名的 Cookie；不会删除保存的网站账号或密码。"
-            "\\n该网站可能因此退出登录，且网页可能立即重新创建 Cookie。确定继续？",
+            "\n该网站可能因此退出登录，且网页可能立即重新创建 Cookie。确定继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
