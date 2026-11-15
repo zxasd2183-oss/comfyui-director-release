@@ -34,6 +34,12 @@ public final class BrowserTabStoreInstrumentedTest {
                 "{\"safe\":\"fake-state\"}", preview));
         original.tabs.add(new BrowserTabStore.TabRecord("test-tab-work-5678",
                 "work", "https://example.org/", "Example work", "", null));
+        String isolated = "glacier-account-private-0123456789abcdef0123456789abcdef";
+        assertTrue(BrowserTabStore.validContextId("private", isolated));
+        assertFalse(BrowserTabStore.validContextId("work", isolated));
+        assertFalse(BrowserTabStore.validContextId("private", "glacier-account-private-other"));
+        original.tabs.add(new BrowserTabStore.TabRecord("test-tab-private-acc-7890",
+                "private", "https://github.com/", "Account session", "", null, isolated));
         original.tabs.add(new BrowserTabStore.TabRecord("test-tab-not-safe",
                 "work", "http://127.0.0.1:18765/transfer", "CI fixture", "", null));
         assertFalse(BrowserTabStore.validUrl("javascript:alert(1)"));
@@ -47,7 +53,11 @@ public final class BrowserTabStoreInstrumentedTest {
             assertFalse(raw.contains("Example private"));
             assertTrue(ciphertext.length > 32);
             BrowserTabStore.Snapshot restored=BrowserTabStore.load(ctx);
-            assertEquals(2, restored.tabs.size());
+            assertEquals(3, restored.tabs.size());
+            assertEquals("glacier-private", restored.tabs.get(0).contextId);
+            assertEquals("glacier-work", restored.tabs.get(1).contextId);
+            assertEquals(isolated, restored.tabs.get(2).contextId);
+            assertEquals("private", restored.tabs.get(2).profile);
             assertEquals("test-tab-work-5678", restored.activeId);
             assertEquals("private",restored.tabs.get(0).profile);
             assertEquals("work",restored.tabs.get(1).profile);

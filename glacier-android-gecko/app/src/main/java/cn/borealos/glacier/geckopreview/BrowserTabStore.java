@@ -41,16 +41,21 @@ final class BrowserTabStore {
             "cn.borealos.glacier.tab-store.v1".getBytes(StandardCharsets.UTF_8);
 
     static final class TabRecord {
-        String id, profile, url, title, state;
+        String id, profile, url, title, state, contextId;
         byte[] thumb;
         TabRecord(String id, String profile, String url, String title,
                   String state, byte[] thumb) {
+            this(id, profile, url, title, state, thumb, "glacier-" + profile);
+        }
+        TabRecord(String id, String profile, String url, String title,
+                  String state, byte[] thumb, String contextId) {
             this.id = id;
             this.profile = profile;
             this.url = url;
             this.title = title;
             this.state = state;
             this.thumb = thumb;
+            this.contextId = contextId;
         }
     }
 
@@ -100,6 +105,13 @@ final class BrowserTabStore {
         }
     }
 
+    static boolean validContextId(String profile, String contextId) {
+        if (contextId == null || !("private".equals(profile) || "work".equals(profile)))
+            return false;
+        return ("glacier-" + profile).equals(contextId)
+                || contextId.matches("glacier-account-" + profile + "-[0-9a-f]{32}");
+    }
+
     private static JSONObject serialize(Snapshot snapshot) throws Exception {
         JSONObject out = new JSONObject();
         out.put("version", 1);
@@ -108,8 +120,9 @@ final class BrowserTabStore {
         for (TabRecord item : snapshot.tabs) {
             if (entries.length() >= LIMIT) break;
             if (!validUrl(item.url)) continue;
-            if (!"private".equals(item.profile) && !"work".equals(item.profile)) continue;
+            if (!validContextId(item.profile, item.contextId)) continue;
             JSONObject obj = new JSONObject();
+            obj.put("context_id", item.contextId);
             obj.put("id", item.id);
             obj.put("profile", item.profile);
             obj.put("url", item.url);
@@ -177,7 +190,10 @@ final class BrowserTabStore {
             String profile = row.optString("profile");
             String url = row.optString("url");
             String id = row.optString("id");
-            if (!validUrl(url) || !("private".equals(profile) || "work".equals(profile))
+            // Snapshots created before per-account sessions have no context_id:
+            // recover their exact original private/work Cookie jar.
+            String contextId = row.optString("context_id", "glacier-" + profile);
+            if (!validUrl(url) || !validContextId(profile, contextId)
                     || id.length() < 8 || id.length() > 100) continue;
             String state = row.optString("state", "");
             if (state.length() > MAX_STATE) state = "";
@@ -189,7 +205,7 @@ final class BrowserTabStore {
                 thumb = null;
             }
             result.tabs.add(new TabRecord(id, profile, url, row.optString("title"),
-                    state, thumb));
+                    state, thumb, contextId));
         }
         return result;
     }
