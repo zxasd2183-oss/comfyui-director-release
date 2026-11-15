@@ -53,7 +53,7 @@ def cookie_host_matches22(cookie_domain, site):
     """
     if not isinstance(cookie_domain, str) or not isinstance(site, str):
         return False
-    if safe_site22(site) != site:
+    if not site or safe_site22(site) != site:
         return False
     domain = cookie_domain.lstrip(".").lower()
     return domain == site or domain == "www." + site
@@ -497,7 +497,7 @@ class GlacierAccounts22:
         upload cookies, or touch another workspace's cookie store.
         """
         site = site.strip().lower() if isinstance(site, str) else ""
-        if safe_site22(site) != site:
+        if not site or safe_site22(site) != site:
             return False
         profile = getattr(self, "profile", None)
         if profile is None or not callable(getattr(profile, "cookieStore", None)):
@@ -538,7 +538,7 @@ class GlacierAccounts22:
     def open_account_site22(self, site):
         """Open the recorded HTTPS site in the active workspace, without login injection."""
         site = site.strip().lower() if isinstance(site, str) else ""
-        if safe_site22(site) != site:
+        if not site or safe_site22(site) != site:
             return False
         tab = self.new_tab()
         if tab is None:
