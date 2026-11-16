@@ -40,4 +40,64 @@ public final class GlacierSyncVersionInstrumentedTest {
         assertEquals(6, GlacierAutoSync.serverVersion(
                 new JSONObject().put("version", 6L)));
     }
+
+    @Test
+    public void manualSyncRejectsOldCloudAndDirtyLocalData() throws Exception {
+        JSONObject baseline=new JSONObject()
+                .put("version",5)
+                .put("local_hash","a".repeat(64));
+        JSONObject old=new JSONObject().put("version",4);
+        for(boolean upload:new boolean[]{true,false}) {
+            try {
+                GlacierAutoSync.checkedManualVersion(old,baseline,
+                        "a".repeat(64),upload);
+                fail("stale cloud must not overwrite either direction");
+            } catch(java.io.IOException expected) {}
+        }
+        try {
+            GlacierAutoSync.checkedManualVersion(
+                    new JSONObject().put("version",6),baseline,
+                    "a".repeat(64),true);
+            fail("newer cloud must not be replaced by a stale manual upload");
+        } catch(java.io.IOException expected) {}
+        try {
+            GlacierAutoSync.checkedManualVersion(
+                    new JSONObject().put("version",6),baseline,
+                    "b".repeat(64),false);
+            fail("dirty local account cards must not be discarded");
+        } catch(java.io.IOException expected) {}
+        assertEquals(6,GlacierAutoSync.checkedManualVersion(
+                new JSONObject().put("version",6),baseline,
+                "a".repeat(64),false));
+        assertEquals(0,GlacierAutoSync.checkedManualVersion(
+                new JSONObject().put("version",0),null,
+                "a".repeat(64),true));
+    }
+
+    @Test
+    public void manualAckAndCheckpointMustBeWellFormed() throws Exception {
+        JSONObject baseline=new JSONObject()
+                .put("version",5).put("local_hash","bad");
+        try {
+            GlacierAutoSync.checkedManualVersion(
+                    new JSONObject().put("version",5),baseline,
+                    "a".repeat(64),false);
+            fail("malformed checkpoint must be rejected");
+        } catch(java.io.IOException expected) {}
+        for(Object v:new Object[]{5,4,"6",true}) {
+            try {
+                GlacierAutoSync.checkedUploadVersion(
+                        new JSONObject().put("version",v),5);
+                fail("bad upload acknowledgement");
+            } catch(java.io.IOException expected) {}
+        }
+        assertEquals(6,GlacierAutoSync.checkedUploadVersion(
+                new JSONObject().put("version",6),5));
+        try {
+            GlacierAutoSync.baselineForSpace(
+                    new JSONObject().put("private","bad"),"private");
+            fail("malformed stored checkpoint must not become first sync");
+        } catch(java.io.IOException expected) {}
+    }
+
 }
