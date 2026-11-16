@@ -1707,6 +1707,25 @@ public final class MainActivity extends Activity {
     }
 
     private void cloudPush(String space,String password) {
+        // An unreadable Keystore vault is NOT an intentionally empty vault.
+        // Never replace a recoverable cloud backup with this temporary state.
+        if(accountsReadonly) {
+            new AlertDialog.Builder(this).setTitle("本机账号保险箱已锁定")
+                    .setMessage("本机账号无法解密，已禁止上传，云端原账号资料保持不变。")
+                    .setPositiveButton("知道了",null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("确认覆盖云端账号资料")
+                .setMessage("上传会替换云端当前账号空间的所有账号，而不是合并。"
+                        +"如果本机没有账号，上传空列表也会清空远端账号。确定继续？")
+                .setNegativeButton("取消",null)
+                .setPositiveButton("确认上传",(dialog,button)->cloudPushConfirmed(space,password))
+                .show();
+    }
+
+    private void cloudPushConfirmed(String space,String password) {
+        // Revalidate at the actual upload action; no network request when locked.
+        if(accountsReadonly)return;
         final List<BrowserAccountsStore.Card> snapshot=new ArrayList<>();
         for(BrowserAccountsStore.Card card:accountCards)
             if(space.equals(card.profile))snapshot.add(card);
@@ -1732,14 +1751,24 @@ public final class MainActivity extends Activity {
     }
 
     private void cloudPull(String space,String password) {
-        final String beforeDownload;
-        try {beforeDownload=GlacierAutoSync.fingerprint(accountCards,space);}
-        catch(Exception ignored) {return;}
         if(accountsReadonly) {
             new AlertDialog.Builder(this).setMessage("本机账号资料处于只读保护，未覆盖。")
                     .setPositiveButton("知道了",null).show();
             return;
         }
+        new AlertDialog.Builder(this).setTitle("确认替换本地账号")
+                .setMessage("下载会替换本机当前账号空间保存的账号，而不是合并；"
+                        +"其他账号空间及网站 Cookie 不受影响。确定继续？")
+                .setNegativeButton("取消",null)
+                .setPositiveButton("确认下载",(dialog,button)->cloudPullConfirmed(space,password))
+                .show();
+    }
+
+    private void cloudPullConfirmed(String space,String password) {
+        if(accountsReadonly)return;
+        final String beforeDownload;
+        try {beforeDownload=GlacierAutoSync.fingerprint(accountCards,space);}
+        catch(Exception ignored) {return;}
         cloudRun(() -> {
             JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
                     "/v1/vault/"+space,null);
