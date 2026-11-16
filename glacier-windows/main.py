@@ -159,7 +159,7 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.31")
+  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.32")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
