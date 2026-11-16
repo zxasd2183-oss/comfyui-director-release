@@ -1,0 +1,188 @@
+name: Glacier verified Windows Mac v0.20.30 click-to-fill release
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-desktop-02030-verified-release.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: glacier-desktop-clickfill-02030-one-time-release
+  cancel-in-progress: false
+jobs:
+  verify-and-publish:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+      WINDOWS_RUN: '43807437745'
+      MAC_RUN: '43807437703'
+      BUILD_SHA: '9ff07479d469683284d74667cb82645495744f6f'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require successful original native RC runs and unchanged Glacier source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          sha=os.environ['BUILD_SHA']
+          for label, env, path in (
+              ('Windows', 'WINDOWS_RUN','glacier-windows/'),
+              ('macOS', 'MAC_RUN', 'glacier-macos/'),
+          ):
+              rid=os.environ[env]
+              j=json.loads(subprocess.check_output([
+                  'gh','api',f'repos/{repo}/actions/runs/{rid}']))
+              if (j.get('conclusion')!='success' or j.get('status')!='completed'
+                  or j.get('head_sha')!=sha or j.get('head_branch')!='main'
+                  or j.get('repository',{}).get('full_name')!=repo):
+                  raise RuntimeError(label+' native source QA is not successful and pinned')
+              subprocess.run(['git','merge-base','--is-ancestor',sha,'HEAD'],check=True)
+              subprocess.run(['git','diff','--exit-code',sha,'HEAD','--',path],check=True)
+              print('PASS',label,'original native QA',rid,sha)
+          # The signed-client public-key guard must remain the one tested.
+          subprocess.run(['git','diff','--exit-code',sha,'HEAD','--',
+                          'scripts/glacier_prepare_rotated_update.py'],check=True)
+          PY
+      - name: Refuse existing or reused immutable desktop release tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tag in glacier-v0.20.30 glacier-macos-v0.20.30; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::Existing Glacier release $tag"; exit 2
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::Existing Glacier tag $tag"; exit 2
+            fi
+          done
+          # gh release view does not list drafts; explicitly check the list too.
+          python3 - <<'PY'
+          import json,os,subprocess
+          releases=json.loads(subprocess.check_output([
+              'gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100"]))
+          if any(x.get('tag_name') in ('glacier-v0.20.30','glacier-macos-v0.20.30')
+                 for x in releases):
+              raise RuntimeError('Existing Glacier draft/public version cannot be overwritten')
+          PY
+      - name: Download exact tested native installers from GitHub Actions artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staged/windows staged/macos
+          gh run download "$WINDOWS_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name 'GlacierBrowser-RC-Windows-Setup' --dir staged/windows
+          gh run download "$MAC_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name 'GlacierBrowser-RC-macOS-AppleSilicon-DMG' --dir staged/macos
+      - name: Verify entire installer size SHA-256 and file signatures before upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          installers={
+              'windows': ('staged/windows',
+                 'GlacierBrowser-v0.20.30-Windows-Setup-x64.exe',
+                 100_000_000,400_000_000),
+              'macos': ('staged/macos',
+                 'GlacierBrowser-v0.20.30-macOS-AppleSilicon.dmg',
+                 150_000_000,650_000_000),
+          }
+          for platform,(folder,filename,minimum,maximum) in installers.items():
+              files=[x for x in Path(folder).rglob('*') if x.is_file()]
+              if len(files)!=1 or files[0].name!=filename:
+                  raise RuntimeError(platform+' RC artifact is not exactly expected installer')
+              f=files[0]
+              if not minimum<=f.stat().st_size<=maximum:
+                  raise RuntimeError(platform+' installer size out of bounded expected range')
+              with f.open('rb') as source:
+                  digest=hashlib.file_digest(source,'sha256').hexdigest()
+              if platform=='windows':
+                  with f.open('rb') as source:
+                      if source.read(2)!=b'MZ':
+                          raise RuntimeError('Windows installer lacks MZ executable signature')
+              else:
+                  with f.open('rb') as source:
+                      source.seek(-512,2)
+                      if source.read(4)!=b'koly':
+                          raise RuntimeError('macOS UDIF footer missing')
+              print('VERIFIED',platform,filename,f.stat().st_size,digest,flush=True)
+          PY
+      - name: Stage both verified installable files as hidden DRAFT releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create glacier-v0.20.30 \
+            staged/windows/GlacierBrowser-v0.20.30-Windows-Setup-x64.exe \
+            --repo "$GITHUB_REPOSITORY" --target "$BUILD_SHA" --draft \
+            --title 'Glacier Browser Windows v0.20.30 · 网站账号点击填充' \
+            --notes '用户主动点击填充已保存的网站账号和密码；只允许匹配 HTTPS 域名与独立账号会话，不自动提交。保留 Cookie、VLESS 和工作区本地数据。Windows EXE 不具备商业 Authenticode 签名，内置更新使用 Ed25519/ SHA-256 校验。'
+          gh release create glacier-macos-v0.20.30 \
+            staged/macos/GlacierBrowser-v0.20.30-macOS-AppleSilicon.dmg \
+            --repo "$GITHUB_REPOSITORY" --target "$BUILD_SHA" --draft \
+            --title 'Glacier Browser Apple Silicon v0.20.30 · 网站账号点击填充' \
+            --notes '用户主动点击填充对应 HTTPS 网站和独立 Cookie 会话中的账号密码，不自动提交；保留 Safari 风格侧边栏、VLESS、Cookie 和工作区。应用采用 ad-hoc 签名，尚未经过 Apple Developer ID 公证。'
+      - name: Verify exactly both DRAFT assets and complete SHA256 against staged files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY']
+          tags={
+            'glacier-v0.20.30':
+                Path('staged/windows/GlacierBrowser-v0.20.30-Windows-Setup-x64.exe'),
+            'glacier-macos-v0.20.30':
+                Path('staged/macos/GlacierBrowser-v0.20.30-macOS-AppleSilicon.dmg'),
+          }
+          # GitHub /releases/tags/{tag} returns 404 for drafts. List by tag instead.
+          releases=json.loads(subprocess.check_output([
+              'gh','api',f'repos/{repo}/releases?per_page=100']))
+          for tag,f in tags.items():
+              match=[x for x in releases if x.get('tag_name')==tag]
+              if len(match)!=1:
+                  raise RuntimeError('Missing or duplicate staged Glacier draft '+tag)
+              doc=match[0]
+              if (doc.get('draft') is not True or doc.get('prerelease')
+                  or doc.get('published_at') is not None
+                  or doc.get('target_commitish')!=os.environ['BUILD_SHA']):
+                  raise RuntimeError('Glacier draft origin or visibility mismatch '+tag)
+              assets=doc.get('assets',[])
+              with f.open('rb') as source:
+                  digest=hashlib.file_digest(source,'sha256').hexdigest()
+              if (len(assets)!=1 or assets[0].get('name')!=f.name
+                  or assets[0].get('size')!=f.stat().st_size
+                  or assets[0].get('digest')!='sha256:'+digest):
+                  raise RuntimeError('Glacier staged installer SHA256 mismatch '+tag)
+              print('PASS DRAFT',doc['id'],tag,digest,flush=True)
+          PY
+      - name: Publish only both verified immutable desktop Releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Publication across two GitHub releases is not atomic; do not
+          # proceed if either staged asset failed complete SHA256 validation.
+          for tag in glacier-macos-v0.20.30 glacier-v0.20.30; do
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft \
+              --jq '.isDraft' | grep -Fx false
+          done
+          echo 'Published verified Glacier 0.20.30 desktop installers.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Dispatch Glacier-only OIDC VPS mirroring and signed update verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Mirror/signer requested. Signed client update delivery must be independently verified.' >> "$GITHUB_STEP_SUMMARY"
