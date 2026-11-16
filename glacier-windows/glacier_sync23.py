@@ -532,7 +532,14 @@ class GlacierSync23:
         transport = self._sync_transport23()
         space = self._sync_space23()
         remote = transport.call("GET", "/v1/vault/" + space)
-        if remote["version"]:
+        from glacier_sync_auto24 import check_manual_snapshot24, check_manual_upload_ack24
+        baselines = self._sync_state23.get("baselines", {})
+        if not isinstance(baselines, dict):
+            raise SyncError23("Local sync checkpoints invalid; account data preserved")
+        version = check_manual_snapshot24(
+            remote, baselines.get(space), self._accounts_doc22["accounts"],
+            space, upload=True)
+        if version:
             if QMessageBox.question(
                 self, "覆盖远端账号资料",
                 "远端此账号空间已有记录。上传会替换远端密文，确定继续？"
@@ -545,14 +552,22 @@ class GlacierSync23:
                    if r.get("space", "private") == space]
         payload = encrypt_space23(records, space, password)
         result = transport.call("PUT", "/v1/vault/" + space,
-                                {"expected_version": remote["version"], "envelope": payload})
-        self._sync_mark_baseline23(space, result["version"])
+                                {"expected_version": version, "envelope": payload})
+        confirmed = check_manual_upload_ack24(result, version)
+        self._sync_mark_baseline23(space, confirmed)
         self._sync_info23("当前账号空间已端到端加密上传。")
 
     def _sync_pull23(self):
         transport = self._sync_transport23()
         space = self._sync_space23()
         remote = transport.call("GET", "/v1/vault/" + space)
+        from glacier_sync_auto24 import check_manual_snapshot24
+        baselines = self._sync_state23.get("baselines", {})
+        if not isinstance(baselines, dict):
+            raise SyncError23("Local sync checkpoints invalid; account data preserved")
+        version = check_manual_snapshot24(
+            remote, baselines.get(space), self._accounts_doc22["accounts"],
+            space, upload=False)
         if not remote.get("envelope"):
             self._sync_info23("这个账号空间暂时没有云端资料。")
             return
@@ -577,7 +592,7 @@ class GlacierSync23:
         except Exception:
             self._accounts_doc22 = previous
             raise SyncError23("Local encrypted save failed; previous records restored")
-        self._sync_mark_baseline23(space, remote["version"])
+        self._sync_mark_baseline23(space, version)
         self._sync_info23("当前账号空间已解密导入本机。")
 
     def _sync_logout23(self):

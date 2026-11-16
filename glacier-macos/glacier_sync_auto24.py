@@ -31,6 +31,45 @@ def account_digest24(records, space):
     return hashlib.sha256(raw).hexdigest()
 
 
+
+def check_manual_snapshot24(remote, baseline, records, space, *, upload):
+    """Reject stale cloud snapshots and unresolved divergence for manual sync.
+
+    Unlike the opt-in automatic flow, manual buttons formerly trusted any
+    server version, including a stale value after a VPS backup restore.
+    """
+    if not isinstance(remote, dict) or type(remote.get("version")) is not int:
+        raise SyncError23("Invalid cloud vault version; account data preserved")
+    version = remote["version"]
+    if version < 0:
+        raise SyncError23("Invalid cloud vault version; account data preserved")
+    if baseline is None:
+        return version
+    if (not isinstance(baseline, dict)
+            or type(baseline.get("version")) is not int
+            or baseline["version"] < 0
+            or not isinstance(baseline.get("local_hash"), str)
+            or len(baseline["local_hash"]) != 64
+            or any(ch not in "0123456789abcdef" for ch in baseline["local_hash"])):
+        raise SyncError23("Local sync checkpoint invalid; account data preserved")
+    if version < baseline["version"]:
+        raise SyncError23("Cloud account version rolled back; refusing overwrite")
+    if upload and version > baseline["version"]:
+        raise SyncError23("Cloud account changed on another device; refusing overwrite")
+    if not upload and account_digest24(records, space) != baseline["local_hash"]:
+        raise SyncError23("Local account data changed; refusing destructive download")
+    return version
+
+
+def check_manual_upload_ack24(reply, expected_version):
+    if not isinstance(reply, dict) or type(reply.get("version")) is not int:
+        raise SyncError23("Invalid cloud upload acknowledgement; checkpoint unchanged")
+    written = reply["version"]
+    if written <= expected_version:
+        raise SyncError23("Non-increasing upload version; checkpoint unchanged")
+    return written
+
+
 def sync_one_space24(base, port, token, space, local_records, baseline, passphrase):
     """Runs in background thread; no Qt access or local file mutation."""
     if (not isinstance(baseline, dict)

@@ -1739,14 +1739,16 @@ public final class MainActivity extends Activity {
         cloudRun(() -> {
             JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
                     "/v1/vault/"+space,null);
-            int version=remote.getInt("version");
+            int version=GlacierAutoSync.checkedManualVersion(
+                    remote,GlacierAutoSync.baselineForSpace(
+                            cloudState.baselines,space),uploadedHash,true);
             String envelope=GlacierCloudSync.encrypt(space,snapshot,password);
             JSONObject body=new JSONObject();
             body.put("expected_version",version);
             body.put("envelope",envelope);
             JSONObject result=GlacierCloudSync.call(cloudState,"PUT",
                     "/v1/vault/"+space,body);
-            int confirmed=result.getInt("version");
+            int confirmed=GlacierAutoSync.checkedUploadVersion(result,version);
             runOnUiThread(() -> {
                 if(!isFinishing())cloudSetBaseline(space,confirmed,uploadedHash);
             });
@@ -1776,6 +1778,9 @@ public final class MainActivity extends Activity {
         cloudRun(() -> {
             JSONObject remote=GlacierCloudSync.call(cloudState,"GET",
                     "/v1/vault/"+space,null);
+            final int safeVersion=GlacierAutoSync.checkedManualVersion(
+                    remote,GlacierAutoSync.baselineForSpace(
+                            cloudState.baselines,space),beforeDownload,false);
             if(remote.isNull("envelope"))return "该账号空间尚未上传云端资料。";
             final List<BrowserAccountsStore.Card> received=GlacierCloudSync.decrypt(
                     space,remote.getString("envelope"),password);
@@ -1794,7 +1799,7 @@ public final class MainActivity extends Activity {
                     if(!space.equals(old.profile))merged.add(old);
                 merged.addAll(received);
                 boolean saved=persistAccountVault(merged);
-                if(saved)cloudMarkBaseline(space,remote.optInt("version",0));
+                if(saved)cloudMarkBaseline(space,safeVersion);
                 new AlertDialog.Builder(this).setTitle("Glacier 加密同步")
                         .setMessage(saved?"账号空间已成功下载并加密保存到本机。":
                                 "本地保存失败，原有账号资料未更改。")
