@@ -5,6 +5,8 @@ on:
       - 'glacier-windows/glacier_accounts22.py'
       - 'glacier-windows/test_accounts22.py'
       - 'glacier-windows/test_account_sessions22.py'
+      - 'glacier-windows/test_login_fill34.py'
+      - 'glacier-windows/test_login_fill_browser34.js'
       - 'glacier-windows/glacier_tabs19.py'
       - 'glacier-windows/main.py'
       - 'glacier-macos/main.py'
@@ -16,6 +18,8 @@ on:
       - 'glacier-windows/glacier_accounts22.py'
       - 'glacier-windows/test_accounts22.py'
       - 'glacier-windows/test_account_sessions22.py'
+      - 'glacier-windows/test_login_fill34.py'
+      - 'glacier-windows/test_login_fill_browser34.js'
       - 'glacier-windows/glacier_tabs19.py'
       - 'glacier-windows/main.py'
       - 'glacier-macos/main.py'
@@ -34,6 +38,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Install Qt headless runtime libraries
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon0
       - name: Install Qt Python bindings
@@ -43,9 +50,10 @@ jobs:
           cmp glacier-windows/glacier_accounts22.py glacier-macos/glacier_accounts22.py
           echo 'PASS: both desktop account and Cookie implementations are identical'
       - name: Check Python syntax
-        run: python -m py_compile glacier-windows/glacier_accounts22.py glacier-windows/test_accounts22.py glacier-windows/test_account_sessions22.py glacier-windows/glacier_tabs19.py glacier-windows/main.py glacier-macos/main.py glacier-macos/glacier_accounts22.py
+        run: python -m py_compile glacier-windows/glacier_accounts22.py glacier-windows/test_accounts22.py glacier-windows/test_account_sessions22.py glacier-windows/test_login_fill34.py glacier-windows/glacier_tabs19.py glacier-windows/main.py glacier-macos/main.py glacier-macos/glacier_accounts22.py
       - name: Test encrypted accounts, scoped Cookies and account-profile isolation
         run: |
           python -m unittest discover -s glacier-windows -p 'test_accounts22.py' -v
           python -m unittest discover -s glacier-windows -p 'test_account_sessions22.py' -v
+          python -m unittest discover -s glacier-windows -p 'test_login_fill34.py' -v
           python -m unittest discover -s glacier-windows -p 'test_tabs19.py' -v
