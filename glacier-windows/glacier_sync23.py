@@ -309,6 +309,10 @@ class GlacierSync23:
         self._save_sync23()
 
     def _sync_auto_tick23(self):
+        # A damaged/unreadable local vault must NEVER be interpreted as an
+        # intentionally empty vault and uploaded over a recoverable backup.
+        if getattr(self, "_accounts_readonly22", False):
+            return
         if self._sync_auto_busy23 or not self._sync_state23.get("auto_enabled"):
             return
         if not self._sync_state23.get("approved") or not self._sync_state23.get("vault_passphrase"):
@@ -516,6 +520,11 @@ class GlacierSync23:
         return value
 
     def _sync_push23(self):
+        # Fail closed before making ANY request. A failed local decryption
+        # leaves _accounts_doc22 empty but the remote vault may be intact.
+        if getattr(self, "_accounts_readonly22", False):
+            raise SyncError23(
+                "本机账号资料无法解密，已禁止上传以保护云端备份；请先恢复本机保险箱。")
         transport = self._sync_transport23()
         space = self._sync_space23()
         remote = transport.call("GET", "/v1/vault/" + space)

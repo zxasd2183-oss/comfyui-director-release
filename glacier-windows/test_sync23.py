@@ -111,5 +111,59 @@ class ConflictProtectionTests(unittest.TestCase):
             EXAMPLE["site"])
 
 
+
+class UnreadableVaultFailClosedTests(unittest.TestCase):
+    """Damaged local encrypted data must never erase a recoverable cloud backup."""
+
+    def host(self, readonly=True):
+        from glacier_sync23 import GlacierSync23
+        h = GlacierSync23()
+        h._accounts_readonly22 = readonly
+        h._accounts_doc22 = {"schema": 1, "accounts": [] if readonly else [EXAMPLE]}
+        h._sync_auto_busy23 = False
+        h._sync_state23 = {"auto_enabled": True, "approved": True,
+                           "vault_passphrase": PASSWORD}
+        return h
+
+    def test_readonly_manual_upload_refuses_before_any_remote_request(self):
+        h = self.host()
+        with patch.object(h, "_sync_transport23") as transport:
+            with self.assertRaises(SyncError23) as raised:
+                h._sync_push23()
+            transport.assert_not_called()
+        self.assertIn("已禁止上传", str(raised.exception))
+        self.assertEqual(h._accounts_doc22["accounts"], [])
+
+    def test_readonly_auto_sync_refuses_before_any_network_or_mutation(self):
+        h = self.host()
+        with patch.object(h, "_sync_transport23") as transport:
+            h._sync_auto_tick23()
+            transport.assert_not_called()
+        self.assertFalse(h._sync_auto_busy23)
+        self.assertEqual(h._accounts_doc22["accounts"], [])
+
+    def test_healthy_manual_upload_remains_available(self):
+        h = self.host(False)
+        class FakeTransport:
+            def __init__(self):
+                self.calls = []
+            def call(self, method, route, payload=None):
+                self.calls.append((method, route, payload))
+                return {"version": 0} if method == "GET" else {"version": 1}
+        wire = FakeTransport()
+        baseline = []
+        with patch.object(h, "_sync_transport23", return_value=wire), \
+             patch.object(h, "_sync_space23", return_value="private"), \
+             patch.object(h, "_sync_passphrase23", return_value=PASSWORD), \
+             patch.object(h, "_sync_mark_baseline23", side_effect=lambda s,v:baseline.append((s,v))), \
+             patch.object(h, "_sync_info23"):
+            h._sync_push23()
+        self.assertEqual(baseline, [("private", 1)])
+        self.assertEqual(wire.calls[0][:2], ("GET", "/v1/vault/private"))
+        self.assertEqual(wire.calls[1][:2], ("PUT", "/v1/vault/private"))
+        self.assertEqual(wire.calls[1][2]["expected_version"], 0)
+        cards = decrypt_space23(wire.calls[1][2]["envelope"], "private", PASSWORD)
+        self.assertEqual(cards[0]["username"], EXAMPLE["username"])
+
 if __name__ == "__main__":
     unittest.main()
