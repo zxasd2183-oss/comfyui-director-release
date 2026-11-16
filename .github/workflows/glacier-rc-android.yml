@@ -3,6 +3,7 @@ name: Glacier Android RC APK + emulator QA (never publish)
 on:
   push:
     branches:
+      - main
       - integration/glacier-browser-release-candidate-20261111
     paths:
       - 'glacier-android-gecko/**'
