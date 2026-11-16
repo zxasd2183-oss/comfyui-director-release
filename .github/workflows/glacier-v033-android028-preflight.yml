@@ -1,0 +1,22 @@
+name: Glacier 0.20.33 and Android 0.2.8 release preflight
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/glacier-v033-android028-verified-release.yml'
+      - '.github/workflows/glacier-v033-android028-preflight.yml'
+      - 'scripts/test_glacier_v033_android028_release.py'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install YAML source parser
+        run: python -m pip install 'PyYAML>=6,<7'
+      - name: Refuse unverified or unsafe three-platform publication
+        run: python -m unittest discover -s scripts -p test_glacier_v031_android026_release.py -v
