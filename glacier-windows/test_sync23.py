@@ -244,5 +244,90 @@ class RollbackProtectionTests(unittest.TestCase):
         self.assertEqual(outcome["records"][0]["username"], newer["username"])
         transport.return_value.call.assert_called_once()
 
+
+class ManualSnapshotSafetyTests(unittest.TestCase):
+    def setUp(self):
+        self.baseline = {
+            "version": 5,
+            "local_hash": account_digest24([EXAMPLE], "private"),
+        }
+
+    def test_manual_upload_and_download_reject_rolled_back_cloud(self):
+        from glacier_sync_auto24 import check_manual_snapshot24
+        for upload in (True, False):
+            with self.subTest(upload=upload), self.assertRaises(SyncError23):
+                check_manual_snapshot24(
+                    {"version": 4, "envelope": "stale"},
+                    self.baseline, [EXAMPLE], "private", upload=upload)
+
+    def test_manual_upload_rejects_newer_other_device_change(self):
+        from glacier_sync_auto24 import check_manual_snapshot24
+        with self.assertRaises(SyncError23):
+            check_manual_snapshot24(
+                {"version": 6}, self.baseline,
+                [EXAMPLE], "private", upload=True)
+
+    def test_manual_download_does_not_discard_local_changes(self):
+        from glacier_sync_auto24 import check_manual_snapshot24
+        local = [dict(EXAMPLE, username="new-local@example.com")]
+        for version in (5, 6):
+            with self.subTest(version=version), self.assertRaises(SyncError23):
+                check_manual_snapshot24(
+                    {"version": version}, self.baseline,
+                    local, "private", upload=False)
+
+    def test_invalid_versions_and_checkpoint_are_rejected(self):
+        from glacier_sync_auto24 import check_manual_snapshot24
+        for invalid in (None, "5", True, 5.5, -1):
+            with self.subTest(version=invalid), self.assertRaises(SyncError23):
+                check_manual_snapshot24(
+                    {"version": invalid}, self.baseline,
+                    [EXAMPLE], "private", upload=False)
+        with self.assertRaises(SyncError23):
+            check_manual_snapshot24(
+                {"version": 6}, {"version": 5, "local_hash": "wrong"},
+                [EXAMPLE], "private", upload=True)
+
+    def test_healthy_first_sync_and_manual_forward_pull(self):
+        from glacier_sync_auto24 import check_manual_snapshot24
+        self.assertEqual(
+            check_manual_snapshot24(
+                {"version": 0}, None, [EXAMPLE],
+                "private", upload=True), 0)
+        self.assertEqual(
+            check_manual_snapshot24(
+                {"version": 6}, self.baseline, [EXAMPLE],
+                "private", upload=False), 6)
+
+    def test_bad_manual_upload_ack_cannot_advance_checkpoint(self):
+        from glacier_sync_auto24 import check_manual_upload_ack24
+        for reply in ({}, {"version": 5}, {"version": 4},
+                      {"version": "6"}, {"version": True}):
+            with self.subTest(reply=reply), self.assertRaises(SyncError23):
+                check_manual_upload_ack24(reply, 5)
+        self.assertEqual(check_manual_upload_ack24({"version": 6}, 5), 6)
+
+    @patch("glacier_sync23.GlacierSync23._sync_mark_baseline23")
+    def test_manual_push_rollback_never_puts_or_updates_baseline(self, mark):
+        from glacier_sync23 import GlacierSync23
+        host = GlacierSync23()
+        host._accounts_readonly22 = False
+        host._accounts_doc22 = {"schema": 1, "accounts": [EXAMPLE]}
+        host._sync_state23 = {"baselines": {"private": self.baseline}}
+        class Remote:
+            def __init__(self):
+                self.calls = []
+            def call(self, method, route, payload=None):
+                self.calls.append((method, route))
+                return {"version": 4, "envelope": None}
+        remote = Remote()
+        with patch.object(host, "_sync_transport23", return_value=remote), \
+             patch.object(host, "_sync_space23", return_value="private"):
+            with self.assertRaises(SyncError23):
+                host._sync_push23()
+        self.assertEqual(remote.calls, [("GET", "/v1/vault/private")])
+        mark.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
