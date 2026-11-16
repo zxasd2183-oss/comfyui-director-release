@@ -13,6 +13,7 @@ on:
       - '.github/workflows/glacier-rc-macos.yml'
       - '.github/workflows/glacier-rc-android.yml'
       - 'scripts/glacier_release_version_check.py'
+      - 'scripts/glacier_prepare_rotated_update.py'
       - '.github/workflows/glacier-release-version-guard.yml'
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - 'glacier-macos/mac_update_core.py'
       - 'glacier-android-gecko/app/build.gradle'
       - 'scripts/glacier_release_version_check.py'
+      - 'scripts/glacier_prepare_rotated_update.py'
       - '.github/workflows/glacier-release-version-guard.yml'
 permissions:
   contents: read
