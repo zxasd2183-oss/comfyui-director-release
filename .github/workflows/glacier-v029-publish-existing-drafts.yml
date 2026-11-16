@@ -1,0 +1,125 @@
+name: Glacier verify existing drafts and publish v0.20.29 plus Android v0.2.4
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-v029-publish-existing-drafts.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: glacier-v029-publish-existing-drafts-once
+  cancel-in-progress: false
+jobs:
+  release-existing-verified-drafts:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: '1'
+      BUILD_SHA: '876465cad539eb6f688a9c70f987669c6e38c479'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prove all three source CI runs and original full-file verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ["GITHUB_REPOSITORY"]
+          sha=os.environ["BUILD_SHA"]
+          def api(url):
+              return json.loads(subprocess.check_output(["gh","api",url]))
+          for label,run in (("Windows",43790619983),("macOS",43790619985),
+                            ("Android",43790619947)):
+              result=api(f"repos/{repo}/actions/runs/{run}")
+              if (result.get("status")!="completed" or result.get("conclusion")!="success"
+                  or result.get("head_sha")!=sha or result.get("head_branch")!="main"
+                  or result.get("repository",{}).get("full_name")!=repo):
+                  raise RuntimeError(label+" verified source run does not match")
+              print("PASS",label,"original native RC run",run)
+          proof=api(f"repos/{repo}/actions/runs/43791661384/jobs?per_page=100")
+          matching=[job for job in proof.get("jobs",[]) if job.get("name")=="one-final-release"]
+          if len(matching)!=1:
+              raise RuntimeError("Missing original verified installer job")
+          steps={x.get("name"):x.get("conclusion") for x in matching[0].get("steps",[])}
+          for required in ("Require 3 successful original QA runs and UNCHANGED app source",
+                           "Enforce NEVER reusing three immutable public Release tags",
+                           "Download only the three specific SUCCESSFUL CI artifacts",
+                           "Verify 3 complete installer files and Android fixed certificate/ABI",
+                           "Stage all three as DRAFT Releases, not visible as updates"):
+              if steps.get(required)!="success":
+                  raise RuntimeError("Original full-file, signer or draft proof failed: "+required)
+          subprocess.run(["git","merge-base","--is-ancestor",sha,"HEAD"],check=True)
+          unchanged=subprocess.run(["git","diff","--quiet",sha,"HEAD","--",
+                                    "glacier-windows/","glacier-macos/",
+                                    "glacier-android-gecko/","scripts/glacier_prepare_rotated_update.py"])
+          if unchanged.returncode!=0:
+              raise RuntimeError("Glacier source changed after verified RC build")
+          print("PASS: original complete bytes/Android certificate checked and browser code unchanged")
+          PY
+      - name: Validate exactly the three owner-created DRAFT files by independent SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ["GITHUB_REPOSITORY"]
+          target=os.environ["BUILD_SHA"]
+          releases=json.loads(subprocess.check_output([
+              "gh","api",f"repos/{repo}/releases?per_page=100"]))
+          expected={
+            "glacier-v0.20.29":(446538402,"GlacierBrowser-v0.20.29-Windows-Setup-x64.exe",175959404,"7477b2952c604722957fb6ef0f93621b3f5ca2ec912fa2cc85c310588dac23d4"),
+            "glacier-macos-v0.20.29":(446538464,"GlacierBrowser-v0.20.29-macOS-AppleSilicon.dmg",288865680,"3979a622fc6964f5184ac013a5ab5618503be61b48e18985dea74977f329d993"),
+            "glacier-android-browser-v0.2.4":(446538545,"GlacierAndroid-v0.2.4-ARM64-x86_64-release.apk",229108121,"2bf15dd7e85f9f74e781401e26723e694bc4ba6d01426a989fa6ad81babf53d4"),
+          }
+          for tag,(id,name,size,sha) in expected.items():
+              matches=[x for x in releases if x.get("tag_name")==tag]
+              if len(matches)!=1:
+                  raise RuntimeError("Missing or duplicate original tagged draft: "+tag)
+              item=matches[0]
+              if (item.get("id")!=id or item.get("draft") is not True
+                  or item.get("prerelease") or item.get("published_at") is not None
+                  or item.get("target_commitish")!=target):
+                  raise RuntimeError("Draft identity or target changed: "+tag)
+              assets=item.get("assets",[])
+              if len(assets)!=1 or any((
+                  assets[0].get("name")!=name,
+                  assets[0].get("size")!=size,
+                  assets[0].get("digest")!="sha256:"+sha,
+              )):
+                  raise RuntimeError("Original verified full-byte SHA256 differs from draft: "+tag)
+              print("PASS DRAFT",tag,id,size,sha)
+          PY
+      - name: Publish only these three exact verified drafts once
+        shell: bash
+        run: |
+          set -euo pipefail
+          # All release bytes were independently hashed by the successful
+          # ORIGINAL verification step and re-checked via GitHub asset digests.
+          # Publishing multiple Release objects cannot be atomic.
+          for entry in '446538545:glacier-android-browser-v0.2.4' '446538464:glacier-macos-v0.20.29' '446538402:glacier-v0.20.29'; do
+            id="${entry%%:*}"
+            tag="${entry#*:}"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -F draft=false >/dev/null
+            ACTUAL_TAG="$tag" ACTUAL_ID="$id" python3 - <<'PY'
+          import json,os,subprocess
+          doc=json.loads(subprocess.check_output([
+              "gh","api",f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/{os.environ['ACTUAL_ID']}"]))
+          if (doc.get("tag_name")!=os.environ["ACTUAL_TAG"] or doc.get("draft")
+                  or not doc.get("published_at") or len(doc.get("assets",[]))!=1):
+              raise RuntimeError("Verified draft failed to become public: "+os.environ["ACTUAL_TAG"])
+          print("PUBLISHED",doc["tag_name"],doc["assets"][0]["name"])
+          PY
+          done
+          echo 'All three Glacier Releases are public; signed VPS distribution is validated separately.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Dispatch existing Glacier OIDC VPS mirror and signing verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Glacier-only VPS mirror/signer verification dispatched; do not claim completion until its result is green.' >> "$GITHUB_STEP_SUMMARY"
