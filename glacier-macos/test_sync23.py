@@ -165,5 +165,84 @@ class UnreadableVaultFailClosedTests(unittest.TestCase):
         cards = decrypt_space23(wire.calls[1][2]["envelope"], "private", PASSWORD)
         self.assertEqual(cards[0]["username"], EXAMPLE["username"])
 
+
+class RollbackProtectionTests(unittest.TestCase):
+    """Server rollback/replay must never replace a newer E2E account vault."""
+
+    @patch("glacier_sync_auto24.SyncTransport23")
+    def test_stale_remote_version_never_downloads_or_uploads(self, transport):
+        remote = encrypt_space23(
+            [dict(EXAMPLE, username="older@example.com")], "private", PASSWORD)
+        transport.return_value.call.return_value = {
+            "version": 4, "envelope": remote}
+        baseline = {"version": 5,
+                    "local_hash": account_digest24([EXAMPLE], "private")}
+        outcome = sync_one_space24("https://sync.borealos.cn", 18566,
+                                  "pretend-token", "private",
+                                  [EXAMPLE], baseline, PASSWORD)
+        self.assertEqual(outcome["kind"], "rollback")
+        self.assertNotIn("records", outcome)
+        transport.return_value.call.assert_called_once_with(
+            "GET", "/v1/vault/private")
+
+    @patch("glacier_sync_auto24.SyncTransport23")
+    def test_stale_remote_version_never_overwrites_local_edit(self, transport):
+        transport.return_value.call.return_value = {
+            "version": 3, "envelope": None}
+        baseline = {"version": 5,
+                    "local_hash": account_digest24([], "private")}
+        outcome = sync_one_space24("https://sync.borealos.cn", 18566,
+                                  "pretend-token", "private",
+                                  [EXAMPLE], baseline, PASSWORD)
+        self.assertEqual(outcome["kind"], "rollback")
+        transport.return_value.call.assert_called_once()
+
+    @patch("glacier_sync_auto24.SyncTransport23")
+    def test_malformed_remote_versions_fail_closed(self, transport):
+        baseline = {"version": 5,
+                    "local_hash": account_digest24([EXAMPLE], "private")}
+        for version in (None, -1, "6", True, 3.5):
+            with self.subTest(version=version):
+                transport.reset_mock()
+                transport.return_value.call.return_value = {
+                    "version": version, "envelope": None}
+                outcome = sync_one_space24("https://sync.borealos.cn", 18566,
+                                          "pretend-token", "private",
+                                          [EXAMPLE], baseline, PASSWORD)
+                self.assertEqual(outcome["kind"], "rollback")
+                transport.return_value.call.assert_called_once()
+
+    @patch("glacier_sync_auto24.SyncTransport23")
+    def test_bad_upload_ack_never_advances_baseline(self, transport):
+        baseline = {"version": 5,
+                    "local_hash": account_digest24([], "private")}
+        for reply in ({"version": 5}, {"version": 4},
+                      {"version": "6"}, {}, {"version": True}):
+            with self.subTest(reply=reply):
+                transport.reset_mock()
+                transport.return_value.call.side_effect = [
+                    {"version": 5, "envelope": None}, reply]
+                outcome = sync_one_space24("https://sync.borealos.cn", 18566,
+                                          "pretend-token", "private",
+                                          [EXAMPLE], baseline, PASSWORD)
+                self.assertEqual(outcome["kind"], "rollback")
+                self.assertNotIn("version", outcome)
+                self.assertEqual(transport.return_value.call.call_count, 2)
+
+    @patch("glacier_sync_auto24.SyncTransport23")
+    def test_forward_remote_version_still_downloads(self, transport):
+        newer = dict(EXAMPLE, username="current@example.com")
+        transport.return_value.call.return_value = {
+            "version": 6, "envelope": encrypt_space23([newer], "private", PASSWORD)}
+        baseline = {"version": 5,
+                    "local_hash": account_digest24([EXAMPLE], "private")}
+        outcome = sync_one_space24("https://sync.borealos.cn", 18566,
+                                  "pretend-token", "private",
+                                  [EXAMPLE], baseline, PASSWORD)
+        self.assertEqual(outcome["kind"], "downloaded")
+        self.assertEqual(outcome["version"], 6)
+        self.assertEqual(outcome["records"][0]["username"], newer["username"])
+        transport.return_value.call.assert_called_once()
+
 if __name__ == "__main__":
     unittest.main()

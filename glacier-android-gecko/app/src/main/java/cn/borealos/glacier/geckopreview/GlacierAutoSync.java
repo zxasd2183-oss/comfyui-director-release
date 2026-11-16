@@ -47,6 +47,22 @@ final class GlacierAutoSync {
         return out.toString();
     }
 
+    /** Accept only integer server versions that never move backwards. */
+    static boolean versionRollsBack(int known,long observed) {
+        return known < 0 || observed < 0
+                || observed > Integer.MAX_VALUE || observed < known;
+    }
+
+    static int serverVersion(JSONObject response) throws java.io.IOException {
+        Object value=response.opt("version");
+        if(!(value instanceof Integer) && !(value instanceof Long))
+            throw new java.io.IOException("Malformed cloud version");
+        long number=((Number)value).longValue();
+        if(number < 0 || number > Integer.MAX_VALUE)
+            throw new java.io.IOException("Invalid cloud version");
+        return (int)number;
+    }
+
     static Result reconcile(GlacierCloudSync.State state,String space,
             List<BrowserAccountsStore.Card> local,JSONObject baseline) throws Exception {
         if(!"private".equals(space)&&!"work".equals(space))
@@ -54,10 +70,18 @@ final class GlacierAutoSync {
         if(baseline==null)return new Result(space,"uninitialized",0,"",null);
         int before=baseline.getInt("version");
         String previous=baseline.getString("local_hash");
-        if(previous.length()!=64)return new Result(space,"uninitialized",0,"",null);
+        if(before < 0 || previous.length()!=64)
+            return new Result(space,"uninitialized",0,"",null);
         String current=fingerprint(local,space);
         JSONObject remote=GlacierCloudSync.call(state,"GET","/v1/vault/"+space,null);
-        int remoteVersion=remote.getInt("version");
+        final int remoteVersion;
+        try {
+            remoteVersion=serverVersion(remote);
+        } catch(java.io.IOException error) {
+            return new Result(space,"rollback",before,current,null);
+        }
+        if(versionRollsBack(before,remoteVersion))
+            return new Result(space,"rollback",before,current,null);
         boolean changedHere=!current.equals(previous);
         boolean changedThere=remoteVersion!=before;
         if(changedHere&&changedThere)return new Result(space,"conflict",0,current,null);
@@ -69,7 +93,15 @@ final class GlacierAutoSync {
             body.put("expected_version",before);
             body.put("envelope",encrypted);
             JSONObject result=GlacierCloudSync.call(state,"PUT","/v1/vault/"+space,body);
-            return new Result(space,"uploaded",result.getInt("version"),current,null);
+            final int written;
+            try {
+                written=serverVersion(result);
+            } catch(java.io.IOException error) {
+                return new Result(space,"rollback",before,current,null);
+            }
+            if(written <= before)
+                return new Result(space,"rollback",before,current,null);
+            return new Result(space,"uploaded",written,current,null);
         }
         if(changedThere) {
             if(remote.isNull("envelope"))

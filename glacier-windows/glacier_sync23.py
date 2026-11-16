@@ -373,6 +373,10 @@ class GlacierSync23:
             if kind == "conflict":
                 self.statusBar().showMessage(
                     "Glacier " + space + " 账号空间发生同步冲突，已暂停自动覆盖", 12000)
+            elif kind == "rollback":
+                self.statusBar().showMessage(
+                    "Glacier " + space + " 云端账号版本低于本机记录或响应无效；"
+                    "已拒绝同步以保护账号资料", 12000)
             elif kind == "uploaded":
                 # Subsequent local edits are not overwritten by an older snapshot.
                 baseline["version"] = event["version"]

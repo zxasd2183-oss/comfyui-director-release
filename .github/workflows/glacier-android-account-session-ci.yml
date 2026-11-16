@@ -32,6 +32,8 @@ jobs:
         run: python -m unittest discover -s glacier-android-gecko/scripts -p test_android_login_fill34.py -v
       - name: Guard Keystore-damaged vault cloud upload and overwrite consent
         run: python -m unittest discover -s glacier-android-gecko/scripts -p test_android_vault_cloud_safety.py -v
+      - name: Guard Android cloud vault against server rollback/replay
+        run: python -m unittest discover -s glacier-android-gecko/scripts -p test_android_sync_rollback.py -v
       - name: Install pinned Android SDK platform
         shell: bash
         run: |
