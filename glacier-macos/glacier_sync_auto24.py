@@ -33,7 +33,9 @@ def account_digest24(records, space):
 
 def sync_one_space24(base, port, token, space, local_records, baseline, passphrase):
     """Runs in background thread; no Qt access or local file mutation."""
-    if not isinstance(baseline, dict) or not isinstance(baseline.get("version"), int):
+    if (not isinstance(baseline, dict)
+            or type(baseline.get("version")) is not int
+            or baseline["version"] < 0):
         return {"space": space, "kind": "uninitialized"}
     version = baseline["version"]
     old_hash = baseline.get("local_hash")
@@ -41,7 +43,11 @@ def sync_one_space24(base, port, token, space, local_records, baseline, passphra
         return {"space": space, "kind": "uninitialized"}
     transport = SyncTransport23(base, port, token)
     remote = transport.call("GET", "/v1/vault/" + space)
-    server_version = remote["version"]
+    server_version = remote.get("version")
+    # A restored/replayed or malformed server record must never replace a
+    # newer, locally known E2E vault. Do not decrypt, upload or alter baseline.
+    if type(server_version) is not int or server_version < version:
+        return {"space": space, "kind": "rollback"}
     local_hash = account_digest24(local_records, space)
     local_changed = local_hash != old_hash
     remote_changed = server_version != version
@@ -53,8 +59,11 @@ def sync_one_space24(base, port, token, space, local_records, baseline, passphra
             space, passphrase)
         result = transport.call("PUT", "/v1/vault/" + space, {
             "expected_version": version, "envelope": encrypted})
+        written_version = result.get("version")
+        if type(written_version) is not int or written_version <= version:
+            return {"space": space, "kind": "rollback"}
         return {"space": space, "kind": "uploaded",
-                "version": result["version"], "local_hash": local_hash}
+                "version": written_version, "local_hash": local_hash}
     if remote_changed:
         if not remote.get("envelope"):
             return {"space": space, "kind": "conflict"}
