@@ -56,7 +56,7 @@ import java.util.Locale;
 /**
  * Glacier Android mobile browser v0.2.0: M02 Chrome-inspired light UI.
  * A REAL, app-bundled VLESS core may feed Gecko through a loopback SOCKS5 proxy.
- * Local Keystore-encrypted per-profile account cards are available; no autofill or cloud sync.
+ * Keystore-encrypted website accounts support manual, exact-origin Gecko autofill.
  *
  * Profile isolation is provided by GeckoSessionSettings.contextId, NOT UI only.
  * Each tab retains the contextId with which it was created for its entire life.
@@ -1201,12 +1201,37 @@ public final class MainActivity extends Activity {
         scheduleTabsSave();
     }
 
+    private void fillCurrentSavedAccount(BrowserAccountsStore.Card card) {
+        // Only the currently visible tab, and only the matching saved
+        // account's independent Gecko Cookie and localStorage container.
+        if (runtime == null || active == null || web == null
+                || !tabs.contains(active) || !accountCards.contains(card)
+                || !BrowserAccountsStore.valid(card)
+                || !selectedProfile.equals(card.profile)
+                || !active.profile.equals(card.profile)
+                || web.getSession() != active.session
+                || !active.contextId.equals(accountCookieContext(card))
+                || !GlacierAccountFill34.exactHttpsSite(active.url, card.site)) {
+            android.widget.Toast.makeText(this,
+                    "请先在此账号的独立会话中打开对应 HTTPS 登录页。",
+                    android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        int filled = GlacierAccountFill34.fill(active.session, active.url, card);
+        android.widget.Toast.makeText(this,
+                filled > 0
+                    ? "已填入登录字段，请自行确认后登录（未自动提交）。"
+                    : "当前页面没有安全可填充的登录字段。",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
     private void showAccountCard(BrowserAccountsStore.Card card) {
         List<String> actions=new ArrayList<>();
         actions.add("复制账号");
         if(!card.password.isEmpty())actions.add("复制密码");
         if(!card.codeApi.isEmpty())actions.add("点击获取验证码");
         actions.add("在独立会话中打开");
+        actions.add("填充当前页");
         actions.add("编辑");
         actions.add("删除");
         new AlertDialog.Builder(this)
@@ -1217,6 +1242,7 @@ public final class MainActivity extends Activity {
                     else if("复制密码".equals(item))copyAccountValue(card.password);
                     else if("点击获取验证码".equals(item))fetchAccountCode(card.codeApi);
                     else if("在独立会话中打开".equals(item))openSavedAccountSession(card);
+                    else if("填充当前页".equals(item))fillCurrentSavedAccount(card);
                     else if("编辑".equals(item))editAccountCard(card,card.profile,card.site);
                     else if("删除".equals(item)) {
                         new AlertDialog.Builder(this).setTitle("删除本机账号卡片")
