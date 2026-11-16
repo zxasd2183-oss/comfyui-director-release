@@ -1,0 +1,27 @@
+name: Glacier independent read-only VPS signed channel acceptance
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-public-signed-feed-independent.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-feed-acceptance:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile independent audit and offline safety tests
+        run: python -m py_compile scripts/glacier_verify_public_signed_feeds.py scripts/test_glacier_public_signed_feeds.py
+      - name: Test strict version, identity, SHA and rollback rules without network
+        run: python -m unittest discover -s scripts -p 'test_glacier_public_signed_feeds.py' -v
+      - name: Compare live VPS HTTPS manifests against pinned signed GitHub channel and official Release digests
+        run: python scripts/glacier_verify_public_signed_feeds.py
