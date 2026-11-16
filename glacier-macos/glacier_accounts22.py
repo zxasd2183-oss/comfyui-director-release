@@ -1,7 +1,7 @@
-"""Glacier desktop D03: local encrypted website-account cards.
+"""Glacier website-account vault and explicit, same-site click-to-fill.
 
-No automatic form filling, password injection, login automation or network calls.
-Accounts are matched by exact canonical HTTPS hostname, never page text.
+No automatic credential insertion, form submission, or login automation.
+Account injection is only user initiated into its own isolated HTTPS profile.
 """
 from __future__ import annotations
 
@@ -59,6 +59,75 @@ def cookie_host_matches22(cookie_domain, site):
         return False
     domain = cookie_domain.lstrip(".").lower()
     return domain == site or domain == "www." + site
+
+
+
+def build_login_fill_script22(site, username, password):
+    """Make top-frame, exact-origin, form-only JavaScript for a user click.
+
+    The generated code is never logged, persisted, or sent to the cloud. All
+    credential strings use JSON escaping, not HTML or selector interpolation.
+    The page's origin is checked a second time at JavaScript execution time.
+    """
+    if (not isinstance(site, str) or not site or safe_site22(site) != site
+            or not isinstance(username, str) or not username
+            or not isinstance(password, str) or len(password) > 2048):
+        raise ValueError("Invalid saved website identity")
+    values = json.dumps({"host": site, "username": username,
+                         "password": password}, ensure_ascii=True)
+    return "(function(){'use strict';const values=" + values + ";" + r"""
+        const host = String(location.hostname || '').toLowerCase();
+        const exact = host === values.host || host === 'www.' + values.host;
+        if (window.top !== window || location.protocol !== 'https:' ||
+            (location.port && location.port !== '443') || !exact ||
+            document.readyState === 'loading') return 'refused';
+
+        function usable(el) {
+          if (!(el instanceof HTMLInputElement) || !el.isConnected ||
+              el.disabled || el.readOnly || !el.getClientRects().length) return false;
+          const css = window.getComputedStyle(el);
+          return css.display !== 'none' && css.visibility !== 'hidden' &&
+                 css.visibility !== 'collapse' && Number(css.opacity) > 0;
+        }
+        const all = Array.from(document.querySelectorAll('input'));
+        const passwords = all.filter(el => el.type === 'password' && usable(el));
+        const focused = document.activeElement;
+        const activePassword = passwords.find(el => el === focused ||
+               (focused && el.form && el.form === focused.form));
+        const password = activePassword || passwords[0] || null;
+        const sameForm = password && password.form;
+        // Without a password input, require explicit username/email
+        // semantics to avoid filling arbitrary search or feedback forms.
+        const pool = sameForm
+          ? Array.from(sameForm.querySelectorAll('input'))
+          : all;
+        function isUsername(el) {
+          if (!usable(el) || !['text','email','tel'].includes(el.type)) return false;
+          const autocomplete = String(el.autocomplete || '').toLowerCase().split(/\s+/);
+          const hint = [el.name, el.id, el.getAttribute('aria-label'),
+                        el.getAttribute('placeholder')].join(' ').toLowerCase();
+          return autocomplete.includes('username') || autocomplete.includes('email') ||
+                 el.type === 'email' ||
+                 /\b(user(name)?|e-?mail|login|account|phone)\b/i.test(hint);
+        }
+        const username = pool.find(el => isUsername(el)) || null;
+        if (!username && !password) return 'no-fields';
+
+        function setInput(el, value) {
+          const setter = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype, 'value').set;
+          setter.call(el, value);
+          el.dispatchEvent(new Event('input', {bubbles: true}));
+          el.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+        if (username) setInput(username, values.username);
+        if (password && values.password) setInput(password, values.password);
+        // Never call submit(), requestSubmit(), click() or navigate().
+        if (username && password && values.password) return 'filled';
+        if (username) return 'username-only';
+        if (password && values.password) return 'password-only';
+        return 'no-fields';
+    })();"""
 
 
 def page_site22(url):
@@ -606,6 +675,56 @@ class GlacierAccounts22:
         page.setUrl(QUrl("https://" + record["site"] + "/"))
         return True
 
+    def fill_account_form22(self, record):
+        """Fill only the selected, saved account's current isolated HTTPS tab.
+
+        No background tabs, no unrelated workspaces, no auto-submit. The JS
+        revalidates top-level origin to fail closed on navigation races.
+        """
+        profile = self._profile_for_saved_account22(record)
+        if profile is None or not isinstance(record, dict):
+            return False
+        view = self.current()
+        if view is None:
+            return False
+        try:
+            page = view.page()
+            site = record["site"]
+            if (page.profile() is not profile
+                    or page_site22(view.url()) != site
+                    or page_site22(page.url()) != site):
+                self.statusBar().showMessage(
+                    "请先使用“在独立会话中打开”，并在对应 HTTPS 登录页手动选择填充。", 8000)
+                return False
+            script = build_login_fill_script22(
+                site, record["username"], record["password"])
+        except (RuntimeError, AttributeError, KeyError, TypeError, ValueError):
+            return False
+
+        def finished(outcome):
+            # Never put credential data, JS source or arbitrary page output
+            # into logs or UI. Treat all other results as refusal.
+            messages = {
+                "filled": "已填入账号和密码，请确认后自行点击登录。",
+                "username-only": "已填入账号；如需密码，请进入网站密码输入步骤后再次选择填充。",
+                "password-only": "已填入密码，请确认后自行点击登录。",
+                "no-fields": "没有发现可填充的可见登录输入框。",
+                "refused": "目标网页已变化或尚未加载完成，已拒绝填充。",
+            }
+            try:
+                self.statusBar().showMessage(
+                    messages.get(outcome, "未能确认登录输入框，未执行自动登录。"), 9000)
+            except RuntimeError:
+                pass
+
+        try:
+            # ApplicationWorld avoids reusing page-defined JavaScript globals;
+            # it still writes normal DOM input values as a user-requested fill.
+            page.runJavaScript(script, 1, finished)
+        except RuntimeError:
+            return False
+        return True
+
     def open_account_site22(self, site):
         """Open the recorded HTTPS site in the active workspace, without login injection."""
         site = site.strip().lower() if isinstance(site, str) else ""
@@ -634,7 +753,7 @@ class GlacierAccounts22:
         dialog = QDialog(self)
         dialog.setWindowTitle("Glacier · " + site + " 账号信息")
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("仅显示和手动复制；不会自动填充或自动登录。", dialog))
+        layout.addWidget(QLabel("密码只会在你点击“填充当前页”时写入对应 HTTPS 账号会话；不会自动提交。", dialog))
         for record in entries:
             row = QHBoxLayout()
             identity = QLabel(record["name"] + " · " + record["username"], dialog)
@@ -659,6 +778,13 @@ class GlacierAccounts22:
                     dialog.accept()
             own_session.clicked.connect(open_current_account)
             row.addWidget(own_session)
+            fill_page = QPushButton("填充当前页", dialog)
+            fill_page.setToolTip("只填充此账号专属会话的 HTTPS 登录表单；不会自动提交")
+            def fill_current_account(_checked=False, r=dict(record)):
+                if self.fill_account_form22(r):
+                    dialog.accept()
+            fill_page.clicked.connect(fill_current_account)
+            row.addWidget(fill_page)
             clear_session = QPushButton("清除此账号 Cookie", dialog)
             clear_session.clicked.connect(
                 lambda _checked=False, r=dict(record): self.clear_account_session_cookies22(r))
