@@ -1,0 +1,22 @@
+name: Glacier desktop 0.20.30 release security preflight
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/glacier-desktop-02030-verified-release.yml'
+      - '.github/workflows/glacier-desktop-02030-release-preflight.yml'
+      - 'scripts/test_glacier_desktop_02030_release.py'
+permissions:
+  contents: read
+jobs:
+  safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install YAML validator
+        run: python -m pip install 'PyYAML>=6,<7'
+      - name: Verify exact native RC SHA and fail-closed release order
+        run: python -m unittest discover -s scripts -p 'test_glacier_desktop_02030_release.py' -v
