@@ -38,12 +38,12 @@ def inspect(root=ROOT):
     mac = _expect_single(r'^CURRENT_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"$', data["mac_core"], "macOS")
     android = _expect_single(r"^\s*versionName '([0-9]+\.[0-9]+\.[0-9]+)'$", data["android_gradle"], "Android")
     code = int(_expect_single(r"^\s*versionCode ([0-9]+)$", data["android_gradle"], "Android versionCode"))
-    if win != "0.20.29" or mac != win or android != "0.2.4" or code != 13:
+    if win != "0.20.30" or mac != win or android != "0.2.4" or code != 13:
         raise ValueError("Glacier versions are not the approved monotonic RC upgrade")
     # The Ed25519 trust-root preparation deliberately refuses any unapproved
     # version. Match its allowlist before scheduling expensive native builds.
     safety = (root / "scripts/glacier_prepare_rotated_update.py").read_text(encoding="utf-8")
-    accepted = 'PLATFORM_VERSIONS = {"windows": "0.20.29", "macos": "0.20.29"}'
+    accepted = 'PLATFORM_VERSIONS = {"windows": "0.20.30", "macos": "0.20.30"}'
     if safety.count(accepted) != 1:
         raise ValueError("Pinned Ed25519 build preparation rejects current clients")
     for key, version in (("windows_main", win), ("mac_main", mac)):
