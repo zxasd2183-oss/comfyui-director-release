@@ -1,0 +1,22 @@
+name: Glacier Android 0.2.5 release gate security preflight
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/glacier-android025-verified-release.yml'
+      - '.github/workflows/glacier-android025-release-preflight.yml'
+      - 'scripts/test_glacier_android025_release.py'
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install YAML parser
+        run: python -m pip install 'PyYAML>=6,<7'
+      - name: Enforce exact QA provenance, original signer and draft/hash safety
+        run: python -m unittest discover -s scripts -p test_glacier_android025_release.py -v
