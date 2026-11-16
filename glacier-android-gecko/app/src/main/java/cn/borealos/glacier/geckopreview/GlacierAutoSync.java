@@ -63,6 +63,42 @@ final class GlacierAutoSync {
         return (int)number;
     }
 
+
+    /** Manual actions must honor the same high-water mark as automatic sync. */
+    static JSONObject baselineForSpace(JSONObject baselines,String space)
+            throws java.io.IOException {
+        if(baselines==null)throw new java.io.IOException("Missing local sync state");
+        JSONObject item=baselines.optJSONObject(space);
+        if(item==null && baselines.has(space))
+            throw new java.io.IOException("Malformed local sync checkpoint");
+        return item;
+    }
+
+    static int checkedManualVersion(JSONObject remote,JSONObject baseline,
+            String currentHash,boolean upload) throws java.io.IOException {
+        int version=serverVersion(remote);
+        if(baseline==null)return version; // Explicit first sync.
+        int known=serverVersion(baseline);
+        String previous=baseline.optString("local_hash","");
+        if(!previous.matches("[0-9a-f]{64}"))
+            throw new java.io.IOException("Invalid local sync checkpoint");
+        if(version<known)
+            throw new java.io.IOException("Cloud vault version rolled back");
+        if(upload && version>known)
+            throw new java.io.IOException("Cloud vault changed on another device");
+        if(!upload && !previous.equals(currentHash))
+            throw new java.io.IOException("Local account cards changed; download blocked");
+        return version;
+    }
+
+    static int checkedUploadVersion(JSONObject ack,int previous)
+            throws java.io.IOException {
+        int written=serverVersion(ack);
+        if(written<=previous)
+            throw new java.io.IOException("Cloud upload version did not advance");
+        return written;
+    }
+
     static Result reconcile(GlacierCloudSync.State state,String space,
             List<BrowserAccountsStore.Card> local,JSONObject baseline) throws Exception {
         if(!"private".equals(space)&&!"work".equals(space))
