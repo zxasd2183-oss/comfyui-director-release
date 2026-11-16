@@ -69,7 +69,10 @@ final class GlacierAccountFill34 {
                 Autofill.Node node = queue.removeFirst();
                 if (node.getChildren() != null) {
                     for (Autofill.Node child : node.getChildren()) {
-                        if (child != null) queue.add(child);
+                        if (child != null) {
+                            if (queue.size() >= 500) return 0;
+                            queue.add(child);
+                        }
                     }
                 }
                 if (!"input".equalsIgnoreCase(node.getTag())
