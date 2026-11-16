@@ -1,0 +1,44 @@
+name: Glacier three-platform release candidate version guard
+on:
+  pull_request:
+    paths:
+      - 'glacier-windows/main.py'
+      - 'glacier-windows/secure_update.py'
+      - 'glacier-macos/main.py'
+      - 'glacier-macos/mac_update_core.py'
+      - 'glacier-macos/glacier_accounts22.py'
+      - 'glacier-windows/glacier_accounts22.py'
+      - 'glacier-android-gecko/**'
+      - '.github/workflows/glacier-rc-windows.yml'
+      - '.github/workflows/glacier-rc-macos.yml'
+      - '.github/workflows/glacier-rc-android.yml'
+      - 'scripts/glacier_release_version_check.py'
+      - '.github/workflows/glacier-release-version-guard.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'glacier-windows/secure_update.py'
+      - 'glacier-macos/mac_update_core.py'
+      - 'glacier-android-gecko/app/build.gradle'
+      - 'scripts/glacier_release_version_check.py'
+      - '.github/workflows/glacier-release-version-guard.yml'
+permissions:
+  contents: read
+jobs:
+  version-and-data-preservation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate installer versions, Android upgrade code and Mac account parity
+        run: python scripts/glacier_release_version_check.py
+      - name: Verify existing Android app and test-script version contracts
+        run: |
+          python glacier-android-gecko/scripts/check_rc_version_consistency.py
+          python -m unittest discover -s glacier-android-gecko/scripts -p 'test_rc_version_consistency.py' -v
+      - name: Validate changed Python source syntax
+        run: |
+          python -m py_compile glacier-windows/main.py glacier-windows/secure_update.py glacier-macos/main.py glacier-macos/mac_update_core.py
