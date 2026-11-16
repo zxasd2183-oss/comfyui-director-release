@@ -17,7 +17,7 @@ class SignedReleaseGuard(unittest.TestCase):
         for expected in (
             "GLACIER_ANDROID_CERT_SHA256", "apksigner",
             "cn.borealos.glacier.geckopreview", "versionCode='12'",
-            "versionName='0.2.6'", "libxul.so", "libsingbox.so",
+            "versionName='0.2.7'", "libxul.so", "libsingbox.so",
             "arm64-v8a", "x86_64",
         ):
             self.assertIn(expected, job)
