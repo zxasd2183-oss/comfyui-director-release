@@ -1650,6 +1650,10 @@ public final class MainActivity extends Activity {
                         android.widget.Toast.makeText(this,
                                 "Glacier "+event.space+"账号空间有同步冲突，已禁止覆盖",
                                 android.widget.Toast.LENGTH_LONG).show();
+                    } else if("rollback".equals(event.kind)) {
+                        android.widget.Toast.makeText(this,
+                                "Glacier "+event.space+"云端账号版本回退或响应异常，已拒绝覆盖本机账号",
+                                android.widget.Toast.LENGTH_LONG).show();
                     } else if("uploaded".equals(event.kind)) {
                         try {
                             JSONObject updated=new JSONObject();
