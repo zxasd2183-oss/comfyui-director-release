@@ -71,6 +71,19 @@ def inspect(root=ROOT):
         raise ValueError("Installer workflow still refers to an old release version")
     if "0.2.3" in data["android_ci"]:
         raise ValueError("Android RC still refers to previous release")
+    # Functional smoke suites must target the version just packaged. Earlier
+    # harnesses looked for the old title and failed valid new installers.
+    checks = (
+        ("glacier-windows/test_windows_desktop15.py", f"v{win}"),
+        ("glacier-macos/test_mac_desktop15.py", f"v{mac}"),
+        ("glacier-macos/test_mac_gui_start.py", f"v{mac}"),
+        ("glacier-android-gecko/scripts/emulator_smoke_v012.py", f"更新与版本 {android}"),
+        ("glacier-android-gecko/scripts/test_rc_signed_release_guard.py",
+         f"versionName='{android}'"),
+    )
+    for rel, expected in checks:
+        if expected not in (root / rel).read_text(encoding="utf-8"):
+            raise ValueError(rel + ": smoke check expects an obsolete client version")
     return {"windows": win, "macos": mac, "android": android, "android_code": code}
 
 
