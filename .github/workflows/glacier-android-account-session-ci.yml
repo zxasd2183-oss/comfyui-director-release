@@ -28,6 +28,8 @@ jobs:
           python-version: '3.12'
       - name: Verify Android source guards and backward compatible tab snapshots
         run: python -m unittest discover -s glacier-android-gecko/scripts -p test_android_account_sessions.py -v
+      - name: Verify exact-origin manual Gecko account fill guards
+        run: python -m unittest discover -s glacier-android-gecko/scripts -p test_android_login_fill34.py -v
       - name: Install pinned Android SDK platform
         shell: bash
         run: |
