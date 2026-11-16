@@ -30,7 +30,7 @@ class ResumeSecurity(unittest.TestCase):
         for run in ("43790619983","43790619985","43790619947"):
             self.assertIn(run,src)
         self.assertIn("Verify 3 complete installer files and Android fixed certificate/ABI",src)
-        self.assertIn('doc.get("head_sha")!=sha',src)
+        self.assertIn('result.get("head_sha")!=sha',src)
         self.assertIn('"glacier-windows/","glacier-macos/"',src)
         self.assertIn('item.get("draft") is not True',src)
         self.assertNotIn("gh release create",src)
