@@ -49,11 +49,11 @@ def inspect(root=ROOT):
     for key, version, filename in (
         ("win_ci", win, f"GlacierBrowser-v{win}-Windows-Setup-x64.exe"),
         ("mac_ci", mac, f"GlacierBrowser-v{mac}-macOS-AppleSilicon.dmg"),
-        ("android_ci", android, f"GlacierAndroid-v{android}-ARM64_x86_64-release.apk"),
+        ("android_ci", android, f"GlacierAndroid-v{android}-ARM64-x86_64-release.apk"),
     ):
         if f"v{version}" not in data[key]:
             raise ValueError(key + ": lacks updated version")
-        if key != "android_ci" and filename not in data[key]:
+        if filename not in data[key]:
             raise ValueError(key + ": lacks corresponding installer name")
     for key in ("android_ci", "android_vless", "android_smoke"):
         if f"GlacierAndroid-v{android}-Mobile-M05-ARM64_x86_64-debug.apk" not in data[key].replace(
