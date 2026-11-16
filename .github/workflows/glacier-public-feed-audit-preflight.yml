@@ -1,0 +1,23 @@
+name: Glacier public signed feed read-only audit preflight
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/glacier-public-signed-feed-independent.yml'
+      - '.github/workflows/glacier-public-feed-audit-preflight.yml'
+      - 'scripts/glacier_verify_public_signed_feeds.py'
+      - 'scripts/test_glacier_public_signed_feeds.py'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile public verifier and synthetic security tests
+        run: python -m py_compile scripts/glacier_verify_public_signed_feeds.py scripts/test_glacier_public_signed_feeds.py
+      - name: Verify channel pinning, version monotonicity and exact digest acceptance
+        run: python -m unittest discover -s scripts -p 'test_glacier_public_signed_feeds.py' -v
