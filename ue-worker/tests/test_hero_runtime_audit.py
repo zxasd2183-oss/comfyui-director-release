@@ -72,6 +72,51 @@ class HeroAuditTests(unittest.TestCase):
                 with patch.object(ue_previs,"GPT_HERO_SOURCE_SHA256",digest):
                     ue_previs.audit_gpt_hero_metahuman_runtime(spec(),root,work)
 
+    def test_launcher_guid_rewrite_audits_without_changing_project(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "HeroProjects" / "CHAR_GPT" / "DirectorHeroGPT.uproject"
+            project.parent.mkdir(parents=True)
+            manifest = agent.hero_project_manifest()
+            manifest["EngineAssociation"] = "{01234567-89AB-CDEF-0123-456789abcdef}"
+            project.write_text(json.dumps(manifest), encoding="utf-8")
+            before = project.read_bytes()
+            seed = ue_previs.GPT_HERO_SOURCE_JOB
+            source = (project.parent / "Content" / "Director" /
+                      "Candidates" / "EP01" / "HeroBuilds" /
+                      ("J" + seed) / "MHC_CHAR_GPT.uasset")
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"native-metahuman-asset")
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            work = root / "Jobs" / ("d" * 32)
+            with patch.object(ue_previs, "GPT_HERO_SOURCE_SHA256", digest), \
+                 patch.object(ue_jobs, "find_editor_cmd",
+                              return_value=Path("UnrealEditor.exe")), \
+                 patch.object(ue_previs, "_run_unreal",
+                              side_effect=RuntimeError("entered_pinned_editor")):
+                with self.assertRaisesRegex(RuntimeError, "entered_pinned_editor"):
+                    ue_previs.audit_gpt_hero_metahuman_runtime(spec(), root, work)
+            self.assertEqual(project.read_bytes(), before)
+            self.assertEqual(source.read_bytes(), b"native-metahuman-asset")
+
+    def test_launcher_guid_cannot_excuse_plugin_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "HeroProjects" / "CHAR_GPT" / "DirectorHeroGPT.uproject"
+            project.parent.mkdir(parents=True)
+            manifest = agent.hero_project_manifest()
+            manifest["EngineAssociation"] = "{01234567-89AB-CDEF-0123-456789abcdef}"
+            manifest["Plugins"][0]["Enabled"] = False
+            project.write_text(json.dumps(manifest), encoding="utf-8")
+            work = root / "Jobs" / ("e" * 32)
+            with patch.object(ue_previs, "_run_unreal") as runner:
+                with self.assertRaisesRegex(
+                    ue_jobs.JobError, "hero_audit_project_not_trusted"
+                ):
+                    ue_previs.audit_gpt_hero_metahuman_runtime(spec(), root, work)
+            runner.assert_not_called()
+            self.assertFalse(work.exists())
+
     def test_hash_drift_blocks_unreal_launch(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
