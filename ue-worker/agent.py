@@ -480,6 +480,13 @@ DESKTOP_LOCK = threading.RLock()
 DESKTOP_SESSION_LOADED = False
 DESKTOP_CREDENTIAL_SAVED = False
 DESKTOP_FRAME_HEALTH = "not_attempted"
+# The interactive companion returns only these non-sensitive categories.
+# Keep the list fixed; never return arbitrary text from the RDP process.
+DESKTOP_FRAME_ERRORS = frozenset({
+    "screen_unavailable", "desktop_capture_failed", "jpeg_encoder_missing",
+    "frame_size_invalid", "desktop_capture_unavailable",
+})
+
 DESKTOP_ORIGIN = "http://127.0.0.1:19017"
 DESKTOP_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -515,6 +522,19 @@ def _desktop_http(path, secret, max_bytes=1024, *, pairing=False, payload=None):
             raise ValueError("desktop_companion_revoked") from exc
         if exc.code == 429:
             raise ValueError("desktop_frame_rate_limited") from exc
+        if exc.code == 503 and path == "/v1/frame":
+            # Exactly one bounded JSON response from the local companion,
+            # never raw exception strings, cookies, pixels or session tokens.
+            try:
+                raw = exc.read(257)
+                if len(raw) <= 256:
+                    body = json.loads(raw)
+                    if (type(body) is dict and body.get("ok") is False and
+                            type(body.get("reason")) is str and
+                            body["reason"] in DESKTOP_FRAME_ERRORS):
+                        raise ValueError(body["reason"]) from exc
+            except (UnicodeError, TypeError, json.JSONDecodeError):
+                pass
         raise ValueError("desktop_companion_unavailable") from exc
     except (OSError, urllib.error.URLError) as exc:
         reason = getattr(exc, "reason", None)
@@ -632,7 +652,7 @@ def desktop_frame():
     except (OSError, ValueError, UnicodeError, TypeError) as exc:
         # A bounded, non-sensitive status only; never expose desktop bytes,
         # credential contents, HTTP payloads or remote exception strings.
-        allowed = {
+        allowed = DESKTOP_FRAME_ERRORS | {
             "desktop_frame_rate_limited", "desktop_companion_timeout",
             "desktop_companion_unavailable", "desktop_companion_revoked",
             "desktop_jpeg_invalid", "desktop_response_too_large",
@@ -716,7 +736,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.3.3",
+        "worker_version": "2.3.4",
     }
 
 
