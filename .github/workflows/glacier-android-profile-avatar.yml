@@ -1,0 +1,30 @@
+name: Glacier Android profile-avatar state and safety checks
+on:
+  pull_request:
+    paths:
+      - 'glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/**'
+      - 'glacier-android-gecko/app/src/main/res/drawable/**'
+      - 'glacier-android-gecko/app/src/androidTest/**'
+      - 'glacier-android-gecko/scripts/emulator_smoke_v012.py'
+      - 'scripts/test_glacier_android_profile_avatar.py'
+      - '.github/workflows/glacier-android-profile-avatar.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/**'
+      - 'glacier-android-gecko/app/src/main/res/drawable/**'
+      - 'glacier-android-gecko/app/src/androidTest/**'
+      - 'scripts/test_glacier_android_profile_avatar.py'
+permissions:
+  contents: read
+jobs:
+  assert-profile-state:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify avatar represents saved login and approval states
+        run: python -m unittest -v scripts.test_glacier_android_profile_avatar

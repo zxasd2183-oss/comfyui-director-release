@@ -107,6 +107,10 @@ public final class MainActivity extends Activity {
     private TextView identity;
     private TextView tabCounter;
     private TextView engineLabel;
+    // The profile avatar is a persistent UI view; auth changes must refresh it.
+    private FrameLayout cloudAvatar;
+    private TextView cloudAvatarInitial;
+    private ImageView cloudAvatarGuest;
     private View newTabPage;
     private FrameLayout tabOverview;
     private Button backButton;
@@ -246,6 +250,33 @@ public final class MainActivity extends Activity {
         return b;
     }
 
+    private void refreshCloudAvatar() {
+        if (cloudAvatar == null || cloudAvatarInitial == null || cloudAvatarGuest == null) return;
+        // A remembered username alone is NOT a signed-in session: logout keeps
+        // the account name locally to support the next login form.
+        int state = GlacierProfileAvatarState.mode(cloudState, cloudSessionReadonly);
+        boolean signedIn = state == GlacierProfileAvatarState.APPROVED
+                || state == GlacierProfileAvatarState.PENDING;
+        boolean pending = state == GlacierProfileAvatarState.PENDING;
+        GradientDrawable frame = new GradientDrawable();
+        frame.setShape(GradientDrawable.OVAL);
+        frame.setColor(signedIn ? (pending ? Color.rgb(255, 247, 231) : GLACIER_BLUE)
+                : Color.WHITE);
+        frame.setStroke(dp(2), cloudSessionReadonly ? Color.rgb(184, 82, 82)
+                : pending ? Color.rgb(212, 149, 45) : GLACIER_BLUE);
+        cloudAvatar.setBackground(frame);
+        cloudAvatarGuest.setVisibility(signedIn ? View.GONE : View.VISIBLE);
+        cloudAvatarInitial.setVisibility(signedIn ? View.VISIBLE : View.GONE);
+        if (signedIn) {
+            cloudAvatarInitial.setText(GlacierProfileAvatarState.initial(cloudState));
+            cloudAvatarInitial.setTextColor(pending ? INK : Color.WHITE);
+        } else {
+            cloudAvatarInitial.setText("");
+        }
+        cloudAvatar.setContentDescription(
+                GlacierProfileAvatarState.accessibilityLabel(state));
+    }
+
     private LinearLayout horizontal() {
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.HORIZONTAL);
@@ -331,16 +362,30 @@ public final class MainActivity extends Activity {
         addressParams.setMargins(dp(4), 0, dp(8), 0);
         toolbar.addView(omnibox, addressParams);
 
-        // Explicit Glacier account entry: do not bury sign-in under overflow.
-        Button account = button(cloudState.username.isEmpty() ? "登录" : "账号");
-        account.setTextSize(12);
-        account.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        account.setContentDescription("Glacier 账号登录与同步");
-        account.setOnClickListener(v -> showCloudMenu());
+        // Use the same compact profile-avatar entry as desktop. Never leave a
+        // stale "登录" button visible after successful sign-in or on cold start.
+        cloudAvatar = new FrameLayout(this);
+        cloudAvatar.setClickable(true);
+        cloudAvatar.setFocusable(true);
+        cloudAvatar.setOnClickListener(v -> showCloudMenu());
+        cloudAvatarGuest = new ImageView(this);
+        cloudAvatarGuest.setImageResource(R.drawable.glacier_profile_silhouette);
+        cloudAvatarGuest.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        cloudAvatar.addView(cloudAvatarGuest, new FrameLayout.LayoutParams(
+                dp(24), dp(24), Gravity.CENTER));
+        cloudAvatarInitial = new TextView(this);
+        cloudAvatarInitial.setGravity(Gravity.CENTER);
+        cloudAvatarInitial.setTextSize(19);
+        cloudAvatarInitial.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        cloudAvatarInitial.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        cloudAvatar.addView(cloudAvatarInitial, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
         LinearLayout.LayoutParams accountParams =
-                new LinearLayout.LayoutParams(dp(43), dp(37));
+                new LinearLayout.LayoutParams(dp(44), dp(44));
         accountParams.setMargins(0, 0, dp(5), 0);
-        toolbar.addView(account, accountParams);
+        toolbar.addView(cloudAvatar, accountParams);
+        refreshCloudAvatar();
 
         tabCounter = new TextView(this);
         tabCounter.setTextSize(14);
@@ -1349,7 +1394,11 @@ public final class MainActivity extends Activity {
             }
             final String output=message;
             runOnUiThread(() -> {
-                if(isFinishing() || output==null)return;
+                if(isFinishing())return;
+                // Auth tasks run off the UI thread; refresh the *existing*
+                // avatar after registration, login, activation and logout.
+                refreshCloudAvatar();
+                if(output==null)return;
                 new AlertDialog.Builder(this).setTitle("Glacier 统一账号")
                         .setMessage(output).setPositiveButton("知道了",null).show();
             });
@@ -1377,19 +1426,27 @@ public final class MainActivity extends Activity {
                     .setPositiveButton("知道了",null).show();
             return;
         }
-        String[] actions={"注册 Glacier 账号","登录 / 申请设备授权","确认设备已获批准",
-                "管理其他设备","加密上传当前账号空间","解密下载当前账号空间",
-                "开启安全自动同步（本机加密保存口令）","关闭自动同步","退出 Glacier 账号"};
-        new AlertDialog.Builder(this).setTitle("Glacier 统一账号 · "
-                +(cloudState.username.isEmpty()?"未登录":cloudState.username))
+        boolean signedIn = GlacierProfileAvatarState.mode(
+                cloudState, cloudSessionReadonly) != GlacierProfileAvatarState.GUEST;
+        String[] actions = signedIn ? new String[]{
+                "确认设备已获批准","管理其他设备","加密上传当前账号空间",
+                "解密下载当前账号空间","开启安全自动同步（本机加密保存口令）",
+                "关闭自动同步","退出 Glacier 账号"
+        } : new String[]{"注册 Glacier 账号","登录 / 申请设备授权"};
+        String heading = signedIn ? cloudState.username
+                + (cloudState.approved ? " · 已登录" : " · 等待设备授权") : "未登录";
+        new AlertDialog.Builder(this).setTitle("Glacier 统一账号 · " + heading)
                 .setItems(actions,(dialog,which)->{
-                    if(which==0||which==1)cloudPromptLogin(which==0);
-                    else if(which==2)cloudActivate();
-                    else if(which==3)cloudDevices();
-                    else if(which==4||which==5)cloudPromptVault(which==4);
-                    else if(which==6)cloudPromptAuto();
-                    else if(which==7)cloudDisableAuto();
-                    else cloudLogout();
+                    String action = actions[which];
+                    if("注册 Glacier 账号".equals(action))cloudPromptLogin(true);
+                    else if("登录 / 申请设备授权".equals(action))cloudPromptLogin(false);
+                    else if("确认设备已获批准".equals(action))cloudActivate();
+                    else if("管理其他设备".equals(action))cloudDevices();
+                    else if("加密上传当前账号空间".equals(action))cloudPromptVault(true);
+                    else if("解密下载当前账号空间".equals(action))cloudPromptVault(false);
+                    else if("开启安全自动同步（本机加密保存口令）".equals(action))cloudPromptAuto();
+                    else if("关闭自动同步".equals(action))cloudDisableAuto();
+                    else if("退出 Glacier 账号".equals(action))cloudLogout();
                 }).setNegativeButton("关闭",null).show();
     }
 
@@ -1458,13 +1515,17 @@ public final class MainActivity extends Activity {
         cloudRun(() -> {
             JSONObject status=GlacierCloudSync.call(cloudState,"GET","/v1/session",null);
             if(!status.getBoolean("approved"))return "此设备仍在等待主设备批准。";
+            GlacierCloudSync.State next=GlacierCloudSync.State.fromJson(cloudState.toJson());
             if(status.optBoolean("pending",false)) {
                 JSONObject approved=GlacierCloudSync.call(cloudState,"POST",
                         "/v1/session/activate",new JSONObject());
-                cloudState.token=approved.getString("token");
-                cloudState.approved=true;
-                GlacierCloudSync.save(this,cloudState);
+                next.token=approved.getString("token");
             }
+            // The server may already have approved the session. Persist that
+            // state even when no token rotation/activation was needed.
+            next.approved=true;
+            GlacierCloudSync.save(this,next);
+            cloudState=next;
             return "设备已授权；可以同步被允许的账号空间。";
         });
     }
@@ -1814,14 +1875,16 @@ public final class MainActivity extends Activity {
             try {GlacierCloudSync.call(cloudState,"POST",
                     "/v1/logout",new JSONObject());}
             catch(Exception ignored) {}
+            GlacierCloudSync.State next=GlacierCloudSync.State.fromJson(cloudState.toJson());
+            next.token="";
+            next.approved=false;
+            next.autoEnabled=false;
+            next.autoPassphrase="";
+            next.baselines=new JSONObject();
+            GlacierCloudSync.save(this,next);
             cloudEpoch++;
             cloudAutoHandler.removeCallbacks(cloudAutoTimer);
-            cloudState.token="";
-            cloudState.approved=false;
-            cloudState.autoEnabled=false;
-            cloudState.autoPassphrase="";
-            cloudState.baselines=new JSONObject();
-            GlacierCloudSync.save(this,cloudState);
+            cloudState=next;
             return "已退出同步账号。本机已保存账号不受影响。";
         });
     }
