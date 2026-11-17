@@ -1,0 +1,14 @@
+{
+  "description": "Synthetic-only desktop-to-Android E2E interoperability fixture. Fixed nonce and salt for this regression ONLY; production encryption MUST use fresh randomness.",
+  "space": "private",
+  "passphrase": "synthetic-only-passphrase-2026",
+  "card": {
+    "space": "private",
+    "site": "example.com",
+    "name": "Glacier Test",
+    "username": "fictional@example.com",
+    "password": "not-a-real-password-2026",
+    "code_api": "https://codes.example.com/otp"
+  },
+  "envelope": "{\"format\":\"glacier-vault-v1\",\"kdf\":\"pbkdf2-sha256-400k\",\"salt\":\"AAECAwQFBgcICQoLDA0ODw\",\"nonce\":\"EBESExQVFhcYGRob\",\"ciphertext\":\"enAPMgrpu4HdXxcQ1e0JQxfSTd72OYh4evPytEZUM33SKSa6z8j2O2YJWvMcxAGPGAViVnOeq8BIpB0tzabmvURIJ3d8wPCOGuh5ypsq80C0JQHxEdYxFFEekuOwJ8JM9GDvo9DgyN-NJ9pQJaRyGCjO5jbdTUmUXrYTVjXeqg51QLeG3xAUnLa7b_KphPp7RC19ZAft7RToVrzDtCirzse_p2Pbes0ho50CK8ON8pEvkGBN5ytOxwEmnVfPaPB2XuGz84whXW_OHCBYvY3W3eiI6gP1mLe4-fPEbNTcPKIRA6NNmLpWSZsUYLkUHA\"}"
+}
