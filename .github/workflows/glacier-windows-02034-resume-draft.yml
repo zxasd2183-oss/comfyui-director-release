@@ -1,0 +1,111 @@
+name: Glacier Windows 0.20.34 resume immutable DRAFT by ID
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-windows-02034-resume-draft.yml'
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: glacier-windows-02034-immutable-publication
+  cancel-in-progress: false
+jobs:
+  resume:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 'bb329238124baf096ac5a0bfa08d7527de36b8ae'
+      ORIGINAL_PROMOTION_SHA: '05b76f4e968a4660ff4d5affe79200deab1b1399'
+      WIN_RUN: '44033772542'
+      RELEASE_ID: '448290367'
+      RELEASE_TAG: 'glacier-v0.20.34'
+      RELEASE_FILE: 'GlacierBrowser-v0.20.34-Windows-Setup-x64.exe'
+      RELEASE_SIZE: '175970856'
+      RELEASE_DIGEST: '7954c7551d43446b6c6acffd9b07d90bb4bf086aa44e351f288bd26aeacbcb5f'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify original successful Windows QA and unchanged main source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          original=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{os.environ["WIN_RUN"]}']))
+          if not (original.get('head_sha')==os.environ['SOURCE_SHA'] and
+                  original.get('head_branch')=='release/glacier-min8-02034-android029-rc-20261116' and
+                  original.get('status')=='completed' and original.get('conclusion')=='success' and
+                  original.get('repository',{}).get('full_name')==repo):
+              raise RuntimeError('Original Windows native QA not verified')
+          # An audited prior release workflow made the original DRAFT asset.
+          promotion=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/44039328678']))
+          if (promotion.get('head_sha')!=os.environ['ORIGINAL_PROMOTION_SHA'] or
+              promotion.get('conclusion')!='failure' or
+              promotion.get('head_branch')!='main'):
+              raise RuntimeError('Expected prior draft creation attempt absent')
+          subprocess.run(['git','merge-base','--is-ancestor',
+                          os.environ['ORIGINAL_PROMOTION_SHA'],'HEAD'],check=True)
+          for path in (
+              'glacier-windows/',
+              'scripts/glacier_prepare_rotated_update.py',
+              'scripts/glacier_release_version_check.py',
+              '.github/workflows/glacier-rc-windows.yml'):
+              subprocess.run(['git','diff','--exit-code',os.environ['SOURCE_SHA'],
+                              'HEAD','--',path],check=True)
+          print('PASS unchanged Windows v0.20.34 binary-producing source and original QA')
+          PY
+      - name: Verify exact existing hidden draft ID, byte digest and original target
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          rel=json.loads(subprocess.check_output(
+              ['gh','api',f'repos/{repo}/releases/{os.environ["RELEASE_ID"]}']))
+          assets=rel.get('assets',[])
+          if (rel.get('id')!=int(os.environ['RELEASE_ID']) or
+              rel.get('tag_name')!=os.environ['RELEASE_TAG'] or
+              rel.get('target_commitish')!=os.environ['ORIGINAL_PROMOTION_SHA'] or
+              rel.get('draft') is not True or rel.get('prerelease') or
+              rel.get('published_at') is not None or len(assets)!=1 or
+              assets[0].get('name')!=os.environ['RELEASE_FILE'] or
+              assets[0].get('size')!=int(os.environ['RELEASE_SIZE']) or
+              assets[0].get('state')!='uploaded' or
+              assets[0].get('digest')!='sha256:'+os.environ['RELEASE_DIGEST']):
+              raise RuntimeError('Existing GitHub DRAFT differs from exact QA EXE: refuse publishing')
+          print('PASS original hidden draft ID, SHA256, size, target commit and absence of extras')
+          PY
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag already exists; refusing any overwrite"; exit 3
+          fi
+      - name: Publish exact verified DRAFT by release ID (not draft tag)
+        run: |
+          set -euo pipefail
+          # GitHub does not yet expose a DRAFT through releases/tags/<tag>.
+          # Publish the verified release ID itself; never upload a replacement.
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false > "$RUNNER_TEMP/glacier-windows-published.json"
+          python3 - <<'PY'
+          import json,os
+          doc=json.load(open(os.environ['RUNNER_TEMP']+'/glacier-windows-published.json'))
+          assets=doc.get('assets',[])
+          if (doc.get('id')!=int(os.environ['RELEASE_ID']) or
+              doc.get('tag_name')!=os.environ['RELEASE_TAG'] or
+              doc.get('draft') is not False or not doc.get('published_at') or
+              len(assets)!=1 or
+              assets[0].get('name')!=os.environ['RELEASE_FILE'] or
+              assets[0].get('size')!=int(os.environ['RELEASE_SIZE']) or
+              assets[0].get('digest')!='sha256:'+os.environ['RELEASE_DIGEST']):
+              raise RuntimeError('Published Windows asset did not match original immutable DRAFT')
+          print('PASS Windows 0.20.34 published immutable full-byte original installer')
+          PY
+      - name: Request existing owner VPS OIDC mirror and separate Ed25519 Windows signing
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Original Glacier Windows 0.20.34 is public; OIDC mirror and Ed25519 signer dispatched; independently verify signed feed before reporting installed update ready.' >> "$GITHUB_STEP_SUMMARY"
