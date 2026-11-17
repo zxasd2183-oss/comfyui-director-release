@@ -150,6 +150,8 @@ class InteractiveHeroTests(unittest.TestCase):
             self.assertFalse(any((folder / "requests").iterdir()))
         source = Path(ue_process.__file__).read_text(encoding="utf-8")
         self.assertIn('"-run=pythonscript"', source)
+        self.assertIn('Win64\\UnrealEditor.exe', source)
+        self.assertIn('"hero_interactive_gui_editor_missing"', source)
         self.assertIn('"hero_rig_v200"', source)
         self.assertNotIn("shell=True", source)
         self.assertIn("_interactive_hero_preflight(root, ident)", source)
