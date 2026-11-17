@@ -368,10 +368,12 @@ def build_gpt_hero_cloud_rig(spec,root,work):
     env["DIRECTOR_UE_JOB_ID"]=work.name
     env["DIRECTOR_UE_REVIEW_MODE"]="hero_rig_v200"
     env["DIRECTOR_UE_RESULT_FILE"]=str(receipt)
-    _run_unreal([str(find_editor_cmd()),str(project),"-run=pythonscript",
-                 "-script="+str(script),"-unattended","-nop4",
-                 "-nosplash","-NoSound","-log"],root,work/"hero_rig.log",
-                780,env)
+    # Route only this cloud operation through the Windows user's actual
+    # interactive login token (Epic HKCU), not the isolated batch Worker.
+    # The signed interactive runner reconstructs a fixed command itself,
+    # verifies all three source hashes, and enforces cancellation/timeout.
+    from ue_process import run_interactive_hero_rig
+    run_interactive_hero_rig(root,work,780)
     if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size>6000:
         raise JobError("hero_rig_receipt_missing")
     data=json.loads(receipt.read_text("utf-8"))
