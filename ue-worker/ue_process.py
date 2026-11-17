@@ -376,7 +376,17 @@ def _interactive_hero_once(root, folder, ticket, user, session):
                                     stdout=log, stderr=subprocess.STDOUT)
             reason = "editor_failed"
             deadline = time.monotonic() + HERO_BRIDGE_TIMEOUT
+            next_ready = 0.0
             while True:
+                # The authenticated Worker must keep seeing this same user /
+                # session while a potentially long cloud request is active.
+                if time.monotonic() >= next_ready:
+                    _bridge_write(folder / "ready.json", {
+                        "format": HERO_BRIDGE_FORMAT, "user": user,
+                        "session_id": session, "pid": os.getpid(),
+                        "updated": time.time(),
+                    })
+                    next_ready = time.monotonic() + 2
                 if cancel.exists() or time.monotonic() >= deadline:
                     _kill_tree(proc)  # PID comes exclusively from local Popen
                     reason = "cancelled_or_timed_out"
