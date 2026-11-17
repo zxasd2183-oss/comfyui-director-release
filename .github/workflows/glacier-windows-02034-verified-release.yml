@@ -1,0 +1,151 @@
+name: Glacier Windows verified 0.20.34 release and signed VPS update
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-windows-02034-verified-release.yml'
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: glacier-windows-02034-immutable-publication
+  cancel-in-progress: false
+jobs:
+  publish-windows:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 'bb329238124baf096ac5a0bfa08d7527de36b8ae'
+      WIN_RUN: '44033772542'
+      EXPECTED_TAG: glacier-v0.20.34
+      EXPECTED_INSTALLER: GlacierBrowser-v0.20.34-Windows-Setup-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refuse unapproved Windows source or incomplete native QA
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          source=os.environ['SOURCE_SHA']
+          run=os.environ['WIN_RUN']
+          j=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
+          if not (j.get('head_sha')==source and
+                  j.get('head_branch')=='release/glacier-min8-02034-android029-rc-20261116' and
+                  j.get('status')=='completed' and
+                  j.get('conclusion')=='success' and
+                  j.get('repository',{}).get('full_name')==repo):
+              raise RuntimeError('Pinned original Windows native QA is not verified')
+          for path in (
+              'glacier-windows/',
+              'scripts/glacier_prepare_rotated_update.py',
+              'scripts/glacier_release_version_check.py',
+              '.github/workflows/glacier-rc-windows.yml',
+          ):
+              subprocess.run(['git','diff','--exit-code',source,'HEAD','--',path],check=True)
+          from pathlib import Path
+          checks={
+            'glacier-windows/secure_update.py':"CURRENT_VERSION = '0.20.34'",
+            'glacier-windows/main.py':'Windows v0.20.34',
+            'scripts/glacier_prepare_rotated_update.py':'"windows": "0.20.34"',
+            '.github/workflows/glacier-rc-windows.yml':'GlacierBrowser-v0.20.34-Windows-Setup-x64.exe',
+          }
+          for p,word in checks.items():
+              if word not in Path(p).read_text(encoding='utf8'):
+                  raise RuntimeError('Source version mismatch: '+p)
+          print('PASS original Windows QA, pinned unchanged main source, version 0.20.34')
+          PY
+      - name: Reject reused or non-monotonic Windows release identity
+        run: |
+          set -euo pipefail
+          if gh release view "$EXPECTED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing replace"; exit 3
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$EXPECTED_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag already exists; refusing replace"; exit 3
+          fi
+          python3 - <<'PY'
+          import json,os,re,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          releases=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100']))
+          new=(0,20,34)
+          for item in releases:
+              tag=str(item.get('tag_name',''))
+              m=re.fullmatch(r'glacier-v(\d+)\.(\d+)\.(\d+)',tag)
+              if not m:continue
+              v=tuple(map(int,m.groups()))
+              if v>=new:raise RuntimeError('Windows version/tag already used or rolled back')
+          print('PASS new Windows version is strictly monotonic')
+          PY
+      - name: Download only the original verified Windows Setup.exe
+        run: |
+          set -euo pipefail
+          mkdir -p staged/windows
+          gh run download "$WIN_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name GlacierBrowser-RC-Windows-Setup --dir staged/windows
+      - name: Independently verify complete Windows installer and SHA256
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,os
+          from pathlib import Path
+          root=Path('staged/windows')
+          files=list(root.iterdir())
+          expected=os.environ['EXPECTED_INSTALLER']
+          if (len(files)!=1 or files[0].name!=expected or
+              files[0].is_symlink() or not files[0].is_file()):
+              raise RuntimeError('Wrong original signed-update Windows installer')
+          p=files[0]
+          size=p.stat().st_size
+          if not (100_000_000<=size<=400_000_000):
+              raise RuntimeError('Unexpected Windows installer size')
+          with p.open('rb') as f:
+              if f.read(2)!=b'MZ':raise RuntimeError('Windows installer is not an EXE')
+              f.seek(0)
+              digest=hashlib.file_digest(f,'sha256').hexdigest()
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf8') as env:
+              env.write('INSTALLER_SHA256='+digest+'\n')
+              env.write('INSTALLER_SIZE='+str(size)+'\n')
+          print('PASS full verified Windows installer:',expected,'size:',size,'sha256:',digest)
+          PY
+      - name: Create Windows-only immutable nonpublic DRAFT release
+        run: |
+          set -euo pipefail
+          gh release create "$EXPECTED_TAG" "staged/windows/$EXPECTED_INSTALLER" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Windows 0.20.34 · 统一账号最低 8 位密码' \
+            --notes 'Windows 统一账号注册与登录密码客户端最低长度改为 8 位，对应 Glacier Sync 服务器已验证注册模型 7 位拒绝、8 位可进入邀请码校验。保留独立网站保险箱主口令至少 12 位、账号与 Cookie 加密同步保护、设备授权及 VLESS。不会在安装包中内置邀请码。Windows 安装 EXE 未经商业 Authenticode 签名；自动更新仍由独立 Ed25519 签名清单及安装包 SHA256 校验。'
+      - name: Verify draft asset bytes, digest, immutable main target before public release
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          tag=os.environ['EXPECTED_TAG']
+          doc=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          a=doc.get('assets',[])
+          expected='sha256:'+os.environ['INSTALLER_SHA256']
+          if (doc.get('draft') is not True or doc.get('published_at') is not None or
+              doc.get('prerelease') or doc.get('target_commitish')!=os.environ['GITHUB_SHA'] or
+              len(a)!=1 or a[0].get('name')!=os.environ['EXPECTED_INSTALLER'] or
+              a[0].get('size')!=int(os.environ['INSTALLER_SIZE']) or
+              a[0].get('digest')!=expected):
+              raise RuntimeError('Unverified or tampered draft release asset: refuse publishing')
+          print('PASS unpublished Windows draft fully matches original QA EXE bytes')
+          PY
+      - name: Publish only verified Windows 0.20.34, never overwrite older releases
+        run: |
+          set -euo pipefail
+          gh release edit "$EXPECTED_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release view "$EXPECTED_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -Fx false
+          echo 'Published independently verified Windows 0.20.34 only.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Trigger existing VPS verified mirror and Ed25519 Windows-only signer
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Dispatched existing OIDC VPS mirror and independent Windows signed feed; check each workflow completion before claiming auto-update ready.' >> "$GITHUB_STEP_SUMMARY"
