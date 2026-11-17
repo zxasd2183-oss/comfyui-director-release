@@ -49,6 +49,7 @@ jobs:
         run: |
           python3 glacier-android-gecko/scripts/check_rc_version_consistency.py
           python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_rc_version_consistency.py' -v
+          python3 -m unittest -v scripts.test_glacier_android_profile_avatar
           python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_gecko_mainthread_guards.py' -v
           python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_android_login_fill34.py' -v
       - name: Download and SHA256 verify official sing-box 1.14.4 Android cores
