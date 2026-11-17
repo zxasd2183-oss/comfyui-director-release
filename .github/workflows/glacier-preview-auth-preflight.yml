@@ -1,0 +1,26 @@
+name: Glacier preview OIDC release discovery auth regression
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/glacier-preview-immediate.yml'
+      - '.github/workflows/glacier-preview-auth-preflight.yml'
+      - 'scripts/test_glacier_preview_dispatch_auth.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-preview-immediate.yml'
+      - '.github/workflows/glacier-preview-auth-preflight.yml'
+      - 'scripts/test_glacier_preview_dispatch_auth.py'
+permissions:
+  contents: read
+jobs:
+  preview-auth-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reject anonymous GitHub release lookups and CDN-sourced signed feed versions
+        run: python -m unittest discover -s scripts -p test_glacier_preview_dispatch_auth.py -v
