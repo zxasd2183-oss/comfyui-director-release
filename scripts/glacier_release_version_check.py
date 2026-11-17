@@ -65,7 +65,7 @@ def inspect(root=ROOT):
         if f"GlacierAndroid-v{android}-Mobile-M05-ARM64_x86_64-debug.apk" not in data[key].replace(
                 "ARM64-x86_64", "ARM64_x86_64"):
             raise ValueError(key + ": stale Android APK name")
-    if "versionCode='17'" not in data["android_ci"] or "versionName='0.2.9'" not in data["android_ci"]:
+    if "versionCode='18'" not in data["android_ci"] or "versionName='0.2.9'" not in data["android_ci"]:
         raise ValueError("Android release signing guard is still pinned to old APK")
     if "0.20.28" in data["win_ci"] or "0.20.27" in data["mac_ci"]:
         raise ValueError("Installer workflow still refers to an old release version")
