@@ -479,6 +479,7 @@ DESKTOP_SESSION = None
 DESKTOP_LOCK = threading.RLock()
 DESKTOP_SESSION_LOADED = False
 DESKTOP_CREDENTIAL_SAVED = False
+DESKTOP_FRAME_HEALTH = "not_attempted"
 DESKTOP_ORIGIN = "http://127.0.0.1:19017"
 DESKTOP_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -512,8 +513,13 @@ def _desktop_http(path, secret, max_bytes=1024, *, pairing=False, payload=None):
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             raise ValueError("desktop_companion_revoked") from exc
+        if exc.code == 429:
+            raise ValueError("desktop_frame_rate_limited") from exc
         raise ValueError("desktop_companion_unavailable") from exc
     except (OSError, urllib.error.URLError) as exc:
+        reason = getattr(exc, "reason", None)
+        if isinstance(exc, TimeoutError) or isinstance(reason, TimeoutError):
+            raise ValueError("desktop_companion_timeout") from exc
         raise ValueError("desktop_companion_unavailable") from exc
 
 
@@ -577,7 +583,8 @@ def desktop_status():
             raise ValueError("desktop_session_ended")
         return {"ok": True, "paired": True, "sharing": True,
                 "control_enabled": body.get("control_enabled") is True,
-                "resume_after_worker_restart": DESKTOP_CREDENTIAL_SAVED}
+                "resume_after_worker_restart": DESKTOP_CREDENTIAL_SAVED,
+                "last_frame_health": DESKTOP_FRAME_HEALTH}
     except (OSError, ValueError, UnicodeError, TypeError) as exc:
         # A temporarily unavailable GUI must not erase a valid resume token
         # during an update. A real companion rejection or explicit Stop is
@@ -608,8 +615,10 @@ def unpair_desktop():
 
 
 def desktop_frame():
+    global DESKTOP_FRAME_HEALTH
     session = _desktop_session_token()
     if session is None:
+        DESKTOP_FRAME_HEALTH = "not_paired"
         raise ValueError("desktop_not_paired")
     try:
         kind, data = _desktop_http("/v1/frame", session, max_bytes=400000)
@@ -617,8 +626,19 @@ def desktop_frame():
                 not data.startswith(bytes((255, 216))) or
                 not data.endswith(bytes((255, 217)))):
             raise ValueError("desktop_jpeg_invalid")
-        return data, hashlib.sha256(data).hexdigest()
+        digest = hashlib.sha256(data).hexdigest()
+        DESKTOP_FRAME_HEALTH = "ok"
+        return data, digest
     except (OSError, ValueError, UnicodeError, TypeError) as exc:
+        # A bounded, non-sensitive status only; never expose desktop bytes,
+        # credential contents, HTTP payloads or remote exception strings.
+        allowed = {
+            "desktop_frame_rate_limited", "desktop_companion_timeout",
+            "desktop_companion_unavailable", "desktop_companion_revoked",
+            "desktop_jpeg_invalid", "desktop_response_too_large",
+        }
+        diagnostic = str(exc)
+        DESKTOP_FRAME_HEALTH = diagnostic if diagnostic in allowed else "other_failure"
         raise ValueError("desktop_frame_unavailable") from exc
 
 
@@ -696,7 +716,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.3.2",
+        "worker_version": "2.3.3",
     }
 
 
