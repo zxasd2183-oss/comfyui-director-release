@@ -103,6 +103,28 @@ def hero_project_manifest():
     }
 
 
+
+def trusted_hero_project_manifest(content):
+    """Accept UE 5.8's GUID rewrite, not arbitrary project config drift.
+
+    The signed Worker always invokes its pinned UE 5.8 executable. The GUID
+    here is never resolved to an executable or accepted as an input path.
+    Every other field (including the complete plugin allowlist) stays frozen.
+    """
+    if type(content) is not dict:
+        return False
+    expected = hero_project_manifest()
+    assoc = content.get("EngineAssociation")
+    if assoc == expected["EngineAssociation"]:
+        return content == expected
+    if (type(assoc) is not str or
+            not re.fullmatch(
+                r"\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
+                r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}", assoc)):
+        return False
+    return {**content, "EngineAssociation": "5.8"} == expected
+
+
 def hero_project_file():
     return (workspace_root() / "HeroProjects" / "CHAR_GPT" /
             "DirectorHeroGPT.uproject")
@@ -118,7 +140,7 @@ def hero_project_state():
         if not candidate.is_file() or candidate.stat().st_size > 65536:
             return "unsupported_project_file"
         content = json.loads(candidate.read_text(encoding="utf-8"))
-        return "prepared" if content == hero_project_manifest() else "foreign_project"
+        return "prepared" if trusted_hero_project_manifest(content) else "foreign_project"
     except (OSError, ValueError, TypeError, UnicodeError):
         return "unreadable"
 
