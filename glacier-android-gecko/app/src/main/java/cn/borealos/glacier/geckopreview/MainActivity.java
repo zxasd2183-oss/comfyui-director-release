@@ -254,9 +254,10 @@ public final class MainActivity extends Activity {
         if (cloudAvatar == null || cloudAvatarInitial == null || cloudAvatarGuest == null) return;
         // A remembered username alone is NOT a signed-in session: logout keeps
         // the account name locally to support the next login form.
-        boolean signedIn = !cloudSessionReadonly && cloudState != null
-                && !cloudState.username.isEmpty() && !cloudState.token.isEmpty();
-        boolean pending = signedIn && !cloudState.approved;
+        int state = GlacierProfileAvatarState.mode(cloudState, cloudSessionReadonly);
+        boolean signedIn = state == GlacierProfileAvatarState.APPROVED
+                || state == GlacierProfileAvatarState.PENDING;
+        boolean pending = state == GlacierProfileAvatarState.PENDING;
         GradientDrawable frame = new GradientDrawable();
         frame.setShape(GradientDrawable.OVAL);
         frame.setColor(signedIn ? (pending ? Color.rgb(255, 247, 231) : GLACIER_BLUE)
@@ -267,18 +268,13 @@ public final class MainActivity extends Activity {
         cloudAvatarGuest.setVisibility(signedIn ? View.GONE : View.VISIBLE);
         cloudAvatarInitial.setVisibility(signedIn ? View.VISIBLE : View.GONE);
         if (signedIn) {
-            int first = cloudState.username.codePointAt(0);
-            String initial = new String(Character.toChars(first)).toUpperCase(Locale.ROOT);
-            cloudAvatarInitial.setText(initial);
+            cloudAvatarInitial.setText(GlacierProfileAvatarState.initial(cloudState));
             cloudAvatarInitial.setTextColor(pending ? INK : Color.WHITE);
         } else {
             cloudAvatarInitial.setText("");
         }
-        cloudAvatar.setContentDescription(cloudSessionReadonly
-                ? "Glacier 账号 · 本机会话已锁定"
-                : !signedIn ? "Glacier 账号 · 未登录"
-                : pending ? "Glacier 账号 · 等待设备授权"
-                : "Glacier 账号 · 已登录");
+        cloudAvatar.setContentDescription(
+                GlacierProfileAvatarState.accessibilityLabel(state));
     }
 
     private LinearLayout horizontal() {
@@ -1430,7 +1426,8 @@ public final class MainActivity extends Activity {
                     .setPositiveButton("知道了",null).show();
             return;
         }
-        boolean signedIn = !cloudState.token.isEmpty() && !cloudState.username.isEmpty();
+        boolean signedIn = GlacierProfileAvatarState.mode(
+                cloudState, cloudSessionReadonly) != GlacierProfileAvatarState.GUEST;
         String[] actions = signedIn ? new String[]{
                 "确认设备已获批准","管理其他设备","加密上传当前账号空间",
                 "解密下载当前账号空间","开启安全自动同步（本机加密保存口令）",
