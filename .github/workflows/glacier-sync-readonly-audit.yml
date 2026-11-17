@@ -1,0 +1,31 @@
+name: Glacier Sync readonly backend-audit safety
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/glacier_sync_readonly_audit.py'
+      - 'scripts/test_glacier_sync_readonly_audit.py'
+      - '.github/workflows/glacier-sync-readonly-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/glacier_sync_readonly_audit.py'
+      - 'scripts/test_glacier_sync_readonly_audit.py'
+      - '.github/workflows/glacier-sync-readonly-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  no-side-effects:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile readonly diagnostic
+        run: python -m py_compile scripts/glacier_sync_readonly_audit.py
+      - name: Test no credentials or mutations
+        run: python -m unittest -v scripts.test_glacier_sync_readonly_audit
