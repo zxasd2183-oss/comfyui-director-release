@@ -184,6 +184,62 @@ class AccountCenterTests(unittest.TestCase):
         self.assertEqual(observed, [True, 0])
         window.close()
 
+
+    def test_eight_character_login_password_is_accepted(self):
+        window = FakeWindow()
+        def submit():
+            modal = QApplication.activeModalWidget()
+            inputs = modal.findChildren(QLineEdit)
+            inputs[0].setText("https://sync.borealos.cn")
+            inputs[1].setText("test-user")
+            inputs[2].setText("eight888")
+            modal.findChild(QDialogButtonBox).button(
+                QDialogButtonBox.StandardButton.Ok).click()
+        QTimer.singleShot(0, submit)
+        self.assertTrue(window._account_form26(False))
+        self.assertEqual(window.logins, 1)
+        self.assertEqual(window.last_login_fields["password"], "eight888")
+        window.close()
+
+    def test_seven_character_registration_password_is_rejected(self):
+        window = FakeWindow()
+        observed = []
+        def submit():
+            modal = QApplication.activeModalWidget()
+            inputs = modal.findChildren(QLineEdit)
+            self.assertEqual(len(inputs), 4)
+            inputs[0].setText("https://sync.borealos.cn")
+            inputs[1].setText("test-user")
+            inputs[2].setText("seven77")
+            inputs[3].setText("dummy-not-real-invite")
+            with patch.object(QMessageBox, "warning", return_value=None):
+                modal.findChild(QDialogButtonBox).button(
+                    QDialogButtonBox.StandardButton.Ok).click()
+            observed.extend([modal.isVisible(),window.registrations])
+            modal.reject()
+        QTimer.singleShot(0, submit)
+        self.assertFalse(window._account_form26(True))
+        self.assertEqual(observed, [True,0])
+        window.close()
+
+    def test_eight_character_registration_passes_client_validation(self):
+        window = FakeWindow()
+        def submit():
+            modal = QApplication.activeModalWidget()
+            inputs = modal.findChildren(QLineEdit)
+            self.assertEqual(len(inputs), 4)
+            inputs[0].setText("https://sync.borealos.cn")
+            inputs[1].setText("test-user")
+            inputs[2].setText("eight888")
+            inputs[3].setText("dummy-not-real-invite")
+            modal.findChild(QDialogButtonBox).button(
+                QDialogButtonBox.StandardButton.Ok).click()
+        QTimer.singleShot(0, submit)
+        self.assertTrue(window._account_form26(True))
+        self.assertEqual(window.registrations, 1)
+        self.assertEqual(window.last_register_fields["password"], "eight888")
+        window.close()
+
     def test_button_label_refreshes_when_signed_in(self):
         window = FakeWindow()
         window.setup_account_center26(QHBoxLayout())

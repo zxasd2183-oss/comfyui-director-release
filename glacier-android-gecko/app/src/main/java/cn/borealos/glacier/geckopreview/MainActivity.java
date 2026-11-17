@@ -1401,7 +1401,7 @@ public final class MainActivity extends Activity {
                 cloudState.base.isEmpty()?"https://sync.borealos.cn":cloudState.base,false);
         EditText user=cloudField(form,"Glacier 账号 ID",
                 cloudState.username,false);
-        EditText pass=cloudField(form,"登录密码（至少 12 位）","",true);
+        EditText pass=cloudField(form,"登录密码（至少 8 位）","",true);
         EditText invite=register?cloudField(form,"管理员注册邀请码","",true):null;
         ScrollView scroller=new ScrollView(this);scroller.addView(form);
         new AlertDialog.Builder(this)
@@ -1413,7 +1413,7 @@ public final class MainActivity extends Activity {
                     final String username=user.getText().toString().trim();
                     final String password=pass.getText().toString();
                     final String invitation=register?invite.getText().toString():"";
-                    if(server.isEmpty()||password.length()<12||username.length()<3) {
+                    if(server.isEmpty()||password.length()<8||username.length()<3) {
                         new AlertDialog.Builder(this).setMessage("HTTPS 地址、账号或密码不合法。")
                                 .setPositiveButton("知道了",null).show();
                         return;

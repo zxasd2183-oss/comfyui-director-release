@@ -320,7 +320,7 @@ class GlacierAccountCenter26:
         user.setText(getattr(self, "_sync_state23", {}).get("username", "") if not register else "")
         password = QLineEdit(form)
         password.setEchoMode(QLineEdit.EchoMode.Password)
-        password.setPlaceholderText("至少 12 个字符")
+        password.setPlaceholderText("至少 8 个字符")
         fields.addRow("同步服务器", base)
         fields.addRow("账号", user)
         fields.addRow("登录密码", password)
@@ -341,9 +341,9 @@ class GlacierAccountCenter26:
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("创建账号" if register else "登录")
         def submit():
             url, name, secret = base.text().strip(), user.text().strip(), password.text()
-            if not sync_url23(url) or not name or len(secret) < 12:
+            if not sync_url23(url) or not name or len(secret) < 8:
                 QMessageBox.warning(form, "Glacier 账号",
-                                    "请检查 HTTPS 服务器、账号以及至少 12 位的密码。")
+                                    "请检查 HTTPS 服务器、账号以及至少 8 位的密码。")
                 return
             invite = invitation.text() if register else ""
             if register and not invite:

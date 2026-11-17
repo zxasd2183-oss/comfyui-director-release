@@ -412,13 +412,13 @@ class GlacierSync23:
         if username is None:
             username = self._prompt_sync23("创建 Glacier 账号", "账号 ID（字母与数字）")
         if password is None:
-            password = self._prompt_sync23("创建 Glacier 账号", "登录密码（至少 12 位）", secret=True)
+            password = self._prompt_sync23("创建 Glacier 账号", "登录密码（至少 8 位）", secret=True)
         if invite is None:
             invite = self._prompt_sync23("创建 Glacier 账号", "管理员提供的注册邀请码", secret=True)
         if None in (username, password, invite):
             return
-        if len(password) < 12:
-            raise SyncError23("Login password must contain at least 12 characters")
+        if len(password) < 8:
+            raise SyncError23("Login password must contain at least 8 characters")
         import platform
         result = SyncTransport23(base, int(self.proxy_port)).call(
             "POST", "/v1/register", {"invite": invite, "username": username,
