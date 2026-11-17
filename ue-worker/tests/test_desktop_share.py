@@ -3,6 +3,7 @@
 The Worker exposes only allowlisted click/key/text actions. Owner must locally
 arm input; no arbitrary commands or long-lived credential reaches ChatGPT.
 """
+import io
 import json
 import os
 import secrets
@@ -107,6 +108,34 @@ class DesktopBridgeTests(unittest.TestCase):
                 agent.desktop_frame()
         self.assertTrue(agent.capabilities()["supports_desktop_keyboard_or_mouse"])
         self.assertTrue(agent.capabilities()["supports_desktop_view_only"])
+
+    def test_local_503_carries_only_allowlisted_capture_reason(self):
+        self.pair()
+        def reply(raw):
+            return urllib.error.HTTPError(
+                "http://127.0.0.1:19017/v1/frame", 503, "Unavailable",
+                {}, io.BytesIO(raw))
+        for reason in sorted(agent.DESKTOP_FRAME_ERRORS):
+            response = json.dumps({"ok": False, "reason": reason}).encode()
+            with patch.object(agent.DESKTOP_HTTP, "open",
+                              side_effect=reply(response)):
+                with self.assertRaisesRegex(ValueError,
+                                            "desktop_frame_unavailable"):
+                    agent.desktop_frame()
+            self.assertEqual(agent.DESKTOP_FRAME_HEALTH, reason)
+        # Arbitrary data from another process must never be returned.
+        for raw in (
+            b'{"ok":false,"reason":"SECRET_TOKEN_ON_SCREEN"}',
+            b'{"ok":false,"reason":"desktop_capture_failed"}' + b" " * 300,
+            b"NOT_JSON",
+        ):
+            with patch.object(agent.DESKTOP_HTTP, "open",
+                              side_effect=reply(raw)):
+                with self.assertRaisesRegex(ValueError,
+                                            "desktop_frame_unavailable"):
+                    agent.desktop_frame()
+            self.assertEqual(agent.DESKTOP_FRAME_HEALTH,
+                             "desktop_companion_unavailable")
 
     def test_snapshot_failure_diagnostics_are_bounded(self):
         self.pair()
