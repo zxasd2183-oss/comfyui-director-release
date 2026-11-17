@@ -51,6 +51,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify per-user Windows Credential Manager desktop resume
+        shell: pwsh
+        run: |
+          python -m unittest ue-worker.tests.test_desktop_share.DesktopBridgeTests.test_windows_credential_manager_round_trip -v
       - name: Verify Windows PowerShell bootstrap syntax
         shell: pwsh
         run: |
