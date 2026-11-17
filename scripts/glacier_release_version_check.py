@@ -2,6 +2,9 @@
 
 Verifies public version identities across desktop applications, installers,
 Android app, smoke scripts and candidate artifacts. Does not publish a release.
+
+The real Glacier Sync registration server and invitation issuer must be verified
+separately before any 8-character-account release is promoted (issue #117).
 """
 from __future__ import annotations
 
