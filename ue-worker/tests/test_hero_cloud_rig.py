@@ -93,6 +93,27 @@ class CloudRigTests(unittest.TestCase):
             self.assertEqual([hashlib.sha256(p.read_bytes()).hexdigest()
                               for p in items],digests)
 
+    def test_ue58_guid_association_reaches_pinned_editor_not_foreign(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project, items = sources(root)
+            data = json.loads(project.read_text("utf-8"))
+            data["EngineAssociation"] = "{01234567-89ab-CDEF-0123-456789abcdef}"
+            project.write_text(json.dumps(data), encoding="utf-8")
+            before = project.read_bytes()
+            digests = [hashlib.sha256(p.read_bytes()).hexdigest() for p in items]
+            work = root / "Jobs" / ("a" * 32)
+            with patch.object(ue_previs, "GPT_HERO_FACE_SOURCE_SHA256", digests[0]), \
+                 patch.object(ue_previs, "GPT_HERO_AMBER_SOURCE_SHA256", digests[1]), \
+                 patch.object(ue_previs, "GPT_HERO_SOURCE_SHA256", digests[2]), \
+                 patch.object(ue_jobs, "find_editor_cmd",
+                              return_value=Path("UnrealEditor.exe")), \
+                 patch.object(ue_previs, "_run_unreal",
+                              side_effect=RuntimeError("entered_pinned_editor")):
+                with self.assertRaisesRegex(RuntimeError, "entered_pinned_editor"):
+                    ue_previs.build_gpt_hero_cloud_rig(spec(), root, work)
+            self.assertEqual(project.read_bytes(), before)
+
     def test_source_hash_drift_blocks_cloud_before_start(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)

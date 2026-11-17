@@ -316,7 +316,7 @@ def build_gpt_hero_cloud_rig(spec,root,work):
     a new job candidate. Epic sign-in might be required: fail closed.
     """
     from ue_jobs import JobError,find_editor_cmd
-    from agent import hero_project_manifest
+    from agent import trusted_hero_project_manifest
     if spec.get("format") != "director_ue_hero_rig_v200":
         raise JobError("hero_rig_format_invalid")
     if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
@@ -334,7 +334,7 @@ def build_gpt_hero_cloud_rig(spec,root,work):
     if project.is_symlink() or not project.is_file():
         raise JobError("hero_rig_project_missing")
     try:
-        if json.loads(project.read_text("utf-8")) != hero_project_manifest():
+        if not trusted_hero_project_manifest(json.loads(project.read_text("utf-8"))):
             raise JobError("hero_rig_project_untrusted")
     except (TypeError,ValueError,UnicodeError):
         raise JobError("hero_rig_project_invalid") from None
