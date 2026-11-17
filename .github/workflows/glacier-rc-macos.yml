@@ -17,6 +17,7 @@ on:
       - feature/glacier-macos-safari-sidebar39-20261112
       - feature/glacier-home-brand-20261112
     paths:
+      - 'scripts/glacier_release_version_check.py'
       - 'glacier-macos/**'
       - 'glacier-windows/glacier_productivity16.py'
       - 'glacier-windows/test_productivity16.py'
