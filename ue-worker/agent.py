@@ -559,7 +559,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.3.0",
+        "worker_version": "2.3.1",
     }
 
 
