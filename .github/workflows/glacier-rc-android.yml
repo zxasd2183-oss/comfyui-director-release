@@ -447,7 +447,7 @@ jobs:
           [[ "$package_line" == *"name='cn.borealos.glacier.geckopreview'"* ]] || {
             echo '::error::Unexpected Android package name'; exit 3;
           }
-          [[ "$package_line" == *"versionCode='17'"* ]] || {
+          [[ "$package_line" == *"versionCode='18'"* ]] || {
             echo '::error::Unexpected Android versionCode'; exit 3;
           }
           [[ "$package_line" == *"versionName='0.2.9'"* ]] || {
