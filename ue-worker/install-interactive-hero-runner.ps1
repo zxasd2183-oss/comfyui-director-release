@@ -27,6 +27,26 @@ $installed = Get-Content -LiteralPath $agent -Raw
 if ($installed -notmatch '"worker_version":\s*"2\.3\.6"') {
     throw "Install signed Worker 2.3.6 before enabling interactive execution"
 }
+# The signed Worker bundle is protected from ordinary users. Allow the
+# particular RDP account to READ trusted Python code without revealing the
+# batch Worker's bearer token. The token's ACL must block inheritance.
+$workerToken = Join-Path $programDir "worker.token"
+if (-not (Test-Path -LiteralPath $workerToken -PathType Leaf)) {
+    throw "Existing private Worker token not found"
+}
+if (-not (Get-Acl -LiteralPath $workerToken).AreAccessRulesProtected) {
+    throw "Worker token ACL inherits parent access; refusing user grant"
+}
+$workspace = "C:\DirectorVirtualStudio"
+if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {
+    throw "Director workspace unavailable"
+}
+$accountRx = "*$($identity.User.Value):(OI)(CI)RX"
+& icacls.exe $programDir /grant $accountRx | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Account read access to signed scripts failed" }
+$accountModify = "*$($identity.User.Value):(OI)(CI)M"
+& icacls.exe $workspace /grant $accountModify | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Account access to existing project failed" }
 $python = $null
 $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
 if ($launcher) {
@@ -44,7 +64,7 @@ $taskName = "Director-UE-Interactive-Hero"
 if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
     throw "Task already exists. Refusing to overwrite an existing identity."
 }
-$action = New-ScheduledTaskAction -Execute $python -Argument ('"' + $runner + '" --interactive-hero-runner') -WorkingDirectory $programDir
+$action = New-ScheduledTaskAction -Execute $python -Argument ('-B "' + $runner + '" --interactive-hero-runner') -WorkingDirectory $programDir
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
 $principal = New-ScheduledTaskPrincipal -UserId $identity.User.Value -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
