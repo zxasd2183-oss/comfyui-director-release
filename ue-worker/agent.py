@@ -509,6 +509,10 @@ def _desktop_http(path, secret, max_bytes=1024, *, pairing=False, payload=None):
             if len(data) > max_bytes:
                 raise ValueError("desktop_response_too_large")
             return response.headers.get("Content-Type", ""), data
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise ValueError("desktop_companion_revoked") from exc
+        raise ValueError("desktop_companion_unavailable") from exc
     except (OSError, urllib.error.URLError) as exc:
         raise ValueError("desktop_companion_unavailable") from exc
 
@@ -574,9 +578,14 @@ def desktop_status():
         return {"ok": True, "paired": True, "sharing": True,
                 "control_enabled": body.get("control_enabled") is True,
                 "resume_after_worker_restart": DESKTOP_CREDENTIAL_SAVED}
-    except (OSError, ValueError, UnicodeError, TypeError):
-        # A locked/disconnected/Stopped desktop invalidates the in-memory
-        # pairing; reconnection requires a NEW visible user-approved code.
+    except (OSError, ValueError, UnicodeError, TypeError) as exc:
+        # A temporarily unavailable GUI must not erase a valid resume token
+        # during an update. A real companion rejection or explicit Stop is
+        # final; the human can always revoke access on their own desktop.
+        if (type(exc) is ValueError and
+                str(exc) == "desktop_companion_unavailable"):
+            return {"ok": True, "paired": False, "sharing": False,
+                    "control_enabled": False, "recovery_pending": True}
         unpair_desktop()
         return {"ok": True, "paired": False, "sharing": False,
                 "control_enabled": False}
