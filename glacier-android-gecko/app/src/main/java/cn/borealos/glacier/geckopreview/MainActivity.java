@@ -103,6 +103,17 @@ public final class MainActivity extends Activity {
     private GeckoView web;
     private BrowserTransfers transfers;
     private BrowserUpdater updater;
+    // Update metadata is polled only while the browser is visible.
+    private static final long UPDATE_CHECK_MS = 15L * 60L * 1000L;
+    private static final long UPDATE_RETRY_MS = 10L * 60L * 1000L;
+    private final Handler updateCheckHandler = new Handler(Looper.getMainLooper());
+    private final Runnable updateCheckTimer = new Runnable() {
+        @Override public void run() {
+            maybeCheckUpdatesAtStartup();
+            updateCheckHandler.postDelayed(this, UPDATE_CHECK_MS);
+        }
+    };
+    private boolean updateCheckInFlight;
     private EditText address;
     private TextView identity;
     private TextView tabCounter;
@@ -889,21 +900,41 @@ public final class MainActivity extends Activity {
     }
 
     private void maybeCheckUpdatesAtStartup() {
-        // Automatically CHECK only; download/install always need user action.
-        // Network routing is already configured when initializeEngine returns.
-        if(debugBuild()||updater==null||!autoUpdateCheckEnabled())return;
-        long now=System.currentTimeMillis();
-        long last=updatePreferences().getLong("last_checked",0);
-        if(last>0 && now-last<6L*60*60*1000 && now>=last)return;
-        updatePreferences().edit().putLong("last_checked",now).apply();
-        updater.check(proxyMode,(found,error)->{
-            if(isFinishing()||error!=null||found==null)return;
+        // Never query before the user selects a network mode. Failed checks
+        // are retried; success is timestamped only after metadata is received.
+        if (debugBuild() || updater == null || !autoUpdateCheckEnabled()
+                || runtime == null || isFinishing() || updateCheckInFlight) return;
+        long now = System.currentTimeMillis();
+        long lastSuccess = updatePreferences().getLong("last_checked", 0);
+        if (lastSuccess > 0 && now >= lastSuccess
+                && now - lastSuccess < UPDATE_CHECK_MS) return;
+        long lastAttempt = updatePreferences().getLong("last_attempt", 0);
+        if (lastAttempt > 0 && now >= lastAttempt
+                && now - lastAttempt < UPDATE_RETRY_MS) return;
+        updateCheckInFlight = true;
+        updatePreferences().edit().putLong("last_attempt", now).apply();
+        updater.check(proxyMode, (found, error) -> {
+            updateCheckInFlight = false;
+            if (error != null) return; // Never retry through direct network in VLESS mode.
+            updatePreferences().edit()
+                    .putLong("last_checked", System.currentTimeMillis()).apply();
+            if (isFinishing() || found == null) return;
+            String lastPromptVersion =
+                    updatePreferences().getString("last_prompt_version", "");
+            long lastPromptAt = updatePreferences().getLong("last_prompt_at", 0);
+            long current = System.currentTimeMillis();
+            if (found.version.equals(lastPromptVersion) && lastPromptAt > 0
+                    && current >= lastPromptAt
+                    && current - lastPromptAt < 24L * 60L * 60L * 1000L) return;
+            updatePreferences().edit()
+                    .putString("last_prompt_version", found.version)
+                    .putLong("last_prompt_at", current).apply();
             new AlertDialog.Builder(this)
-                    .setTitle("Glacier 发现新版 "+found.version)
+                    .setTitle("Glacier 发现新版 " + found.version)
                     .setMessage("已检查官方发布记录。你可以选择下载并验证新版 APK，"
-                            +"安装仍需要 Android 系统确认。")
-                    .setNegativeButton("以后再说",null)
-                    .setPositiveButton("查看更新",(d,w)->showAvailableUpdate(found))
+                            + "安装仍需要 Android 系统确认。")
+                    .setNegativeButton("以后再说", null)
+                    .setPositiveButton("查看更新", (d, w) -> showAvailableUpdate(found))
                     .show();
         });
     }
@@ -912,9 +943,9 @@ public final class MainActivity extends Activity {
         final String version=BuildConfig.VERSION_NAME;
         final String auto=autoUpdateCheckEnabled()?"已开启":"已关闭";
         final String[] choices=updater!=null&&updater.hasReady()?
-                new String[]{"检查更新","启动时检查新版："+auto,
+                new String[]{"检查更新","自动检查新版："+auto,
                         "更新安全说明","安装已验证 APK"}:
-                new String[]{"检查更新","启动时检查新版："+auto,"更新安全说明"};
+                new String[]{"检查更新","自动检查新版："+auto,"更新安全说明"};
         // Android AlertDialog's message view can hide its items list on
         // some versions. A compact list and a separate explanation dialog
         // keep the actual update actions reachable on real devices.
@@ -2671,7 +2702,8 @@ public final class MainActivity extends Activity {
                 openTab(PRIVATE, bootUrl);
             }
             if (!debugBuild()) {
-                tabSaveHandler.postDelayed(this::maybeCheckUpdatesAtStartup, 5000);
+                updateCheckHandler.removeCallbacks(updateCheckTimer);
+                updateCheckHandler.postDelayed(updateCheckTimer, 5000);
             }
         } catch (Exception ex) {
             NativeProxy.stop();
@@ -2759,7 +2791,15 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        updateCheckHandler.removeCallbacks(updateCheckTimer);
+        updateCheckHandler.postDelayed(updateCheckTimer, 5000);
+    }
+
+    @Override
     protected void onStop() {
+        updateCheckHandler.removeCallbacks(updateCheckTimer);
         tabSaveHandler.removeCallbacks(saveTabsTask);
         persistTabs();
         libraryHandler.removeCallbacks(saveLibraryTask);
@@ -2769,6 +2809,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        updateCheckHandler.removeCallbacks(updateCheckTimer);
         tabSaveHandler.removeCallbacks(saveTabsTask);
         libraryHandler.removeCallbacks(saveLibraryTask);
         if (isFinishing()) {
