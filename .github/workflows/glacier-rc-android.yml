@@ -7,6 +7,7 @@ on:
       - release/glacier-min8-02034-android029-rc-20261116
       - integration/glacier-browser-release-candidate-20261111
     paths:
+      - 'scripts/glacier_release_version_check.py'
       - 'glacier-android-gecko/**'
       - '.github/workflows/glacier-rc-android.yml'
   workflow_dispatch:
