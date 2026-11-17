@@ -108,6 +108,51 @@ class DesktopBridgeTests(unittest.TestCase):
         self.assertTrue(agent.capabilities()["supports_desktop_keyboard_or_mouse"])
         self.assertTrue(agent.capabilities()["supports_desktop_view_only"])
 
+    def test_snapshot_failure_diagnostics_are_bounded(self):
+        self.pair()
+        allowed = (
+            "desktop_frame_rate_limited",
+            "desktop_companion_timeout",
+            "desktop_companion_unavailable",
+            "desktop_companion_revoked",
+            "desktop_jpeg_invalid",
+            "desktop_response_too_large",
+        )
+        for reason in allowed:
+            with patch.object(agent, "_desktop_http",
+                              side_effect=ValueError(reason)):
+                with self.assertRaisesRegex(ValueError,
+                                            "desktop_frame_unavailable"):
+                    agent.desktop_frame()
+            with patch.object(agent, "_desktop_http",
+                              return_value=("application/json",
+                                            b'{"ok":true,"sharing":true}')):
+                state = agent.desktop_status()
+            self.assertEqual(state["last_frame_health"], reason)
+        with patch.object(agent, "_desktop_http",
+                          side_effect=ValueError("PRIVATE_SESSION_SECRET")):
+            with self.assertRaisesRegex(ValueError, "desktop_frame_unavailable"):
+                agent.desktop_frame()
+        with patch.object(agent, "_desktop_http",
+                          return_value=("application/json",
+                                        b'{"ok":true,"sharing":true}')):
+            state = agent.desktop_status()
+        self.assertEqual(state["last_frame_health"], "other_failure")
+        self.assertNotIn("PRIVATE_SESSION_SECRET", json.dumps(state))
+
+    def test_snapshot_health_success_does_not_expose_pixels(self):
+        self.pair()
+        data = bytes((255, 216)) + b"q" * 256 + bytes((255, 217))
+        with patch.object(agent, "_desktop_http", return_value=("image/jpeg", data)):
+            out, digest = agent.desktop_frame()
+        self.assertEqual(out, data)
+        self.assertEqual(len(digest), 64)
+        with patch.object(agent, "_desktop_http", return_value=(
+                "application/json", b'{"ok":true,"sharing":true}')):
+            state = agent.desktop_status()
+        self.assertEqual(state["last_frame_health"], "ok")
+        self.assertNotIn("qqqqqq", json.dumps(state))
+
     def test_input_invalid_or_not_locally_armed_never_reaches_companion(self):
         self.pair()
         actions = [
