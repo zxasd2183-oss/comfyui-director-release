@@ -175,6 +175,10 @@ def _bridge_read(path):
     return json.loads(path.read_text(encoding="ascii"))
 
 
+def _hero_bridge_is_windows():
+    return os.name == "nt"
+
+
 def interactive_hero_status(root=None):
     root = HERO_BRIDGE_ROOT if root is None else Path(root)
     try:
@@ -220,7 +224,7 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT):
     """
     from ue_jobs import JobError
     root, work = Path(root), Path(work)
-    if os.name != "nt" or root != HERO_BRIDGE_ROOT:
+    if not _hero_bridge_is_windows() or root != HERO_BRIDGE_ROOT:
         raise JobError("hero_interactive_windows_required")
     if not HERO_BRIDGE_ID.fullmatch(work.name) or work.parent != root / "Jobs":
         raise JobError("hero_interactive_work_invalid")
