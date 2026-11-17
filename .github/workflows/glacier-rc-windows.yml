@@ -14,6 +14,7 @@ on:
       - feature/glacier-account-popover-20261112
       - feature/glacier-home-brand-20261112
     paths:
+      - 'scripts/glacier_release_version_check.py'
       - 'glacier-windows/**'
       - '.github/workflows/glacier-rc-windows.yml'
       - 'scripts/glacier_prepare_rotated_update.py'
