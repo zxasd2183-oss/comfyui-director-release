@@ -735,8 +735,9 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
+        "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.3.5",
+        "worker_version": "2.3.6",
     }
 
 
