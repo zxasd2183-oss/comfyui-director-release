@@ -9,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import agent
 import ue_jobs
+import ue_process
 import ue_previs
 
 
@@ -55,10 +56,10 @@ class CloudRigTests(unittest.TestCase):
             project,items=sources(root)
             digests=[hashlib.sha256(p.read_bytes()).hexdigest() for p in items]
             work=root/"Jobs"/("d"*32)
-            def run(argv,r,log,timeout,env):
-                self.assertEqual(env["DIRECTOR_UE_REVIEW_MODE"],"hero_rig_v200")
-                self.assertEqual(timeout,780)
-                self.assertIn(str(project),argv)
+            def run(r, work_dir, timeout):
+                self.assertEqual(r, root)
+                self.assertEqual(work_dir, work)
+                self.assertEqual(timeout, 780)
                 dest=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
                       "HeroRigs"/("J"+work.name)/"MHC_CHAR_GPT_RigV1.uasset")
                 dest.parent.mkdir(parents=True)
@@ -78,14 +79,14 @@ class CloudRigTests(unittest.TestCase):
                     "cinematic_character_ready":False,
                     "character_master_approved":False,
                 }
-                Path(env["DIRECTOR_UE_RESULT_FILE"]).write_text(json.dumps(data),
+                (work / "hero_rig_result.json").write_text(json.dumps(data),
                                                                   encoding="utf-8")
             with patch.object(ue_previs,"GPT_HERO_FACE_SOURCE_SHA256",digests[0]), \
                  patch.object(ue_previs,"GPT_HERO_AMBER_SOURCE_SHA256",digests[1]), \
                  patch.object(ue_previs,"GPT_HERO_SOURCE_SHA256",digests[2]), \
                  patch.object(ue_jobs,"find_editor_cmd",
                               return_value=Path("UnrealEditor.exe")), \
-                 patch.object(ue_previs,"_run_unreal",side_effect=run):
+                 patch.object(ue_process,"run_interactive_hero_rig",side_effect=run):
                 result=ue_previs.build_gpt_hero_cloud_rig(spec(),root,work)
             self.assertTrue(result["full_face_rig_verified"])
             self.assertFalse(result["texture_sources_ready"])
@@ -108,9 +109,9 @@ class CloudRigTests(unittest.TestCase):
                  patch.object(ue_previs, "GPT_HERO_SOURCE_SHA256", digests[2]), \
                  patch.object(ue_jobs, "find_editor_cmd",
                               return_value=Path("UnrealEditor.exe")), \
-                 patch.object(ue_previs, "_run_unreal",
-                              side_effect=RuntimeError("entered_pinned_editor")):
-                with self.assertRaisesRegex(RuntimeError, "entered_pinned_editor"):
+                 patch.object(ue_process, "run_interactive_hero_rig",
+                              side_effect=RuntimeError("entered_interactive_runner")):
+                with self.assertRaisesRegex(RuntimeError, "entered_interactive_runner"):
                     ue_previs.build_gpt_hero_cloud_rig(spec(), root, work)
             self.assertEqual(project.read_bytes(), before)
 
@@ -119,7 +120,7 @@ class CloudRigTests(unittest.TestCase):
             root=Path(td)
             _,items=sources(root)
             work=root/"Jobs"/("e"*32)
-            with patch.object(ue_previs,"_run_unreal") as run:
+            with patch.object(ue_process,"run_interactive_hero_rig") as run:
                 with self.assertRaisesRegex(ue_jobs.JobError,
                                              "hero_rig_source_hash_changed"):
                     ue_previs.build_gpt_hero_cloud_rig(spec(),root,work)
