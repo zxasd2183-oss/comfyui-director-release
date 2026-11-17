@@ -633,7 +633,7 @@ def audit_gpt_hero_metahuman_runtime(spec, root, work):
     isolated project. No auth tokens, remote URLs or arbitrary commands.
     """
     from ue_jobs import JobError, find_editor_cmd
-    from agent import hero_project_manifest
+    from agent import trusted_hero_project_manifest
     if spec.get("format") != "director_ue_hero_audit_v140":
         raise JobError("hero_audit_spec_invalid")
     if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
@@ -651,10 +651,11 @@ def audit_gpt_hero_metahuman_runtime(spec, root, work):
     if project.is_symlink() or not project.is_file():
         raise JobError("hero_audit_project_missing")
     try:
-        if json.loads(project.read_text("utf-8"))!=hero_project_manifest():
-            raise JobError("hero_audit_project_not_trusted")
+        manifest = json.loads(project.read_text("utf-8"))
     except (ValueError,UnicodeError,TypeError):
         raise JobError("hero_audit_project_invalid") from None
+    if not trusted_hero_project_manifest(manifest):
+        raise JobError("hero_audit_project_not_trusted")
     original=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
               "HeroBuilds"/("J"+GPT_HERO_SOURCE_JOB)/"MHC_CHAR_GPT.uasset")
     if original.is_symlink() or not original.is_file():
