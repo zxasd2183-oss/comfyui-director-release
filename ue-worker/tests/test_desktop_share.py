@@ -24,11 +24,22 @@ PAIRED = ("application/json", json.dumps({
 
 
 class DesktopBridgeTests(unittest.TestCase):
+    def setUp(self):
+        self.native_write = agent._desktop_credential_write
+        self.native_read = agent._desktop_credential_read
+        self.native_delete = agent._desktop_credential_delete
+        for name, result in (
+            ("_desktop_credential_write", True),
+            ("_desktop_credential_read", None),
+            ("_desktop_credential_delete", None),
+        ):
+            patcher = patch.object(agent, name, return_value=result)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        agent.unpair_desktop()
+
     def tearDown(self):
-        # Never touch the current Windows account's real Worker credential
-        # when these pure protocol tests run on a production machine.
-        with patch.object(agent, "_desktop_credential_delete"):
-            agent.unpair_desktop()
+        agent.unpair_desktop()
 
     def pair(self, code="a" * 32):
         with patch.object(agent, "_desktop_http", return_value=PAIRED) as remote, \
@@ -264,13 +275,13 @@ class DesktopBridgeTests(unittest.TestCase):
     def test_windows_credential_manager_round_trip(self):
         target = "DirectorUEWorker/CI-Test-" + secrets.token_hex(12)
         with patch.object(agent, "DESKTOP_CRED_TARGET", target):
-            self.assertIsNone(agent._desktop_credential_read())
+            self.assertIsNone(self.native_read())
             try:
-                self.assertTrue(agent._desktop_credential_write(VALID_SESSION))
-                self.assertEqual(agent._desktop_credential_read(), VALID_SESSION)
+                self.assertTrue(self.native_write(VALID_SESSION))
+                self.assertEqual(self.native_read(), VALID_SESSION)
             finally:
-                agent._desktop_credential_delete()
-            self.assertIsNone(agent._desktop_credential_read())
+                self.native_delete()
+            self.assertIsNone(self.native_read())
 
     def test_companion_protocol_stays_loopback_and_read_only(self):
         script = (Path(__file__).resolve().parents[1] /
