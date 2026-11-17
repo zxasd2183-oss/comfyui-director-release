@@ -29,3 +29,5 @@ jobs:
         run: python -m py_compile scripts/glacier_sync_readonly_audit.py
       - name: Test no credentials or mutations
         run: python -m unittest -v scripts.test_glacier_sync_readonly_audit
+      - name: Observe public Glacier Sync HTTPS routes without credentials
+        run: python scripts/glacier_sync_readonly_audit.py --network-only --timeout 3
