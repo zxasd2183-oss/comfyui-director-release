@@ -1,4 +1,4 @@
-# Director Desktop Companion 0.2 - view-only, human-armed RDP session sharing.
+# Director Desktop Companion 0.4 - bounded screenshot-failure replies, human-armed RDP session sharing.
 # Runs interactively inside the existing RDP session, never as SYSTEM.
 # Local manual Stop, session Lock/Disconnect/Logoff revoke access immediately.
 # A visible 128-bit PIN is good for ONE initial pairing for up to ten minutes;
@@ -154,6 +154,11 @@ function Encode-Snapshot {
     $original = [System.Drawing.Bitmap]::new($size.Width, $size.Height)
     $g = [System.Drawing.Graphics]::FromImage($original)
     try { $g.CopyFromScreen($screen.X, $screen.Y, 0, 0, $size) }
+    catch {
+        # Never leak a GDI bitmap if the RDP graphics session is unavailable.
+        $original.Dispose()
+        throw 'desktop_capture_failed'
+    }
     finally { $g.Dispose() }
     $w = [Math]::Min(800, $screen.Width)
     $h = [Math]::Max(1, [int][Math]::Round($screen.Height * $w / $screen.Width))
@@ -180,6 +185,17 @@ function Encode-Snapshot {
         throw 'Desktop snapshot outside safe size bounds'
     }
     return ,$bytes
+}
+function Get-SnapshotFailureCode($errorRecord) {
+    # Fixed error categories only. Never echo arbitrary exception strings,
+    # local account details, the screen image, or session credentials.
+    switch ([string]$errorRecord.Exception.Message) {
+        'Screen unavailable' { return 'screen_unavailable' }
+        'desktop_capture_failed' { return 'desktop_capture_failed' }
+        'JPEG encoder missing' { return 'jpeg_encoder_missing' }
+        'Desktop snapshot outside safe size bounds' { return 'frame_size_invalid' }
+        default { return 'desktop_capture_unavailable' }
+    }
 }
 function Send-Reply($stream, [int]$status, [string]$type, [byte[]]$body) {
     $label = @{200='OK';401='Unauthorized';403='Forbidden';404='Not Found';409='Conflict';429='Too Many Requests';503='Unavailable'}[$status]
@@ -292,7 +308,8 @@ $timer.Add_Tick({
     try {
         $client = $listener.AcceptTcpClient()
         $client.ReceiveTimeout = 1500
-        $client.SendTimeout = 1500
+        # Local JPEG delivery may occasionally need >1.5s after RDP redraw.
+        $client.SendTimeout = 4000
         $stream = $client.GetStream()
         $buffer = [byte[]]::new(2048)
         $len = $stream.Read($buffer, 0, $buffer.Length)
@@ -329,9 +346,22 @@ $timer.Add_Tick({
             } elseif (([DateTime]::UtcNow - $script:lastFrame).TotalSeconds -lt 3) {
                 Send-Reply $stream 429 'application/json' (Json-Bytes $false 'rate_limited')
             } else {
-                $snapshot = Encode-Snapshot
-                $script:lastFrame = [DateTime]::UtcNow
-                Send-Reply $stream 200 'image/jpeg' $snapshot
+                try {
+                    $snapshot = Encode-Snapshot
+                    $script:lastFrame = [DateTime]::UtcNow
+                    Send-Reply $stream 200 'image/jpeg' $snapshot
+                    $status.Text = 'ON: Live desktop frame delivered.'
+                } catch {
+                    # Keep the already-authorized sharing session alive.
+                    # Failed screenshot requests do not alter control consent.
+                    $category = Get-SnapshotFailureCode $_
+                    $status.Text = 'FRAME ERROR: ' + $category + ' (share stays active)'
+                    try {
+                        Send-Reply $stream 503 'application/json' (Json-Bytes $false $category)
+                    } catch {
+                        # The client may have timed out; never disclose data.
+                    }
+                }
             }
         } elseif ($header.StartsWith('POST /v1/action HTTP/1.1')) {
             if (-not (Get-ControlActive)) {
@@ -354,8 +384,9 @@ $timer.Add_Tick({
             Send-Reply $stream 404 'application/json' (Json-Bytes $false 'not_found')
         }
     } catch {
-        # Never show secrets, HTTP bodies, or desktop contents in exceptions.
-        $status.Text = 'Connection error. Stop and restart.'
+        # Keep sharing intact on transient HTTP transport errors; never show
+        # headers, secrets, request bodies or screenshot data in this label.
+        $status.Text = 'NETWORK ERROR: request failed (share stays active)'
     } finally {
         if ($client) { $client.Dispose() }
     }
