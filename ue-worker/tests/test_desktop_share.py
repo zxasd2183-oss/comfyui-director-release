@@ -4,6 +4,8 @@ The Worker exposes only allowlisted click/key/text actions. Owner must locally
 arm input; no arbitrary commands or long-lived credential reaches ChatGPT.
 """
 import json
+import os
+import secrets
 import sys
 import threading
 import unittest
@@ -22,11 +24,26 @@ PAIRED = ("application/json", json.dumps({
 
 
 class DesktopBridgeTests(unittest.TestCase):
+    def setUp(self):
+        self.native_write = agent._desktop_credential_write
+        self.native_read = agent._desktop_credential_read
+        self.native_delete = agent._desktop_credential_delete
+        for name, result in (
+            ("_desktop_credential_write", True),
+            ("_desktop_credential_read", None),
+            ("_desktop_credential_delete", None),
+        ):
+            patcher = patch.object(agent, name, return_value=result)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        agent.unpair_desktop()
+
     def tearDown(self):
         agent.unpair_desktop()
 
     def pair(self, code="a" * 32):
-        with patch.object(agent, "_desktop_http", return_value=PAIRED) as remote:
+        with patch.object(agent, "_desktop_http", return_value=PAIRED) as remote, \
+             patch.object(agent, "_desktop_credential_write", return_value=True):
             result = agent.pair_desktop(code)
         self.assertTrue(result["ok"])
         self.assertFalse(result["control_enabled"])
@@ -191,7 +208,8 @@ class DesktopBridgeTests(unittest.TestCase):
             result, data = call(headers, {"code": "NOT_A_PAIR_CODE"})
             self.assertEqual(result, 409)
             self.assertEqual(data["reason"], "desktop_pair_code_invalid")
-            with patch.object(agent, "_desktop_http", return_value=PAIRED):
+            with patch.object(agent, "_desktop_http", return_value=PAIRED), \
+                 patch.object(agent, "_desktop_credential_write", return_value=True):
                 result, data = call(headers, {"code": "a" * 32})
             self.assertEqual(result, 200)
             self.assertTrue(data["paired"])
@@ -202,6 +220,87 @@ class DesktopBridgeTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)
+
+    def test_worker_restart_recovers_only_still_live_approved_share(self):
+        self.pair()
+        agent.DESKTOP_SESSION = None
+        agent.DESKTOP_SESSION_LOADED = False
+        agent.DESKTOP_CREDENTIAL_SAVED = False
+        with patch.object(agent, "_desktop_credential_read",
+                          return_value=VALID_SESSION) as vault, \
+             patch.object(agent, "_desktop_http", return_value=(
+                 "application/json",
+                 b'{"ok":true,"sharing":true,"control_enabled":true}'
+             )) as remote:
+            state = agent.desktop_status()
+        self.assertTrue(state["paired"])
+        self.assertTrue(state["control_enabled"])
+        self.assertTrue(state["resume_after_worker_restart"])
+        self.assertEqual(agent._desktop_session_token(), VALID_SESSION)
+        vault.assert_called_once_with()
+        remote.assert_called_once_with("/v1/status", VALID_SESSION)
+
+    def test_restart_does_not_resurrect_stopped_companion(self):
+        self.pair()
+        agent.DESKTOP_SESSION = None
+        agent.DESKTOP_SESSION_LOADED = False
+        agent.DESKTOP_CREDENTIAL_SAVED = False
+        with patch.object(agent, "_desktop_credential_read",
+                          return_value=VALID_SESSION), \
+             patch.object(agent, "_desktop_credential_delete") as delete, \
+             patch.object(agent, "_desktop_http",
+                          side_effect=ValueError("companion_closed")):
+            state = agent.desktop_status()
+            self.assertFalse(state["paired"])
+            delete.assert_called_once_with()
+        self.assertIsNone(agent._desktop_session_token())
+
+    def test_transient_companion_timeout_keeps_resume_only_not_access(self):
+        self.pair()
+        agent.DESKTOP_SESSION = None
+        agent.DESKTOP_SESSION_LOADED = False
+        agent.DESKTOP_CREDENTIAL_SAVED = False
+        with patch.object(agent, "_desktop_credential_read",
+                          return_value=VALID_SESSION), \
+             patch.object(agent, "_desktop_credential_delete") as delete, \
+             patch.object(agent, "_desktop_http",
+                          side_effect=ValueError("desktop_companion_unavailable")):
+            state = agent.desktop_status()
+            self.assertFalse(state["sharing"])
+            self.assertFalse(state["control_enabled"])
+            self.assertTrue(state["recovery_pending"])
+            delete.assert_not_called()
+        with patch.object(agent, "_desktop_http", return_value=(
+                "application/json", b'{"ok":true,"sharing":true}')):
+            self.assertTrue(agent.desktop_status()["sharing"])
+
+    def test_manual_unpair_removes_recovery_credential(self):
+        self.pair()
+        with patch.object(agent, "_desktop_credential_delete") as delete:
+            self.assertFalse(agent.unpair_desktop()["paired"])
+            delete.assert_called_once_with()
+        self.assertIsNone(agent._desktop_session_token())
+
+    def test_credential_store_failure_keeps_session_but_disables_recovery(self):
+        with patch.object(agent, "_desktop_http", return_value=PAIRED), \
+             patch.object(agent, "_desktop_credential_write",
+                          side_effect=OSError("vault_locked")):
+            result = agent.pair_desktop("a" * 32)
+        self.assertTrue(result["paired"])
+        self.assertFalse(result["resume_after_worker_restart"])
+        self.assertEqual(agent._desktop_session_token(), VALID_SESSION)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Credential Manager only")
+    def test_windows_credential_manager_round_trip(self):
+        target = "DirectorUEWorker/CI-Test-" + secrets.token_hex(12)
+        with patch.object(agent, "DESKTOP_CRED_TARGET", target):
+            self.assertIsNone(self.native_read())
+            try:
+                self.assertTrue(self.native_write(VALID_SESSION))
+                self.assertEqual(self.native_read(), VALID_SESSION)
+            finally:
+                self.native_delete()
+            self.assertIsNone(self.native_read())
 
     def test_companion_protocol_stays_loopback_and_read_only(self):
         script = (Path(__file__).resolve().parents[1] /
