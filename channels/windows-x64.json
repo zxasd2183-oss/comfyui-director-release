@@ -1,10 +1,10 @@
 {
   "channel": "windows-x64",
   "key_id": "v2-259ea4a7b9da4bea",
-  "notes": "Glacier Browser v0.20.33：全新轻量浏览器界面、紧凑标签栏、统一工具中心与纯净新标签页。双端自动测试通过。",
-  "sha256": "331ca9b127359bb844a4dbad80b4c092b8c8858ab44d073d8380be7bc2d858a4",
-  "signature": "RQk/gCu4uY27hx0R6ZeXETs63bErjdmchNraV815U96vgr8OSt+IfxKYYbtofGm/nWJGKGoQ2LWy1btWEzDOBg==",
-  "size": 175976438,
-  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.33-Windows-Setup-x64.exe",
-  "version": "0.20.33"
+  "notes": "Glacier Browser v0.20.34：Windows 独立签名更新；安装前确认。",
+  "sha256": "7954c7551d43446b6c6acffd9b07d90bb4bf086aa44e351f288bd26aeacbcb5f",
+  "signature": "r003o4CFeSabuNDqEXZq1nc8qBqPI/fX/a2LudGol2J7eypKusxr0OEKSkKkq4kV2wHbb+Y2eWTduP2SYaXnCw==",
+  "size": 175970856,
+  "url": "https://sync.borealos.cn/downloads/GlacierBrowser-v0.20.34-Windows-Setup-x64.exe",
+  "version": "0.20.34"
 }
