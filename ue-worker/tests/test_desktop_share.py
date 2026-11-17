@@ -255,6 +255,25 @@ class DesktopBridgeTests(unittest.TestCase):
             delete.assert_called_once_with()
         self.assertIsNone(agent._desktop_session_token())
 
+    def test_transient_companion_timeout_keeps_resume_only_not_access(self):
+        self.pair()
+        agent.DESKTOP_SESSION = None
+        agent.DESKTOP_SESSION_LOADED = False
+        agent.DESKTOP_CREDENTIAL_SAVED = False
+        with patch.object(agent, "_desktop_credential_read",
+                          return_value=VALID_SESSION), \
+             patch.object(agent, "_desktop_credential_delete") as delete, \
+             patch.object(agent, "_desktop_http",
+                          side_effect=ValueError("desktop_companion_unavailable")):
+            state = agent.desktop_status()
+            self.assertFalse(state["sharing"])
+            self.assertFalse(state["control_enabled"])
+            self.assertTrue(state["recovery_pending"])
+            delete.assert_not_called()
+        with patch.object(agent, "_desktop_http", return_value=(
+                "application/json", b'{"ok":true,"sharing":true}')):
+            self.assertTrue(agent.desktop_status()["sharing"])
+
     def test_manual_unpair_removes_recovery_credential(self):
         self.pair()
         with patch.object(agent, "_desktop_credential_delete") as delete:
