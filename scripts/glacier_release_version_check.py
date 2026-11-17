@@ -41,7 +41,7 @@ def inspect(root=ROOT):
     mac = _expect_single(r'^CURRENT_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"$', data["mac_core"], "macOS")
     android = _expect_single(r"^\s*versionName '([0-9]+\.[0-9]+\.[0-9]+)'$", data["android_gradle"], "Android")
     code = int(_expect_single(r"^\s*versionCode ([0-9]+)$", data["android_gradle"], "Android versionCode"))
-    if win != "0.20.34" or mac != win or android != "0.2.9" or code != 18:
+    if win != "0.20.34" or mac != win or android != "0.2.10" or code != 19:
         raise ValueError("Glacier versions are not the approved monotonic RC upgrade")
     # The Ed25519 trust-root preparation deliberately refuses any unapproved
     # version. Match its allowlist before scheduling expensive native builds.
@@ -68,7 +68,7 @@ def inspect(root=ROOT):
         if f"GlacierAndroid-v{android}-Mobile-M05-ARM64_x86_64-debug.apk" not in data[key].replace(
                 "ARM64-x86_64", "ARM64_x86_64"):
             raise ValueError(key + ": stale Android APK name")
-    if "versionCode='18'" not in data["android_ci"] or "versionName='0.2.9'" not in data["android_ci"]:
+    if "versionCode='19'" not in data["android_ci"] or "versionName='0.2.10'" not in data["android_ci"]:
         raise ValueError("Android release signing guard is still pinned to old APK")
     if "0.20.28" in data["win_ci"] or "0.20.27" in data["mac_ci"]:
         raise ValueError("Installer workflow still refers to an old release version")
