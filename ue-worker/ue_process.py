@@ -349,7 +349,9 @@ def _interactive_hero_preflight(root, job_id):
 
 
 def _interactive_hero_once(root, folder, ticket, user, session):
-    from ue_jobs import find_editor_cmd
+    # Use the actual GUI Editor for on-screen Epic login, not
+    # UnrealEditor-Cmd.exe (a headless commandlet binary).
+    editor = Path(r"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe")
     ident, nonce = ticket["job_id"], ticket["nonce"]
     work = root / "Jobs" / ident
     result = folder / "results" / (ident + ".json")
@@ -368,7 +370,9 @@ def _interactive_hero_once(root, folder, ticket, user, session):
         env["DIRECTOR_UE_REVIEW_MODE"] = "hero_rig_v200"
         env["DIRECTOR_UE_RESULT_FILE"] = str(receipt)
         # Crucially NOT -unattended: Epic may show account authorization.
-        argv = [str(find_editor_cmd()), str(project), "-run=pythonscript",
+        if not editor.is_file() or editor.is_symlink():
+            raise ValueError("hero_interactive_gui_editor_missing")
+        argv = [str(editor), str(project), "-run=pythonscript",
                 "-script=" + str(script), "-nop4", "-nosplash", "-NoSound",
                 "-log"]
         with (work / "hero_rig.log").open("wb") as log:
