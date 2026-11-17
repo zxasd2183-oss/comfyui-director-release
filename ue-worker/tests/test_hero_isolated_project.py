@@ -48,6 +48,34 @@ class HeroProjectTests(unittest.TestCase):
             self.assertFalse(report["character_production_ready"])
             self.assertTrue((target.parent / "Content").is_dir())
 
+    def test_launcher_guid_rewrite_is_read_only_and_strict(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "workspace"
+            target = root / "HeroProjects" / "CHAR_GPT" / "DirectorHeroGPT.uproject"
+            target.parent.mkdir(parents=True)
+            data = agent.hero_project_manifest()
+            data["EngineAssociation"] = "{01234567-89AB-cdef-0123-456789ABCDEF}"
+            target.write_text(json.dumps(data), encoding="utf-8")
+            before = target.read_bytes()
+            with patch.object(agent, "workspace_root", return_value=root), \
+                 patch.object(agent, "find_ue_installations",
+                              return_value=fake_engine(base)):
+                self.assertEqual(agent.hero_project_state(), "prepared")
+                result = agent.prepare_hero_metahuman_project()
+            self.assertFalse(result["created"])
+            self.assertEqual(target.read_bytes(), before)
+            # A GUID cannot excuse even one modified plugin flag.
+            data["Plugins"][2]["Enabled"] = False
+            target.write_text(json.dumps(data), encoding="utf-8")
+            with patch.object(agent, "workspace_root", return_value=root):
+                self.assertEqual(agent.hero_project_state(), "foreign_project")
+            data["Plugins"][2]["Enabled"] = True
+            data["EngineAssociation"] = "../../ForeignEngine"
+            target.write_text(json.dumps(data), encoding="utf-8")
+            with patch.object(agent, "workspace_root", return_value=root):
+                self.assertEqual(agent.hero_project_state(), "foreign_project")
+
     def test_rejects_missing_plugin_without_writing_any_project(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
