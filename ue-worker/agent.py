@@ -378,8 +378,107 @@ def request_signed_update_check():
 # The short visible code authorizes ONE pairing. The companion returns a new
 # private session capability over loopback; only this token is retained by the
 # Worker. It is never returned to MCP clients or written to disk.
+# A paired RDP companion belongs to the HUMAN's live session, not to this
+# Worker process. The worker's limited local-account Credential Manager vault
+# survives a signed code update/restart. The companion's independent in-memory
+# token remains the final authorization gate: local Stop, session lock, RDP
+# disconnect, or companion exit invalidates the credential immediately.
+# Never use a machine-shared key, filesystem plaintext, or a recoverable PIN.
+DESKTOP_CRED_TARGET = "DirectorUEWorker/InteractiveDesktopShare/v1"
+
+
+def _desktop_vault_api():
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class NativeCredential(ctypes.Structure):
+        _fields_ = [
+            ("Flags", wintypes.DWORD), ("Type", wintypes.DWORD),
+            ("TargetName", wintypes.LPWSTR), ("Comment", wintypes.LPWSTR),
+            ("LastWritten", wintypes.FILETIME),
+            ("CredentialBlobSize", wintypes.DWORD),
+            ("CredentialBlob", ctypes.POINTER(ctypes.c_ubyte)),
+            ("Persist", wintypes.DWORD), ("AttributeCount", wintypes.DWORD),
+            ("Attributes", ctypes.c_void_p), ("TargetAlias", wintypes.LPWSTR),
+            ("UserName", wintypes.LPWSTR),
+        ]
+
+    dll = ctypes.WinDLL("advapi32", use_last_error=True)
+    dll.CredWriteW.argtypes = [ctypes.POINTER(NativeCredential), wintypes.DWORD]
+    dll.CredWriteW.restype = wintypes.BOOL
+    dll.CredReadW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(ctypes.POINTER(NativeCredential)),
+    ]
+    dll.CredReadW.restype = wintypes.BOOL
+    dll.CredDeleteW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
+    dll.CredDeleteW.restype = wintypes.BOOL
+    dll.CredFree.argtypes = [ctypes.c_void_p]
+    dll.CredFree.restype = None
+    return ctypes, dll, NativeCredential
+
+
+def _desktop_credential_write(token):
+    if type(token) is not str or not re.fullmatch(r"[a-f0-9]{32}", token):
+        raise ValueError("desktop_session_invalid")
+    api = _desktop_vault_api()
+    if api is None:
+        return False
+    ctypes, dll, credential_type = api
+    data = token.encode("ascii")
+    buffer = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+    credential = credential_type()
+    credential.Type = 1  # CRED_TYPE_GENERIC
+    credential.TargetName = DESKTOP_CRED_TARGET
+    credential.CredentialBlobSize = len(data)
+    credential.CredentialBlob = ctypes.cast(
+        buffer, ctypes.POINTER(ctypes.c_ubyte))
+    credential.Persist = 2  # CRED_PERSIST_LOCAL_MACHINE: current OS user only
+    if not dll.CredWriteW(ctypes.byref(credential), 0):
+        raise OSError(ctypes.get_last_error(), "desktop_vault_write_failed")
+    return True
+
+
+def _desktop_credential_read():
+    api = _desktop_vault_api()
+    if api is None:
+        return None
+    ctypes, dll, credential_type = api
+    record = ctypes.POINTER(credential_type)()
+    if not dll.CredReadW(DESKTOP_CRED_TARGET, 1, 0, ctypes.byref(record)):
+        err = ctypes.get_last_error()
+        if err == 1168:  # ERROR_NOT_FOUND
+            return None
+        raise OSError(err, "desktop_vault_read_failed")
+    try:
+        item = record.contents
+        if item.CredentialBlobSize != 32 or not item.CredentialBlob:
+            raise ValueError("desktop_vault_session_invalid")
+        token = ctypes.string_at(item.CredentialBlob, 32).decode("ascii")
+        if not re.fullmatch(r"[a-f0-9]{32}", token):
+            raise ValueError("desktop_vault_session_invalid")
+        return token
+    finally:
+        dll.CredFree(ctypes.cast(record, ctypes.c_void_p))
+
+
+def _desktop_credential_delete():
+    api = _desktop_vault_api()
+    if api is None:
+        return
+    ctypes, dll, _ = api
+    if not dll.CredDeleteW(DESKTOP_CRED_TARGET, 1, 0):
+        err = ctypes.get_last_error()
+        if err != 1168:
+            raise OSError(err, "desktop_vault_delete_failed")
+
+
 DESKTOP_SESSION = None
 DESKTOP_LOCK = threading.RLock()
+DESKTOP_SESSION_LOADED = False
+DESKTOP_CREDENTIAL_SAVED = False
 DESKTOP_ORIGIN = "http://127.0.0.1:19017"
 DESKTOP_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -428,16 +527,36 @@ def pair_desktop(code):
                 body.get("sharing") is not True or
                 type(session) is not str or not re.fullmatch(r"[0-9a-f]{32}", session)):
             raise ValueError("desktop_pair_protocol_invalid")
+        global DESKTOP_SESSION_LOADED, DESKTOP_CREDENTIAL_SAVED
+        durable = False
+        try:
+            durable = _desktop_credential_write(session)
+        except (OSError, ValueError):
+            # A vault failure must not block the human-approved live share.
+            # It only disables automatic recovery across process restarts.
+            durable = False
         with DESKTOP_LOCK:
             DESKTOP_SESSION = session
+            DESKTOP_SESSION_LOADED = True
+            DESKTOP_CREDENTIAL_SAVED = durable
         return {"ok": True, "paired": True, "sharing": True,
-                "control_enabled": False, "session_expires": "local_stop_or_rdp_end"}
+                "control_enabled": False, "session_expires": "local_stop_or_rdp_end",
+                "resume_after_worker_restart": durable}
     except (ValueError, TypeError, UnicodeError):
         return {"ok": False, "reason": "desktop_pair_unavailable_or_not_sharing"}
 
 
 def _desktop_session_token():
+    global DESKTOP_SESSION, DESKTOP_SESSION_LOADED, DESKTOP_CREDENTIAL_SAVED
     with DESKTOP_LOCK:
+        if not DESKTOP_SESSION_LOADED:
+            DESKTOP_SESSION_LOADED = True
+            try:
+                DESKTOP_SESSION = _desktop_credential_read()
+                DESKTOP_CREDENTIAL_SAVED = DESKTOP_SESSION is not None
+            except (OSError, ValueError, UnicodeError):
+                DESKTOP_SESSION = None
+                DESKTOP_CREDENTIAL_SAVED = False
         return DESKTOP_SESSION
 
 
@@ -453,7 +572,8 @@ def desktop_status():
                 body.get("ok") is not True or body.get("sharing") is not True):
             raise ValueError("desktop_session_ended")
         return {"ok": True, "paired": True, "sharing": True,
-                "control_enabled": body.get("control_enabled") is True}
+                "control_enabled": body.get("control_enabled") is True,
+                "resume_after_worker_restart": DESKTOP_CREDENTIAL_SAVED}
     except (OSError, ValueError, UnicodeError, TypeError):
         # A locked/disconnected/Stopped desktop invalidates the in-memory
         # pairing; reconnection requires a NEW visible user-approved code.
@@ -463,9 +583,17 @@ def desktop_status():
 
 
 def unpair_desktop():
-    global DESKTOP_SESSION
+    global DESKTOP_SESSION, DESKTOP_SESSION_LOADED, DESKTOP_CREDENTIAL_SAVED
     with DESKTOP_LOCK:
         DESKTOP_SESSION = None
+        DESKTOP_SESSION_LOADED = True
+        DESKTOP_CREDENTIAL_SAVED = False
+        try:
+            _desktop_credential_delete()
+        except OSError:
+            # Fail closed for this running process. No retry/re-pair occurs
+            # without a new explicit code even when vault deletion fails.
+            pass
     return {"ok": True, "paired": False, "sharing": False,
             "control_enabled": False}
 
@@ -559,7 +687,7 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.3.1",
+        "worker_version": "2.3.2",
     }
 
 
