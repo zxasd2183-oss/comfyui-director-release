@@ -360,6 +360,11 @@ class DesktopBridgeTests(unittest.TestCase):
         self.assertIn("Disable Input", script)
         self.assertIn("POST /v1/action", script)
         self.assertIn("Get-ControlActive", script)
+        self.assertIn("Get-SnapshotFailureCode", script)
+        self.assertIn("FRAME ERROR:", script)
+        self.assertIn("Send-Reply $stream 503 'application/json'", script)
+        self.assertIn("share stays active", script)
+        self.assertIn("desktop_capture_failed", script)
         self.assertNotIn("Invoke-Expression", script)
         self.assertNotIn("keybd_event", script)
 
