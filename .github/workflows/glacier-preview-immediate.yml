@@ -181,19 +181,28 @@ jobs:
           set -euo pipefail
           # Windows no longer waits for a Mac DMG with the same version.
           latest="$(python3 - <<'PY'
-          import json,re,urllib.request
+          import base64,json,os,re,urllib.request
           api="https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/releases?per_page=100"
-          req=urllib.request.Request(api,headers={"Accept":"application/vnd.github+json","User-Agent":"Glacier-Win-Signer-Notify/1"})
+          headers={"Accept":"application/vnd.github+json",
+                   "User-Agent":"Glacier-Win-Signer-Notify/1",
+                   "Authorization":"Bearer "+os.environ["GH_TOKEN"]}
+          req=urllib.request.Request(api,headers=headers)
           with urllib.request.urlopen(req,timeout=20) as f: items=json.load(f)
           pattern=re.compile(r"^glacier-v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$")
           versions=[m.group(1) for r in items if isinstance(r,dict)
                  and r.get("published_at") and not r.get("draft") and not r.get("prerelease")
                  for m in [pattern.fullmatch(str(r.get("tag_name","")))] if m]
           latest=max(versions,key=lambda v:tuple(map(int,v.split(".")))) if versions else ""
-          base=("https://raw.githubusercontent.com/zxasd2183-oss/"
-                "comfyui-director-release/glacier-browser-updates-v2/channels/windows-x64.json?nonce="
-                +str(__import__("time").time_ns()))
-          with urllib.request.urlopen(base,timeout=18) as f: signed=json.load(f)["version"]
+          channel_url=("https://api.github.com/repos/zxasd2183-oss/"
+                       "comfyui-director-release/contents/channels/windows-x64.json"
+                       "?ref=glacier-browser-updates-v2")
+          with urllib.request.urlopen(urllib.request.Request(
+                  channel_url,headers=headers),timeout=18) as f:
+              doc=json.load(f)
+          if doc.get("encoding")!="base64":
+              raise RuntimeError("Invalid signed Windows channel source")
+          signed=json.loads(base64.b64decode(
+              doc["content"].replace("\n",""),validate=True))["version"]
           if latest and tuple(map(int,latest.split(".")))>tuple(map(int,signed.split("."))):
               print(latest)
           PY
@@ -218,10 +227,13 @@ jobs:
         run: |
           set -euo pipefail
           latest="$(python3 - <<'PY'
-          import json, re, urllib.request
+          import base64,json,os,re,urllib.request
+          headers={"Accept":"application/vnd.github+json",
+                   "User-Agent":"GlacierReleaseMirror/1",
+                   "Authorization":"Bearer "+os.environ["GH_TOKEN"]}
           req=urllib.request.Request(
             "https://api.github.com/repos/zxasd2183-oss/comfyui-director-release/releases?per_page=100",
-            headers={"Accept":"application/vnd.github+json","User-Agent":"GlacierReleaseMirror/1"})
+            headers=headers)
           with urllib.request.urlopen(req,timeout=20) as f: items=json.load(f)
           platforms=(re.compile(r"^glacier-v(\d+\.\d+\.\d+)$"),
                      re.compile(r"^glacier-macos-v(\d+\.\d+\.\d+)$"))
@@ -235,13 +247,18 @@ jobs:
           # Windows and macOS signed feeds may intentionally be different.
           # When macOS catches up, dispatch its paired signer without
           # downgrading a newer standalone Windows signed channel.
-          origin=("https://raw.githubusercontent.com/zxasd2183-oss/"
-                  "comfyui-director-release/glacier-browser-updates-v2/channels/")
+          origin=("https://api.github.com/repos/zxasd2183-oss/"
+                  "comfyui-director-release/contents/channels/")
           versions=[]
           for channel in ("windows-x64","macos-arm64"):
-              with urllib.request.urlopen(origin+channel+".json?nonce="+
-                                          str(__import__("time").time_ns()),timeout=15) as f:
-                  versions.append(json.load(f)["version"])
+              channel_url=origin+channel+".json?ref=glacier-browser-updates-v2"
+              with urllib.request.urlopen(urllib.request.Request(
+                      channel_url,headers=headers),timeout=20) as f:
+                  doc=json.load(f)
+              if doc.get("encoding")!="base64":
+                  raise RuntimeError("Invalid signed channel source: "+channel)
+              versions.append(json.loads(base64.b64decode(
+                  doc["content"].replace("\n",""),validate=True))["version"])
           numbers=lambda v:tuple(map(int,v.split(".")))
           if version and all(numbers(version)>=numbers(v) for v in versions) and any(numbers(version)>numbers(v) for v in versions):
               print(version)
