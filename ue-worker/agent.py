@@ -737,7 +737,7 @@ def status():
         "hero_character_readiness": hero_character_readiness(),
         "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.3.6",
+        "worker_version": "2.3.7",
     }
 
 

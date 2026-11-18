@@ -372,9 +372,12 @@ def _interactive_hero_once(root, folder, ticket, user, session):
         # Crucially NOT -unattended: Epic may show account authorization.
         if not editor.is_file() or editor.is_symlink():
             raise ValueError("hero_interactive_gui_editor_missing")
-        argv = [str(editor), str(project), "-run=pythonscript",
-                "-script=" + str(script), "-nop4", "-nosplash", "-NoSound",
-                "-log"]
+        # Epic UE 5.8 Python docs: ExecutePythonScript launches the FULL
+        # project editor. -run=pythonscript is a headless commandlet and must
+        # not be used for the signed-in RDP user's cloud authorization.
+        argv = [str(editor), str(project),
+                "-ExecutePythonScript=" + str(script),
+                "-nop4", "-nosplash", "-NoSound", "-log"]
         with (work / "hero_rig.log").open("wb") as log:
             proc = subprocess.Popen(argv, cwd=str(root), env=env,
                                     stdout=log, stderr=subprocess.STDOUT)
