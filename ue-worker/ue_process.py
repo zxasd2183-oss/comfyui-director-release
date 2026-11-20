@@ -295,6 +295,81 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT):
         pass
 
 
+
+def interactive_hero_job_diagnostic(root, job_id):
+    """Sanitized, read-only bridge receipt inspection for one existing rig job.
+
+    No arbitrary paths, raw file contents, credentials, user names, command
+    lines, or account-session tokens are returned.
+    """
+    root = Path(root)
+    if root != HERO_BRIDGE_ROOT or type(job_id) is not str or not HERO_BRIDGE_ID.fullmatch(job_id):
+        return {"available": False, "reason": "invalid_diagnostic_target"}
+    folder = _hero_bridge_path(root)
+    report = {"available": True}
+    for name in ("requests", "claimed", "heartbeat", "cancel", "results"):
+        path = folder / name / (job_id + ".json")
+        try:
+            _bridge_safe_parent(path, root)
+            if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+                report[name] = "unsafe"
+            elif not path.is_file():
+                report[name] = "missing"
+            else:
+                report[name] = "present"
+        except (OSError, ValueError):
+            report[name] = "unreadable"
+    if report["results"] == "present":
+        path = folder / "results" / (job_id + ".json")
+        try:
+            data = _bridge_read(path)
+            if (type(data) is not dict or
+                    set(data) != {"format", "job_id", "nonce", "exit_code",
+                                  "session_id", "user", "reason"} or
+                    data.get("format") != HERO_BRIDGE_FORMAT or
+                    data.get("job_id") != job_id or
+                    type(data.get("exit_code")) is not int or
+                    data.get("reason") not in {
+                        "not_started", "preflight_or_launch_failed", "finished",
+                        "editor_failed", "cancelled_or_timed_out",
+                        "worker_heartbeat_lost"}):
+                report["results"] = "invalid"
+            else:
+                report["results"] = "valid"
+                report["process_exit"] = ("zero" if data["exit_code"] == 0
+                                          else "nonzero")
+                report["process_reason"] = data["reason"]
+        except (OSError, ValueError, TypeError, UnicodeError):
+            report["results"] = "invalid"
+    receipt = root / "Jobs" / job_id / "hero_rig_result.json"
+    try:
+        _bridge_safe_parent(receipt, root)
+        if receipt.is_symlink() or getattr(receipt, "is_junction", lambda: False)():
+            report["rig_receipt"] = "unsafe"
+        elif not receipt.is_file():
+            report["rig_receipt"] = "missing"
+        elif not 1 <= receipt.stat().st_size <= 6000:
+            report["rig_receipt"] = "invalid_size"
+        else:
+            content = json.loads(receipt.read_text(encoding="utf-8"))
+            if type(content) is not dict:
+                report["rig_receipt"] = "invalid"
+            elif content.get("ok") is True:
+                report["rig_receipt"] = "success_unverified"
+            elif (content.get("ok") is False and
+                  type(content.get("reason")) is str and
+                  re.fullmatch(r"hero_rig_failed_(?:identity|source|clone|register|cloud_request|rig_readback|save|release)",
+                               content["reason"])):
+                report["rig_receipt"] = "failed"
+                report["rig_stage"] = content["reason"]
+            else:
+                report["rig_receipt"] = "invalid"
+    except (OSError, ValueError, TypeError, UnicodeError):
+        report["rig_receipt"] = "unreadable"
+    report["mutations_performed"] = False
+    return report
+
+
 def _windows_session_identity():
     if os.name != "nt":
         raise RuntimeError("interactive_windows_required")

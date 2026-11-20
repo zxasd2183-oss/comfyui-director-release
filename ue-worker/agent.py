@@ -792,7 +792,7 @@ def status():
         "hero_source_integrity": hero_source_integrity(),
         "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.4.0",
+        "worker_version": "2.4.1",
     }
 
 
