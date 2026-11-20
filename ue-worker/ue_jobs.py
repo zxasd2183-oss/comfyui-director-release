@@ -523,13 +523,23 @@ class JobManager:
                 raise JobError("job_not_found")
             response = dict(entry)
         if response.get("task") == "build_ep01_hero_cloud_rig":
-            from ue_process import interactive_hero_job_diagnostic
+            from ue_process import (
+                interactive_hero_job_diagnostic, hero_rig_editor_log_diagnostic)
             try:
                 response["interactive_diagnostic"] = interactive_hero_job_diagnostic(
                     self.root_factory(), job_id)
             except (OSError, ValueError, TypeError):
                 response["interactive_diagnostic"] = {
                     "available": False, "reason": "diagnostic_unavailable"}
+            if (response.get("state") == "failed" and
+                    response.get("reason") == "hero_rig_failed_rig_readback"):
+                try:
+                    response["editor_log_diagnostic"] = hero_rig_editor_log_diagnostic(
+                        self.root_factory(), response.get("started_at"),
+                        response.get("finished_at"))
+                except (OSError, ValueError, TypeError):
+                    response["editor_log_diagnostic"] = {
+                        "available": False, "reason": "diagnostic_unavailable"}
         return response
 
 

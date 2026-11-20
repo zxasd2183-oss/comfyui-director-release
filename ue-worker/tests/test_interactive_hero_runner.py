@@ -90,6 +90,56 @@ class InteractiveHeroTests(unittest.TestCase):
         self.assertIn("if valid_heartbeat:", runner)
         self.assertIn('reason = "worker_heartbeat_lost"', runner)
 
+    def test_editor_log_diagnostic_classifies_only_this_job_without_raw_logs(self):
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = root / "HeroProjects" / "CHAR_GPT" / "Saved" / "Logs"
+            folder.mkdir(parents=True)
+            path = folder / "DirectorHeroGPT.log"
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            stamp = now.strftime("[%Y.%m.%d-%H.%M.%S:000]")
+            path.write_text(
+                "[2020.01.01-01.01.01:000] LogMetaHumanAuth: Login failed\n" +
+                stamp + " LogEOSAuth: No existing persistent auth credentials were found\n" +
+                stamp + " LogMetaHumanAuth: Login failed - error code EOS_InvalidAuth\n" +
+                stamp + " LogMetaHumanCharacterEditor: Error: Auto-Rigging of Face failed\n",
+                encoding="utf-8")
+            start = (now - __import__("datetime").timedelta(seconds=2)).isoformat()
+            end = (now + __import__("datetime").timedelta(seconds=2)).isoformat()
+            original = path.read_bytes()
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                report = ue_process.hero_rig_editor_log_diagnostic(root, start, end)
+            self.assertTrue(report["available"])
+            self.assertEqual(report["status"], "analyzed")
+            self.assertEqual(report["signals"], [
+                "cloud_autorig_failed", "epic_signin_failed",
+                "no_epic_persistent_credentials"])
+            self.assertFalse(report["mutations_performed"])
+            self.assertNotIn("EOS_InvalidAuth", str(report))
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_editor_log_diagnostic_denies_stale_or_unscoped_logs(self):
+        from datetime import datetime, timedelta, timezone
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = root / "HeroProjects" / "CHAR_GPT" / "Saved" / "Logs"
+            folder.mkdir(parents=True)
+            path = folder / "DirectorHeroGPT.log"
+            path.write_text("[2020.01.01-01.01.01:000] LogMetaHumanAuth: Login failed")
+            now = datetime.now(timezone.utc)
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                report = ue_process.hero_rig_editor_log_diagnostic(
+                    root, (now-timedelta(seconds=5)).isoformat(),
+                    (now+timedelta(seconds=5)).isoformat())
+                rejected = ue_process.hero_rig_editor_log_diagnostic(
+                    root, "invalid", now.isoformat())
+            self.assertTrue(report["available"])
+            self.assertEqual(report["signals"], [])
+            self.assertEqual(report["status"], "no_correlated_timestamped_lines")
+            self.assertFalse(rejected["available"])
+
+
     def test_ready_requires_fresh_session_and_valid_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
