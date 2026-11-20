@@ -31,6 +31,12 @@ class ForegroundUpdateGuards(unittest.TestCase):
         self.assertIn("runtime == null", self.check)
         self.assertIn("updateCheckInFlight", self.check)
 
+    def test_candidate_filename_is_parseable_apk_not_part(self):
+        self.assertIn('new File(downloadsDir,"glacier-update-candidate.apk")', self.updater)
+        self.assertNotIn('"glacier-update.apk.part"', self.updater)
+        self.assertIn("validateApk(temp,release)", self.updater)
+        self.assertIn("temp.renameTo(ready)", self.updater)
+
     def test_security_guards_remain(self):
         self.assertIn("requestInstall()", self.updater)
         self.assertIn("validateApk(file,release)", self.updater)

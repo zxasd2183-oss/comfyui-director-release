@@ -224,7 +224,9 @@ final class BrowserUpdater {
                 }
                 if(!downloadsDir.exists()&&!downloadsDir.mkdirs())
                     throw new IllegalStateException("无法创建私有更新目录");
-                temp=new File(downloadsDir,"glacier-update.apk.part");
+                // Keep the unverified candidate private, but use an .apk suffix so
+                // Android PackageManager can parse it before promotion.
+                temp=new File(downloadsDir,"glacier-update-candidate.apk");
                 File ready=new File(downloadsDir,"glacier-update-verified.apk");
                 if(!temp.delete()&&temp.exists())
                     throw new IllegalStateException("无法删除上次的临时文件");

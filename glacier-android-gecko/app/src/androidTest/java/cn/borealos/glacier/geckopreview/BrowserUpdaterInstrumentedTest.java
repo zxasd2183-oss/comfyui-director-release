@@ -1,6 +1,16 @@
 package cn.borealos.glacier.geckopreview;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+
+import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.os.Build;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -35,6 +45,31 @@ public final class BrowserUpdaterInstrumentedTest {
         return new JSONObject()
                 .put("draft",false).put("tag_name",tag)
                 .put("assets",new JSONArray().put(file));
+    }
+
+    @Test
+    public void packageManagerCanParsePrivateDownloadedApkCandidate() throws Exception {
+        Context app=InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File original=new File(app.getApplicationInfo().sourceDir);
+        // Only the APK suffix is accepted by all Android package parsers.
+        File candidate=File.createTempFile("glacier-update-candidate-", ".apk", app.getCacheDir());
+        try {
+            try(InputStream in=new FileInputStream(original);
+                OutputStream out=new FileOutputStream(candidate)) {
+                byte[] buffer=new byte[65536];
+                int n;
+                while((n=in.read(buffer))!=-1) out.write(buffer,0,n);
+                out.flush();
+            }
+            int flags=Build.VERSION.SDK_INT>=28
+                    ?PackageManager.GET_SIGNING_CERTIFICATES:PackageManager.GET_SIGNATURES;
+            PackageInfo parsed=app.getPackageManager().getPackageArchiveInfo(
+                    candidate.getAbsolutePath(),flags);
+            assertNotNull("PackageManager refused .apk candidate",parsed);
+            assertEquals(app.getPackageName(),parsed.packageName);
+        } finally {
+            assertTrue("Could not remove synthetic upgrade APK",candidate.delete());
+        }
     }
 
     @Test
