@@ -150,10 +150,10 @@ class InteractiveHeroTests(unittest.TestCase):
             now = datetime.now(timezone.utc).replace(microsecond=0)
             stamp = now.strftime("[%Y.%m.%d-%H.%M.%S:000]")
             content = (
-                "[2020.01.01-01.01.01:000] LogPython: Warning: Director Hero Rig blocked phase=rig_readback exception_class=AttributeError\\n"
-                + stamp + " LogPython: Warning: Director Hero Rig blocked phase=rig_readback exception_class=RuntimeError\\n"
-                + stamp + " LogHttp: Warning: Request timed out for private-token\\n"
-            ).replace("\\\\n", "\\n")
+                "[2020.01.01-01.01.01:000] LogPython: Warning: Director Hero Rig blocked phase=rig_readback exception_class=AttributeError\n"
+                + stamp + " LogPython: Warning: Director Hero Rig blocked phase=rig_readback exception_class=RuntimeError\n"
+                + stamp + " LogHttp: Warning: Request timed out for private-token\n"
+            )
             path.write_text(content, encoding="utf-8")
             before = path.read_bytes()
             start = (now - timedelta(seconds=1)).isoformat()
