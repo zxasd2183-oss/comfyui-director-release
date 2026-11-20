@@ -159,20 +159,36 @@ def _bridge_safe_parent(path, stop):
 
 
 def _bridge_write(path, payload):
-    """Atomic one-writer JSON; no secrets from Epic in this protocol."""
+    """Atomic one-writer JSON; retry short Windows sharing-violation races.
+
+    The authenticated Worker and interactive runner each own distinct files.
+    Never modify the JSON in place: readers must see a complete receipt.
+    """
     temp = path.with_name(path.name + ".tmp")
     data = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     if len(data) > 1200:
         raise ValueError("hero_interactive_payload_too_large")
     with temp.open("x", encoding="ascii") as fp:
         fp.write(data)
-    temp.replace(path)
+    for attempt in range(8):
+        try:
+            temp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(0.05)
 
 
 def _bridge_read(path):
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 1200:
+    """Read one atomic snapshot through a single handle, bounded to 1200 B."""
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
         raise ValueError("hero_interactive_invalid_receipt")
-    return json.loads(path.read_text(encoding="ascii"))
+    with path.open("rb") as fp:
+        raw = fp.read(1201)
+    if not 1 <= len(raw) <= 1200:
+        raise ValueError("hero_interactive_invalid_receipt")
+    return json.loads(raw.decode("ascii"))
 
 
 def _hero_bridge_is_windows():
@@ -280,8 +296,12 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT):
                     raise JobError("hero_interactive_ue_failed")
                 return
             if time.monotonic() >= next_heartbeat:
-                _bridge_write(heartbeat, {"format": HERO_BRIDGE_FORMAT,
-                                          "job_id": ident, "updated": time.time()})
+                try:
+                    _bridge_write(heartbeat, {"format": HERO_BRIDGE_FORMAT,
+                                              "job_id": ident, "updated": time.time()})
+                except (OSError, ValueError):
+                    _bridge_signal_cancel(folder, ident)
+                    raise JobError("hero_interactive_heartbeat_write_failed") from None
                 next_heartbeat = time.monotonic() + 2
             if interactive_hero_status(root).get("available") is not True:
                 _bridge_signal_cancel(folder, ident)
@@ -459,6 +479,7 @@ def _interactive_hero_once(root, folder, ticket, user, session):
             reason = "editor_failed"
             deadline = time.monotonic() + HERO_BRIDGE_TIMEOUT
             next_ready = 0.0
+            last_valid_worker_heartbeat = time.monotonic()
             while True:
                 # The authenticated Worker must keep seeing this same user /
                 # session while a potentially long cloud request is active.
@@ -473,17 +494,23 @@ def _interactive_hero_once(root, folder, ticket, user, session):
                     _kill_tree(proc)  # PID comes exclusively from local Popen
                     reason = "cancelled_or_timed_out"
                     break
+                # A single NTFS replace/read race is not proof of a lost
+                # controller. Require 15 seconds without ANY valid, fresh
+                # heartbeat before killing the owned editor process.
+                valid_heartbeat = False
                 try:
                     beat = _bridge_read(heartbeat)
-                    if (type(beat) is not dict or
-                            beat.get("format") != HERO_BRIDGE_FORMAT or
-                            beat.get("job_id") != ident or
-                            type(beat.get("updated")) not in (int, float) or
-                            time.time() - beat["updated"] > 15):
-                        _kill_tree(proc)
-                        reason = "worker_heartbeat_lost"
-                        break
-                except (OSError, ValueError, TypeError):
+                    valid_heartbeat = (
+                        type(beat) is dict and
+                        beat.get("format") == HERO_BRIDGE_FORMAT and
+                        beat.get("job_id") == ident and
+                        type(beat.get("updated")) in (int, float) and
+                        0 <= time.time() - beat["updated"] <= 15)
+                except (OSError, ValueError, TypeError, UnicodeError):
+                    pass
+                if valid_heartbeat:
+                    last_valid_worker_heartbeat = time.monotonic()
+                elif time.monotonic() - last_valid_worker_heartbeat > 15:
                     _kill_tree(proc)
                     reason = "worker_heartbeat_lost"
                     break
