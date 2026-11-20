@@ -311,7 +311,7 @@ def interactive_hero_job_diagnostic(root, job_id):
         path = folder / name / (job_id + ".json")
         try:
             _bridge_safe_parent(path, root)
-            if path.is_symlink() or getattr(path, "is_junction", lambda: False):
+            if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
                 report[name] = "unsafe"
             elif not path.is_file():
                 report[name] = "missing"
@@ -344,7 +344,7 @@ def interactive_hero_job_diagnostic(root, job_id):
     receipt = root / "Jobs" / job_id / "hero_rig_result.json"
     try:
         _bridge_safe_parent(receipt, root)
-        if receipt.is_symlink() or getattr(receipt, "is_junction", lambda: False):
+        if receipt.is_symlink() or getattr(receipt, "is_junction", lambda: False)():
             report["rig_receipt"] = "unsafe"
         elif not receipt.is_file():
             report["rig_receipt"] = "missing"
