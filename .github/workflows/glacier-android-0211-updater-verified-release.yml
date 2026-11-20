@@ -1,0 +1,185 @@
+name: Glacier Android 0.2.11 verified updater release
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-android-0211-updater-verified-release.yml'
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: glacier-android-0211-immutable-release
+  cancel-in-progress: false
+jobs:
+  verified-android:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 'e28b967f5301a5b81c3df16dcdbeaad94fef9759'
+      ANDROID_RUN: '44662044870'
+      TAG: glacier-android-browser-v0.2.11
+      APK: GlacierAndroid-v0.2.11-ARM64-x86_64-release.apk
+      GLACIER_ANDROID_CERT_SHA256: '6d8fb8a4b3dd90427ff2f7959394df4b73f37c117a7d1d2e983bde0f10a1ff4e'
+      ANDROID_HOME: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify original native QA and unchanged Android source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          run=os.environ['ANDROID_RUN']
+          sha=os.environ['SOURCE_SHA']
+          doc=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
+          if not (doc.get('head_sha')==sha and
+                  doc.get('head_branch')=='main' and
+                  doc.get('status')=='completed' and doc.get('conclusion')=='success' and
+                  doc.get('repository',{}).get('full_name')==repo):
+              raise RuntimeError('Android 0.2.11 source QA not pinned/successful')
+          jobs=json.loads(subprocess.check_output(
+              ['gh','api',f'repos/{repo}/actions/runs/{run}/jobs?per_page=100']))['jobs']
+          required=(
+              'Check permanent Glacier Android signing configuration',
+              'Build GeckoView + embedded sing-box dual-ABI APK',
+              'Android 15 SOCKS offline fail-closed regression (no VLESS secrets)',
+              'Android 15 SOCKS5 remote-DNS route via synthetic host (no secrets)',
+              'Android 15 Keystore saved-node persistence M01',
+              'Android 15 x86_64 real-APK UI smoke (bounded ADB + evidence)',
+              'Android 15 fresh real-sites + native UI click stress',
+              'Build permanent-signature Android RC (artifact ONLY, never publish)',
+          )
+          for name in required:
+              if len([j for j in jobs if j.get('name')==name and j.get('conclusion')=='success'])!=1:
+                  raise RuntimeError('Required Android native/emulator QA failed: '+name)
+          for path in ('glacier-android-gecko/',
+                       '.github/workflows/glacier-rc-android.yml',
+                       'scripts/glacier_release_version_check.py',
+                       'scripts/test_glacier_android_profile_avatar.py',
+                       'scripts/test_glacier_android_auto_update.py'):
+              subprocess.run(['git','diff','--exit-code',sha,'HEAD','--',path],check=True)
+          print('PASS source, 8 native-sign/emulator gates and avatar test')
+          PY
+          python3 scripts/glacier_release_version_check.py
+          python3 -m unittest -v scripts.test_glacier_android_profile_avatar
+          python3 -m unittest -v scripts.test_glacier_android_auto_update
+      - name: Refuse existing or rolled-back Android release version
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Target tag already exists"; exit 3
+          fi
+          python3 - <<'PY'
+          import json,os,re,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          items=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100']))
+          for item in items:
+              name=item.get('tag_name','')
+              m=re.fullmatch(r'glacier-android-browser-v(\d+)\.(\d+)\.(\d+)',name)
+              if m and tuple(map(int,m.groups())) >= (0,2,11):
+                  raise RuntimeError('Reused Android release version: '+name)
+          PY
+      - name: Download only permanent-signed original Android QA APK
+        run: |
+          set -euo pipefail
+          mkdir -p staged/android
+          gh run download "$ANDROID_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name GlacierAndroid-v0.2.11-STABLE-SIGNED-RC-NOT-PUBLISHED --dir staged/android
+      - name: Install independent Android signature inspection tools
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'build-tools;36.0.0' --channel=3
+      - name: Verify whole APK SHA256, stable signing certificate, versionCode20 and native ABIs
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,os,re,subprocess
+          from pathlib import Path
+          from zipfile import ZipFile
+          stage=Path('staged/android')
+          apk=stage/os.environ['APK']
+          items=list(stage.iterdir())
+          if len(items)!=1 or items[0]!=apk or not apk.is_file() or apk.is_symlink():
+              raise RuntimeError('Unexpected Android candidate file(s)')
+          size=apk.stat().st_size
+          if not 150_000_000<=size<=600_000_000:
+              raise RuntimeError('Invalid Android APK size')
+          with apk.open('rb') as stream:
+              digest=hashlib.file_digest(stream,'sha256').hexdigest()
+          with ZipFile(apk) as z:
+              files=set(z.namelist())
+              for abi in ('arm64-v8a','x86_64'):
+                  for lib in ('libxul.so','libsingbox.so'):
+                      if 'lib/'+abi+'/'+lib not in files:
+                          raise RuntimeError('Missing native engine '+abi+'/'+lib)
+          tools=Path(os.environ['ANDROID_HOME'])/'build-tools'/'36.0.0'
+          subprocess.run([str(tools/'apksigner'),'verify','--verbose',str(apk)],check=True)
+          certificate=subprocess.check_output(
+              [str(tools/'apksigner'),'verify','--print-certs',str(apk)],text=True)
+          found=re.search(r'Signer #1 certificate SHA-256 digest:\s*([a-fA-F0-9]{64})',certificate)
+          if not found or found.group(1).lower()!=os.environ['GLACIER_ANDROID_CERT_SHA256']:
+              raise RuntimeError('Android signing certificate changed')
+          identity=subprocess.check_output(
+              [str(tools/'aapt'),'dump','badging',str(apk)],text=True).splitlines()[0]
+          for expected in ("name='cn.borealos.glacier.geckopreview'",
+                           "versionCode='20'","versionName='0.2.11'"):
+              if expected not in identity:raise RuntimeError('Wrong Android upgrade identity')
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf8') as env:
+              env.write('APK_SHA256='+digest+'\n')
+              env.write('APK_SIZE='+str(size)+'\n')
+          print('PASS permanent Android signer and whole QA APK:',size,digest)
+          PY
+      - name: Upload only new private immutable draft release
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "staged/android/$APK" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title 'Glacier Android 0.2.11 · 安全更新检查与安装兼容性' \
+            --notes 'Android 0.2.11 / versionCode20：改进前台更新检查与联网失败重试，修复下载 APK 解析后缀，沿用 0.2.10 永久签名，支持直接覆盖安装且不清除账号、加密会话、Cookie、书签及 VLESS。安装由 Android 系统确认。'
+      - name: Confirm private draft has exactly the verified original APK
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          docs=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100']))
+          matches=[r for r in docs if r.get('tag_name')==os.environ['TAG']]
+          if len(matches)!=1:raise RuntimeError('Original Android release draft missing/duplicate')
+          d=matches[0];a=d.get('assets',[])
+          if (d.get('draft') is not True or d.get('published_at') is not None or
+              d.get('prerelease') or d.get('target_commitish')!=os.environ['GITHUB_SHA'] or
+              len(a)!=1 or a[0].get('name')!=os.environ['APK'] or
+              a[0].get('state')!='uploaded' or
+              a[0].get('size')!=int(os.environ['APK_SIZE']) or
+              a[0].get('digest')!='sha256:'+os.environ['APK_SHA256']):
+              raise RuntimeError('Android draft differs from original QA signed APK')
+          with open(os.environ['GITHUB_ENV'],'a') as env:
+              env.write('RELEASE_ID='+str(d['id'])+'\n')
+          print('PASS immutable Android draft',d['id'])
+          PY
+      - name: Publish exact checked draft by release ID and re-verify
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY'];rid=os.environ['RELEASE_ID']
+          before=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{rid}']))
+          if not (before.get('draft') is True and before.get('tag_name')==os.environ['TAG']
+                  and before.get('target_commitish')==os.environ['GITHUB_SHA']
+                  and len(before.get('assets',[]))==1):
+              raise RuntimeError('Unexpected draft mutation before publishing')
+          after=json.loads(subprocess.check_output(
+              ['gh','api','-X','PATCH',f'repos/{repo}/releases/{rid}','-F','draft=false']))
+          a=after.get('assets',[])
+          if (after.get('draft') is not False or not after.get('published_at') or
+              after.get('tag_name')!=os.environ['TAG'] or len(a)!=1 or
+              a[0].get('name')!=os.environ['APK'] or
+              a[0].get('size')!=int(os.environ['APK_SIZE']) or
+              a[0].get('digest')!='sha256:'+os.environ['APK_SHA256']):
+              raise RuntimeError('Public Android release failed byte-identity verification')
+          print('PASS published original Android 0.2.11 permanently-signed APK')
+          PY
