@@ -67,6 +67,29 @@ class InteractiveHeroTests(unittest.TestCase):
             self.assertFalse(rejected["available"])
 
 
+    def test_bridge_read_uses_one_atomic_bounded_snapshot(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "ready.json"
+            expected = {"format": FORMAT, "user": "Administrator",
+                        "session_id": 3, "pid": 123, "updated": time.time()}
+            ue_process._bridge_write(p, expected)
+            self.assertEqual(ue_process._bridge_read(p), expected)
+            p.write_bytes(b"x" * 1201)
+            with self.assertRaises(ValueError):
+                ue_process._bridge_read(p)
+            p.write_bytes(b"{broken}")
+            with self.assertRaises(ValueError):
+                ue_process._bridge_read(p)
+
+    def test_runner_requires_sustained_heartbeat_loss_not_single_read_race(self):
+        source = Path(ue_process.__file__).read_text("utf-8")
+        runner = source[source.index("def _interactive_hero_once("):
+                        source.index("def interactive_hero_runner_main(")]
+        self.assertIn("last_valid_worker_heartbeat = time.monotonic()", runner)
+        self.assertIn("time.monotonic() - last_valid_worker_heartbeat > 15", runner)
+        self.assertIn("if valid_heartbeat:", runner)
+        self.assertIn('reason = "worker_heartbeat_lost"', runner)
+
     def test_ready_requires_fresh_session_and_valid_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -192,7 +215,7 @@ class InteractiveHeroTests(unittest.TestCase):
         self.assertIn('"hero_rig_v200"', source)
         self.assertNotIn("shell=True", source)
         self.assertIn("_interactive_hero_preflight(root, ident)", source)
-        self.assertIn("time.time() - beat[\"updated\"] > 15", source)
+        self.assertIn("time.monotonic() - last_valid_worker_heartbeat > 15", source)
 
     def test_setup_requires_real_interactive_account_no_password(self):
         path = Path(__file__).resolve().parents[1] / "install-interactive-hero-runner.ps1"
