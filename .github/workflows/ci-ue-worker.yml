@@ -66,6 +66,140 @@ jobs:
           $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
           if ($principal.LogonType.ToString() -ne 'Interactive' -or -not $trigger) { throw 'Interactive-token task principal unavailable' }
           Write-Host "Passwordless interactive task definition validated"
+      - name: Verify registered interactive task via native Task Scheduler (no execution)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $name = "DirectorHeroCI-" + [Guid]::NewGuid().ToString("N")
+          $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" -Argument "/c exit 0" -WorkingDirectory "$env:SystemRoot"
+          $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
+          $principal = New-ScheduledTaskPrincipal -UserId $identity.User.Value -LogonType Interactive -RunLevel Limited
+          try {
+            Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Principal $principal -Description "Director CI interactive token test" -ErrorAction Stop | Out-Null
+            $service = New-Object -ComObject Schedule.Service
+            $service.Connect()
+            $definition = $service.GetFolder('\').GetTask($name).Definition
+            if ([int]$definition.Principal.LogonType -ne 3) { throw "Task principal is not an interactive token" }
+            if ([int]$definition.Principal.RunLevel -ne 0) { throw "Task principal elevated" }
+            $id = [string]$definition.Principal.UserId
+            $sid = if ($id -match '^S-1-[0-9-]+        shell: pwsh
+        run: |
+          foreach ($path in @("ue-worker/WindowsBootstrap.ps1", "ue-worker/install-v02.ps1", "ue-worker/install-v03.ps1", "ue-worker/install-v04.ps1", "ue-worker/install-v05.ps1", "ue-worker/install-v051.ps1", "ue-worker/install-v052.ps1", "ue-worker/install-signed-updater.ps1", "ue-worker/setup-signed-auto-updates-once.ps1", "ue-worker/bootstrap-vps-updater-only.ps1", "ue-worker/DirectorDesktopShare.ps1", "ue-worker/install-interactive-hero-runner.ps1")) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path, [ref]$tokens, [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error "$path : $_" }
+              throw "PowerShell syntax verification failed: $path"
+            }
+            Write-Host "Syntax OK: $path"
+          }
+
+      - name: Test native Windows PowerShell 5.1 parser and scheduler construction
+        shell: powershell
+        run: |
+          if ($PSVersionTable.PSVersion.Major -ne 5) {
+            throw "Expected inbox Windows PowerShell 5.1"
+          }
+          foreach ($path in @("ue-worker/setup-signed-auto-updates-once.ps1", "ue-worker/install-signed-updater.ps1", "ue-worker/install-v052.ps1", "ue-worker/bootstrap-vps-updater-only.ps1", "ue-worker/DirectorDesktopShare.ps1", "ue-worker/install-interactive-hero-runner.ps1")) {
+            $tokens = $null
+            $issues = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path, [ref]$tokens, [ref]$issues
+            ) | Out-Null
+            if ($issues.Count -gt 0) {
+              $issues | ForEach-Object { Write-Host ("PS5 parser error: " + $_.Message + " line " + $_.Extent.StartLineNumber) }
+              throw "Windows PowerShell 5.1 parse failure: $path"
+            }
+          }
+          # Compile the RDP native session-event handler without opening a GUI.
+          $companion = Get-Content "ue-worker/DirectorDesktopShare.ps1" -Raw
+          $start = "Add-Type -TypeDefinition @'"
+          $end = "'@ -ReferencedAssemblies"
+          $a = $companion.IndexOf($start)
+          $b = $companion.IndexOf($end, $a + $start.Length)
+          if ($a -lt 0 -or $b -lt 0) { throw "Missing native RDP session handler" }
+          $definition = $companion.Substring($a + $start.Length, $b - $a - $start.Length).Trim()
+          Add-Type -TypeDefinition $definition -ReferencedAssemblies @('System.Windows.Forms.dll','System.Drawing.dll') -ErrorAction Stop
+          if (-not ('DirectorSessionForm' -as [type])) {
+            throw "RDP session revocation handler failed to compile"
+          }
+          Write-Host "Session notification handler compiles on Windows PowerShell 5.1"
+          # Compile the second native input helper as well. Do not execute input.
+          $second = $companion.IndexOf($start, $b + $end.Length)
+          $finish = $companion.IndexOf("'@", $second + $start.Length)
+          if ($second -lt 0 -or $finish -lt 0) {
+            throw "Missing native desktop input helper"
+          }
+          $inputDefinition = $companion.Substring(
+            $second + $start.Length, $finish - $second - $start.Length
+          ).Trim()
+          Add-Type -TypeDefinition $inputDefinition -ErrorAction Stop
+          if (-not ('DirectorDesktopInput' -as [type])) {
+            throw "Native desktop input helper failed to compile"
+          }
+          Write-Host "Desktop input helper compiles on Windows PowerShell 5.1"
+          # Build a task definition only; do not register it or touch SYSTEM.
+          $args = '"C:\Program Files\Director UE\ue_signed_updater.py"'
+          $action = New-ScheduledTaskAction -Execute "C:\Program Files\Python\python.exe" -Argument $args
+          $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
+          $principal = New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
+          $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 4)
+          $definition = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings
+          if (-not $definition -or $action.Arguments -ne $args) {
+            throw "Scheduled task quoting/syntax regression"
+          }
+          Write-Host "PS 5.1 syntax, quoted paths and bounded 3650-day trigger verified"
+
+      - name: Verify account identity matching without privileged operations
+        shell: pwsh
+        run: |
+          . ./ue-worker/WindowsBootstrap.ps1
+          $sid = "S-1-5-21-1234-2345-3456-1001"
+          $cases = @(
+            @{ Value = $sid; Ok = $true },
+            @{ Value = "*$sid"; Ok = $true },
+            @{ Value = "DirectorUEWorker"; Ok = $true },
+            @{ Value = "TESTHOST\DirectorUEWorker"; Ok = $true },
+            @{ Value = ".\DirectorUEWorker"; Ok = $true },
+            @{ Value = "OTHERHOST\DirectorUEWorker"; Ok = $false },
+            @{ Value = "Administrator"; Ok = $false },
+            @{ Value = "DirectorUEWorker2"; Ok = $false },
+            @{ Value = "*S-1-5-21-1234-2345-3456-1002"; Ok = $false }
+          )
+          foreach ($item in $cases) {
+            $actual = Test-DirectorUELocalIdentity -Value $item.Value -AccountName "DirectorUEWorker" -Sid $sid -ComputerName "TESTHOST"
+            if ($actual -ne $item.Ok) {
+              throw "Identity matching failed for '$($item.Value)': wanted $($item.Ok), got $actual"
+            }
+          }
+          foreach ($principal in @("DirectorUEWorker", "TESTHOST\DirectorUEWorker", $sid)) {
+            if (-not (Test-DirectorUEPrincipal -Principal $principal -AccountName "DirectorUEWorker" -Sid $sid -ComputerName "TESTHOST")) {
+              throw "Scheduled Task principal mismatch for '$principal'"
+            }
+          }
+          Write-Host "Local-account and resolved-SID cases pass"
+) { $id } else {
+              $account = New-Object System.Security.Principal.NTAccount -ArgumentList $id
+              $account.Translate([Security.Principal.SecurityIdentifier]).Value
+            }
+            if ($sid -ne $identity.User.Value) { throw "Persisted Windows principal SID differs" }
+            if ([int]$definition.Triggers.Count -ne 1 -or
+                [int]$definition.Triggers.Item(1).Type -ne 9) {
+              throw "Task logon trigger drifted"
+            }
+            if ([int]$definition.Actions.Count -ne 1 -or
+                [int]$definition.Actions.Item(1).Type -ne 0) {
+              throw "Task exec action drifted"
+            }
+            Write-Host "Real Task Scheduler interactive-token registration and canonical identity verified"
+          } finally {
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+          }
+
       - name: Verify Windows PowerShell bootstrap syntax
         shell: pwsh
         run: |
