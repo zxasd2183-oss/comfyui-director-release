@@ -22,7 +22,11 @@ class ForegroundUpdateGuards(unittest.TestCase):
     def test_poll_after_resume_and_foreground_only(self):
         self.assertIn("UPDATE_CHECK_MS = 15L * 60L * 1000L", self.main)
         self.assertIn("protected void onResume()", self.main)
-        self.assertIn("updateCheckHandler.postDelayed(this, UPDATE_CHECK_MS)", self.main)
+        self.assertIn("updateCheckHandler.postDelayed(this, UPDATE_POLL_MS)", self.main)
+        self.assertIn("UPDATE_POLL_MS = 60L * 1000L", self.main)
+        self.assertIn("!updateForeground", self.check)
+        self.assertIn("updateForeground = true;", self.main)
+        self.assertIn("updateForeground = false;", self.main)
         self.assertIn("updateCheckHandler.removeCallbacks(updateCheckTimer)", self.main)
         self.assertIn("runtime == null", self.check)
         self.assertIn("updateCheckInFlight", self.check)
