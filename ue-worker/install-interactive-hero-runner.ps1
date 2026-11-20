@@ -60,22 +60,86 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
 }
 & $python -c "import sys; assert sys.version_info >= (3,12)"
 if ($LASTEXITCODE -ne 0) { throw "Python 3.12 or newer is required" }
-$taskName = "Director-UE-Interactive-Hero"
-if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
-    throw "Task already exists. Refusing to overwrite an existing identity."
+# Task Scheduler can persist a principal as ACCOUNT\Name even when
+# New-ScheduledTaskPrincipal was given a SID. Compare resolved SIDs, not
+# string representations. COM task logon type 3 = InteractiveToken.
+function Get-DirectorTaskSid([string]$rawId) {
+    if ([string]::IsNullOrWhiteSpace($rawId)) { return $null }
+    if ($rawId -match '^S-1-[0-9-]+$') { return $rawId }
+    try {
+        $name = New-Object System.Security.Principal.NTAccount($rawId)
+        return $name.Translate([Security.Principal.SecurityIdentifier]).Value
+    } catch [System.Security.Principal.IdentityNotMappedException] {
+        return $null
+    }
 }
-$action = New-ScheduledTaskAction -Execute $python -Argument ('-B "' + $runner + '" --interactive-hero-runner') -WorkingDirectory $programDir
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
-$principal = New-ScheduledTaskPrincipal -UserId $identity.User.Value -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
-# Only a fixed reviewed script, task name and windows account. No task
-# parameters, user credentials or remote executable/command fields exist.
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Director: allowlisted Epic MetaHuman rig in this logged-in user's session" -ErrorAction Stop | Out-Null
+function Test-DirectorHeroTask([string]$name, [string]$expectedSid,
+                                [string]$expectedPython,
+                                [string]$expectedRunner,
+                                [string]$expectedProgramDir,
+                                [string]$expectedUserName) {
+    $scheduler = New-Object -ComObject Schedule.Service
+    $scheduler.Connect()
+    $definition = $scheduler.GetFolder('\').GetTask($name).Definition
+    $taskSid = Get-DirectorTaskSid ([string]$definition.Principal.UserId)
+    if ($taskSid -ne $expectedSid) { return 'principal_account_mismatch' }
+    if ([int]$definition.Principal.LogonType -ne 3) {
+        return 'principal_not_interactive_token'
+    }
+    if ([int]$definition.Principal.RunLevel -ne 0) {
+        return 'principal_elevation_mismatch'
+    }
+    if ([int]$definition.Actions.Count -ne 1) {
+        return 'unexpected_action_count'
+    }
+    $actual = $definition.Actions.Item(1)
+    if ([int]$actual.Type -ne 0 -or
+        [string]$actual.Path -ine $expectedPython -or
+        [string]$actual.Arguments -cne ('-B "' + $expectedRunner + '" --interactive-hero-runner') -or
+        [string]$actual.WorkingDirectory -ine $expectedProgramDir) {
+        return 'unexpected_task_action'
+    }
+    if ([int]$definition.Triggers.Count -ne 1) {
+        return 'unexpected_trigger_count'
+    }
+    $trigger = $definition.Triggers.Item(1)
+    if ([int]$trigger.Type -ne 9 -or
+        (Get-DirectorTaskSid ([string]$trigger.UserId)) -ne $expectedSid) {
+        return 'unexpected_logon_trigger'
+    }
+    if ([string]$definition.RegistrationInfo.Description -cne
+        "Director: allowlisted Epic MetaHuman rig in this logged-in user's session") {
+        return 'unexpected_task_description'
+    }
+    return 'verified'
+}
+
+$taskName = "Director-UE-Interactive-Hero"
+$existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+$createdNow = $false
+if (-not $existing) {
+    $action = New-ScheduledTaskAction -Execute $python -Argument ('-B "' + $runner + '" --interactive-hero-runner') -WorkingDirectory $programDir
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
+    $principal = New-ScheduledTaskPrincipal -UserId $identity.User.Value -LogonType Interactive -RunLevel Limited
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
+    # Only a fixed reviewed script, task name and windows account. No task
+    # parameters, user credentials or remote executable/command fields exist.
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Director: allowlisted Epic MetaHuman rig in this logged-in user's session" -ErrorAction Stop | Out-Null
+    $createdNow = $true
+}
+# Repair ONLY the previously created exact task, even if it was disabled
+# by the old false-negative SID/string comparison. Never overwrite an
+# unknown task, rotate a credential, modify any Worker task, or elevate.
+$verification = Test-DirectorHeroTask $taskName $identity.User.Value $python $runner $programDir $identity.Name
+if ($verification -cne 'verified') {
+    if ($createdNow) {
+        Disable-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue | Out-Null
+    }
+    throw "Interactive hero task verification failed ($verification). Existing task unchanged."
+}
 $registered = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
-if ([string]$registered.Principal.UserId -ne [string]$identity.User.Value -or
-    [string]$registered.Principal.LogonType -ne "Interactive") {
-    Disable-ScheduledTask -TaskName $taskName | Out-Null
-    throw "Interactive Windows principal verification failed; task disabled"
+if ($registered.State -eq 'Disabled') {
+    Enable-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
 }
 Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
 Write-Host "Director interactive hero runner registered under $($identity.Name)"
