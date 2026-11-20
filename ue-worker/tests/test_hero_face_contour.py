@@ -50,6 +50,9 @@ class FaceContourTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
             project,amber,seed=setup_sources(root)
+            guid=json.loads(project.read_text(encoding="utf-8"))
+            guid["EngineAssociation"]="{01234567-89ab-CDEF-0123-456789abcdef}"
+            project.write_text(json.dumps(guid),encoding="utf-8")
             work=root/"Jobs"/("a"*32)
             before_amber=amber.read_bytes()
             before_seed=seed.read_bytes()
@@ -97,6 +100,21 @@ class FaceContourTests(unittest.TestCase):
             self.assertEqual(seed.read_bytes(),before_seed)
             self.assertNotEqual(receipt["candidate_uasset_sha256"],
                                 hashlib.sha256(before_amber).hexdigest())
+
+    def test_foreign_project_manifest_refuses_before_unreal(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            project,_,_=setup_sources(root)
+            wrong=json.loads(project.read_text(encoding="utf-8"))
+            wrong["Plugins"].append({"Name":"UntrustedPlugin","Enabled":True})
+            project.write_text(json.dumps(wrong),encoding="utf-8")
+            work=root/"Jobs"/("e"*32)
+            with patch.object(ue_previs,"_run_unreal") as execute:
+                with self.assertRaisesRegex(ue_jobs.JobError,"hero_face_project_untrusted"):
+                    ue_previs.build_gpt_hero_face_contour(studio_spec(),root,work)
+            execute.assert_not_called()
+            self.assertFalse(work.exists())
+
 
     def test_tampered_parent_blocks_editor_before_any_work(self):
         with tempfile.TemporaryDirectory() as td:

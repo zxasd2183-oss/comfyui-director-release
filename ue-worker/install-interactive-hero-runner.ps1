@@ -24,8 +24,8 @@ if (-not (Test-Path -LiteralPath $runner -PathType Leaf) -or
     throw "Signed Director Worker files are missing"
 }
 $installed = Get-Content -LiteralPath $agent -Raw
-if ($installed -notmatch '"worker_version":\s*"2\.3\.(7|8)"') {
-    throw "Install signed Worker 2.3.7 or 2.3.8 before enabling interactive execution"
+if ($installed -notmatch '"worker_version":\s*"2\.3\.(7|8|9)"') {
+    throw "Install signed Worker 2.3.7, 2.3.8 or 2.3.9 before enabling interactive execution"
 }
 # The signed Worker bundle is protected from ordinary users. Allow the
 # particular RDP account to READ trusted Python code without revealing the

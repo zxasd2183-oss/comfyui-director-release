@@ -430,7 +430,7 @@ def build_gpt_hero_cloud_rig(spec,root,work):
 def build_gpt_hero_face_contour(spec,root,work):
     """Unrigged MetaHuman contour on a NEW candidate; preserves amber source."""
     from ue_jobs import JobError,find_editor_cmd
-    from agent import hero_project_manifest
+    from agent import trusted_hero_project_manifest
     if spec.get("format")!="director_ue_hero_face_v170":
         raise JobError("hero_face_spec_invalid")
     if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
@@ -447,10 +447,11 @@ def build_gpt_hero_face_contour(spec,root,work):
     if project.is_symlink() or not project.is_file():
         raise JobError("hero_face_project_missing")
     try:
-        if json.loads(project.read_text("utf-8"))!=hero_project_manifest():
-            raise JobError("hero_face_project_untrusted")
+        manifest=json.loads(project.read_text("utf-8"))
     except (UnicodeError,TypeError,ValueError):
         raise JobError("hero_face_project_unreadable") from None
+    if not trusted_hero_project_manifest(manifest):
+        raise JobError("hero_face_project_untrusted")
     original=(project.parent/"Content"/"Director"/"Candidates"/"EP01"/
               "HeroLooks"/("J"+GPT_HERO_AMBER_SOURCE_JOB)/
               "MHC_CHAR_GPT_AmberV1.uasset")
