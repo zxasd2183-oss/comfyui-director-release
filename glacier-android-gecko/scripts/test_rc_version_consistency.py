@@ -12,7 +12,7 @@ class TestRcVersionConsistency(unittest.TestCase):
         return Path(__file__).resolve().parents[2]
 
     def test_real_checkout(self):
-        self.assertEqual(inspect(self.source_root()), "0.2.10")
+        self.assertEqual(inspect(self.source_root()), "0.2.11")
 
     def test_stale_instrumentation_script_blocks_before_emulator(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -23,13 +23,13 @@ class TestRcVersionConsistency(unittest.TestCase):
             app.mkdir(parents=True)
             scripts.mkdir(parents=True)
             wf.mkdir(parents=True)
-            (app / "build.gradle").write_text("versionCode 19\nversionName '0.2.10'\n")
-            expected = "GlacierAndroid-v0.2.10-Mobile-M05-ARM64-x86_64-debug.apk"
+            (app / "build.gradle").write_text("versionCode 20\nversionName '0.2.11'\n")
+            expected = "GlacierAndroid-v0.2.11-Mobile-M05-ARM64-x86_64-debug.apk"
             (scripts / "run_saved_vless_test.sh").write_text(expected)
             (scripts / "run_emulator_smoke.sh").write_text(expected)
             (wf / "glacier-rc-android.yml").write_text(expected)
-            self.assertEqual(inspect(root), "0.2.10")
-            (scripts / "run_saved_vless_test.sh").write_text(expected.replace("0.2.10", "0.2.2"))
+            self.assertEqual(inspect(root), "0.2.11")
+            (scripts / "run_saved_vless_test.sh").write_text(expected.replace("0.2.11", "0.2.2"))
             with self.assertRaisesRegex(ValueError, "does not reference"):
                 inspect(root)
 
