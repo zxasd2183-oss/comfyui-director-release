@@ -390,6 +390,87 @@ def interactive_hero_job_diagnostic(root, job_id):
     return report
 
 
+def hero_rig_editor_log_diagnostic(root, started_at, finished_at):
+    """Read-only, time-scoped classification of a failed rig's UE project log.
+
+    Never return raw Editor lines, URLs, credentials, usernames or arbitrary
+    paths. Timestamp correlation prevents old sign-in errors being mistaken
+    for this failed run. No additional Unreal/cloud request is made.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    root = Path(root)
+    if root != HERO_BRIDGE_ROOT:
+        return {"available": False, "reason": "invalid_diagnostic_target"}
+    try:
+        started = datetime.fromisoformat(started_at)
+        finished = datetime.fromisoformat(finished_at)
+        if (started.tzinfo is None or finished.tzinfo is None or
+                not started < finished <= started + timedelta(minutes=30)):
+            raise ValueError("invalid_job_window")
+        started = started.astimezone(timezone.utc)
+        finished = finished.astimezone(timezone.utc)
+    except (ValueError, TypeError, AttributeError):
+        return {"available": False, "reason": "invalid_job_window"}
+
+    path = (root / "HeroProjects" / "CHAR_GPT" / "Saved" /
+            "Logs" / "DirectorHeroGPT.log")
+    try:
+        _bridge_safe_parent(path, root)
+        if not path.is_file() or path.is_symlink():
+            return {"available": False, "reason": "editor_log_unavailable"}
+        meta = path.stat()
+        if not 1 <= meta.st_size <= 128 * 1024 * 1024:
+            return {"available": False, "reason": "editor_log_unavailable"}
+        updated = datetime.fromtimestamp(meta.st_mtime, timezone.utc)
+        if not (started - timedelta(minutes=2) <= updated <=
+                finished + timedelta(minutes=5)):
+            return {"available": False, "reason": "editor_log_not_correlated"}
+        with path.open("rb") as fp:
+            fp.seek(max(0, meta.st_size - 4 * 1024 * 1024))
+            data = fp.read(4 * 1024 * 1024 + 1)
+    except (OSError, ValueError, OverflowError):
+        return {"available": False, "reason": "editor_log_unavailable"}
+    if len(data) > 4 * 1024 * 1024:
+        return {"available": False, "reason": "editor_log_changed"}
+
+    # Every classified line must carry UE's own UTC time within this job.
+    stamp = re.compile(
+        r"^\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):\d+\]")
+    signals = set()
+    scoped_lines = 0
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        m = stamp.match(line)
+        if m is None:
+            continue
+        try:
+            when = datetime(*[int(x) for x in m.groups()], tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if not started - timedelta(seconds=30) <= when <= finished + timedelta(seconds=30):
+            continue
+        scoped_lines += 1
+        value = line.casefold()
+        if ("logeosauth" in value and
+                "no existing persistent auth credentials" in value):
+            signals.add("no_epic_persistent_credentials")
+        if ("logmetahumanauth" in value and
+                ("login failed" in value or "eos_invalidauth" in value)):
+            signals.add("epic_signin_failed")
+        if ("auto-rigging of face failed" in value or
+                ("logmetahumancharactereditor" in value and
+                 "rigging" in value and ("failed" in value or "error" in value))):
+            signals.add("cloud_autorig_failed")
+        if ("loghttp" in value and "timed out" in value):
+            signals.add("http_request_timeout")
+        if ("logpython" in value and
+                ("error" in value or "traceback" in value or "exception" in value)):
+            signals.add("editor_python_error")
+    return {"available": True, "status": "analyzed" if scoped_lines else
+            "no_correlated_timestamped_lines", "signals": sorted(signals),
+            "mutations_performed": False}
+
+
 def _windows_session_identity():
     if os.name != "nt":
         raise RuntimeError("interactive_windows_required")
