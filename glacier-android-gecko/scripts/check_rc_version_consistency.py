@@ -28,7 +28,7 @@ def inspect(root: Path) -> str:
         observed = re.findall(r"GlacierAndroid-v([0-9]+\.[0-9]+\.[0-9]+)-[^\s\"']+\.apk", data)
         if observed and set(observed) != {version}:
             raise ValueError(f"{path.name} contains stale APK version references: {sorted(set(observed))}")
-    if "versionCode 19" not in gradle:
+    if "versionCode 20" not in gradle:
         raise ValueError("Android versionCode unexpected; candidate upgrade may not install")
     return version
 
