@@ -31,6 +31,42 @@ def setup(root, session=3, user="Administrator"):
 
 
 class InteractiveHeroTests(unittest.TestCase):
+    def test_readonly_diagnostic_classifies_completed_failed_handoff(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = setup(root)
+            result = folder / "results" / (JOB + ".json")
+            payload = {"format": FORMAT, "job_id": JOB, "nonce": NONCE,
+                       "exit_code": 0, "session_id": 3, "user": "Administrator",
+                       "reason": "finished"}
+            ue_process._bridge_write(result, payload)
+            old = result.read_bytes()
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                diag = ue_process.interactive_hero_job_diagnostic(root, JOB)
+            self.assertTrue(diag["available"])
+            self.assertEqual(diag["results"], "valid")
+            self.assertEqual(diag["process_exit"], "zero")
+            self.assertEqual(diag["rig_receipt"], "missing")
+            self.assertFalse(diag["mutations_performed"])
+            self.assertNotIn("user", diag)
+            self.assertNotIn("nonce", diag)
+            self.assertEqual(result.read_bytes(), old)
+
+    def test_readonly_diagnostic_rejects_untrusted_paths_and_receipts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = setup(root)
+            receipt = root / "Jobs" / JOB / "hero_rig_result.json"
+            receipt.write_text('{"ok": false, "reason": "hero_rig_failed_cloud_request"}')
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                diag = ue_process.interactive_hero_job_diagnostic(root, JOB)
+                rejected = ue_process.interactive_hero_job_diagnostic(
+                    root, "../unsafe")
+            self.assertEqual(diag["rig_receipt"], "failed")
+            self.assertEqual(diag["rig_stage"], "hero_rig_failed_cloud_request")
+            self.assertFalse(rejected["available"])
+
+
     def test_ready_requires_fresh_session_and_valid_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

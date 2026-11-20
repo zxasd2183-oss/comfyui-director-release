@@ -521,7 +521,16 @@ class JobManager:
             entry = self.jobs.get(job_id)
             if entry is None:
                 raise JobError("job_not_found")
-            return dict(entry)
+            response = dict(entry)
+        if response.get("task") == "build_ep01_hero_cloud_rig":
+            from ue_process import interactive_hero_job_diagnostic
+            try:
+                response["interactive_diagnostic"] = interactive_hero_job_diagnostic(
+                    self.root_factory(), job_id)
+            except (OSError, ValueError, TypeError):
+                response["interactive_diagnostic"] = {
+                    "available": False, "reason": "diagnostic_unavailable"}
+        return response
 
 
 # EP01 final-assembly inventory is inside the signed-owned Worker module.
