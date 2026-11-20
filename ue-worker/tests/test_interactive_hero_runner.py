@@ -215,7 +215,7 @@ class InteractiveHeroTests(unittest.TestCase):
         self.assertIn('"hero_rig_v200"', source)
         self.assertNotIn("shell=True", source)
         self.assertIn("_interactive_hero_preflight(root, ident)", source)
-        self.assertIn("time.time() - beat[\"updated\"] > 15", source)
+        self.assertIn("time.monotonic() - last_valid_worker_heartbeat > 15", source)
 
     def test_setup_requires_real_interactive_account_no_password(self):
         path = Path(__file__).resolve().parents[1] / "install-interactive-hero-runner.ps1"
