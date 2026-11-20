@@ -1049,7 +1049,7 @@ def hero_cloud_face_rig_main():
                 or not re.fullmatch(r"[a-f0-9]{32}",job)):
             raise RuntimeError("invalid_fixed_task")
         source=("/Game/Director/Candidates/EP01/HeroFaces/"
-                "J47cc188f03b9410fb8c94b085b739469/"
+                "J3da85eb1f3ae45aa82b911417b5cd6d3/"
                 "MHC_CHAR_GPT_FaceContourV1")
         target=("/Game/Director/Candidates/EP01/HeroRigs/J"+job+
                 "/MHC_CHAR_GPT_RigV1")
