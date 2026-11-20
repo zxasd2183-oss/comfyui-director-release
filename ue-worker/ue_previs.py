@@ -302,10 +302,10 @@ GPT_HERO_AMBER_SOURCE_SHA256 = (
 )
 
 
-# Real face candidate saved by RTX4090 UE 5.8 on 2026-11-13.
-GPT_HERO_FACE_SOURCE_JOB = "47cc188f03b9410fb8c94b085b739469"
+# Verified new isolated face candidate from RTX4090 UE 5.8 job on 2026-11-20.
+GPT_HERO_FACE_SOURCE_JOB = "3da85eb1f3ae45aa82b911417b5cd6d3"
 GPT_HERO_FACE_SOURCE_SHA256 = (
-    "812fcabd3544cc273789841433cae1f0d07ceb59815693eb492c03ef3f9f8816"
+    "4cd053edf79b4ec856eb80c5c425bc3953b1d10ec12f71ed8ccae5cb1935a100"
 )
 
 

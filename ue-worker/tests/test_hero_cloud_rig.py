@@ -154,6 +154,21 @@ class CloudRigTests(unittest.TestCase):
             run.assert_not_called()
             self.assertFalse(work.exists())
 
+    def test_verified_new_face_receipt_is_pinned_in_worker_and_editor(self):
+        # Face source must be the real completed, independently receipted
+        # candidate, never the older changed-on-disk job.
+        job = "3da85eb1f3ae45aa82b911417b5cd6d3"
+        digest = "4cd053edf79b4ec856eb80c5c425bc3953b1d10ec12f71ed8ccae5cb1935a100"
+        self.assertEqual(ue_previs.GPT_HERO_FACE_SOURCE_JOB, job)
+        self.assertEqual(ue_previs.GPT_HERO_FACE_SOURCE_SHA256, digest)
+        src = (Path(__file__).resolve().parents[1] /
+               "unreal_create_previs_preset.py").read_text("utf-8")
+        start = src.index("def hero_cloud_face_rig_main():")
+        end = src.index('if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_rig_v200":')
+        code = src[start:end]
+        self.assertIn("J" + job + "/", code)
+        self.assertNotIn("J47cc188f03b9410fb8c94b085b739469/", code)
+
     def test_cloud_script_uses_no_injected_commands_or_secrets(self):
         src=(Path(__file__).resolve().parents[1]/
              "unreal_create_previs_preset.py").read_text("utf-8")
