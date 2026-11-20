@@ -161,7 +161,7 @@ class InteractiveHeroTests(unittest.TestCase):
             with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
                 report = ue_process.hero_rig_editor_log_diagnostic(root, start, end)
             self.assertEqual(report["readback_exception"], "RuntimeError")
-            self.assertEqual(report["signals"], ["http_request_timeout"])
+            self.assertEqual(report["signals"], ["editor_python_error", "http_request_timeout"])
             self.assertNotIn("private-token", str(report))
             self.assertEqual(path.read_bytes(), before)
 
