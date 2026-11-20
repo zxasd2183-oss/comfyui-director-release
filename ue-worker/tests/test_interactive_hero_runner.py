@@ -140,6 +140,48 @@ class InteractiveHeroTests(unittest.TestCase):
             self.assertFalse(rejected["available"])
 
 
+    def test_editor_log_classifies_actual_rig_readback_exception_without_raw_text(self):
+        from datetime import datetime, timedelta, timezone
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = root / "HeroProjects" / "CHAR_GPT" / "Saved" / "Logs"
+            folder.mkdir(parents=True)
+            path = folder / "DirectorHeroGPT.log"
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            stamp = now.strftime("[%Y.%m.%d-%H.%M.%S:000]")
+            content = (
+                "[2020.01.01-01.01.01:000] LogPython: Warning: Director Hero Rig blocked phase=rig_readback exception_class=AttributeError\\n"
+                + stamp + " LogPython: Warning: Director Hero Rig blocked phase=rig_readback exception_class=RuntimeError\\n"
+                + stamp + " LogHttp: Warning: Request timed out for private-token\\n"
+            ).replace("\\\\n", "\\n")
+            path.write_text(content, encoding="utf-8")
+            before = path.read_bytes()
+            start = (now - timedelta(seconds=1)).isoformat()
+            end = (now + timedelta(seconds=1)).isoformat()
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                report = ue_process.hero_rig_editor_log_diagnostic(root, start, end)
+            self.assertEqual(report["readback_exception"], "RuntimeError")
+            self.assertEqual(report["signals"], ["http_request_timeout"])
+            self.assertNotIn("private-token", str(report))
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_editor_log_readback_not_observed_does_not_guess(self):
+        from datetime import datetime, timedelta, timezone
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = root / "HeroProjects" / "CHAR_GPT" / "Saved" / "Logs"
+            folder.mkdir(parents=True)
+            path = folder / "DirectorHeroGPT.log"
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            stamp = now.strftime("[%Y.%m.%d-%H.%M.%S:000]")
+            path.write_text(stamp + " LogPython: Error: unrelated exception", encoding="utf-8")
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                report = ue_process.hero_rig_editor_log_diagnostic(
+                    root, (now - timedelta(seconds=1)).isoformat(),
+                    (now + timedelta(seconds=1)).isoformat())
+            self.assertEqual(report["readback_exception"], "not_observed")
+
+
     def test_ready_requires_fresh_session_and_valid_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
