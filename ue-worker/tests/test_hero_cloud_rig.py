@@ -115,6 +115,33 @@ class CloudRigTests(unittest.TestCase):
                     ue_previs.build_gpt_hero_cloud_rig(spec(), root, work)
             self.assertEqual(project.read_bytes(), before)
 
+    def test_source_integrity_audit_reports_drift_without_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _, items = sources(root)
+            originals = [p.read_bytes() for p in items]
+            hashes = [hashlib.sha256(x).hexdigest() for x in originals]
+            with patch.object(ue_previs, "GPT_HERO_FACE_SOURCE_SHA256", hashes[0]), \
+                 patch.object(ue_previs, "GPT_HERO_AMBER_SOURCE_SHA256", hashes[1]), \
+                 patch.object(ue_previs, "GPT_HERO_SOURCE_SHA256", hashes[2]):
+                good = agent.hero_source_integrity(root)
+                self.assertTrue(good["ok"])
+                self.assertEqual(set(good["assets"]), {"face", "amber", "seed"})
+                items[0].write_bytes(originals[0] + b"drift")
+                drift = agent.hero_source_integrity(root)
+                self.assertFalse(drift["ok"])
+                self.assertEqual(drift["assets"]["face"]["status"], "mismatch")
+                self.assertEqual(drift["assets"]["face"]["expected_sha256"], hashes[0])
+                self.assertEqual(drift["assets"]["amber"]["status"], "match")
+                self.assertEqual(drift["assets"]["seed"]["status"], "match")
+                items[1].unlink()
+                missing = agent.hero_source_integrity(root)
+                self.assertEqual(missing["assets"]["amber"]["status"], "missing")
+            self.assertEqual(items[0].read_bytes(), originals[0] + b"drift")
+            self.assertEqual(items[2].read_bytes(), originals[2])
+            self.assertFalse(good["mutations_performed"])
+
+
     def test_source_hash_drift_blocks_cloud_before_start(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)

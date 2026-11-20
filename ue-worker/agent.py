@@ -197,6 +197,60 @@ def prepare_hero_metahuman_project():
             "source_episode_untouched":True,"rendered_character":False}
 
 
+def hero_source_integrity(root=None):
+    """Read-only SHA-256 audit of the three pinned EP01 CHAR_GPT rig sources.
+
+    API callers cannot choose paths. Never mutates, repairs or approves files.
+    """
+    from ue_previs import (
+        GPT_HERO_FACE_SOURCE_JOB, GPT_HERO_FACE_SOURCE_SHA256,
+        GPT_HERO_AMBER_SOURCE_JOB, GPT_HERO_AMBER_SOURCE_SHA256,
+        GPT_HERO_SOURCE_JOB, GPT_HERO_SOURCE_SHA256,
+    )
+    root = workspace_root() if root is None else Path(root)
+    base = (root / "HeroProjects" / "CHAR_GPT" / "Content" /
+            "Director" / "Candidates" / "EP01")
+    sources = (
+        ("face", base / "HeroFaces" / ("J" + GPT_HERO_FACE_SOURCE_JOB) /
+         "MHC_CHAR_GPT_FaceContourV1.uasset", GPT_HERO_FACE_SOURCE_SHA256),
+        ("amber", base / "HeroLooks" / ("J" + GPT_HERO_AMBER_SOURCE_JOB) /
+         "MHC_CHAR_GPT_AmberV1.uasset", GPT_HERO_AMBER_SOURCE_SHA256),
+        ("seed", base / "HeroBuilds" / ("J" + GPT_HERO_SOURCE_JOB) /
+         "MHC_CHAR_GPT.uasset", GPT_HERO_SOURCE_SHA256),
+    )
+    results = {}
+    for label, path, expected in sources:
+        state = {"status": "unverified", "expected_sha256": expected}
+        try:
+            for part in (path, *path.parents):
+                if part == root.parent:
+                    break
+                if part.is_symlink() or getattr(part, "is_junction", lambda: False)():
+                    state["status"] = "unsafe_link"
+                    break
+            if state["status"] != "unsafe_link":
+                if not path.is_file():
+                    state["status"] = "missing"
+                elif not 1024 <= path.stat().st_size <= 250 * 1024 * 1024:
+                    state["status"] = "unsupported_file"
+                else:
+                    digest = hashlib.sha256()
+                    with path.open("rb") as source:
+                        while True:
+                            chunk = source.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            digest.update(chunk)
+                    actual = digest.hexdigest()
+                    state["current_sha256"] = actual
+                    state["status"] = "match" if actual == expected else "mismatch"
+        except (OSError, ValueError, UnicodeError):
+            state["status"] = "unreadable"
+        results[label] = state
+    return {"ok": all(row["status"] == "match" for row in results.values()),
+            "assets": results, "mutations_performed": False}
+
+
 def hero_character_readiness():
     """Bounded local preflight for ONE EP01 hero; no installs or mutations.
 
@@ -735,9 +789,10 @@ def status():
         "gpu": gpu_summary(), "ue": {"installations": find_ue_installations()},
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
+        "hero_source_integrity": hero_source_integrity(),
         "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.3.7",
+        "worker_version": "2.3.8",
     }
 
 
