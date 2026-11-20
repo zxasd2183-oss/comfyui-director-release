@@ -9,6 +9,7 @@ on:
       - integration/glacier-browser-release-candidate-20261111
     paths:
       - 'scripts/glacier_release_version_check.py'
+      - 'scripts/test_glacier_android_auto_update.py'
       - 'glacier-android-gecko/**'
       - '.github/workflows/glacier-rc-android.yml'
   workflow_dispatch:
@@ -50,6 +51,7 @@ jobs:
           python3 glacier-android-gecko/scripts/check_rc_version_consistency.py
           python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_rc_version_consistency.py' -v
           python3 -m unittest -v scripts.test_glacier_android_profile_avatar
+          python3 -m unittest -v scripts.test_glacier_android_auto_update
           python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_gecko_mainthread_guards.py' -v
           python3 -m unittest discover -s glacier-android-gecko/scripts -p 'test_android_login_fill34.py' -v
       - name: Download and SHA256 verify official sing-box 1.14.4 Android cores
@@ -324,6 +326,8 @@ jobs:
 
   signing_preflight:
     name: Check permanent Glacier Android signing configuration
+    # Never load stable signing secrets on a feature branch.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
       ready: ${{ steps.check.outputs.ready }}
@@ -354,7 +358,7 @@ jobs:
   signed_release_candidate:
     name: Build permanent-signature Android RC (artifact ONLY, never publish)
     needs: [build, signing_preflight, emulator_saved_node, emulator_smoke, emulator_external_websites, emulator_proxy_fail_closed, emulator_proxy_mock_route]
-    if: needs.signing_preflight.outputs.ready == 'true'
+    if: github.ref == 'refs/heads/main' && needs.signing_preflight.outputs.ready == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
