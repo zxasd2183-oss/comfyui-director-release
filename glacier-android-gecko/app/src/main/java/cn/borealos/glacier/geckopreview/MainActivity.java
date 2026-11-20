@@ -105,15 +105,18 @@ public final class MainActivity extends Activity {
     private BrowserUpdater updater;
     // Update metadata is polled only while the browser is visible.
     private static final long UPDATE_CHECK_MS = 15L * 60L * 1000L;
+    // Wake frequently without hitting the network until the retry/check window expires.
+    private static final long UPDATE_POLL_MS = 60L * 1000L;
     private static final long UPDATE_RETRY_MS = 10L * 60L * 1000L;
     private final Handler updateCheckHandler = new Handler(Looper.getMainLooper());
     private final Runnable updateCheckTimer = new Runnable() {
         @Override public void run() {
             maybeCheckUpdatesAtStartup();
-            updateCheckHandler.postDelayed(this, UPDATE_CHECK_MS);
+            updateCheckHandler.postDelayed(this, UPDATE_POLL_MS);
         }
     };
     private boolean updateCheckInFlight;
+    private boolean updateForeground;
     private EditText address;
     private TextView identity;
     private TextView tabCounter;
@@ -903,7 +906,7 @@ public final class MainActivity extends Activity {
         // Never query before the user selects a network mode. Failed checks
         // are retried; success is timestamped only after metadata is received.
         if (debugBuild() || updater == null || !autoUpdateCheckEnabled()
-                || runtime == null || isFinishing() || updateCheckInFlight) return;
+                || runtime == null || !updateForeground || isFinishing() || updateCheckInFlight) return;
         long now = System.currentTimeMillis();
         long lastSuccess = updatePreferences().getLong("last_checked", 0);
         if (lastSuccess > 0 && now >= lastSuccess
@@ -918,7 +921,7 @@ public final class MainActivity extends Activity {
             if (error != null) return; // Never retry through direct network in VLESS mode.
             updatePreferences().edit()
                     .putLong("last_checked", System.currentTimeMillis()).apply();
-            if (isFinishing() || found == null) return;
+            if (!updateForeground || isFinishing() || found == null) return;
             String lastPromptVersion =
                     updatePreferences().getString("last_prompt_version", "");
             long lastPromptAt = updatePreferences().getLong("last_prompt_at", 0);
@@ -2793,12 +2796,14 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        updateForeground = true;
         updateCheckHandler.removeCallbacks(updateCheckTimer);
         updateCheckHandler.postDelayed(updateCheckTimer, 5000);
     }
 
     @Override
     protected void onStop() {
+        updateForeground = false;
         updateCheckHandler.removeCallbacks(updateCheckTimer);
         tabSaveHandler.removeCallbacks(saveTabsTask);
         persistTabs();
