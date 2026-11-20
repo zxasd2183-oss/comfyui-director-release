@@ -66,6 +66,43 @@ jobs:
           $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
           if ($principal.LogonType.ToString() -ne 'Interactive' -or -not $trigger) { throw 'Interactive-token task principal unavailable' }
           Write-Host "Passwordless interactive task definition validated"
+      - name: Verify persisted interactive-token task with Windows Task Scheduler
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $name = 'DirectorHeroCI-' + [Guid]::NewGuid().ToString('N')
+          $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\cmd.exe') -Argument '/c exit 0'
+          $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
+          $principal = New-ScheduledTaskPrincipal -UserId $identity.User.Value -LogonType Interactive -RunLevel Limited
+          try {
+            Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Principal $principal -Description 'Director CI interactive task' -ErrorAction Stop | Out-Null
+            $scheduler = New-Object -ComObject Schedule.Service
+            $scheduler.Connect()
+            $def = $scheduler.GetFolder('\').GetTask($name).Definition
+            if ([int]$def.Principal.LogonType -ne 3) { throw 'Interactive token logon type missing' }
+            if ([int]$def.Principal.RunLevel -ne 0) { throw 'Unexpected elevation' }
+            $id = [string]$def.Principal.UserId
+            if ($id -ne $identity.User.Value) {
+              if ($id -like 'S-1-*') { throw 'Persisted principal SID mismatch' }
+              $account = New-Object System.Security.Principal.NTAccount -ArgumentList $id
+              $id = $account.Translate([Security.Principal.SecurityIdentifier]).Value
+            }
+            if ($id -ne $identity.User.Value) { throw 'Canonical principal SID mismatch' }
+            if ([int]$def.Triggers.Count -ne 1 -or [int]$def.Triggers.Item(1).Type -ne 9) { throw 'Unexpected logon trigger' }
+            $triggerUser = [string]$def.Triggers.Item(1).UserId
+            if ($triggerUser -ne $identity.User.Value) {
+              if ($triggerUser -like 'S-1-*') { throw 'Logon trigger SID mismatch' }
+              $triggerName = New-Object System.Security.Principal.NTAccount -ArgumentList $triggerUser
+              $triggerUser = $triggerName.Translate([Security.Principal.SecurityIdentifier]).Value
+            }
+            if ($triggerUser -ne $identity.User.Value) { throw 'Logon trigger resolved to another account' }
+            if ([string]$def.RegistrationInfo.Description -cne 'Director CI interactive task') { throw 'Description drifted' }
+            if ([int]$def.Actions.Count -ne 1 -or [int]$def.Actions.Item(1).Type -ne 0) { throw 'Unexpected executable action' }
+            Write-Host 'Verified persisted interactive token and task principal SID'
+          } finally {
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+          }
       - name: Verify Windows PowerShell bootstrap syntax
         shell: pwsh
         run: |
