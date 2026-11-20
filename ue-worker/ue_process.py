@@ -439,6 +439,7 @@ def hero_rig_editor_log_diagnostic(root, started_at, finished_at):
         r"^\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):\d+\]")
     signals = set()
     scoped_lines = 0
+    readback_exception = "not_observed"
     for line in data.decode("utf-8", errors="replace").splitlines():
         m = stamp.match(line)
         if m is None:
@@ -451,6 +452,17 @@ def hero_rig_editor_log_diagnostic(root, started_at, finished_at):
             continue
         scoped_lines += 1
         value = line.casefold()
+        # This marker is emitted by our fixed Unreal script after the
+        # blocking cloud call. It distinguishes an unavailable Python
+        # editor property from a present-but-false DNA result.
+        if ("director hero rig blocked phase=rig_readback" in value and
+                "exception_class=" in value):
+            match = re.search(r"exception_class=([A-Za-z_]{1,48})", line)
+            if match:
+                cls = match.group(1)
+                readback_exception = (cls if cls in {
+                    "RuntimeError", "AttributeError", "TypeError",
+                    "ValueError", "Exception"} else "other")
         if ("logeosauth" in value and
                 "no existing persistent auth credentials" in value):
             signals.add("no_epic_persistent_credentials")
@@ -468,6 +480,7 @@ def hero_rig_editor_log_diagnostic(root, started_at, finished_at):
             signals.add("editor_python_error")
     return {"available": True, "status": "analyzed" if scoped_lines else
             "no_correlated_timestamped_lines", "signals": sorted(signals),
+            "readback_exception": readback_exception,
             "mutations_performed": False}
 
 
