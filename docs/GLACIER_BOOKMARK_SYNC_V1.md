@@ -32,7 +32,10 @@ MUST come from the existing verified login session, never request JSON.
 
 The isolated SQLite backend at vps-control/glacier_bookmark_cas_store.py
 implements encrypted-only rows and per-user/per-space atomic versions.
-It implements NO HTTP routes and NO authentication. Do not mount it without
+A separate optional adapter in vps-control/glacier_bookmark_api_router.py
+provides GET/PUT route handlers only after injection of a verified existing
+Glacier session identity dependency. Neither module is mounted on the VPS.
+Neither module implements authentication. Do not mount it without
 first inspecting and correctly integrating the live Glacier Sync session
 verifier and database ownership; do not create an unauthenticated shortcut.
 
