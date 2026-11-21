@@ -16,8 +16,12 @@ on:
       - feature/glacier-macos-safari-separated-20261112
       - feature/glacier-macos-safari-sidebar39-20261112
       - feature/glacier-home-brand-20261112
+      - feature/glacier-desktop-brand-icon-unified-20261120
     paths:
       - 'scripts/glacier_release_version_check.py'
+      - 'assets/glacier-browser.svg'
+      - 'scripts/glacier_desktop_icons.py'
+      - 'scripts/test_glacier_desktop_icons.py'
       - 'glacier-macos/**'
       - 'glacier-windows/glacier_productivity16.py'
       - 'glacier-windows/test_productivity16.py'
@@ -223,9 +227,13 @@ jobs:
         working-directory: glacier-macos
         run: |
           set -euo pipefail
+          python ../scripts/glacier_desktop_icons.py macos
+          python ../scripts/test_glacier_desktop_icons.py
           python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser \
             --target-architecture arm64 \
             --osx-bundle-identifier cn.borealos.glacierbrowser \
+            --icon assets/GlacierBrowser.icns \
+            --add-data 'assets/GlacierBrowser.png:assets' \
             --add-binary 'bin/sing-box:bin' \
             --add-binary 'bin/xray:bin' \
             --collect-all PySide6.QtWebEngineCore \
@@ -243,6 +251,12 @@ jobs:
             echo 'Missing packaged certifi root CA bundle'; exit 1
           fi
           test -d dist/GlacierBrowser.app
+          icon_file="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' dist/GlacierBrowser.app/Contents/Info.plist)"
+          test -n "$icon_file"
+          test -s "dist/GlacierBrowser.app/Contents/Resources/$icon_file"
+          test -s "dist/GlacierBrowser.app/Contents/Frameworks/assets/GlacierBrowser.png" || \
+            test -s "dist/GlacierBrowser.app/Contents/Resources/assets/GlacierBrowser.png" || \
+            find dist/GlacierBrowser.app -type f -path '*/assets/GlacierBrowser.png' | grep -q .
           test -f dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser
           test "$(lipo -archs dist/GlacierBrowser.app/Contents/MacOS/GlacierBrowser)" = 'arm64'
           test "$(find dist/GlacierBrowser.app -type f -name sing-box | wc -l | tr -d ' ')" -ge 1

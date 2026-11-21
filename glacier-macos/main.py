@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
 from PySide6.QtCore import QUrl, QTimer
 from PySide6.QtNetwork import QNetworkProxy
+from glacier_brand_icon import glacier_icon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
@@ -299,7 +300,7 @@ def main():
  with socket.socket() as listener:
   listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
- app=QApplication(sys.argv);app.setApplicationName(APP)
+ app=QApplication(sys.argv);app.setApplicationName(APP);app.setWindowIcon(glacier_icon())
  link=get_link(app,parse_node)
  proc=None
  try:proc=proxy_start(link,port)

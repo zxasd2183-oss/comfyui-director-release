@@ -13,8 +13,12 @@ on:
       - feature/glacier-framed-tabstrip-36-20261112
       - feature/glacier-account-popover-20261112
       - feature/glacier-home-brand-20261112
+      - feature/glacier-desktop-brand-icon-unified-20261120
     paths:
       - 'scripts/glacier_release_version_check.py'
+      - 'assets/glacier-browser.svg'
+      - 'scripts/glacier_desktop_icons.py'
+      - 'scripts/test_glacier_desktop_icons.py'
       - 'glacier-windows/**'
       - '.github/workflows/glacier-rc-windows.yml'
       - 'scripts/glacier_prepare_rotated_update.py'
@@ -127,9 +131,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Actual Browser UI32 did not render correctly' }
       - name: Build Windows executable with embedded VLESS core
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets --hidden-import glacier_sync_auto24 --hidden-import glacier_account_center26 --hidden-import glacier_signed_install27 --hidden-import glacier_win_resume28 --hidden-import glacier_proxy_health29 --hidden-import socks main.py
+          python ../scripts/glacier_desktop_icons.py windows
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Glacier icon generation failed' }
+          python ../scripts/test_glacier_desktop_icons.py
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Glacier icon integration tests failed' }
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name GlacierBrowser --icon assets/GlacierBrowser.ico --add-data 'assets/GlacierBrowser.png;assets' --contents-directory _internal --add-binary 'bin/sing-box.exe;bin' --collect-all PySide6.QtWebEngineCore --collect-all PySide6.QtWebEngineWidgets --hidden-import glacier_sync_auto24 --hidden-import glacier_account_center26 --hidden-import glacier_signed_install27 --hidden-import glacier_win_resume28 --hidden-import glacier_proxy_health29 --hidden-import socks main.py
           if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
           if (-not (Test-Path dist/GlacierBrowser/GlacierBrowser.exe)) { throw 'Browser EXE missing' }
+          if (-not (Test-Path assets/GlacierBrowser.ico)) { throw 'Windows Glacier ICO missing' }
+          if (-not (Test-Path dist/GlacierBrowser/_internal/assets/GlacierBrowser.png)) { throw 'Frozen Glacier window icon missing' }
           if (-not (Test-Path dist/GlacierBrowser/_internal/bin/sing-box.exe)) { throw 'Bundled sing-box missing' }
           & dist/GlacierBrowser/_internal/bin/sing-box.exe version
           if ($LASTEXITCODE -ne 0) { throw 'Bundled sing-box failed to execute' }
@@ -145,6 +155,7 @@ jobs:
           AppName=Glacier Browser
           AppVersion=0.20.34
           AppPublisher=Glacier Browser
+          SetupIconFile=assets\GlacierBrowser.ico
           DefaultDirName={localappdata}\Programs\GlacierBrowser
           DefaultGroupName=Glacier Browser
           OutputDir=dist
