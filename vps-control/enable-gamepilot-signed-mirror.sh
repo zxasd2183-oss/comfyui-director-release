@@ -44,15 +44,21 @@ sudo systemctl start "$unit"
 
 # v0.4.1's official signed appcast still references GitHub: its ZIP may be
 # staged, but ONLY a later, VPS-origin signed appcast is made public here.
-for filename in GamePilot-mac-arm64-v0.4.1.zip; do
-  test -f "$folder/$filename" || {
-    echo "GamePilot ZIP not yet mirrored; inspect unit logs without changing keys" >&2; exit 3;
-  }
-  curl --fail --silent --show-error --location --head \
-    --connect-timeout 8 --max-time 20 \
+# The current published version may advance while GitHub Actions and this
+# VPS activation run. Check what the verified mirror actually staged.
+mapfile -t packages < <(
+  find "$folder" -maxdepth 1 -type f -name 'GamePilot-mac-arm64-v*.zip' -printf '%f\\n' | sort
+)
+[[ "${#packages[@]}" -gt 0 ]] || {
+  echo "No verified GamePilot ZIP is staged yet; inspect the mirror unit log" >&2; exit 3;
+}
+for filename in "${packages[@]}"; do
+  curl --fail --silent --show-error --location --head \\
+    --connect-timeout 8 --max-time 20 \\
     "https://sync.borealos.cn/downloads/$filename" >/dev/null || {
-      echo "VPS HTTPS file route not ready for GamePilot" >&2; exit 3;
+      echo "VPS HTTPS file route not ready for $filename" >&2; exit 3;
     }
+  echo "Confirmed HTTPS serving $filename"
 done
 echo "PASS: permanent, separately verified GamePilot ZIP mirroring enabled."
 echo "Glacier channels, existing OIDC receiver and systemd units unchanged."
