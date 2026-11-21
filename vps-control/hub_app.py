@@ -39,9 +39,10 @@ from ue_worker_rpc import (call_ue_worker,
                            request_ue_signed_update as request_ue_signed_update_rpc,
                            get_codex_bridge_status as get_codex_bridge_status_rpc,
                            codex_queue_message as codex_queue_message_rpc,
-                           get_codex_message_status as get_codex_message_status_rpc)
+                           get_codex_message_status as get_codex_message_status_rpc,
+                           codex_queue_with_report as codex_queue_with_report_rpc)
 
-UE_HUB_API_VERSION = "1.10.1"
+UE_HUB_API_VERSION = "1.10.2"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -525,6 +526,10 @@ DIRECTOR_TASK_ALLOWLIST = {
     "hero_full_face_rig_v1": enqueue_ue_hero_cloud_rig_rpc,
     "codex_queue_probe_v1": lambda project_id, episode_id: codex_queue_message_rpc(
         "CODEX-HUB-1121: This is a read-only remote queue test. Reply ACK. Do not change files."),
+    "codex_reply_probe_v1": lambda project_id, episode_id: codex_queue_with_report_rpc(
+        "CODEX-RETURN-1121: Reply CODEX-RETURN-1121-ACK. "
+        "Do not run Unreal or change any project files. Only one small "
+        "Director Bridge status text file is authorized."),
     "hero_amber_eyes_v1": enqueue_ue_hero_amber_eyes_rpc,
     "hero_runtime_audit_v1": enqueue_ue_hero_runtime_audit_rpc,
 }
@@ -787,6 +792,18 @@ def codex_queue_message(message: str) -> dict:
 def get_codex_message_status(request_id: str) -> dict:
     """Read queue receipt without Codex history, secrets or raw CLI output."""
     return get_codex_message_status_rpc(request_id)
+
+
+
+
+@app.tool(annotations=WRITE)
+def codex_queue_with_report(message: str) -> dict:
+    """Queue a message to the locally approved Codex desktop conversation.
+
+    Codex is requested to create one short report file in a fixed JobStatus
+    directory. Does not read account credentials or entire conversation.
+    """
+    return codex_queue_with_report_rpc(message)
 
 
 
