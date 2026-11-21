@@ -944,3 +944,13 @@ def get_codex_message_status(request_id, opener=None, token_file=None):
         return {"ok": False, "reason": "invalid_codex_request_id"}
     return _v2_request("/v16/codex/requests/" + request_id, "GET", None,
                        opener, token_file)
+
+
+def codex_queue_with_report(message, opener=None, token_file=None):
+    """Only a bounded purpose-made reply is requested, not Codex history."""
+    if (type(message) is not str or not 1 <= len(message) <= 1200 or
+            not message.strip() or len(message.encode("utf-8")) > 3000 or
+            any(ord(c) < 32 and c not in "\n\t" for c in message)):
+        return {"ok": False, "reason": "codex_message_invalid"}
+    return _v2_request("/v17/codex/queue-report", "POST",
+                       {"message": message}, opener, token_file)
