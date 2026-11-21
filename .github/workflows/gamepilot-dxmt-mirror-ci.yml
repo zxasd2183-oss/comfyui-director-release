@@ -1,0 +1,31 @@
+name: GamePilot free DXMT VPS mirror contract
+
+on:
+  pull_request:
+    paths:
+      - 'vps-control/install-gamepilot-dxmt-mirror.sh'
+      - 'vps-control/nginx-gamepilot-dxmt-downloads.conf'
+      - 'vps-control/test_gamepilot_dxmt_mirror.py'
+      - '.github/workflows/gamepilot-dxmt-mirror-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'vps-control/install-gamepilot-dxmt-mirror.sh'
+      - 'vps-control/nginx-gamepilot-dxmt-downloads.conf'
+      - 'vps-control/test_gamepilot_dxmt_mirror.py'
+      - '.github/workflows/gamepilot-dxmt-mirror-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reviewed-contract:
+    name: Validate isolated HTTPS route and immutable upstream hashes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: bash -n vps-control/install-gamepilot-dxmt-mirror.sh
+      - name: Exact route, checksum and rollback contract
+        run: python3 -m unittest discover -s vps-control -p 'test_gamepilot_dxmt_mirror.py' -v
