@@ -90,11 +90,26 @@ fi
 if ! nginx -t; then rollback "nginx -t failed"; fi
 if ! systemctl reload nginx; then rollback "Nginx reload failed"; fi
 
-# Prove the actual public-facing HTTPS route serves original release bytes.
+# A successful nginx reload returns before replacement workers have
+# necessarily started serving new connections. Older workers may briefly
+# return the previous location / 404; retry the public GET for a bounded
+# interval before deciding the new route is broken. Any successful download
+# must still match the canonical size and full SHA-256 below.
 probe="$(mktemp)"
-if ! curl --fail --silent --show-error --max-redirs 0 \
+ready=0
+for attempt in 1 2 3 4 5 6 7 8; do
+  if curl --fail --silent --show-error --max-redirs 0 \
       --connect-timeout 10 --max-time 90 --output "$probe" "$url"; then
-  rollback "GamePilot public ZIP route is not HTTP 200"
+    ready=1
+    break
+  fi
+  if [[ "$attempt" -lt 8 ]]; then
+    echo "GamePilot HTTPS route not ready yet ($attempt/8); retrying after nginx reload"
+    sleep 1
+  fi
+done
+if [[ "$ready" != 1 ]]; then
+  rollback "GamePilot public ZIP route did not become HTTP 200 after bounded retry"
 fi
 if [[ "$(stat -c %s "$probe")" != "$canonical_size" ]] ||
    [[ "$(sha256sum "$probe" | awk '{print $1}')" != "$canonical_sha256" ]]; then
