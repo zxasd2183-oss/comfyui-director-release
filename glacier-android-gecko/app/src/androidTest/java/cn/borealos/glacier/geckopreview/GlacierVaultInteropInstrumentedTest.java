@@ -22,8 +22,12 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public final class GlacierVaultInteropInstrumentedTest {
     private JSONObject fixture() throws Exception {
+        return fixture("glacier_sync_interop_private_v1.json");
+    }
+
+    private JSONObject fixture(String assetName) throws Exception {
         try (InputStream stream = InstrumentationRegistry.getInstrumentation()
-                .getContext().getAssets().open("glacier_sync_interop_private_v1.json")) {
+                .getContext().getAssets().open(assetName)) {
             byte[] data = stream.readAllBytes();
             assertTrue("Synthetic fixture must remain bounded", data.length < 8192);
             return new JSONObject(new String(data, StandardCharsets.UTF_8));
@@ -74,4 +78,37 @@ public final class GlacierVaultInteropInstrumentedTest {
             fail("Cross-space vault must never import into work profile");
         } catch (Exception expected) {}
     }
+    @Test
+    public void androidDecryptsWorkVaultAndRejectsCrossSpaceImports() throws Exception {
+        JSONObject f = fixture("glacier_sync_interop_work_v1.json");
+        String phrase = f.getString("passphrase");
+        String encrypted = f.getString("envelope");
+        JSONObject expected = f.getJSONObject("card");
+        assertEquals("work", f.getString("space"));
+        assertFalse(encrypted.contains(expected.getString("password")));
+        List<BrowserAccountsStore.Card> cards = GlacierCloudSync.decrypt(
+                "work", encrypted, phrase);
+        assertEquals(1, cards.size());
+        BrowserAccountsStore.Card card = cards.get(0);
+        assertEquals("work", card.profile);
+        assertEquals(expected.getString("site"), card.site);
+        assertEquals(expected.getString("name"), card.name);
+        assertEquals(expected.getString("username"), card.username);
+        assertEquals(expected.getString("password"), card.password);
+        assertEquals(expected.getString("code_api"), card.codeApi);
+
+        String rotated = GlacierCloudSync.encrypt("work", cards, phrase);
+        assertNotEquals("Production encryption must randomize salt/nonce", encrypted, rotated);
+        assertEquals(card.password,
+                GlacierCloudSync.decrypt("work", rotated, phrase).get(0).password);
+        try {
+            GlacierCloudSync.decrypt("private", encrypted, phrase);
+            fail("Work vault ciphertext must not decrypt in private space");
+        } catch (Exception expectedFailure) {}
+        try {
+            GlacierCloudSync.decrypt("work", encrypted, "synthetic-wrong-passphrase");
+            fail("Wrong passphrase must never import work credentials");
+        } catch (Exception expectedFailure) {}
+    }
+
 }

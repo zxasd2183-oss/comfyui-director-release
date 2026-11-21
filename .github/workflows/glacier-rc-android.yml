@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - qa/glacier-three-device-private-work-sync-20261120
       - fix/glacier-android-avatar-authstate-20261117
       - release/glacier-min8-02034-android029-rc-20261116
       - integration/glacier-browser-release-candidate-20261111

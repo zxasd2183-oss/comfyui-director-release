@@ -3,14 +3,18 @@ on:
   pull_request:
     paths:
       - 'scripts/test_glacier_three_device_vault_interop.py'
+      - 'scripts/test_glacier_three_device_dual_space.py'
       - 'glacier-android-gecko/app/src/androidTest/assets/glacier_sync_interop_private_v1.json'
+      - 'glacier-android-gecko/app/src/androidTest/assets/glacier_sync_interop_work_v1.json'
       - 'glacier-android-gecko/app/src/androidTest/java/cn/borealos/glacier/geckopreview/GlacierVaultInteropInstrumentedTest.java'
       - '.github/workflows/glacier-three-device-vault-interoperability.yml'
   push:
     branches: [main]
     paths:
       - 'scripts/test_glacier_three_device_vault_interop.py'
+      - 'scripts/test_glacier_three_device_dual_space.py'
       - 'glacier-android-gecko/app/src/androidTest/assets/glacier_sync_interop_private_v1.json'
+      - 'glacier-android-gecko/app/src/androidTest/assets/glacier_sync_interop_work_v1.json'
       - 'glacier-android-gecko/app/src/androidTest/java/cn/borealos/glacier/geckopreview/GlacierVaultInteropInstrumentedTest.java'
       - '.github/workflows/glacier-three-device-vault-interoperability.yml'
 permissions:
@@ -39,8 +43,29 @@ jobs:
           PYTHONPATH: ${{ matrix.platform }}
         run: |
           python -m unittest -v scripts.test_glacier_three_device_vault_interop
+          python -m unittest -v scripts.test_glacier_three_device_dual_space
       - name: Check Mac and Windows source equality for sync protocol
         run: |
           cmp glacier-windows/glacier_sync23.py glacier-macos/glacier_sync23.py
           cmp glacier-windows/glacier_sync_auto24.py glacier-macos/glacier_sync_auto24.py
           echo 'PASS: identical encrypted vault and conflict protection on both desktop platforms'
+
+  backend-readonly-health:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify live TLS Glacier Sync responds without reading credentials or bodies
+        run: |
+          python3 - <<'PY'
+          from scripts.glacier_sync_readonly_audit import probe
+          base = "https://sync.borealos.cn"
+          health = probe(base + "/health", timeout=5)
+          session = probe(base + "/v1/session", timeout=5)
+          print("Glacier Sync readonly HTTPS health:", health)
+          print("Glacier Sync anonymous session protection:", session)
+          if health.get("status") != 200:
+              raise RuntimeError("Glacier Sync HTTPS health is not 200; no production mutation attempted")
+          if session.get("status") not in (401, 403):
+              raise RuntimeError("Glacier Sync session route is not denying anonymous access")
+          PY
