@@ -142,5 +142,58 @@ class CodexQueueBridgeTests(unittest.TestCase):
                 self.assertFalse(ue_process.codex_stage("second",root)["ok"])
 
 
+    def test_opt_in_report_returns_only_scoped_response(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            root = tmp / "workspace"
+            root.mkdir()
+            local = create_local(tmp)
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root), \
+                 patch.dict(os.environ, {"LOCALAPPDATA": str(local)}), \
+                 patch.object(ue_process.subprocess, "run",
+                              return_value=SimpleNamespace(returncode=0)) as runner:
+                ue_process._codex_poll(root, 2)
+                pending = ue_process.codex_stage("Return safe ACK", root,
+                                                request_report=True)
+                ident = pending["request_id"]
+                self.assertEqual(ue_process.codex_latest_report(root)["state"], "staged")
+                ue_process._codex_poll(root, 2)
+                args = runner.call_args.args[0]
+                self.assertEqual(args[1:4], ["queue", "--thread", THREAD])
+                self.assertIn("Return safe ACK", args[5])
+                self.assertIn(ident + ".txt", args[5])
+                self.assertEqual(ue_process.codex_lookup(ident, root)["state"],
+                                 "queued_by_cli")
+                folder = root / "JobStatus" / "CodexBridge" / "responses"
+                (folder / (ident + ".txt")).write_text(
+                    "CODEX-RETURN-1121-ACK", encoding="utf-8")
+                receipt = ue_process.codex_lookup(ident, root)
+                self.assertEqual(receipt["state"], "reply_received")
+                self.assertEqual(receipt["reply"], "CODEX-RETURN-1121-ACK")
+                self.assertTrue(receipt["codex_self_reported"])
+                self.assertFalse(receipt["task_effects_verified"])
+                self.assertTrue(receipt["completed"])
+                self.assertEqual(ue_process.codex_latest_report(root), receipt)
+
+    def test_report_does_not_follow_symlinks_or_unbounded_text(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)/"workspace"
+            root.mkdir()
+            ident = "a"*32
+            folder = root/"JobStatus"/"CodexBridge"/"responses"
+            folder.mkdir(parents=True)
+            path = folder/(ident+".txt")
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                path.write_text("S"*5000,encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    ue_process._codex_read_report(ident,root)
+                path.write_text("OK",encoding="utf-8")
+                self.assertEqual(ue_process._codex_read_report(ident,root),"OK")
+                path.unlink()
+                path.symlink_to(folder/"other")
+                with self.assertRaises(ValueError):
+                    ue_process._codex_read_report(ident,root)
+
+
 if __name__ == "__main__":
     unittest.main()
