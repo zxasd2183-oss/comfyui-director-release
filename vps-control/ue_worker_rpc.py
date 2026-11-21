@@ -924,3 +924,23 @@ def get_ue_signed_update_status(opener=None, token_file=None):
 def request_ue_signed_update(opener=None, token_file=None):
     """Queue a check on the NEXT privileged signed-updater poll, not an install."""
     return _v2_request("/v4/update/request", "POST", None, opener, token_file)
+
+
+def get_codex_bridge_status(opener=None, token_file=None):
+    return _v2_request("/v16/codex/status", "GET", None, opener, token_file)
+
+
+def codex_queue_message(message, opener=None, token_file=None):
+    if (type(message) is not str or not 1 <= len(message) <= 1200 or
+            not message.strip() or len(message.encode("utf-8")) > 3000 or
+            any(ord(c) < 32 and c not in "\n\t" for c in message)):
+        return {"ok": False, "reason": "codex_message_invalid"}
+    return _v2_request("/v16/codex/queue", "POST", {"message": message},
+                       opener, token_file)
+
+
+def get_codex_message_status(request_id, opener=None, token_file=None):
+    if type(request_id) is not str or not re.fullmatch(r"[a-f0-9]{32}", request_id):
+        return {"ok": False, "reason": "invalid_codex_request_id"}
+    return _v2_request("/v16/codex/requests/" + request_id, "GET", None,
+                       opener, token_file)

@@ -36,9 +36,12 @@ from ue_worker_rpc import (call_ue_worker,
                            get_ue_desktop_snapshot as get_ue_desktop_snapshot_rpc,
                            send_ue_desktop_action as send_ue_desktop_action_rpc,
                            get_ue_signed_update_status as get_ue_signed_update_status_rpc,
-                           request_ue_signed_update as request_ue_signed_update_rpc)
+                           request_ue_signed_update as request_ue_signed_update_rpc,
+                           get_codex_bridge_status as get_codex_bridge_status_rpc,
+                           codex_queue_message as codex_queue_message_rpc,
+                           get_codex_message_status as get_codex_message_status_rpc)
 
-UE_HUB_API_VERSION = "1.10.0"
+UE_HUB_API_VERSION = "1.10.1"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -520,6 +523,8 @@ def enqueue_ue_hero_amber_eyes(project_id: str, episode_id: str) -> dict:
 DIRECTOR_TASK_ALLOWLIST = {
     "hero_face_contour_v1": enqueue_ue_hero_face_contour_rpc,
     "hero_full_face_rig_v1": enqueue_ue_hero_cloud_rig_rpc,
+    "codex_queue_probe_v1": lambda project_id, episode_id: codex_queue_message_rpc(
+        "CODEX-HUB-1121: This is a read-only remote queue test. Reply ACK. Do not change files."),
     "hero_amber_eyes_v1": enqueue_ue_hero_amber_eyes_rpc,
     "hero_runtime_audit_v1": enqueue_ue_hero_runtime_audit_rpc,
 }
@@ -759,6 +764,30 @@ def get_ue_hub_signed_update_status() -> dict:
                    k in item and type(item[k]) is str and len(item[k]) <= 100}}
     except (OSError, UnicodeError, ValueError, TypeError):
         return {"ok": False, "reason": "invalid_update_receipt"}
+
+
+
+@app.tool(annotations=READ)
+def get_codex_bridge_status() -> dict:
+    """Check local user consent; no login or Codex thread ID exposed."""
+    return get_codex_bridge_status_rpc()
+
+
+@app.tool(annotations=WRITE)
+def codex_queue_message(message: str) -> dict:
+    """Queue one text message to the locally approved desktop Codex thread.
+
+    This is NOT shell execution. CLI queue success does not prove GUI delivery.
+    Codex user account, local approvals, and desktop session stay unchanged.
+    """
+    return codex_queue_message_rpc(message)
+
+
+@app.tool(annotations=READ)
+def get_codex_message_status(request_id: str) -> dict:
+    """Read queue receipt without Codex history, secrets or raw CLI output."""
+    return get_codex_message_status_rpc(request_id)
+
 
 
 if __name__ == "__main__":

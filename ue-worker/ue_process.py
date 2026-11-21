@@ -658,7 +658,219 @@ def interactive_hero_runner_main():
             except (OSError, ValueError, TypeError, UnicodeError):
                 # Never run untrusted inputs or an unverified project.
                 continue
+        try:
+            _codex_poll(root, session)
+        except (OSError, ValueError, TypeError, UnicodeError):
+            pass
         time.sleep(1)
+
+
+# The existing RDP user's interactive-token task is the ONLY Codex executor.
+# Never accept remote executable paths or thread IDs; the user opts in locally.
+CODEX_FMT = "director_codex_bridge_v1"
+CODEX_ID = re.compile(r"[a-f0-9]{32}\Z")
+CODEX_THREAD = re.compile(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\Z")
+CODEX_ROOT = HERO_BRIDGE_ROOT / "JobStatus" / "CodexBridge"
+
+
+def _codex_path(root):
+    return root / "JobStatus" / "CodexBridge"
+
+
+def _codex_json(path):
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+        raise ValueError("unsafe_codex_file")
+    with path.open("rb") as f:
+        raw = f.read(8193)
+    if not 1 <= len(raw) <= 8192:
+        raise ValueError("invalid_codex_file")
+    return json.loads(raw)
+
+
+def _codex_write(path, payload):
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True,
+                     ensure_ascii=True).encode("ascii")
+    if not 1 <= len(raw) <= 8192:
+        raise ValueError("invalid_codex_payload")
+    temp = path.with_name(path.name + "." + secrets.token_hex(8) + ".pending")
+    try:
+        with temp.open("xb") as out:
+            out.write(raw)
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _codex_consent():
+    local = os.environ.get("LOCALAPPDATA")
+    if not local or not Path(local).is_absolute():
+        return None
+    directory = Path(local) / "DirectorCodexBridge"
+    path = directory / "consent.json"
+    try:
+        if directory.is_symlink() or not path.is_file() or path.stat().st_size > 512:
+            return None
+        doc = _codex_json(path)
+        if (type(doc) is not dict or set(doc) !=
+                {"format", "enabled", "thread_id"} or
+                doc["format"] != CODEX_FMT or doc["enabled"] is not True or
+                type(doc["thread_id"]) is not str or
+                not CODEX_THREAD.fullmatch(doc["thread_id"])):
+            return None
+        return doc["thread_id"]
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return None
+
+
+def _codex_binary():
+    local = os.environ.get("LOCALAPPDATA")
+    if not local or not Path(local).is_absolute():
+        return None
+    folder = Path(local) / "OpenAI" / "Codex" / "bin"
+    if folder.is_symlink() or not folder.is_dir():
+        return None
+    choices = []
+    for path in list(folder.glob("*/codex.exe"))[:24]:
+        if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+            continue
+        try:
+            if path.resolve().is_relative_to(folder.resolve()):
+                choices.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    return max(choices)[1] if choices else None
+
+
+def _codex_message_valid(text):
+    return (type(text) is str and 1 <= len(text) <= 1200 and
+            bool(text.strip()) and len(text.encode("utf-8")) <= 3000 and
+            all(ord(ch) >= 32 or ch in "\n\t" for ch in text))
+
+
+def codex_bridge_status(root=HERO_BRIDGE_ROOT):
+    if root != HERO_BRIDGE_ROOT:
+        return {"available": False, "reason": "workspace_mismatch"}
+    try:
+        path = _codex_path(root) / "ready.json"
+        _bridge_safe_parent(path, root)
+        doc = _codex_json(path)
+        if (type(doc) is not dict or set(doc) !=
+                {"format", "enabled", "session_id", "updated"} or
+                doc["format"] != CODEX_FMT or
+                doc["enabled"] is not True or
+                type(doc["session_id"]) is not int or
+                not 1 <= doc["session_id"] <= 9999 or
+                type(doc["updated"]) not in (int, float) or
+                not 0 <= time.time() - doc["updated"] <= 8):
+            return {"available": False, "reason": "codex_consent_or_session_missing"}
+        return {"available": True, "session_id": doc["session_id"],
+                "scope": "single_locally_consented_thread"}
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return {"available": False, "reason": "codex_bridge_not_running"}
+
+
+def codex_stage(message, root=HERO_BRIDGE_ROOT):
+    if root != HERO_BRIDGE_ROOT or not _codex_message_valid(message):
+        return {"ok": False, "reason": "codex_message_invalid"}
+    if codex_bridge_status(root).get("available") is not True:
+        return {"ok": False, "reason": "codex_local_consent_required"}
+    try:
+        base = _codex_path(root)
+        folder = base / "requests"
+        _bridge_safe_parent(folder, root)
+        if not folder.is_dir() or sum(1 for _ in folder.glob("*.json")) >= 4:
+            return {"ok": False, "reason": "codex_queue_not_ready"}
+        ident = secrets.token_hex(16)
+        _codex_write(folder / (ident + ".json"),
+                     {"format": CODEX_FMT, "id": ident,
+                      "created": time.time(), "message": message})
+        return {"ok": True, "request_id": ident, "state": "staged",
+                "gui_delivery_confirmed": False, "completed": False}
+    except (OSError, ValueError, TypeError):
+        return {"ok": False, "reason": "codex_bridge_unavailable"}
+
+
+def codex_lookup(ident, root=HERO_BRIDGE_ROOT):
+    if type(ident) is not str or not CODEX_ID.fullmatch(ident):
+        return {"ok": False, "reason": "invalid_codex_request_id"}
+    if root != HERO_BRIDGE_ROOT:
+        return {"ok": False, "reason": "workspace_mismatch"}
+    try:
+        base = _codex_path(root)
+        receipt = base / "receipts" / (ident + ".json")
+        _bridge_safe_parent(receipt, root)
+        if receipt.is_file():
+            obj = _codex_json(receipt)
+            if (type(obj) is not dict or set(obj) !=
+                    {"format", "id", "state"} or
+                    obj["format"] != CODEX_FMT or obj["id"] != ident or
+                    obj["state"] not in ("queued_by_cli", "failed")):
+                raise ValueError("invalid_codex_receipt")
+            return {"ok": True, "request_id": ident, "state": obj["state"],
+                    "gui_delivery_confirmed": False, "completed": False}
+        if (base / "claims" / (ident + ".json")).is_file():
+            return {"ok": True, "request_id": ident, "state": "claimed_unknown_delivery",
+                    "gui_delivery_confirmed": False, "completed": False}
+        if (base / "requests" / (ident + ".json")).is_file():
+            return {"ok": True, "request_id": ident, "state": "staged",
+                    "gui_delivery_confirmed": False, "completed": False}
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return {"ok": False, "reason": "invalid_codex_receipt"}
+    return {"ok": False, "reason": "codex_request_not_found"}
+
+
+def _codex_poll(root, session):
+    """No shell, no new app-server, no credentials, one real RDP user session."""
+    if root != HERO_BRIDGE_ROOT or not 1 <= session <= 9999:
+        return
+    base = _codex_path(root)
+    for name in (None, "requests", "claims", "receipts"):
+        directory = base if name is None else base / name
+        _bridge_safe_parent(directory, root)
+        directory.mkdir(parents=True, exist_ok=True)
+    thread = _codex_consent()
+    exe = _codex_binary() if thread else None
+    _codex_write(base / "ready.json",
+                 {"format": CODEX_FMT, "enabled": bool(thread and exe),
+                  "session_id": session, "updated": time.time()})
+    for path in sorted((base / "requests").glob("*.json"))[:4]:
+        if path.is_symlink() or not CODEX_ID.fullmatch(path.stem):
+            continue
+        try:
+            payload = _codex_json(path)
+            valid = (type(payload) is dict and set(payload) ==
+                     {"format", "id", "created", "message"} and
+                     payload["format"] == CODEX_FMT and
+                     payload["id"] == path.stem and
+                     type(payload["created"]) in (int, float) and
+                     0 <= time.time() - payload["created"] <= 90 and
+                     _codex_message_valid(payload["message"]))
+            claim = base / "claims" / path.name
+            try:
+                with claim.open("x", encoding="ascii") as fp:
+                    fp.write(path.stem)
+            except FileExistsError:
+                continue
+            state = "failed"
+            if valid and thread and exe:
+                try:
+                    result = subprocess.run(
+                        [str(exe), "queue", "--thread", thread,
+                         "--message", payload["message"]],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL, timeout=30, check=False,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    if result.returncode == 0:
+                        state = "queued_by_cli"
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            _codex_write(base / "receipts" / path.name,
+                         {"format": CODEX_FMT, "id": path.stem, "state": state})
+            path.unlink(missing_ok=True)
+        except (OSError, ValueError, TypeError, UnicodeError):
+            # Claimed requests are never replayed automatically.
+            continue
+
 
 
 if __name__ == "__main__" and sys.argv[1:] == ["--interactive-hero-runner"]:
