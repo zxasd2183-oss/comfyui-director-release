@@ -1,0 +1,30 @@
+name: GamePilot optional components 111 VPS mirror contract
+
+on:
+  pull_request:
+    paths:
+      - 'vps-control/install-gamepilot-component-mirror.sh'
+      - 'vps-control/nginx-gamepilot-components.conf'
+      - 'vps-control/test_gamepilot_component_mirror.py'
+      - '.github/workflows/gamepilot-component-mirror-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'vps-control/install-gamepilot-component-mirror.sh'
+      - 'vps-control/nginx-gamepilot-components.conf'
+      - 'vps-control/test_gamepilot_component_mirror.py'
+      - '.github/workflows/gamepilot-component-mirror-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reviewed-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check 111 proxy-prefetch script
+        run: bash -n vps-control/install-gamepilot-component-mirror.sh
+      - name: Check allowlisted HTTPS, pinned checksums and no-open-proxy contract
+        run: python3 -m unittest discover -s vps-control -p 'test_gamepilot_component_mirror.py' -v
