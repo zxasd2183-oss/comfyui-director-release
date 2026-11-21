@@ -53,4 +53,6 @@ jobs:
           bash -n upgrade-glacier-signed-mirror.sh
           bash -n repair-glacier-v02015-mirror.sh
           bash -n enable-glacier-automatic-releases.sh
+          bash -n enable-gamepilot-signed-mirror.sh
+          bash -n install-gamepilot-downloads-nginx.sh
           bash -n install-glacier-preview-notify-sudo-compat.sh
