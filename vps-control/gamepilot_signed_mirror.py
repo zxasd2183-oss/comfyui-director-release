@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import os
+import posixpath
 import plistlib
 import re
 import stat
@@ -130,13 +131,24 @@ def validate_zip(path, version):
             raise ValueError("Duplicate ZIP member")
         for info in archive.infolist():
             mode = info.external_attr >> 16
-            if stat.S_IFMT(mode) == stat.S_IFLNK:
-                raise ValueError("ZIP must not include symlinks")
             name = info.filename
             parts = name.split("/")
             if (name.startswith("/") or "\\" in name or
                     any(p in ("..", ".") for p in parts)):
                 raise ValueError("Unsafe ZIP path")
+            if stat.S_IFMT(mode) == stat.S_IFLNK:
+                # Sparkle.framework legitimately contains relative symlinks.
+                # Allow only links entirely within its own framework tree.
+                prefix = "GamePilot.app/Contents/Frameworks/Sparkle.framework/"
+                if not name.startswith(prefix):
+                    raise ValueError("Unexpected ZIP symlink")
+                target = archive.read(info).decode("utf-8")
+                if not target or target.startswith("/") or "\\" in target:
+                    raise ValueError("Unsafe ZIP symlink target")
+                resolved = posixpath.normpath(posixpath.join(
+                    posixpath.dirname(name), target))
+                if not resolved.startswith(prefix):
+                    raise ValueError("ZIP symlink escapes Sparkle framework")
         meta = plistlib.loads(archive.read("GamePilot.app/Contents/Info.plist"))
         if (meta.get("CFBundleIdentifier") != "cn.gamepilot.unified.mac" or
                 meta.get("CFBundleVersion") != version or
