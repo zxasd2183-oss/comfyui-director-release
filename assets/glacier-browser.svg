@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="plate" x1=".1" y1="0" x2=".95" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#0C377E"/><stop offset=".43" stop-color="#08225E"/><stop offset="1" stop-color="#020E34"/>
+    </linearGradient>
+    <linearGradient id="crest" x1=".16" y1=".07" x2=".8" y2="1">
+      <stop offset="0" stop-color="#49CBFF"/><stop offset=".50" stop-color="#0278E9"/><stop offset="1" stop-color="#0645C0"/>
+    </linearGradient>
+    <linearGradient id="ice" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".42" stop-color="#D9FFFF"/><stop offset="1" stop-color="#5DDCFF"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1=".9" x2="1" y2=".05">
+      <stop offset="0" stop-color="#64FAFF"/><stop offset=".50" stop-color="#00BEFF"/><stop offset="1" stop-color="#C7FFFF"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".62" cy=".45" r=".72">
+      <stop offset="0" stop-color="#118FF4" stop-opacity=".26"/><stop offset="1" stop-color="#08194B" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="halo" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="10"/></filter>
+  </defs>
+  <!-- Transparent exterior; recognizable rounded-square app plate. -->
+  <rect x="78" y="78" width="868" height="868" rx="192" fill="url(#plate)"/>
+  <rect x="80" y="80" width="864" height="864" rx="190" fill="url(#glow)"/>
+  <path d="M278 319 C424 199 643 188 789 272" fill="none" stroke="#34B8FE" stroke-opacity=".20" stroke-width="5"/>
+  <!-- Three stylized glacier peaks and crystalline facets. -->
+  <path d="M211 704 L368 457 L526 713 Z" fill="url(#crest)"/>
+  <path d="M368 457 L430 562 L371 532 L329 572 L301 570 Z" fill="url(#ice)"/>
+  <path d="M368 457 L430 562 L371 532 Z" fill="#EFFFFF"/>
+  <path d="M211 704 L368 457 L365 632 L320 756 Z" fill="#0574D9" opacity=".72"/>
+  <path d="M330 733 L542 286 L766 740 Z" fill="url(#crest)"/>
+  <path d="M542 286 L682 567 L578 497 L529 550 L466 503 Z" fill="url(#ice)"/>
+  <path d="M542 286 L578 497 L529 550 L466 503 Z" fill="#C7FCFF"/>
+  <path d="M542 286 L682 567 L578 497 Z" fill="#FCFFFF"/>
+  <path d="M529 550 L542 699 L436 778 L393 733 Z" fill="#0062C9" opacity=".58"/>
+  <path d="M578 497 L766 740 L589 764 Z" fill="#0066D2" opacity=".57"/>
+  <path d="M639 722 L741 476 L861 712 Z" fill="url(#crest)"/>
+  <path d="M741 476 L810 611 L753 578 L709 605 L701 576 Z" fill="url(#ice)"/>
+  <path d="M741 476 L810 611 L753 578 Z" fill="#F6FFFF"/>
+  <path d="M753 578 L861 712 L759 770 Z" fill="#024DB7" opacity=".52"/>
+  <!-- Aurora orbit below, becoming a thin crescent across the top-right. -->
+  <path d="M197 645 C169 785 319 856 520 855 C692 855 822 793 878 673 C917 589 893 468 841 381 C783 290 655 236 532 239" fill="none" stroke="#0AF6FF" stroke-opacity=".54" stroke-width="30" filter="url(#halo)"/>
+  <path d="M197 645 C169 785 319 856 520 855 C692 855 822 793 878 673 C917 589 893 468 841 381 C783 290 655 236 532 239" fill="none" stroke="url(#arc)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M221 666 C220 780 362 837 541 830" fill="none" stroke="#C7FFFF" stroke-opacity=".82" stroke-width="5" stroke-linecap="round"/>
+  <path d="M839 378 L848 396 L867 402 L848 408 L840 426 L833 408 L813 401 L833 395 Z" fill="#EBFFFF" opacity=".87"/>
+  <path d="M78 735 L78 270 Q78 78 270 78 L754 78" fill="none" stroke="#66CBFF" stroke-opacity=".16" stroke-width="4"/>
+</svg>
