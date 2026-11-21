@@ -1,0 +1,79 @@
+name: Glacier official three-platform in-place upgrade QA (synthetic data only)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/glacier-three-platform-inplace-upgrade.yml'
+      - 'scripts/glacier_win_inplace_upgrade.ps1'
+      - 'scripts/glacier_mac_inplace_upgrade.sh'
+      - 'scripts/glacier_android_stable_upgrade_smoke.sh'
+      - 'scripts/test_glacier_three_platform_upgrade_guard.py'
+permissions:
+  contents: read
+jobs:
+  source-guards:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest -v scripts.test_glacier_three_platform_upgrade_guard
+  native-windows-upgrade:
+    needs: source-guards
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify official Windows Setup hashes and install both versions
+        shell: pwsh
+        run: ./scripts/glacier_win_inplace_upgrade.ps1
+  native-macos-upgrade:
+    needs: source-guards
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify official Apple Silicon DMGs and replace app with profile preserved
+        shell: bash
+        run: bash ./scripts/glacier_mac_inplace_upgrade.sh
+  native-android-upgrade:
+    needs: source-guards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 48
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download SHA256-pinned official permanent-signed APK versions
+        run: |
+          set -euo pipefail
+          mkdir -p .upgrade-apks/old .upgrade-apks/new
+          gh release download glacier-android-browser-v0.2.10 --repo "$GITHUB_REPOSITORY" --pattern 'GlacierAndroid-v0.2.10-ARM64-x86_64-release.apk' --dir .upgrade-apks/old
+          gh release download glacier-android-browser-v0.2.11 --repo "$GITHUB_REPOSITORY" --pattern 'GlacierAndroid-v0.2.11-ARM64-x86_64-release.apk' --dir .upgrade-apks/new
+          echo 'e08ccf6ef57702d9def715d043e3243a8660cc745ef36fe98dad210a9a2ff93d  .upgrade-apks/old/GlacierAndroid-v0.2.10-ARM64-x86_64-release.apk' | sha256sum -c -
+          echo '59fe579b5a10e238035d97f9863bc8d77c7800599b7ea87788f3ac16f7fded26  .upgrade-apks/new/GlacierAndroid-v0.2.11-ARM64-x86_64-release.apk' | sha256sum -c -
+          test "$(stat -c%s .upgrade-apks/old/*.apk)" = 229114001
+          test "$(stat -c%s .upgrade-apks/new/*.apk)" = 229114545
+      - name: Install pinned Android package verification tools
+        run: |
+          set -euo pipefail
+          sdk="$ANDROID_HOME"
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" --install 'build-tools;36.0.0' --channel=3
+      - name: Enable CI emulator KVM
+        run: if test -e /dev/kvm; then sudo chmod 0666 /dev/kvm; fi
+      - name: Install original Android signed APKs in sequence and check private marker
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6144M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: bash "$GITHUB_WORKSPACE/scripts/glacier_android_stable_upgrade_smoke.sh"
