@@ -1,0 +1,30 @@
+name: Glacier E2E portable bookmark encryption interop (no live user data)
+on:
+  pull_request:
+    paths:
+      - 'glacier-windows/glacier_bookmark_portable_v1.py'
+      - 'glacier-macos/glacier_bookmark_portable_v1.py'
+      - 'glacier-android-gecko/app/src/main/java/cn/borealos/glacier/geckopreview/GlacierBookmarkPortable.java'
+      - 'glacier-android-gecko/app/src/androidTest/java/cn/borealos/glacier/geckopreview/GlacierBookmarkPortableInstrumentedTest.java'
+      - 'glacier-android-gecko/app/src/androidTest/assets/glacier_bookmark_portable_work_v1.json'
+      - 'scripts/test_glacier_bookmark_portable_v1.py'
+      - '.github/workflows/glacier-bookmark-portable-interop.yml'
+permissions:
+  contents: read
+jobs:
+  desktop-portable-bookmarks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only approved bookmark cipher dependency
+        run: python -m pip install 'cryptography>=43,<47'
+      - name: Verify deterministic three-device encrypted fixture and no-overwrite import
+        run: python -m unittest -v scripts.test_glacier_bookmark_portable_v1
