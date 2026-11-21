@@ -792,8 +792,9 @@ def status():
         "hero_source_integrity": hero_source_integrity(),
         "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
         "codex_bridge": __import__("ue_process").codex_bridge_status(workspace_root()),
+        "codex_last_report": __import__("ue_process").codex_latest_report(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.4.5",
+        "worker_version": "2.4.6",
     }
 
 
@@ -912,6 +913,7 @@ def capabilities():
         "supports_desktop_keyboard_or_mouse": True,
         "supports_desktop_input_only_when_local_armed": True,
         "supports_codex_queue": True,
+        "supports_codex_report": True,
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
         "supports_rendering": False,
@@ -1053,7 +1055,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorize():
             self.send_json(401, {"ok": False, "reason": "unauthorized"})
             return
-        if self.path == "/v16/codex/queue":
+        if self.path in ("/v16/codex/queue", "/v17/codex/queue-report"):
             from ue_process import codex_stage
             try:
                 n = int(self.headers.get("Content-Length", "-1"))
@@ -1062,7 +1064,8 @@ class Handler(BaseHTTPRequestHandler):
                 obj = json.loads(self.rfile.read(n))
                 if type(obj) is not dict or set(obj) != {"message"}:
                     raise ValueError("invalid_request")
-                state = codex_stage(obj["message"], workspace_root())
+                state = codex_stage(obj["message"], workspace_root(),
+                                    request_report=self.path == "/v17/codex/queue-report")
                 self.send_json(202 if state["ok"] else 409, state)
             except (ValueError, TypeError, UnicodeError):
                 self.send_json(400, {"ok": False, "reason": "codex_message_invalid"})
