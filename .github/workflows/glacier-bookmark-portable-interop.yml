@@ -8,6 +8,9 @@ on:
       - 'glacier-android-gecko/app/src/androidTest/java/cn/borealos/glacier/geckopreview/GlacierBookmarkPortableInstrumentedTest.java'
       - 'glacier-android-gecko/app/src/androidTest/assets/glacier_bookmark_portable_work_v1.json'
       - 'scripts/test_glacier_bookmark_portable_v1.py'
+      - 'vps-control/glacier_bookmark_cas_store.py'
+      - 'scripts/test_glacier_bookmark_cas_store.py'
+      - 'docs/GLACIER_BOOKMARK_SYNC_V1.md'
       - '.github/workflows/glacier-bookmark-portable-interop.yml'
 permissions:
   contents: read
@@ -28,3 +31,14 @@ jobs:
         run: python -m pip install 'cryptography>=43,<47'
       - name: Verify deterministic three-device encrypted fixture and no-overwrite import
         run: python -m unittest -v scripts.test_glacier_bookmark_portable_v1
+
+  isolated-bookmark-cas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Enforce per-user per-space encrypted CAS and atomic conflicts
+        run: python -m unittest -v scripts.test_glacier_bookmark_cas_store
