@@ -35,6 +35,7 @@ def make_archive(version, b64, malicious_link=None):
         })
         z.writestr("GamePilot.app/Contents/Info.plist", contents)
         z.writestr("GamePilot.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle", b"stub")
+        z.writestr("GamePilot.app/Contents/Resources/LICENSE", b"Test license." * 1200)
         if malicious_link is not None:
             link = zipfile.ZipInfo("GamePilot.app/Contents/Frameworks/Sparkle.framework/Versions/Current")
             link.create_system = 3
