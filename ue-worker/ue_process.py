@@ -851,13 +851,24 @@ def codex_lookup(ident, root=HERO_BRIDGE_ROOT):
         _bridge_safe_parent(receipt, root)
         if receipt.is_file():
             obj = _codex_json(receipt)
-            if (type(obj) is not dict or set(obj) !=
-                    {"format", "id", "state"} or
+            fields = {"format", "id", "state"}
+            if (type(obj) is not dict or
+                    set(obj) not in (fields, fields | {"report_requested"}) or
                     obj["format"] != CODEX_FMT or obj["id"] != ident or
-                    obj["state"] not in ("queued_by_cli", "failed")):
+                    obj["state"] not in ("queued_by_cli", "failed") or
+                    ("report_requested" in obj and
+                     obj["report_requested"] is not True)):
                 raise ValueError("invalid_codex_receipt")
-            return {"ok": True, "request_id": ident, "state": obj["state"],
-                    "gui_delivery_confirmed": False, "completed": False}
+            result = {"ok": True, "request_id": ident, "state": obj["state"],
+                      "gui_delivery_confirmed": False, "completed": False}
+            if obj.get("report_requested") is True and obj["state"] == "queued_by_cli":
+                report = _codex_read_report(ident, root)
+                if report is not None:
+                    result.update({"state": "reply_received", "reply": report,
+                                   "codex_self_reported": True,
+                                   "task_effects_verified": False,
+                                   "completed": True})
+            return result
         if (base / "claims" / (ident + ".json")).is_file():
             return {"ok": True, "request_id": ident, "state": "claimed_unknown_delivery",
                     "gui_delivery_confirmed": False, "completed": False}
@@ -869,12 +880,26 @@ def codex_lookup(ident, root=HERO_BRIDGE_ROOT):
     return {"ok": False, "reason": "codex_request_not_found"}
 
 
+
+def _codex_report_prompt(message, path):
+    """Only a purpose-built reply file is returned, not full Codex history."""
+    return (message + "\n\n[Director Bridge result return]\n"
+            "When finished, save your final reply as plain UTF-8 text at exactly:\n"
+            + str(path) + "\n"
+            "Maximum 2,000 characters. Do not include secrets, passwords, "
+            "tokens, or private conversation history. "
+            "This is a status file only; do not change Unreal/project assets. "
+            "If you cannot write it safely, explain that in this same "
+            "Codex desktop conversation rather than bypassing permissions.")
+
+
+
 def _codex_poll(root, session):
     """No shell, no new app-server, no credentials, one real RDP user session."""
     if root != HERO_BRIDGE_ROOT or not 1 <= session <= 9999:
         return
     base = _codex_path(root)
-    for name in (None, "requests", "claims", "receipts"):
+    for name in (None, "requests", "claims", "receipts", "responses"):
         directory = base if name is None else base / name
         _bridge_safe_parent(directory, root)
         directory.mkdir(parents=True, exist_ok=True)
@@ -888,8 +913,12 @@ def _codex_poll(root, session):
             continue
         try:
             payload = _codex_json(path)
-            valid = (type(payload) is dict and set(payload) ==
-                     {"format", "id", "created", "message"} and
+            fields = {"format", "id", "created", "message"}
+            report_requested = (type(payload) is dict and
+                                payload.get("report_requested") is True)
+            valid = (type(payload) is dict and
+                     set(payload) in (fields, fields | {"report_requested"}) and
+                     ("report_requested" not in payload or report_requested) and
                      payload["format"] == CODEX_FMT and
                      payload["id"] == path.stem and
                      type(payload["created"]) in (int, float) and
@@ -906,7 +935,9 @@ def _codex_poll(root, session):
                 try:
                     result = subprocess.run(
                         [str(exe), "queue", "--thread", thread,
-                         "--message", payload["message"]],
+                         "--message", (_codex_report_prompt(payload["message"],
+                             base / "responses" / (path.stem + ".txt"))
+                             if report_requested else payload["message"])],
                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL, timeout=30, check=False,
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -914,8 +945,10 @@ def _codex_poll(root, session):
                         state = "queued_by_cli"
                 except (OSError, subprocess.TimeoutExpired):
                     pass
-            _codex_write(base / "receipts" / path.name,
-                         {"format": CODEX_FMT, "id": path.stem, "state": state})
+            receipt = {"format": CODEX_FMT, "id": path.stem, "state": state}
+            if valid and report_requested:
+                receipt["report_requested"] = True
+            _codex_write(base / "receipts" / path.name, receipt)
             path.unlink(missing_ok=True)
         except (OSError, ValueError, TypeError, UnicodeError):
             # Claimed requests are never replayed automatically.
