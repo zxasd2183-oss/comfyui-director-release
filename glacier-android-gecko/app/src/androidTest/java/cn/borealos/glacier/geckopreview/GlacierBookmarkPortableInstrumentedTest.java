@@ -91,6 +91,23 @@ public class GlacierBookmarkPortableInstrumentedTest {
         assertEquals(2,existing.bookmarks.size()); // preview never mutates
     }
 
+    @Test public void importingWorkMustNotEvictFullPrivateBookmarkStore() throws Exception {
+        JSONObject f=fixture();
+        List<BrowserLibraryStore.Entry> imported=GlacierBookmarkPortable.decrypt(
+                "work",f.getString("envelope"),f.getString("passphrase"));
+        BrowserLibraryStore.Snapshot full=new BrowserLibraryStore.Snapshot();
+        for(int i=0;i<160;i++) {
+            full.bookmarks.add(new BrowserLibraryStore.Entry(
+                    "private","Private "+i,"https://private.example.org/"+i,
+                    "","","",0,i));
+        }
+        try {
+            GlacierBookmarkPortable.previewMerge(full,"work",imported);
+            fail("An imported work bookmark may evict a private bookmark");
+        }catch(java.io.IOException expected) {}
+        assertEquals(160,full.bookmarks.size());
+    }
+
     @Test public void duplicateAndCrossProfileMergeAreRejected() throws Exception {
         JSONObject f=fixture();
         List<BrowserLibraryStore.Entry> imported=GlacierBookmarkPortable.decrypt(
