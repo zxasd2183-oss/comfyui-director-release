@@ -47,7 +47,7 @@ sudo systemctl start "$unit"
 # The current published version may advance while GitHub Actions and this
 # VPS activation run. Check what the verified mirror actually staged.
 mapfile -t packages < <(
-  find "$folder" -maxdepth 1 -type f -name 'GamePilot-mac-arm64-v*.zip' -printf '%f\\n' | sort
+  find "$folder" -maxdepth 1 -type f -name 'GamePilot-mac-arm64-v*.zip' -printf '%f\n' | sort
 )
 [[ "${#packages[@]}" -gt 0 ]] || {
   echo "No verified GamePilot ZIP is staged yet; inspect the mirror unit log" >&2; exit 3;
