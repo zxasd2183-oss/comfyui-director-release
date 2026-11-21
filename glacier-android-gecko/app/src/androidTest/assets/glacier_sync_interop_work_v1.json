@@ -1,0 +1,14 @@
+{
+  "description": "Synthetic-only work-space desktop-to-Android E2E interoperability. Fixed salt/nonce solely for regression; production encryption MUST use fresh randomness.",
+  "space": "work",
+  "passphrase": "synthetic-only-work-passphrase-2026",
+  "card": {
+    "space": "work",
+    "site": "work.example.org",
+    "name": "Glacier Work Test",
+    "username": "fictional-work@example.org",
+    "password": "not-a-real-work-password-2026",
+    "code_api": "https://codes.work.example.org/otp"
+  },
+  "envelope": "{\"format\":\"glacier-vault-v1\",\"kdf\":\"pbkdf2-sha256-400k\",\"salt\":\"ICEiIyQlJicoKSorLC0uLw\",\"nonce\":\"MDEyMzQ1Njc4OTo7\",\"ciphertext\":\"2rHOodo_GxfboqT-9YyddQfdH5Y0wEB978LJ_dyd7H63FfpwhlWFSbr_Ka9dfAB_i2z6kQ3cCAC5omYLBrBxQrMmI0l5x4b9bt5Y2XVFmHocTAnxzzxfZmZJQGTEMDGUO2bO2-GSa6oHtS8cEoo6U8KfM7HJU4ptezDK4yHC5W8D9B-Dzn-OGOs7v0LfRLVnV97N1Gl_YLEqV_nwFpZRncV5gIIV74KVRxi5h_hiRBZNVoidModODIjBzeYvZrrq9XUrxK-EMNOnjra8gfcD_j2oDXBO6xSaCtEi5M9jv17C0p0n0XIaTNI9UIZY0tuq3a9YhuO1csfg_JP_2xgiYPE\"}"
+}
