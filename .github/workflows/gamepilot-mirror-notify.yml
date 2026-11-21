@@ -1,0 +1,39 @@
+name: Notify existing signed VPS mirror of GamePilot Mac releases
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - updates/gamepilot-macos-arm64.xml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  queue-existing-oidc-mirror:
+    if: >-
+      github.repository == 'zxasd2183-oss/comfyui-director-release' &&
+      (
+        (github.event_name == 'release' &&
+          startsWith(github.event.release.tag_name, 'gamepilot-mac-v')) ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Queue the existing OIDC-authorized Glacier mirror timer worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Do not create a new VPS endpoint, OIDC audience, SSH credential,
+          # public write route, or new sudo permission. The installed receiver
+          # only trusts the established glacier-preview-immediate.yml workflow.
+          gh workflow run glacier-preview-immediate.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main
+          echo 'Existing OIDC mirror workflow queued; not proof of VPS file availability.'
