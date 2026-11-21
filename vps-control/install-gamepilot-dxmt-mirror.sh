@@ -60,14 +60,14 @@ timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/1081' 2>/dev/null ||
   fail "111's existing HTTP proxy 127.0.0.1:1081 is not responding"
 
 valid() {
-  file="$1" bytes="$2" digest="$3"
+  local file="$1" bytes="$2" digest="$3"
   [[ -f "$file" && ! -L "$file" ]] || return 1
   [[ "$(stat -c %s "$file")" == "$bytes" ]] || return 1
   [[ "$(sha256sum "$file" | awk '{print $1}')" == "$digest" ]]
 }
 mirror_one() {
-  name="$1" upstream="$2" bytes="$3" digest="$4"
-  target="$dest/$name"
+  local name="$1" upstream="$2" bytes="$3" digest="$4"
+  local target="$dest/$name" temp
   if valid "$target" "$bytes" "$digest"; then
     echo "CACHE PASS: $name ($bytes bytes) SHA256"
     return
