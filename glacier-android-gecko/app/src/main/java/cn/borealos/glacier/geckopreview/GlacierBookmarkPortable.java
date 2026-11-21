@@ -165,6 +165,11 @@ final class GlacierBookmarkPortable {
         if(current==null||imported==null||imported.size()>LIMIT)
             throw new java.io.IOException("Missing bookmark snapshot");
         BrowserLibraryStore.Snapshot result=current.copy();
+        // BrowserLibraryStore persists at most 160 bookmarks TOTAL, not per
+        // profile. An import must never let its serializer silently discard
+        // either a private or a work bookmark.
+        if(result.bookmarks.size()>LIMIT)
+            throw new java.io.IOException("Local bookmark store exceeds capacity");
         HashSet<String> local=new HashSet<>();
         int count=0;
         for(BrowserLibraryStore.Entry e:result.bookmarks) {
@@ -179,7 +184,8 @@ final class GlacierBookmarkPortable {
             check(e,profile);
             if(!seen.add(e.url))throw new java.io.IOException("Duplicate import");
             if(local.add(e.url)) {
-                if(++count>LIMIT)throw new java.io.IOException("Bookmark capacity exceeded");
+                if(++count>LIMIT || result.bookmarks.size()>=LIMIT)
+                    throw new java.io.IOException("Bookmark capacity exceeded");
                 result.bookmarks.add(e.copy());
             }
         }
