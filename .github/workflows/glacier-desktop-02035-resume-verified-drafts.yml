@@ -1,0 +1,116 @@
+name: Glacier desktop 0.20.35 resume immutable verified drafts
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glacier-desktop-02035-resume-verified-drafts.yml'
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: glacier-desktop-02035-immutable-release
+  cancel-in-progress: false
+jobs:
+  resume-publish:
+    if: github.repository == 'zxasd2183-oss/comfyui-director-release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: '0a97660066764619e33a540cffdbffe968b3f658'
+      ORIGINAL_PUBLISH_SHA: '76aa51baec87f8b6e60dca7ca1d7e555646aa2c4'
+      WIN_RUN: '44861852263'
+      MAC_RUN: '44861852478'
+      WIN_TAG: glacier-v0.20.35
+      MAC_TAG: glacier-macos-v0.20.35
+      WIN_RELEASE_ID: '453416459'
+      MAC_RELEASE_ID: '453416500'
+      WIN_FILE: GlacierBrowser-v0.20.35-Windows-Setup-x64.exe
+      MAC_FILE: GlacierBrowser-v0.20.35-macOS-AppleSilicon.dmg
+      WIN_SIZE: '176328874'
+      MAC_SIZE: '290705713'
+      WIN_SHA256: d90c43d727f0dad3e89eb97af7b4e1ae5b6df1ddb8cbd2dac04f5eb4894a724e
+      MAC_SHA256: 181e8ca08295336eff5313675642f3d1407df198ecedc7284cf1d19fda61121c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify pinned main native QA, unchanged source and BOTH original draft IDs
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          for key,job in [('WIN_RUN','build-publish'),('MAC_RUN','macos-arm64')]:
+              run=os.environ[key]
+              data=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}']))
+              if not (data.get('head_sha')==os.environ['SOURCE_SHA']
+                      and data.get('head_branch')=='main'
+                      and data.get('status')=='completed' and data.get('conclusion')=='success'
+                      and data.get('repository',{}).get('full_name')==repo):
+                  raise RuntimeError('Unapproved native QA: '+key)
+              jobs=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/actions/runs/{run}/jobs?per_page=100']))['jobs']
+              if len([j for j in jobs if j.get('name')==job and j.get('conclusion')=='success'])!=1:
+                  raise RuntimeError('Native CI job not successful: '+key)
+          for path in ('glacier-windows/','glacier-macos/','assets/glacier-browser.svg',
+                       'scripts/glacier_desktop_icons.py','scripts/test_glacier_desktop_icons.py',
+                       'scripts/glacier_prepare_rotated_update.py','scripts/glacier_release_version_check.py',
+                       '.github/workflows/glacier-rc-windows.yml','.github/workflows/glacier-rc-macos.yml'):
+              subprocess.run(['git','diff','--exit-code',os.environ['SOURCE_SHA'],'HEAD','--',path],check=True)
+          docs=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases?per_page=100']))
+          for prefix in ('WIN','MAC'):
+              rid=int(os.environ[prefix+'_RELEASE_ID']);tag=os.environ[prefix+'_TAG']
+              matches=[x for x in docs if x.get('tag_name')==tag]
+              if len(matches)!=1 or matches[0].get('id')!=rid:
+                  raise RuntimeError('Missing, duplicated or replaced original draft Release: '+tag)
+              doc=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{rid}']))
+              assets=doc.get('assets',[])
+              if not (doc.get('id')==rid and doc.get('tag_name')==tag
+                      and doc.get('target_commitish')==os.environ['ORIGINAL_PUBLISH_SHA']
+                      and not doc.get('prerelease')
+                      and ((doc.get('draft') is True and doc.get('published_at') is None)
+                           or (doc.get('draft') is False and doc.get('published_at')))
+                      and len(assets)==1 and assets[0].get('name')==os.environ[prefix+'_FILE']
+                      and assets[0].get('state')=='uploaded'
+                      and assets[0].get('size')==int(os.environ[prefix+'_SIZE'])
+                      and assets[0].get('digest')=='sha256:'+os.environ[prefix+'_SHA256']):
+                  raise RuntimeError('Original draft or published asset differs from verified native bytes: '+tag)
+              if doc.get('draft') is True:
+                  tag_ref=subprocess.run(['gh','api',f'repos/{repo}/git/ref/tags/{tag}'],
+                                         capture_output=True,text=True)
+                  if tag_ref.returncode==0:
+                      raise RuntimeError('An unexpected Git tag already exists for a draft')
+          print('PASS two exact original Release IDs and SHA256, no replacement or re-upload')
+          PY
+          python3 scripts/glacier_release_version_check.py
+      - name: Publish ONLY original matching draft release IDs, then verify again
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          for prefix in ('WIN','MAC'):
+              rid=os.environ[prefix+'_RELEASE_ID'];tag=os.environ[prefix+'_TAG']
+              before=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{rid}']))
+              if before.get('draft') is True:
+                  after=json.loads(subprocess.check_output(['gh','api','-X','PATCH',
+                      f'repos/{repo}/releases/{rid}','-F','draft=false']))
+              else:
+                  after=before  # Safe resume after partially successful prior run.
+              a=after.get('assets',[])
+              if not (after.get('id')==int(rid) and after.get('draft') is False
+                      and after.get('published_at') and after.get('tag_name')==tag
+                      and after.get('target_commitish')==os.environ['ORIGINAL_PUBLISH_SHA']
+                      and len(a)==1 and a[0].get('name')==os.environ[prefix+'_FILE']
+                      and a[0].get('size')==int(os.environ[prefix+'_SIZE'])
+                      and a[0].get('digest')=='sha256:'+os.environ[prefix+'_SHA256']):
+                  raise RuntimeError('Published desktop asset changed or incorrect: '+tag)
+              print('PASS published original immutable desktop Release',tag)
+          PY
+      - name: Request authorized VPS mirrors and independent Ed25519 update feeds
+        run: |
+          set -euo pipefail
+          gh workflow run glacier-preview-immediate.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh workflow run glacier-windows-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          gh workflow run glacier-macos-signed-auto.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo 'Both verified original draft IDs published; OIDC VPS and signed channels queued for independent check.' >> "$GITHUB_STEP_SUMMARY"
