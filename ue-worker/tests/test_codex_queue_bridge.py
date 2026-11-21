@@ -15,7 +15,7 @@ import ue_process
 
 
 FMT = "director_codex_bridge_v1"
-THREAD = "01a1fe46-eafb-7db1-9b0f-bf4180cbd242"
+THREAD = "01234567-89ab-cdef-0123-456789abcdef"
 
 
 def create_local(temp, thread=THREAD, enabled=True):
