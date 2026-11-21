@@ -1,0 +1,69 @@
+name: GamePilot Mac 0.4.12 independent Apple Silicon compile verification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gamepilot-mac-0412-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: zxasd2183-oss/GamePilot
+          ref: 80fa093d0a67c9b8db0c5ff6c293b8e507ca9bea
+          path: GamePilot
+          persist-credentials: false
+      - name: Validate checked-out source identity and component mirrors
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test "$(git -C GamePilot rev-parse HEAD)" = 80fa093d0a67c9b8db0c5ff6c293b8e507ca9bea
+          cd GamePilot/apps/macos/GamePilotMac
+          /bin/zsh -n Resources/install-free-dxmt.zsh
+          /bin/zsh -n Resources/download-gstreamer.zsh
+          /bin/zsh -n Resources/install-wine-video.zsh
+          python3 -m unittest discover -s Tests -p 'test_vps_only_downloads.py' -v
+          python3 -m unittest discover -s Tests -p 'test_gstreamer_download.py' -v
+          python3 -m unittest discover -s Tests -p 'test_free_dxmt_cancel.py' -v
+      - name: Swift compile and game-library tests on Apple Silicon
+        shell: bash
+        working-directory: GamePilot/apps/macos/GamePilotMac
+        run: |
+          set -euo pipefail
+          swift test -c release
+          swift build -c release --product GamePilotMac
+      - name: Smoke-test macOS first-install DMG packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/installer"
+          mkdir -p "$STAGE/GamePilot.app/Contents"
+          ln -s /Applications "$STAGE/Applications"
+          cat > "$STAGE/GamePilot.app/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>GamePilot</string>
+            <key>CFBundleIdentifier</key><string>cn.gamepilot.unified.mac</string>
+            <key>CFBundleShortVersionString</key><string>0.4.12</string>
+            <key>CFBundleVersion</key><string>0.4.12</string>
+          </dict></plist>
+          PLIST
+          hdiutil create -srcfolder "$STAGE" -volname "GamePilot Installer" \
+            -format UDZO -ov "$RUNNER_TEMP/GamePilot.dmg"
+          hdiutil verify "$RUNNER_TEMP/GamePilot.dmg"
+          MOUNT="$RUNNER_TEMP/mount"
+          mkdir -p "$MOUNT"
+          hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$RUNNER_TEMP/GamePilot.dmg"
+          test -L "$MOUNT/Applications"
+          test "$(readlink "$MOUNT/Applications")" = "/Applications"
+          test -f "$MOUNT/GamePilot.app/Contents/Info.plist"
+          hdiutil detach "$MOUNT"
+          echo "PASS: macOS DMG installation layout verified"
