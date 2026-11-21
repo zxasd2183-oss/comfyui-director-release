@@ -769,7 +769,9 @@ def codex_bridge_status(root=HERO_BRIDGE_ROOT):
         return {"available": False, "reason": "codex_bridge_not_running"}
 
 
-def codex_stage(message, root=HERO_BRIDGE_ROOT):
+def codex_stage(message, root=HERO_BRIDGE_ROOT, request_report=False):
+    if type(request_report) is not bool:
+        return {"ok": False, "reason": "codex_report_flag_invalid"}
     if root != HERO_BRIDGE_ROOT or not _codex_message_valid(message):
         return {"ok": False, "reason": "codex_message_invalid"}
     if codex_bridge_status(root).get("available") is not True:
@@ -781,13 +783,61 @@ def codex_stage(message, root=HERO_BRIDGE_ROOT):
         if not folder.is_dir() or sum(1 for _ in folder.glob("*.json")) >= 4:
             return {"ok": False, "reason": "codex_queue_not_ready"}
         ident = secrets.token_hex(16)
-        _codex_write(folder / (ident + ".json"),
-                     {"format": CODEX_FMT, "id": ident,
-                      "created": time.time(), "message": message})
+        payload = {"format": CODEX_FMT, "id": ident,
+                   "created": time.time(), "message": message}
+        if request_report:
+            payload["report_requested"] = True
+        _codex_write(folder / (ident + ".json"), payload)
+        if request_report:
+            _codex_write(base / "latest-report.json",
+                         {"format": CODEX_FMT, "id": ident})
         return {"ok": True, "request_id": ident, "state": "staged",
                 "gui_delivery_confirmed": False, "completed": False}
     except (OSError, ValueError, TypeError):
         return {"ok": False, "reason": "codex_bridge_unavailable"}
+
+
+
+def _codex_read_report(ident, root):
+    """Read ONLY one purpose-created reply, never Codex history or other files."""
+    path = _codex_path(root) / "responses" / (ident + ".txt")
+    _bridge_safe_parent(path, root)
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+        raise ValueError("unsafe_codex_response")
+    if not path.is_file():
+        return None
+    if not 1 <= path.stat().st_size <= 4096:
+        raise ValueError("invalid_codex_response_size")
+    with path.open("rb") as stream:
+        raw = stream.read(4097)
+    if not 1 <= len(raw) <= 4096:
+        raise ValueError("invalid_codex_response_size")
+    message = raw.decode("utf-8").strip()
+    if (not 1 <= len(message) <= 2000 or
+            any(ord(ch) < 32 and ch not in "\n\t" for ch in message)):
+        raise ValueError("invalid_codex_response_text")
+    return message
+
+
+def codex_latest_report(root=HERO_BRIDGE_ROOT):
+    """Bounded status for clients with an already-cached get_ue_worker_status."""
+    if root != HERO_BRIDGE_ROOT:
+        return {"available": False, "reason": "workspace_mismatch"}
+    try:
+        path = _codex_path(root) / "latest-report.json"
+        _bridge_safe_parent(path, root)
+        if not path.is_file():
+            return {"available": False, "reason": "no_report_requested"}
+        item = _codex_json(path)
+        if (type(item) is not dict or set(item) != {"format", "id"} or
+                item["format"] != CODEX_FMT or
+                type(item["id"]) is not str or
+                not CODEX_ID.fullmatch(item["id"])):
+            raise ValueError("invalid_codex_report_marker")
+        return codex_lookup(item["id"], root)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {"available": False, "reason": "report_status_unavailable"}
+
 
 
 def codex_lookup(ident, root=HERO_BRIDGE_ROOT):
