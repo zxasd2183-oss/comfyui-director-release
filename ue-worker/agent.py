@@ -791,8 +791,9 @@ def status():
         "hero_character_readiness": hero_character_readiness(),
         "hero_source_integrity": hero_source_integrity(),
         "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
+        "codex_bridge": __import__("ue_process").codex_bridge_status(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.4.4",
+        "worker_version": "2.4.5",
     }
 
 
@@ -910,6 +911,7 @@ def capabilities():
         "supports_desktop_view_only": True,
         "supports_desktop_keyboard_or_mouse": True,
         "supports_desktop_input_only_when_local_armed": True,
+        "supports_codex_queue": True,
         "supports_arbitrary_commands": False,
         "supports_unreal_install": False,
         "supports_rendering": False,
@@ -978,6 +980,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(data)
             except ValueError:
                 self.send_json(403,{"ok":False,"reason":"desktop_frame_unavailable"})
+        elif self.path == "/v16/codex/status":
+            from ue_process import codex_bridge_status
+            self.send_json(200, codex_bridge_status(workspace_root()))
+        elif re.fullmatch(r"/v16/codex/requests/[a-f0-9]{32}", self.path):
+            from ue_process import codex_lookup
+            self.send_json(200, codex_lookup(self.path.rsplit("/", 1)[-1],
+                                               workspace_root()))
         elif self.path == "/v4/update/status":
             self.send_json(200, update_status())
         elif self.path == "/v6/episode/assembly-readiness":
@@ -1043,6 +1052,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.authorize():
             self.send_json(401, {"ok": False, "reason": "unauthorized"})
+            return
+        if self.path == "/v16/codex/queue":
+            from ue_process import codex_stage
+            try:
+                n = int(self.headers.get("Content-Length", "-1"))
+                if self.headers.get("Transfer-Encoding") or not 1 <= n <= 8192:
+                    raise ValueError("invalid_request")
+                obj = json.loads(self.rfile.read(n))
+                if type(obj) is not dict or set(obj) != {"message"}:
+                    raise ValueError("invalid_request")
+                state = codex_stage(obj["message"], workspace_root())
+                self.send_json(202 if state["ok"] else 409, state)
+            except (ValueError, TypeError, UnicodeError):
+                self.send_json(400, {"ok": False, "reason": "codex_message_invalid"})
             return
         if self.path == "/v15/desktop/action":
             try:
