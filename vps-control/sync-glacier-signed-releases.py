@@ -374,6 +374,15 @@ def main():
     if not args.stage_only:
         for channel in PLATFORMS:
             sync_one(directory, channel)
+        # GamePilot is an optional, independently signed tenant of the
+        # already deployed downloads mirror. A GamePilot failure MUST NOT
+        # change, invalidate or block either existing Glacier channel.
+        try:
+            from gamepilot_signed_mirror import sync as sync_gamepilot
+            sync_gamepilot(directory)
+        except Exception as exc:
+            print("GamePilot optional mirror deferred: " +
+                  type(exc).__name__ + ": " + str(exc), file=sys.stderr)
 
 if __name__ == "__main__":
     try:
