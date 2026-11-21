@@ -17,7 +17,19 @@ $app = Join-Path $env:LOCALAPPDATA 'Programs\GlacierBrowser\GlacierBrowser.exe'
 $data = Join-Path $env:LOCALAPPDATA 'GlacierBrowser'
 $marker = Join-Path $data '.glacier-ci-upgrade-marker'
 function Install-Glacier([string]$installer) {
-    $p = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-') -Wait -PassThru
+    # Inno may launch GlacierBrowser after silent installation. Waiting for the
+    # entire descendant process tree would hang on its setup/login window.
+    # Wait for Setup's own process ONLY, then stop the CI-launched browser.
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $installer
+    $psi.Arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
+    $psi.UseShellExecute = $false
+    $p = [System.Diagnostics.Process]::Start($psi)
+    if ($null -eq $p) { throw 'Could not start Inno Setup process' }
+    if (-not $p.WaitForExit(360000)) {
+        $p.Kill($true)
+        throw 'Inno Setup exceeded bounded six-minute wait'
+    }
     if ($p.ExitCode -ne 0) { throw "Inno Setup failed with code $($p.ExitCode)" }
     Get-Process -Name GlacierBrowser -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
