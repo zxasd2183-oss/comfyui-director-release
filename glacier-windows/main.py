@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote, quote_plus
 from PySide6.QtCore import QUrl, QTimer, QSize, Qt
 from PySide6.QtNetwork import QNetworkProxy
+from glacier_brand_icon import glacier_icon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
  QLineEdit, QTabWidget, QPushButton, QMessageBox, QInputDialog, QLabel)
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
@@ -159,7 +160,7 @@ class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31,
   self.proc=process
   self.proxy_port=port
   self.prefs=GlacierPrefs(appdir()/"settings.json")
-  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.34")
+  self.setWindowTitle("❄ Glacier Browser · Windows v0.20.35")
   self.resize(1260,850)
   self.profile=QWebEngineProfile("Glacier",self)
   self.profile.setPersistentStoragePath(str(appdir()/"profile"))
@@ -368,7 +369,7 @@ def main():
  with socket.socket() as s:
   s.bind(("127.0.0.1",0));port=s.getsockname()[1]
  os.environ["QTWEBENGINE_CHROMIUM_FLAGS"]=f"--proxy-server=socks5://127.0.0.1:{port} --disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
- app=QApplication(sys.argv);app.setApplicationName(APP)
+ app=QApplication(sys.argv);app.setApplicationName(APP);app.setWindowIcon(glacier_icon())
  link=get_link(app)
  proc=None
  try:proc=proxy_start(link,port)

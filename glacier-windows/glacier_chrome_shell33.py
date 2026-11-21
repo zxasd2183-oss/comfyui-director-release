@@ -8,6 +8,7 @@ import sys
 
 from PySide6.QtCore import Qt, QSize, QPointF, QRectF, QTimer, QEvent, QObject
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from glacier_brand_icon import glacier_icon
 from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLabel, QSizePolicy, QTabBar, QToolButton
 
 CHROME_SHELL_QSS33 = """
@@ -478,7 +479,7 @@ class GlacierChromeShell33:
         status.messageChanged.connect(
             lambda message: status.setVisible(bool(message.strip())))
 
-        self.setWindowIcon(shell_icon33("brand"))
+        self.setWindowIcon(glacier_icon())
         self._chrome_ui33_ready = True
         # The proxy timer normally ticks after 3.5s. Update its actual
         # glyph immediately, so first paint never flashes a red Unicode dot.
