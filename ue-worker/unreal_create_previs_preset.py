@@ -1030,6 +1030,88 @@ def hero_face_contour_main():
 
 
 
+
+def hero_texture_sources_main():
+    """Download Epic high-resolution skin sources on a COPY of verified rig.
+
+    No arbitrary asset paths, requests, user data, or approvals. This operates
+    in the same already-authorized interactive RDP session as face auto-rig.
+    """
+    output = Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    report = {"ok": False, "reason": "hero_texture_not_started"}
+    phase = "identity"
+    registered = False
+    subsystem = None
+    clone = None
+    try:
+        job = os.environ.get("DIRECTOR_UE_JOB_ID", "")
+        if (os.environ.get("DIRECTOR_UE_REVIEW_MODE") != "hero_textures_v250"
+                or not re.fullmatch(r"[a-f0-9]{32}", job)):
+            raise RuntimeError("untrusted_texture_job")
+        source = ("/Game/Director/Candidates/EP01/HeroRigs/"
+                  "Jb2a62bb6bc004de4ab747a9de4e3d16d/MHC_CHAR_GPT_RigV1")
+        target = ("/Game/Director/Candidates/EP01/HeroTextures/J" + job +
+                  "/MHC_CHAR_GPT_TexturesV1")
+        phase = "source"
+        if (not unreal.EditorAssetLibrary.does_asset_exist(source)
+                or unreal.EditorAssetLibrary.does_asset_exist(target)):
+            raise RuntimeError("rig_missing_or_texture_target_collision")
+        rig = unreal.EditorAssetLibrary.load_asset(source)
+        if (not rig or rig.get_class().get_name() != "MetaHumanCharacter"
+                or rig.get_editor_property("has_face_dna_blendshapes") is not True):
+            raise RuntimeError("source_rig_not_verified")
+        phase = "clone"
+        clone = unreal.EditorAssetLibrary.duplicate_asset(source, target)
+        if not clone or clone.get_class().get_name() != "MetaHumanCharacter":
+            raise RuntimeError("texture_clone_failed")
+        phase = "register"
+        subsystem = unreal.get_editor_subsystem(
+            unreal.MetaHumanCharacterEditorSubsystem)
+        if not subsystem or not subsystem.try_add_object_to_edit(clone):
+            raise RuntimeError("texture_registration_failed")
+        registered = True
+        phase = "cloud_request"
+        params = unreal.MetaHumanCharacterTextureRequestParams()
+        params.blocking = True
+        params.report_progress = False
+        subsystem.request_texture_sources(clone, params)
+        phase = "readback"
+        if clone.get_editor_property("has_high_resolution_textures") is not True:
+            raise RuntimeError("high_resolution_textures_not_verified")
+        if clone.get_editor_property("has_face_dna_blendshapes") is not True:
+            raise RuntimeError("face_rig_lost")
+        phase = "save"
+        if not unreal.EditorAssetLibrary.save_loaded_asset(clone):
+            raise RuntimeError("texture_candidate_save_failed")
+        report = {
+            "ok": True, "character_id": "CHAR_GPT",
+            "asset_path": target, "asset_class": "MetaHumanCharacter",
+            "source_rig_preserved": True,
+            "face_blendshapes_verified": True,
+            "cloud_texture_request_executed": True,
+            "has_high_resolution_textures": True,
+            "groom_ready": False, "wardrobe_ready": False,
+            "cinematic_character_ready": False,
+            "character_master_approved": False,
+        }
+    except Exception as exc:
+        report = {"ok": False, "reason": "hero_texture_failed_" + phase}
+        unreal.log_warning("Director Hero texture blocked phase=" + phase +
+                           " exception_class=" + type(exc).__name__)
+    finally:
+        if registered:
+            try:
+                subsystem.remove_object_to_edit(clone)
+            except Exception:
+                report = {"ok": False, "reason": "hero_texture_failed_release"}
+        output.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    if report["ok"]:
+        unreal.log("Director high-resolution MetaHuman texture candidate saved")
+    else:
+        unreal.log_warning("Director Hero texture task " + report["reason"])
+
+
+
 def hero_cloud_face_rig_main():
     """Request full face joints + blendshapes for a new isolated MetaHuman.
 
@@ -1114,86 +1196,6 @@ def hero_cloud_face_rig_main():
     else:
         unreal.log_warning("Director MetaHuman rig task "+report["reason"])
 
-
-
-def hero_texture_sources_main():
-    """Download Epic high-resolution skin sources on a COPY of verified rig.
-
-    No arbitrary asset paths, requests, user data, or approvals. This operates
-    in the same already-authorized interactive RDP session as face auto-rig.
-    """
-    output = Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
-    report = {"ok": False, "reason": "hero_texture_not_started"}
-    phase = "identity"
-    registered = False
-    subsystem = None
-    clone = None
-    try:
-        job = os.environ.get("DIRECTOR_UE_JOB_ID", "")
-        if (os.environ.get("DIRECTOR_UE_REVIEW_MODE") != "hero_textures_v250"
-                or not re.fullmatch(r"[a-f0-9]{32}", job)):
-            raise RuntimeError("untrusted_texture_job")
-        source = ("/Game/Director/Candidates/EP01/HeroRigs/"
-                  "Jb2a62bb6bc004de4ab747a9de4e3d16d/MHC_CHAR_GPT_RigV1")
-        target = ("/Game/Director/Candidates/EP01/HeroTextures/J" + job +
-                  "/MHC_CHAR_GPT_TexturesV1")
-        phase = "source"
-        if (not unreal.EditorAssetLibrary.does_asset_exist(source)
-                or unreal.EditorAssetLibrary.does_asset_exist(target)):
-            raise RuntimeError("rig_missing_or_texture_target_collision")
-        rig = unreal.EditorAssetLibrary.load_asset(source)
-        if (not rig or rig.get_class().get_name() != "MetaHumanCharacter"
-                or rig.get_editor_property("has_face_dna_blendshapes") is not True):
-            raise RuntimeError("source_rig_not_verified")
-        phase = "clone"
-        clone = unreal.EditorAssetLibrary.duplicate_asset(source, target)
-        if not clone or clone.get_class().get_name() != "MetaHumanCharacter":
-            raise RuntimeError("texture_clone_failed")
-        phase = "register"
-        subsystem = unreal.get_editor_subsystem(
-            unreal.MetaHumanCharacterEditorSubsystem)
-        if not subsystem or not subsystem.try_add_object_to_edit(clone):
-            raise RuntimeError("texture_registration_failed")
-        registered = True
-        phase = "cloud_request"
-        params = unreal.MetaHumanCharacterTextureRequestParams()
-        params.blocking = True
-        params.report_progress = False
-        subsystem.request_texture_sources(clone, params)
-        phase = "readback"
-        if clone.get_editor_property("has_high_resolution_textures") is not True:
-            raise RuntimeError("high_resolution_textures_not_verified")
-        if clone.get_editor_property("has_face_dna_blendshapes") is not True:
-            raise RuntimeError("face_rig_lost")
-        phase = "save"
-        if not unreal.EditorAssetLibrary.save_loaded_asset(clone):
-            raise RuntimeError("texture_candidate_save_failed")
-        report = {
-            "ok": True, "character_id": "CHAR_GPT",
-            "asset_path": target, "asset_class": "MetaHumanCharacter",
-            "source_rig_preserved": True,
-            "face_blendshapes_verified": True,
-            "cloud_texture_request_executed": True,
-            "has_high_resolution_textures": True,
-            "groom_ready": False, "wardrobe_ready": False,
-            "cinematic_character_ready": False,
-            "character_master_approved": False,
-        }
-    except Exception as exc:
-        report = {"ok": False, "reason": "hero_texture_failed_" + phase}
-        unreal.log_warning("Director Hero texture blocked phase=" + phase +
-                           " exception_class=" + type(exc).__name__)
-    finally:
-        if registered:
-            try:
-                subsystem.remove_object_to_edit(clone)
-            except Exception:
-                report = {"ok": False, "reason": "hero_texture_failed_release"}
-        output.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
-    if report["ok"]:
-        unreal.log("Director high-resolution MetaHuman texture candidate saved")
-    else:
-        unreal.log_warning("Director Hero texture task " + report["reason"])
 
 
 if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_textures_v250":
