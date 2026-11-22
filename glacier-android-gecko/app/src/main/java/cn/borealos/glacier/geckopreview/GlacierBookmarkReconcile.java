@@ -191,10 +191,15 @@ final class GlacierBookmarkReconcile {
     }
 
     /** Only a strictly monotonic CAS PUT acknowledgement allows checkpoint save. */
-    static JSONObject approveUpload(Plan plan,JSONObject reply) throws Exception {
+    static JSONObject approveUpload(Plan plan,JSONObject reply,
+            BrowserLibraryStore.Snapshot current,String space) throws Exception {
         if(plan==null||!"upload_pending".equals(plan.kind)
                 ||plan.checkpoint==null||reply==null)
             throw new IOException("No upload pending");
+        if(!hash(current,space).equals(plan.expectedLocalHash))
+            throw new IOException("Local bookmarks changed during cloud upload");
+        if(!space.equals(plan.checkpoint.optString("space","")))
+            throw new IOException("Upload checkpoint has wrong profile");
         long version=remoteVersion(reply);
         if(version!=plan.expectedVersion+1)
             throw new IOException("Upload CAS acknowledgement did not advance by one");

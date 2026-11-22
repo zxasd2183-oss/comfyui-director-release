@@ -48,9 +48,9 @@ public class GlacierBookmarkReconcileInstrumentedTest {
         assertNotNull(pending.ciphertext);
         assertEquals(2,original.bookmarks.size());
         assertEquals(1,GlacierBookmarkReconcile.approveUpload(
-                pending,new JSONObject().put("version",1)).getInt("version"));
+                pending,new JSONObject().put("version",1),original,"work").getInt("version"));
         try {
-            GlacierBookmarkReconcile.approveUpload(pending,new JSONObject().put("version",0));
+            GlacierBookmarkReconcile.approveUpload(pending,new JSONObject().put("version",0),original,"work");
             fail("Stale CAS upload acknowledgement accepted");
         }catch(java.io.IOException expected){}
         try {
@@ -88,7 +88,7 @@ public class GlacierBookmarkReconcileInstrumentedTest {
         GlacierBookmarkReconcile.Plan first=GlacierBookmarkReconcile.firstSync(
                 OWNER,"work",local,cloud(0,null),PASS,"upload");
         JSONObject checkpoint=GlacierBookmarkReconcile.approveUpload(first,
-                new JSONObject().put("version",1));
+                new JSONObject().put("version",1),local,"work");
         String base=envelope("Work");
         assertEquals("unchanged",GlacierBookmarkReconcile.reconcile(
                 OWNER,"work",local,checkpoint,cloud(1,base),PASS).kind);
