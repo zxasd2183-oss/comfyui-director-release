@@ -180,3 +180,30 @@ def accept_download(preview, owner, space, current_rows):
     if c is None or c["local_hash"] != fingerprint(newrows, space):
         raise BookmarkSyncError("Invalid bookmark import checkpoint")
     return {"records": newrows, "checkpoint": c}
+
+
+def existing_authorized_transport(sync_state, proxy_process, proxy_port):
+    """Use ONLY the established Glacier device session and running VLESS core.
+
+    Returns (VLESS-only existing SyncTransport23, account scope); never accepts
+    a caller-supplied username/token override or falls back to direct HTTPS.
+    The browser must store checkpoints only in its existing OS-encrypted
+    account session and use the returned account scope on every sync action.
+    """
+    if not isinstance(sync_state, dict) or sync_state.get("locked"):
+        raise BookmarkSyncError("Glacier device session is unavailable")
+    if (sync_state.get("approved") is not True
+            or not all(isinstance(sync_state.get(k), str) and sync_state.get(k)
+                       for k in ("base", "token", "username", "device_id"))):
+        raise BookmarkSyncError("Glacier account and device approval required")
+    if (proxy_process is None or not callable(getattr(proxy_process, "poll", None))
+            or proxy_process.poll() is not None):
+        raise BookmarkSyncError("VLESS is offline; bookmark sync cannot connect directly")
+    if type(proxy_port) is not int or not 1 <= proxy_port <= 65535:
+        raise BookmarkSyncError("Invalid local SOCKS5 port")
+    from glacier_sync23 import SyncTransport23, sync_url23
+    base = sync_url23(sync_state["base"])
+    if not base or base != sync_state["base"]:
+        raise BookmarkSyncError("Glacier Sync base URL is not secure")
+    owner = base + "|" + sync_state["username"].casefold()
+    return SyncTransport23(base, proxy_port, sync_state["token"]), owner
