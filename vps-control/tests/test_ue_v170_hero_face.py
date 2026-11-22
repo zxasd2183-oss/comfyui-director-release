@@ -71,6 +71,7 @@ class V170FaceRpcTests(unittest.TestCase):
         self.assertEqual(set(hub_app.DIRECTOR_TASK_ALLOWLIST),{
             "hero_face_contour_v1","hero_amber_eyes_v1",
             "hero_runtime_audit_v1","hero_full_face_rig_v1",
+            "hero_highres_textures_v1",
             "codex_queue_probe_v1","codex_reply_probe_v1",
             "codex_ep01_gap_matrix_v1"})
         with patch.dict(hub_app.DIRECTOR_TASK_ALLOWLIST,{
