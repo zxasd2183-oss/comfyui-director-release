@@ -65,10 +65,14 @@ class HubPortContractTests(unittest.TestCase):
         registered=set(re.findall(
             r'@app\.tool\([\s\S]*?\)\n(?:\#[^\n]*\n)*def\s+(\w+)\s*\(',
             content(VPS/"hub_app.py")))
-        # Historical V0.6 installer remains frozen at 62 tools. The live
-        # Hub may add only the explicit locally-armed RDP input tools.
+        # Historical V0.6 installer remains frozen at 62 tools.
+        # The live registry additionally has 3 locally armed desktop-input
+        # tools and 4 previously reviewed same-user Codex queue tools.
+        # They are exact named additions, not a blanket count exception.
         self.assertEqual(registered, hub | {
             'ue_desktop_click', 'ue_desktop_key', 'ue_desktop_text',
+            'get_codex_bridge_status', 'codex_queue_message',
+            'get_codex_message_status', 'codex_queue_with_report',
         })
         self.assertTrue(core<=hub|{"get_power_service_health"})
         self.assertIn('((8892,core),(8898,hub))',script)
