@@ -76,7 +76,7 @@ class HeroMetaHumanPreflightTests(unittest.TestCase):
              patch.object(agent, "workspace_root", return_value=Path("/not_a_workspace")), \
              patch.object(agent, "signed_update_status", return_value={"status": "ok"}):
             state = agent.status()
-        self.assertEqual(state["worker_version"], "2.4.6")
+        self.assertEqual(state["worker_version"], "2.5.0")
         self.assertIn("hero_source_integrity", state)
         self.assertFalse(state["hero_source_integrity"]["ok"])
         self.assertFalse(state["hero_source_integrity"]["mutations_performed"])
