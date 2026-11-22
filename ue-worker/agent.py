@@ -774,6 +774,81 @@ def desktop_input_action(item):
         return {"ok": False, "reason": "desktop_input_unavailable"}
 
 
+def hero_cine_config_audit(root=None):
+    """Read-only audit of the isolated GPT UE project's explicit render INI.
+
+    No UE launch and no inference about engine defaults. Absence of a setting
+    means only 'not explicitly configured in this project's DefaultEngine.ini'.
+    Fixed file, no directory enumeration, no user paths or INI contents returned.
+    """
+    root = workspace_root() if root is None else Path(root)
+    project = root / "HeroProjects" / "CHAR_GPT" / "DirectorHeroGPT.uproject"
+    ini = project.parent / "Config" / "DefaultEngine.ini"
+    empty = {
+        "dx12_default_explicit": False,
+        "sm6_target_explicit": False,
+        "sm5_target_explicit": False,
+        "gpu_skin_16bit_explicit": False,
+        "gpu_skin_unlimited_explicit": False,
+        "skin_cache_explicit": False,
+    }
+    result = {"available": False, "state": "unverified",
+              "explicit_settings": empty, "mutations_performed": False}
+    try:
+        for folder in (root, project.parent, ini.parent):
+            if folder.is_symlink() or getattr(folder, "is_junction", lambda: False)():
+                return {**result, "state": "unsafe_project_path"}
+        if project.is_symlink() or not project.is_file() or project.stat().st_size > 65536:
+            return {**result, "state": "project_unavailable"}
+        if not trusted_hero_project_manifest(json.loads(project.read_text("utf-8"))):
+            return {**result, "state": "untrusted_project"}
+        if ini.is_symlink() or getattr(ini, "is_junction", lambda: False)():
+            return {**result, "state": "unsafe_ini_path"}
+        if not ini.exists():
+            return {**result, "available": True, "state": "ini_not_present"}
+        if not ini.is_file() or not 0 <= ini.stat().st_size <= 131072:
+            return {**result, "state": "ini_not_readable"}
+        raw = ini.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {**result, "state": "ini_not_readable"}
+    group = ""
+    entries = {}
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith((";", "#")):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            group = line[1:-1].strip().casefold()
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip().casefold(), value.strip().casefold()
+        if group in ("/script/windowstargetplatform.windowstargetsettings",
+                     "/script/engine.renderersettings", "consolevariables"):
+            entries.setdefault((group, key), set()).add(value)
+    win = "/script/windowstargetplatform.windowstargetsettings"
+    render = "/script/engine.renderersettings"
+    def explicit_truth(key):
+        return ("true" in entries.get((render, key), set()) or
+                "1" in entries.get((render, key), set()) or
+                "true" in entries.get(("consolevariables", key), set()) or
+                "1" in entries.get(("consolevariables", key), set()))
+    settings = {
+        "dx12_default_explicit":
+            "defaultgraphicsrhi_dx12" in entries.get((win, "defaultgraphicsrhi"), set()),
+        "sm6_target_explicit":
+            "pcd3d_sm6" in entries.get((win, "+d3d12targetedshaderformats"), set()),
+        "sm5_target_explicit":
+            "pcd3d_sm5" in entries.get((win, "+d3d12targetedshaderformats"), set()),
+        "gpu_skin_16bit_explicit": explicit_truth("r.gpuskin.support16bitboneindex"),
+        "gpu_skin_unlimited_explicit": explicit_truth("r.gpuskin.unlimitedboneinfluences"),
+        "skin_cache_explicit": explicit_truth("r.skincache.compileshaders"),
+    }
+    return {"available": True, "state": "ini_read", "explicit_settings": settings,
+            "mutations_performed": False}
+
+
 def status():
     active_job_id = None
     if JOB_MANAGER is not None:
@@ -790,11 +865,12 @@ def status():
         "workspace_exists": workspace_root().is_dir(),
         "hero_character_readiness": hero_character_readiness(),
         "hero_source_integrity": hero_source_integrity(),
+        "hero_cine_config_audit": hero_cine_config_audit(),
         "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
         "codex_bridge": __import__("ue_process").codex_bridge_status(workspace_root()),
         "codex_last_report": __import__("ue_process").codex_latest_report(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.6.1",
+        "worker_version": "2.6.2",
     }
 
 
