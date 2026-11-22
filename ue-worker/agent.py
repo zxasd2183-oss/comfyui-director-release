@@ -160,11 +160,11 @@ def prepare_hero_cine_render_config():
     if hero_project_state() != "prepared":
         raise ValueError("hero_render_config_project_untrusted")
     for parent in (root, root / "HeroProjects", project.parent, ini.parent):
-        if (parent.is_symlink() or getattr(parent, "is_junction", lambda: False)
+        if (parent.is_symlink() or getattr(parent, "is_junction", lambda: False)()
                 or not parent.is_dir()):
             raise ValueError("hero_render_config_parent_unsafe")
     for path in (ini, tmp, backup):
-        if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+        if path.is_symlink() or getattr(path, "is_junction", lambda: False)()():
             raise ValueError("hero_render_config_link_unsafe")
     if tmp.exists() or (ini.exists() and not ini.is_file()):
         raise ValueError("hero_render_config_staged_collision")
