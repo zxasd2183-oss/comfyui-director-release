@@ -1031,6 +1031,127 @@ def hero_face_contour_main():
 
 
 
+def hero_cine_assembly_main():
+    """Assemble a pinned MetaHuman to NEW UE Cine assets, without approval.
+
+    Uses MetaHuman's official editor subsystem in the signed-in Windows
+    session. No external paths, no arbitrary scripts or user-specified assets.
+    """
+    output = Path(os.environ["DIRECTOR_UE_RESULT_FILE"])
+    report = {"ok": False, "reason": "hero_cine_not_started"}
+    phase = "identity"
+    subsystem = None
+    clone = None
+    registered = False
+    try:
+        ident = os.environ.get("DIRECTOR_UE_JOB_ID", "")
+        if (os.environ.get("DIRECTOR_UE_REVIEW_MODE") != "hero_cine_v260"
+                or not re.fullmatch(r"[a-f0-9]{32}", ident)):
+            raise RuntimeError("hero_cine_invalid_identity")
+        src = ("/Game/Director/Candidates/EP01/HeroTextures/"
+               "Jbe13a12e3f2246c894d377ad12c19ae0/"
+               "MHC_CHAR_GPT_TexturesV1")
+        root = "/Game/Director/Candidates/EP01/HeroCine/J" + ident
+        target = root + "/MHC_CHAR_GPT_CineV1"
+        build_root = root + "/Build"
+        phase = "source"
+        if (not unreal.EditorAssetLibrary.does_asset_exist(src)
+                or unreal.EditorAssetLibrary.does_asset_exist(target)
+                or unreal.EditorAssetLibrary.does_directory_exist(build_root)):
+            raise RuntimeError("hero_cine_source_missing_or_collision")
+        source = unreal.EditorAssetLibrary.load_asset(src)
+        if not source or source.get_class().get_name() != "MetaHumanCharacter":
+            raise RuntimeError("hero_cine_source_invalid")
+        if (source.get_editor_property("has_high_resolution_textures") is not True
+                or source.get_editor_property("has_face_dna_blendshapes") is not True):
+            raise RuntimeError("hero_cine_source_not_ready")
+        phase = "clone"
+        clone = unreal.EditorAssetLibrary.duplicate_asset(src, target)
+        if not clone or clone.get_class().get_name() != "MetaHumanCharacter":
+            raise RuntimeError("hero_cine_clone_failed")
+        phase = "register"
+        subsystem = unreal.get_editor_subsystem(
+            unreal.MetaHumanCharacterEditorSubsystem)
+        if not subsystem or not subsystem.try_add_object_to_edit(clone):
+            raise RuntimeError("hero_cine_registration_failed")
+        registered = True
+        phase = "readiness"
+        if subsystem.can_build_meta_human(clone, True) is not True:
+            raise RuntimeError("hero_cine_not_buildable")
+        phase = "build"
+        params = unreal.MetaHumanCharacterEditorBuildParameters()
+        params.pipeline_type = unreal.MetaHumanDefaultPipelineType.CINEMATIC
+        params.pipeline_quality = unreal.MetaHumanQualityLevel.CINEMATIC
+        params.absolute_build_path = build_root
+        params.common_folder_path = build_root + "/Common"
+        params.name_override = "CHAR_GPT_Cine"
+        params.enable_wardrobe_item_validation = False
+        subsystem.build_meta_human(clone, params)
+        phase = "save"
+        if not unreal.EditorAssetLibrary.save_loaded_asset(clone):
+            raise RuntimeError("hero_cine_clone_save_failed")
+        if not unreal.EditorAssetLibrary.save_directory(
+                build_root, only_if_is_dirty=True, recursive=True):
+            raise RuntimeError("hero_cine_assets_save_failed")
+        phase = "inventory"
+        names = unreal.EditorAssetLibrary.list_assets(
+            build_root, recursive=True, include_folder=False)
+        names = sorted(set(str(a).split(".")[0] for a in names))
+        if not 3 <= len(names) <= 1000:
+            raise RuntimeError("hero_cine_asset_inventory_out_of_bounds")
+        grouped = {}
+        for asset in names:
+            if not asset.startswith(build_root + "/"):
+                raise RuntimeError("hero_cine_asset_outside_job")
+            data = unreal.EditorAssetLibrary.find_asset_data(asset)
+            classname = str(data.asset_class_path.asset_name)
+            if classname in ("SkeletalMesh", "Blueprint", "MetaHumanCharacterBlueprint",
+                             "AnimBlueprint", "Skeleton"):
+                grouped.setdefault(classname, []).append(asset)
+        faces_bodies = grouped.get("SkeletalMesh", [])
+        blueprints = grouped.get("Blueprint", []) + grouped.get(
+            "MetaHumanCharacterBlueprint", [])
+        if len(faces_bodies) < 2 or not blueprints:
+            raise RuntimeError("hero_cine_skeletal_blueprint_missing")
+        selected = ([{"asset_path": a, "asset_class": "SkeletalMesh"}
+                     for a in faces_bodies[:2]] +
+                    [{"asset_path": blueprints[0],
+                      "asset_class": "Blueprint" if blueprints[0] in
+                      grouped.get("Blueprint", []) else "MetaHumanCharacterBlueprint"}])
+        for asset_class in ("Skeleton", "AnimBlueprint"):
+            if grouped.get(asset_class):
+                selected.append({"asset_path": grouped[asset_class][0],
+                                 "asset_class": asset_class})
+        if clone.get_editor_property("has_high_resolution_textures") is not True:
+            raise RuntimeError("hero_cine_texture_lost")
+        if clone.get_editor_property("has_face_dna_blendshapes") is not True:
+            raise RuntimeError("hero_cine_rig_lost")
+        report = {
+            "ok": True, "character_id": "CHAR_GPT", "asset_path": target,
+            "pipeline_type": "CINEMATIC", "build_executed": True,
+            "source_unchanged": True, "face_blendshapes_verified": True,
+            "has_high_resolution_textures": True,
+            "asset_manifest": selected, "total_assets": len(names),
+            "groom_ready": False, "wardrobe_ready": False,
+            "cinematic_character_ready": False, "character_master_approved": False,
+        }
+    except Exception as exc:
+        report = {"ok": False, "reason": "hero_cine_failed_" + phase}
+        unreal.log_warning("Director UE Cine phase=" + phase +
+                           " exception_class=" + type(exc).__name__)
+    finally:
+        if registered:
+            try:
+                subsystem.remove_object_to_edit(clone)
+            except Exception:
+                report = {"ok": False, "reason": "hero_cine_failed_release"}
+        output.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    if report["ok"]:
+        unreal.log("Director GPT native cinematic assembly assets verified")
+    else:
+        unreal.log_warning("Director GPT Cine assembly " + report["reason"])
+
+
 def hero_texture_sources_main():
     """Download Epic high-resolution skin sources on a COPY of verified rig.
 
@@ -1198,7 +1319,9 @@ def hero_cloud_face_rig_main():
 
 
 
-if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_textures_v250":
+if os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_cine_v260":
+    hero_cine_assembly_main()
+elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_textures_v250":
     hero_texture_sources_main()
 elif os.environ.get("DIRECTOR_UE_REVIEW_MODE") == "hero_rig_v200":
     hero_cloud_face_rig_main()
