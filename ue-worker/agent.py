@@ -200,10 +200,19 @@ def prepare_hero_cine_render_config():
         if line.startswith("[") and line.endswith("]"):
             section = line[1:-1].strip().casefold()
             continue
-        if section not in required or "=" not in line:
+        if section not in (*required, "consolevariables") or "=" not in line:
             continue
         key, val = (part.strip().casefold() for part in line.split("=", 1))
-        observed.setdefault((section, key), set()).add(val)
+        if section == "consolevariables":
+            renderer_keys = {k.casefold() for k, _ in required[
+                "/script/engine.renderersettings"]}
+            if key in renderer_keys:
+                section_key = "/script/engine.renderersettings"
+            else:
+                continue
+        else:
+            section_key = section
+        observed.setdefault((section_key, key), set()).add(val)
 
     # Never override an existing explicit, incompatible engine setting.
     missing = {}
