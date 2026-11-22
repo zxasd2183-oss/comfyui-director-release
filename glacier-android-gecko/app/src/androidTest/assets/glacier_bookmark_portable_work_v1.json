@@ -1,0 +1,20 @@
+{
+  "description": "Synthetic cross-platform encrypted work bookmarks fixture. Fixed salt/nonce for deterministic QA ONLY; never use fixed randomness for real user data.",
+  "space": "work",
+  "passphrase": "synthetic-bookmark-passphrase-2026",
+  "bookmarks": [
+    {
+      "profile": "work",
+      "title": "Glacier 示例工作站",
+      "url": "https://work.example.org/articles/bridge?v=1",
+      "at": 1795000000000
+    },
+    {
+      "profile": "work",
+      "title": "团队手册",
+      "url": "https://docs.example.org/guide",
+      "at": 1795000000001
+    }
+  ],
+  "envelope": "{\"format\":\"glacier-bookmarks-v1\",\"kdf\":\"pbkdf2-sha256-400k\",\"salt\":\"AAECAwQFBgcICQoLDA0ODw\",\"nonce\":\"ICEiIyQlJicoKSor\",\"ciphertext\":\"nzJFAWz5SRKGqkzoI4QCNhF4SVn5ZS7SJndO95j9Gjm8h_SqSivQjlHlVouyuK6187GG-owX0jlfMWRueZdKSPKfIB9YuaXMxUm8v7DYyGEyXE8s2u6fxfxFQJnaACt-tWnoP7BvMAzkZHWvtvv3-uH_qCqrC_Y5cQ-LVmmKEmVgugp2hAFBUgf6Sno54cSXBswIbd9kF3MYNYAc3gF0p_vpJqGY45lCZBTG7QDsd8GKH4TiMWCU4J3G2GFOJmgh53XpFXV5whbte1IbOlLna3nnsGeehbU6xIqdGaeV03UeGJPUjmdI6EcqyWllxRdwA21uw_Q4dRlJk-AOeMgxM_ujbLfvKyHNosZHSxaDXSsDF2lum7tsuMdg\"}"
+}
