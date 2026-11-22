@@ -262,6 +262,7 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
     request = folder / "requests" / (ident + ".json")
     result = folder / "results" / (ident + ".json")
     heartbeat = folder / "heartbeat" / (ident + ".json")
+    claimed = folder / "claimed" / (ident + ".json")
     if request.exists() or result.exists() or heartbeat.exists():
         raise JobError("hero_interactive_job_collision")
     _bridge_write(heartbeat, {"format": HERO_BRIDGE_FORMAT,
@@ -269,10 +270,17 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
     _bridge_write(request, {"format": HERO_BRIDGE_FORMAT,
                             "task": task, "job_id": ident,
                             "nonce": nonce, "created": requested})
+    claim_started = time.monotonic()
     deadline = time.monotonic() + min(timeout, HERO_BRIDGE_TIMEOUT) + 20
     next_heartbeat = 0
     try:
         while time.monotonic() < deadline:
+            # An old interactive runner does not know the new Cine allowlist.
+            # Fail fast without starting UE or waiting for the full GPU timeout.
+            if (task == "hero_cine_v260" and not claimed.exists()
+                    and time.monotonic() - claim_started > 12):
+                _bridge_signal_cancel(folder, ident)
+                raise JobError("hero_cine_interactive_runner_upgrade_required")
             if _bridge_controller_cancelled():
                 _bridge_signal_cancel(folder, ident)
                 # The UI Worker cannot abandon an interactive UE process before
