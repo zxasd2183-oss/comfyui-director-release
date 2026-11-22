@@ -145,6 +145,127 @@ def hero_project_state():
         return "unreadable"
 
 
+def prepare_hero_cine_render_config():
+    """Set only reviewed MetaHuman settings in the isolated hero project INI.
+
+    Existing configuration is backed up verbatim once, never clobbered.
+    Unknown or conflicting renderer settings fail closed. No UE launch, no
+    asset, Epic profile or original EP01 project modifications are allowed.
+    """
+    root = workspace_root()
+    project = hero_project_file()
+    ini = project.parent / "Config" / "DefaultEngine.ini"
+    tmp = ini.with_name("DefaultEngine.ini.director-staged.tmp")
+    backup = ini.with_name("DefaultEngine.ini.pre-director-cine-v1.bak")
+    if hero_project_state() != "prepared":
+        raise ValueError("hero_render_config_project_untrusted")
+    for parent in (root, root / "HeroProjects", project.parent, ini.parent):
+        if (parent.is_symlink() or getattr(parent, "is_junction", lambda: False)()
+                or not parent.is_dir()):
+            raise ValueError("hero_render_config_parent_unsafe")
+    for path in (ini, tmp, backup):
+        if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+            raise ValueError("hero_render_config_link_unsafe")
+    if tmp.exists() or (ini.exists() and not ini.is_file()):
+        raise ValueError("hero_render_config_staged_collision")
+    if os.name == "nt" and count_windows_ue_processes() != 0:
+        raise ValueError("hero_render_config_unreal_busy")
+    if ini.exists():
+        if not 0 <= ini.stat().st_size <= 131072:
+            raise ValueError("hero_render_config_ini_oversized")
+        original = ini.read_bytes()
+    else:
+        original = b""
+    try:
+        text_content = original.decode("utf-8-sig")
+    except UnicodeError:
+        raise ValueError("hero_render_config_ini_invalid_encoding") from None
+    required = {
+        "/script/windowstargetplatform.windowstargetsettings": (
+            ("DefaultGraphicsRHI", "DefaultGraphicsRHI_DX12"),
+            ("+D3D12TargetedShaderFormats", "PCD3D_SM6"),
+        ),
+        "/script/engine.renderersettings": (
+            ("r.GPUSkin.Support16BitBoneIndex", "True"),
+            ("r.GPUSkin.UnlimitedBoneInfluences", "True"),
+            ("r.SkinCache.CompileShaders", "True"),
+        ),
+    }
+    section = ""
+    observed = {}
+    for raw_line in text_content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith((";", "#")):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].strip().casefold()
+            continue
+        if section not in (*required, "consolevariables") or "=" not in line:
+            continue
+        key, val = (part.strip().casefold() for part in line.split("=", 1))
+        if section == "consolevariables":
+            renderer_keys = {k.casefold() for k, _ in required[
+                "/script/engine.renderersettings"]}
+            if key in renderer_keys:
+                section_key = "/script/engine.renderersettings"
+            else:
+                continue
+        else:
+            section_key = section
+        observed.setdefault((section_key, key), set()).add(val)
+
+    # Never override an existing explicit, incompatible engine setting.
+    missing = {}
+    for group, fields in required.items():
+        for key, value in fields:
+            found = observed.get((group, key.casefold()), set())
+            if found and value.casefold() not in found:
+                # SM5 and SM6 may coexist; all other mismatches are refusals.
+                if key != "+D3D12TargetedShaderFormats" or found != {"pcd3d_sm5"}:
+                    raise ValueError("hero_render_config_existing_conflict")
+            if value.casefold() not in found:
+                missing.setdefault(group, []).append((key, value))
+    if not missing:
+        return {"configured": True, "changed": False,
+                "backup_created": False, "ini_sha256": hashlib.sha256(original).hexdigest(),
+                "mutations_outside_isolated_config": False}
+    if "Director Hero Cine Renderer v1" in text_content:
+        raise ValueError("hero_render_config_existing_marker_incomplete")
+    if backup.exists():
+        raise ValueError("hero_render_config_backup_collision")
+    newline = "\r\n" if b"\r\n" in original else "\n"
+    additions = ["; Director Hero Cine Renderer v1 (official MetaHuman settings)"]
+    for group, fields in missing.items():
+        additions.append("[" + (
+            "/Script/WindowsTargetPlatform.WindowsTargetSettings" if
+            group == "/script/windowstargetplatform.windowstargetsettings"
+            else "/Script/Engine.RendererSettings") + "]")
+        additions.extend(key + "=" + value for key, value in fields)
+    prefix = "" if not original or original.endswith((b"\n", b"\r")) else newline
+    payload = original + (prefix + newline.join(additions) + newline).encode("utf-8")
+    if len(payload) > 131072:
+        raise ValueError("hero_render_config_ini_oversized")
+    # Retain an immutable byte-for-byte backup before replacing existing INI.
+    backup_created = False
+    if original:
+        with backup.open("xb") as fp:
+            fp.write(original)
+            fp.flush()
+            os.fsync(fp.fileno())
+        backup_created = True
+    with tmp.open("xb") as fp:
+        fp.write(payload)
+        fp.flush()
+        os.fsync(fp.fileno())
+    tmp.replace(ini)
+    if ini.read_bytes() != payload:
+        raise ValueError("hero_render_config_postwrite_unverified")
+    return {"configured": True, "changed": True,
+            "backup_created": backup_created,
+            "ini_sha256": hashlib.sha256(payload).hexdigest(),
+            "mutations_outside_isolated_config": False}
+
+
 def prepare_hero_metahuman_project():
     """Create EXACTLY one isolated project with MetaHuman enabled, no UE launch.
 
@@ -180,7 +301,9 @@ def prepare_hero_metahuman_project():
     if existing not in ("missing", "prepared"):
         raise ValueError("hero_project_collision_" + existing)
     if existing == "prepared":
+        config = prepare_hero_cine_render_config()
         return {"ok":True,"created":False,"state":"prepared",
+                "cine_renderer_config": config,
                 "relative_project":"HeroProjects/CHAR_GPT/DirectorHeroGPT.uproject",
                 "source_episode_untouched":True,"rendered_character":False}
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -192,7 +315,9 @@ def prepare_hero_metahuman_project():
         if folder.is_symlink() or getattr(folder, "is_junction", lambda:False)():
             raise ValueError("unsafe_hero_project_directory")
         folder.mkdir(exist_ok=True)
+    config = prepare_hero_cine_render_config()
     return {"ok":True,"created":True,"state":hero_project_state(),
+            "cine_renderer_config": config,
             "relative_project":"HeroProjects/CHAR_GPT/DirectorHeroGPT.uproject",
             "source_episode_untouched":True,"rendered_character":False}
 
@@ -870,7 +995,7 @@ def status():
         "codex_bridge": __import__("ue_process").codex_bridge_status(workspace_root()),
         "codex_last_report": __import__("ue_process").codex_latest_report(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.6.2",
+        "worker_version": "2.6.3",
     }
 
 
