@@ -57,6 +57,7 @@ class HeroProjectTests(unittest.TestCase):
             data = agent.hero_project_manifest()
             data["EngineAssociation"] = "{01234567-89AB-cdef-0123-456789ABCDEF}"
             target.write_text(json.dumps(data), encoding="utf-8")
+            (target.parent / "Config").mkdir()
             before = target.read_bytes()
             with patch.object(agent, "workspace_root", return_value=root), \
                  patch.object(agent, "find_ue_installations",
