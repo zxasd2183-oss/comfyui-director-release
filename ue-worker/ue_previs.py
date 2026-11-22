@@ -525,6 +525,149 @@ def build_gpt_hero_texture_sources(spec,root,work):
     }
 
 
+GPT_HERO_TEXTURE_SOURCE_JOB = "be13a12e3f2246c894d377ad12c19ae0"
+GPT_HERO_TEXTURE_SOURCE_SHA256 = (
+    "aaacb49c72bcbd0f37aa22df974d2765298eaf0277b5f6b795583616c262904f"
+)
+
+
+def build_gpt_hero_cine_assembly(spec, root, work):
+    """Build one non-approved UE Cine candidate from the pinned textured hero.
+
+    No existing masters or EP01 production sequences are touched. A new
+    directory is owned by this job, with no caller-supplied output paths.
+    """
+    from ue_jobs import JobError
+    from agent import trusted_hero_project_manifest
+    if spec.get("format") != "director_ue_hero_cine_v260":
+        raise JobError("hero_cine_format_invalid")
+    if (
+        (spec.get("project_id"), spec.get("episode_id"), spec.get("fps"),
+         spec.get("total_ms"), spec.get("total_frames"),
+         len(spec.get("shots", []))) != ("WaitingOffice", "EP01", 24, 160000, 3840, 31)
+        or [a["shot_id"] for a in spec["shots"]] !=
+           ["%02d" % i for i in range(1, 32)]
+    ):
+        raise JobError("hero_cine_requires_locked_ep01")
+    if (not re.fullmatch(r"[a-f0-9]{32}", work.name)
+            or work.parent != root / "Jobs"
+            or work.exists() or work.is_symlink()):
+        raise JobError("hero_cine_job_invalid")
+    project = root / "HeroProjects" / "CHAR_GPT" / "DirectorHeroGPT.uproject"
+    if project.is_symlink() or not project.is_file():
+        raise JobError("hero_cine_project_missing")
+    try:
+        if not trusted_hero_project_manifest(json.loads(project.read_text("utf-8"))):
+            raise JobError("hero_cine_project_untrusted")
+    except (TypeError, ValueError, UnicodeError):
+        raise JobError("hero_cine_project_invalid") from None
+    base = project.parent / "Content" / "Director" / "Candidates" / "EP01"
+    source = (base / "HeroTextures" / ("J" + GPT_HERO_TEXTURE_SOURCE_JOB) /
+              "MHC_CHAR_GPT_TexturesV1.uasset")
+    if source.is_symlink() or not source.is_file():
+        raise JobError("hero_cine_source_missing")
+    if hashlib.sha256(source.read_bytes()).hexdigest() != GPT_HERO_TEXTURE_SOURCE_SHA256:
+        raise JobError("hero_cine_source_hash_drift")
+    directory = base / "HeroCine" / ("J" + work.name)
+    if directory.exists() or directory.is_symlink():
+        raise JobError("hero_cine_output_collision")
+    script = Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if script.is_symlink() or not script.is_file():
+        raise JobError("hero_cine_script_missing")
+    work.mkdir(parents=True, exist_ok=False)
+    from ue_process import run_interactive_hero_rig
+    run_interactive_hero_rig(root, work, 780, task="hero_cine_v260")
+    receipt = work / "hero_cine_result.json"
+    if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size > 6000:
+        raise JobError("hero_cine_receipt_missing")
+    try:
+        data = json.loads(receipt.read_text("utf-8"))
+    except (ValueError, UnicodeError):
+        raise JobError("hero_cine_receipt_invalid") from None
+    if type(data) is not dict:
+        raise JobError("hero_cine_receipt_invalid")
+    if data.get("ok") is not True:
+        reason = data.get("reason")
+        if type(reason) is str and re.fullmatch(
+            r"hero_cine_failed_(?:identity|source|clone|register|readiness|"
+            r"build|inventory|save|release)", reason
+        ):
+            raise JobError(reason)
+        raise JobError("hero_cine_unverified")
+    target_prefix = ("/Game/Director/Candidates/EP01/HeroCine/J" + work.name)
+    expected_character = target_prefix + "/MHC_CHAR_GPT_CineV1"
+    if (data.get("character_id") != "CHAR_GPT"
+            or data.get("asset_path") != expected_character
+            or data.get("pipeline_type") != "CINEMATIC"
+            or data.get("source_unchanged") is not True
+            or data.get("face_blendshapes_verified") is not True
+            or data.get("has_high_resolution_textures") is not True
+            or data.get("build_executed") is not True
+            or any(data.get(key) is not False for key in
+                   ("wardrobe_ready", "groom_ready", "cinematic_character_ready",
+                    "character_master_approved"))):
+        raise JobError("hero_cine_receipt_inconsistent")
+    asset_list = data.get("asset_manifest")
+    if (type(asset_list) is not list or not 3 <= len(asset_list) <= 8
+            or type(data.get("total_assets")) is not int
+            or not 3 <= data["total_assets"] <= 1000):
+        raise JobError("hero_cine_manifest_invalid")
+    types = []
+    seen = set()
+    verified = []
+    for asset in asset_list:
+        if (type(asset) is not dict or
+                set(asset) != {"asset_path", "asset_class"} or
+                type(asset["asset_path"]) is not str or
+                type(asset["asset_class"]) is not str):
+            raise JobError("hero_cine_manifest_invalid")
+        package = asset["asset_path"]
+        classname = asset["asset_class"]
+        if (not package.startswith(target_prefix + "/Build/")
+                or package in seen
+                or not re.fullmatch(r"[A-Za-z0-9_]{1,80}", classname)
+                or not re.fullmatch(r"[A-Za-z0-9_/]{1,180}", package)):
+            raise JobError("hero_cine_manifest_path_invalid")
+        seen.add(package)
+        relative = package[len(target_prefix) + 1:].split("/")
+        f = directory.joinpath(*relative).with_suffix(".uasset")
+        if (f.is_symlink() or not f.is_file()
+                or not 1024 <= f.stat().st_size <= 512 * 1024 * 1024):
+            raise JobError("hero_cine_generated_asset_missing")
+        verified.append({
+            "asset_path": package, "asset_class": classname,
+            "bytes": f.stat().st_size,
+            "sha256": hashlib.sha256(f.read_bytes()).hexdigest()
+        })
+        types.append(classname)
+    if types.count("SkeletalMesh") < 2 or not any(
+        x.endswith("Blueprint") or x == "Blueprint" for x in types
+    ):
+        raise JobError("hero_cine_structure_not_verified")
+    target = directory / "MHC_CHAR_GPT_CineV1.uasset"
+    if target.is_symlink() or not target.is_file():
+        raise JobError("hero_cine_character_missing")
+    if hashlib.sha256(source.read_bytes()).hexdigest() != GPT_HERO_TEXTURE_SOURCE_SHA256:
+        raise JobError("hero_cine_source_modified")
+    return {
+        "kind": "real_native_metahuman_cinematic_assembly_v260",
+        "character_id": "CHAR_GPT",
+        "candidate_asset_path": expected_character,
+        "candidate_uasset_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        "candidate_uasset_bytes": target.stat().st_size,
+        "pipeline_type": "CINEMATIC",
+        "total_generated_assets": data["total_assets"],
+        "verified_key_assets": verified,
+        "source_texture_sha256": GPT_HERO_TEXTURE_SOURCE_SHA256,
+        "source_preserved": True,
+        "face_blendshapes_verified": True,
+        "has_high_resolution_textures": True,
+        "wardrobe_ready": False, "groom_ready": False,
+        "cinematic_character_ready": False,
+        "character_master_approved": False,
+    }
+
+
 def build_gpt_hero_face_contour(spec,root,work):
     """Unrigged MetaHuman contour on a NEW candidate; preserves amber source."""
     from ue_jobs import JobError,find_editor_cmd
