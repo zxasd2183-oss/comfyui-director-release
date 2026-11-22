@@ -427,6 +427,102 @@ def build_gpt_hero_cloud_rig(spec,root,work):
     }
 
 
+GPT_HERO_RIG_SOURCE_JOB = "b2a62bb6bc004de4ab747a9de4e3d16d"
+GPT_HERO_RIG_SOURCE_SHA256 = (
+    "78f4b9af93128aed62f0b9d348d758fff7769f292d970982ca80f149befaab24"
+)
+
+
+def build_gpt_hero_texture_sources(spec,root,work):
+    """Cloud-download skin textures on a fresh clone of the verified rig.
+
+    Fixed source bytes, fixed MetaHuman project and Studio EP01. The actual
+    Epic request executes only through the original interactive Windows user
+    session. No UI credentials, caller paths or arbitrary scripts accepted.
+    """
+    from ue_jobs import JobError
+    from agent import trusted_hero_project_manifest
+    if spec.get("format") != "director_ue_hero_textures_v250":
+        raise JobError("hero_texture_format_invalid")
+    if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
+         spec.get("total_ms"),spec.get("total_frames"),
+         len(spec.get("shots", []))) != ("WaitingOffice","EP01",24,160000,3840,31)
+        or [s["shot_id"] for s in spec["shots"]] !=
+        ["%02d" % i for i in range(1, 32)]):
+        raise JobError("hero_texture_requires_locked_ep01")
+    if not re.fullmatch(r"[a-f0-9]{32}",work.name) or work.exists() or work.is_symlink():
+        raise JobError("hero_texture_job_invalid")
+    project=root/"HeroProjects"/"CHAR_GPT"/"DirectorHeroGPT.uproject"
+    if project.is_symlink() or not project.is_file():
+        raise JobError("hero_texture_project_missing")
+    try:
+        if not trusted_hero_project_manifest(json.loads(project.read_text("utf-8"))):
+            raise JobError("hero_texture_project_untrusted")
+    except (TypeError,ValueError,UnicodeError):
+        raise JobError("hero_texture_project_invalid") from None
+    base=project.parent/"Content"/"Director"/"Candidates"/"EP01"
+    source=base/"HeroRigs"/("J"+GPT_HERO_RIG_SOURCE_JOB)/"MHC_CHAR_GPT_RigV1.uasset"
+    if source.is_symlink() or not source.is_file():
+        raise JobError("hero_texture_rig_missing")
+    if hashlib.sha256(source.read_bytes()).hexdigest()!=GPT_HERO_RIG_SOURCE_SHA256:
+        raise JobError("hero_texture_rig_hash_drift")
+    target=base/"HeroTextures"/("J"+work.name)/"MHC_CHAR_GPT_TexturesV1.uasset"
+    if target.exists() or target.is_symlink():
+        raise JobError("hero_texture_candidate_collision")
+    work.mkdir(parents=True,exist_ok=False)
+    receipt=work/"hero_texture_result.json"
+    from ue_process import run_interactive_hero_rig
+    run_interactive_hero_rig(root,work,780,task="hero_textures_v250")
+    if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size>6000:
+        raise JobError("hero_texture_receipt_missing")
+    try:
+        data=json.loads(receipt.read_text("utf-8"))
+    except (ValueError,UnicodeError):
+        raise JobError("hero_texture_receipt_invalid") from None
+    if type(data) is not dict:
+        raise JobError("hero_texture_receipt_invalid")
+    if data.get("ok") is not True:
+        reason=data.get("reason")
+        if type(reason) is str and re.fullmatch(
+            r"hero_texture_failed_(?:identity|source|clone|register|cloud_request|readback|save|release)",
+            reason):
+            raise JobError(reason)
+        raise JobError("hero_texture_unverified")
+    expected=("/Game/Director/Candidates/EP01/HeroTextures/J"+work.name+
+              "/MHC_CHAR_GPT_TexturesV1")
+    if (data.get("asset_path")!=expected or data.get("character_id")!="CHAR_GPT"
+            or data.get("asset_class")!="MetaHumanCharacter"
+            or any(data.get(k) is not True for k in
+                ("source_rig_preserved","face_blendshapes_verified",
+                 "cloud_texture_request_executed","has_high_resolution_textures"))
+            or any(data.get(k) is not False for k in
+                ("groom_ready","wardrobe_ready","cinematic_character_ready",
+                 "character_master_approved"))):
+        raise JobError("hero_texture_receipt_inconsistent")
+    if (target.is_symlink() or not target.is_file() or
+            not 1024<=target.stat().st_size<=512*1024*1024):
+        raise JobError("hero_texture_native_asset_missing")
+    if hashlib.sha256(source.read_bytes()).hexdigest()!=GPT_HERO_RIG_SOURCE_SHA256:
+        raise JobError("hero_texture_source_modified")
+    digest=hashlib.sha256(target.read_bytes()).hexdigest()
+    if digest==GPT_HERO_RIG_SOURCE_SHA256:
+        raise JobError("hero_texture_candidate_unchanged")
+    return {
+        "kind":"real_native_metahuman_highres_textures_v250",
+        "character_id":"CHAR_GPT",
+        "candidate_asset_path":expected,
+        "candidate_uasset_sha256":digest,
+        "candidate_uasset_bytes":target.stat().st_size,
+        "cloud_texture_request_executed":True,
+        "has_high_resolution_textures":True,
+        "face_blendshapes_verified":True,
+        "source_rig_sha256":GPT_HERO_RIG_SOURCE_SHA256,
+        "source_rig_preserved":True,
+        "groom_ready":False,"wardrobe_ready":False,
+        "cinematic_character_ready":False,"character_master_approved":False,
+    }
+
+
 def build_gpt_hero_face_contour(spec,root,work):
     """Unrigged MetaHuman contour on a NEW candidate; preserves amber source."""
     from ue_jobs import JobError,find_editor_cmd
