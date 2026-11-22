@@ -162,7 +162,8 @@ def enqueue_ue_episode_timeline(project_id, episode_id, studio_getter=None,
                     "audit_ep01_hero_metahuman_runtime","build_ep01_hero_amber_eyes",
                     "build_ep01_hero_face_contour",
                     "build_ep01_hero_cloud_rig",
-                    "build_ep01_hero_texture_sources"):
+                    "build_ep01_hero_texture_sources",
+                    "build_ep01_hero_cine_assembly"):
         return {"ok": False, "reason": "task_not_allowlisted"}
     if os.getenv("DIRECTOR_UE_WORKER_ENABLED", "0") != "1":
         return {"ok": False, "reason": "ue_worker_not_enabled"}
@@ -550,13 +551,50 @@ def enqueue_ue_hero_texture_sources(project_id,episode_id,
         task="build_ep01_hero_texture_sources")
 
 
+
+def enqueue_ue_hero_cine_assembly(project_id, episode_id,
+                                  studio_getter=None, cast_getter=None,
+                                  opener=None, token_file=None):
+    """One reviewed UE Cine candidate for the locked, textured GPT hero.
+
+    Never allows caller-specified source paths, actor code, wardrobe,
+    filenames, presets, user identities, rendering or auto-approval.
+    """
+    if (project_id, episode_id) != ("WaitingOffice", "EP01"):
+        return {"ok": False, "reason": "hero_cine_requires_locked_ep01"}
+    if cast_getter is None:
+        from hub_brain import call_studio
+        cast_getter = call_studio
+    try:
+        info = cast_getter("get_project_characters", {"project_id": project_id})
+        rows = info.get("characters") if type(info) is dict and info.get("ok") is True else None
+        matches = ([r for r in rows if type(r) is dict
+                    and r.get("character_id") == "CHAR_GPT"]
+                   if type(rows) is list else [])
+        if len(matches) != 1:
+            return {"ok": False, "reason": "hero_cine_character_missing"}
+        char = matches[0]
+        brief = char.get("design_language")
+        if (char.get("revision") != 2 or char.get("role") != "main"
+                or char.get("master") is not None or type(brief) is not str
+                or any(word not in brief for word in
+                       ("深栗色", "琥珀", "象牙白", "青绿"))):
+            return {"ok": False, "reason": "hero_cine_studio_lock_failed"}
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return {"ok": False, "reason": "hero_cine_studio_unavailable"}
+    return enqueue_ue_episode_timeline(
+        project_id, episode_id, studio_getter=studio_getter,
+        opener=opener, token_file=token_file, task="build_ep01_hero_cine_assembly"
+    )
+
+
 # V0.5 operator workflow: job-bound log tails and task cancellation only.
 # No caller-supplied filenames, PIDs, shell commands, or arbitrary URLs.
 LOG_KIND = frozenset({
     "unreal", "preset", "render_01", "render_13",
     "render_26", "render_31",
     "render_lineup", "render_gpt", "render_gem",
-    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit", "hero_eyes", "hero_face", "hero_rig", "hero_texture",
+    "render_ds", "render_cla", "render_zero", "hero_seed", "hero_audit", "hero_eyes", "hero_face", "hero_rig", "hero_texture", "hero_cine",
 })
 
 
