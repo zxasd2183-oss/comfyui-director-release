@@ -128,6 +128,10 @@ class HeroCineTests(unittest.TestCase):
         self.assertNotIn("subprocess", fragment)
         self.assertNotIn("os.system", fragment)
         self.assertNotIn("shell=True", fragment)
+        runner_source = (Path(__file__).resolve().parents[1] /
+                         "ue_process.py").read_text("utf-8")
+        self.assertIn("hero_cine_interactive_runner_upgrade_required", runner_source)
+        self.assertIn("_bridge_signal_cancel(folder, ident)", runner_source)
 
 
 if __name__ == "__main__":
