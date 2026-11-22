@@ -231,7 +231,8 @@ def _bridge_signal_cancel(folder, ident):
         _bridge_write(signal, {"format": HERO_BRIDGE_FORMAT, "job_id": ident})
 
 
-def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT):
+def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
+                             task="hero_rig_v200"):
     """Wait for the SAME Windows logon session to run the hardcoded rig task.
 
     This call is only from the verified v200 hero path, after source hashes
@@ -239,6 +240,8 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT):
     executable, arguments, paths or a session identity from an MCP client.
     """
     from ue_jobs import JobError
+    if task not in ("hero_rig_v200", "hero_textures_v250"):
+        raise JobError("hero_interactive_task_not_allowed")
     root, work = Path(root), Path(work)
     if not _hero_bridge_is_windows() or root != HERO_BRIDGE_ROOT:
         raise JobError("hero_interactive_windows_required")
@@ -264,7 +267,7 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT):
     _bridge_write(heartbeat, {"format": HERO_BRIDGE_FORMAT,
                               "job_id": ident, "updated": requested})
     _bridge_write(request, {"format": HERO_BRIDGE_FORMAT,
-                            "task": "hero_rig_v200", "job_id": ident,
+                            "task": task, "job_id": ident,
                             "nonce": nonce, "created": requested})
     deadline = time.monotonic() + min(timeout, HERO_BRIDGE_TIMEOUT) + 20
     next_heartbeat = 0
@@ -537,26 +540,58 @@ def _interactive_hero_preflight(root, job_id):
     return project, script
 
 
+def _interactive_hero_texture_preflight(root, job_id):
+    """Pin the exact signed-in MetaHuman rig before allowing textures."""
+    from agent import trusted_hero_project_manifest
+    from ue_previs import GPT_HERO_RIG_SOURCE_JOB, GPT_HERO_RIG_SOURCE_SHA256
+    project = root / "HeroProjects" / "CHAR_GPT" / "DirectorHeroGPT.uproject"
+    script = Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if (project.is_symlink() or not project.is_file()
+            or script.is_symlink() or not script.is_file()):
+        raise ValueError("hero_texture_interactive_source_missing")
+    if not trusted_hero_project_manifest(json.loads(project.read_text("utf-8"))):
+        raise ValueError("hero_texture_interactive_project_untrusted")
+    base = project.parent / "Content" / "Director" / "Candidates" / "EP01"
+    source = (base / "HeroRigs" / ("J" + GPT_HERO_RIG_SOURCE_JOB) /
+              "MHC_CHAR_GPT_RigV1.uasset")
+    if (source.is_symlink() or not source.is_file()
+            or hashlib.sha256(source.read_bytes()).hexdigest()
+            != GPT_HERO_RIG_SOURCE_SHA256):
+        raise ValueError("hero_texture_interactive_rig_drift")
+    target = (base / "HeroTextures" / ("J" + job_id) /
+              "MHC_CHAR_GPT_TexturesV1.uasset")
+    if target.exists() or target.is_symlink():
+        raise ValueError("hero_texture_interactive_target_collision")
+    return project, script
+
+
 def _interactive_hero_once(root, folder, ticket, user, session):
     # Use the actual GUI Editor for on-screen Epic login, not
     # UnrealEditor-Cmd.exe (a headless commandlet binary).
     editor = Path(r"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe")
     ident, nonce = ticket["job_id"], ticket["nonce"]
+    task = ticket["task"]
     work = root / "Jobs" / ident
     result = folder / "results" / (ident + ".json")
     cancel = folder / "cancel" / (ident + ".json")
     heartbeat = folder / "heartbeat" / (ident + ".json")
     exit_code, reason = -1, "not_started"
     try:
-        project, script = _interactive_hero_preflight(root, ident)
+        if task == "hero_rig_v200":
+            project, script = _interactive_hero_preflight(root, ident)
+        elif task == "hero_textures_v250":
+            project, script = _interactive_hero_texture_preflight(root, ident)
+        else:
+            raise ValueError("hero_interactive_unknown_task")
         if not work.is_dir() or work.is_symlink():
             raise ValueError("hero_interactive_work_missing")
-        receipt = work / "hero_rig_result.json"
+        receipt = work / ("hero_texture_result.json" if task == "hero_textures_v250"
+                          else "hero_rig_result.json")
         if receipt.exists():
             raise ValueError("hero_interactive_receipt_collision")
         env = os.environ.copy()  # Current RDP account's HKCU / Epic profile
         env["DIRECTOR_UE_JOB_ID"] = ident
-        env["DIRECTOR_UE_REVIEW_MODE"] = "hero_rig_v200"
+        env["DIRECTOR_UE_REVIEW_MODE"] = task
         env["DIRECTOR_UE_RESULT_FILE"] = str(receipt)
         # Crucially NOT -unattended: Epic may show account authorization.
         if not editor.is_file() or editor.is_symlink():
@@ -567,7 +602,8 @@ def _interactive_hero_once(root, folder, ticket, user, session):
         argv = [str(editor), str(project),
                 "-ExecutePythonScript=" + str(script),
                 "-nop4", "-nosplash", "-NoSound", "-log"]
-        with (work / "hero_rig.log").open("wb") as log:
+        log_name = "hero_texture.log" if task == "hero_textures_v250" else "hero_rig.log"
+        with (work / log_name).open("wb") as log:
             proc = subprocess.Popen(argv, cwd=str(root), env=env,
                                     stdout=log, stderr=subprocess.STDOUT)
             reason = "editor_failed"
@@ -642,7 +678,7 @@ def interactive_hero_runner_main():
                 if (type(item) is not dict or
                         set(item) != {"format", "task", "job_id", "nonce", "created"} or
                         item["format"] != HERO_BRIDGE_FORMAT or
-                        item["task"] != "hero_rig_v200" or
+                        item["task"] not in ("hero_rig_v200", "hero_textures_v250") or
                         item["job_id"] != request.stem or
                         not HERO_BRIDGE_ID.fullmatch(item["nonce"]) or
                         type(item["created"]) not in (int, float) or
