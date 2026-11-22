@@ -76,6 +76,12 @@ public class GlacierBookmarkReconcileInstrumentedTest {
         assertEquals(2,before.bookmarks.size()); // pending import never writes
         assertEquals(3,GlacierBookmarkReconcile.approveImport(
                 OWNER,"work",before,plan).getInt("version"));
+        before.history.add(row("private","New visit","https://private.example.org/history",88));
+        try {
+            GlacierBookmarkReconcile.approveImport(OWNER,"work",before,plan);
+            fail("An unrelated history edit must invalidate stale whole-library preview");
+        }catch(java.io.IOException expected){}
+        before.history.clear();
         before.bookmarks.add(row("work","Changed meanwhile","https://work.example.org/edit",52));
         try {
             GlacierBookmarkReconcile.approveImport(OWNER,"work",before,plan);

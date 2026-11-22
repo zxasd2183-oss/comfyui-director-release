@@ -21,14 +21,18 @@ import java.util.List;
  */
 final class GlacierBookmarkReconcile {
     static final class Plan {
-        final String kind, expectedLocalHash, ciphertext;
+        final String kind, expectedLocalHash, expectedSnapshotHash, ciphertext;
         final long expectedVersion;
         final BrowserLibraryStore.Snapshot preview;
         final JSONObject checkpoint;
         Plan(String k,String hash,long v,String encrypted,
              BrowserLibraryStore.Snapshot snapshot,JSONObject cp) {
-            kind=k;expectedLocalHash=hash;expectedVersion=v;
-            ciphertext=encrypted;preview=snapshot;checkpoint=cp;
+            this(k,hash,v,encrypted,snapshot,cp,null);
+        }
+        Plan(String k,String hash,long v,String encrypted,
+             BrowserLibraryStore.Snapshot snapshot,JSONObject cp,String fullHash) {
+            kind=k;expectedLocalHash=hash;expectedSnapshotHash=fullHash;
+            expectedVersion=v;ciphertext=encrypted;preview=snapshot;checkpoint=cp;
         }
     }
 
@@ -69,6 +73,39 @@ final class GlacierBookmarkReconcile {
         StringBuilder text=new StringBuilder();
         for(byte b:digest.digest())text.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
         return text.toString();
+    }
+
+    /** Hash the ENTIRE library, including other space, history and downloads.
+     * A delayed import must never re-save stale copies of unrelated records.
+     */
+    private static String snapshotHash(BrowserLibraryStore.Snapshot snapshot) throws Exception {
+        if(snapshot==null)throw new IOException("Missing browser library snapshot");
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        digestList(digest,"bookmarks",snapshot.bookmarks);
+        digestList(digest,"history",snapshot.history);
+        digestList(digest,"downloads",snapshot.downloads);
+        StringBuilder result=new StringBuilder();
+        for(byte b:digest.digest())
+            result.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+        return result.toString();
+    }
+
+    private static void digestText(MessageDigest digest,String value) {
+        byte[] raw=(value==null?"":value).getBytes(StandardCharsets.UTF_8);
+        digest.update(ByteBuffer.allocate(4).putInt(raw.length).array());
+        digest.update(raw);
+    }
+
+    private static void digestList(MessageDigest digest,String tag,
+            List<BrowserLibraryStore.Entry> entries) throws IOException {
+        digestText(digest,tag);
+        digest.update(ByteBuffer.allocate(4).putInt(entries.size()).array());
+        for(BrowserLibraryStore.Entry e:entries) {
+            if(e==null)throw new IOException("Corrupt browser library entry");
+            for(String value:new String[]{e.profile,e.title,e.url,e.name,e.uri,e.mime})
+                digestText(digest,value);
+            digest.update(ByteBuffer.allocate(16).putLong(e.bytes).putLong(e.timestamp).array());
+        }
     }
 
     private static BrowserLibraryStore.Snapshot fromRows(
@@ -151,7 +188,7 @@ final class GlacierBookmarkReconcile {
             BrowserLibraryStore.Snapshot merged=GlacierBookmarkPortable.previewMerge(
                     local,space,inSpace(remote,space));
             return new Plan("download_pending",currentHash,remoteVer,null,merged,
-                    checkpoint(owner,space,remoteVer,merged,remote));
+                    checkpoint(owner,space,remoteVer,merged,remote),snapshotHash(local));
         }
         return new Plan("unchanged",currentHash,remoteVer,null,null,null);
     }
@@ -173,7 +210,7 @@ final class GlacierBookmarkReconcile {
         BrowserLibraryStore.Snapshot merged=GlacierBookmarkPortable.previewMerge(
                 local,space,inSpace(remote,space));
         return new Plan("download_pending",localHash,version,null,merged,
-                checkpoint(owner,space,version,merged,remote));
+                checkpoint(owner,space,version,merged,remote),snapshotHash(local));
     }
 
     /** Caller verifies local unchanged, then saves preview in encrypted store. */
@@ -182,8 +219,10 @@ final class GlacierBookmarkReconcile {
         if(plan==null||!"download_pending".equals(plan.kind)
                 ||plan.preview==null||plan.checkpoint==null)
             throw new IOException("No import pending");
-        if(!hash(current,space).equals(plan.expectedLocalHash))
-            throw new IOException("Local bookmarks changed while download was pending");
+        if(!hash(current,space).equals(plan.expectedLocalHash)
+                ||plan.expectedSnapshotHash==null
+                ||!snapshotHash(current).equals(plan.expectedSnapshotHash))
+            throw new IOException("Browser library changed while download was pending");
         verifyCheckpoint(plan.checkpoint,owner,space);
         if(!hash(plan.preview,space).equals(plan.checkpoint.getString("local_hash")))
             throw new IOException("Import preview changed");
