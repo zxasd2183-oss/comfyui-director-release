@@ -80,7 +80,7 @@ class RendererConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "DirectorVirtualStudio"
             ini, _ = workspace(root,
-                b"[ConsoleVariables]\\nr.GPUSkin.UnlimitedBoneInfluences=False\\n")
+                b"[ConsoleVariables]\nr.GPUSkin.UnlimitedBoneInfluences=False\n")
             old = ini.read_bytes()
             with patch.object(agent, "workspace_root", return_value=root):
                 with self.assertRaisesRegex(ValueError, "existing_conflict"):
