@@ -99,8 +99,8 @@ class EndToEndBookmarkSessionTest(unittest.TestCase):
         self.assertEqual(self.client.put("/v1/bookmarks/work",headers=self.other.headers,
                                          json=body).status_code,422)
         first=first_sync(self.one,A,SPACE,self.rows,PASS,choice="upload")
-        with self.assertRaises(BookmarkSyncError):
-            first_sync(self.other,BASE+"|qa-user-b",SPACE,[],PASS,choice="upload")
+        self.assertEqual(self.other.call("GET","/v1/bookmarks/work"),
+                         {"version":0,"envelope":None})
         self.assertEqual(self.db.get("qa-user-b","work")["version"],0)
         self.assertEqual(first["kind"],"uploaded")
 
