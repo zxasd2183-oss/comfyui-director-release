@@ -444,11 +444,13 @@ def build_gpt_hero_texture_sources(spec,root,work):
     from agent import trusted_hero_project_manifest
     if spec.get("format") != "director_ue_hero_textures_v250":
         raise JobError("hero_texture_format_invalid")
-    if ((spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
+    if (
+        (spec.get("project_id"),spec.get("episode_id"),spec.get("fps"),
          spec.get("total_ms"),spec.get("total_frames"),
          len(spec.get("shots", []))) != ("WaitingOffice","EP01",24,160000,3840,31)
         or [s["shot_id"] for s in spec["shots"]] !=
-        ["%02d" % i for i in range(1, 32)]):
+           ["%02d" % i for i in range(1, 32)]
+    ):
         raise JobError("hero_texture_requires_locked_ep01")
     if not re.fullmatch(r"[a-f0-9]{32}",work.name) or work.exists() or work.is_symlink():
         raise JobError("hero_texture_job_invalid")
