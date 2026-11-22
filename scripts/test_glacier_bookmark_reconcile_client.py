@@ -133,6 +133,41 @@ class BookmarksClientReconcileTests(unittest.TestCase):
                                  initial["checkpoint"],SECRET)
             self.assertEqual(srv.version,1)
 
+    def test_bookmark_transport_reuses_approved_device_vless_only(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        state={"base":"https://sync.borealos.cn","token":"synthetic-token",
+               "username":"SyntheticUser","device_id":"synthetic-device-id",
+               "approved":True}
+        class Online:
+            def poll(self): return None
+        class Offline:
+            def poll(self): return 1
+        for platform,(_,client) in self.clients.items():
+            with self.subTest(platform=platform):
+                with self.assertRaises(client.BookmarkSyncError):
+                    client.existing_authorized_transport(state,Offline(),18991)
+                with self.assertRaises(client.BookmarkSyncError):
+                    client.existing_authorized_transport(state,None,18991)
+                with self.assertRaises(client.BookmarkSyncError):
+                    client.existing_authorized_transport({**state,"approved":False},Online(),18991)
+                with self.assertRaises(client.BookmarkSyncError):
+                    client.existing_authorized_transport({**state,"token":""},Online(),18991)
+                with self.assertRaises(client.BookmarkSyncError):
+                    client.existing_authorized_transport(state,Online(),0)
+                constructed=[]
+                def factory(base,port,token):
+                    constructed.append((base,port,token))
+                    return SimpleNamespace(call=lambda *args:None)
+                stub=SimpleNamespace(SyncTransport23=factory,
+                                     sync_url23=lambda url:url if url=="https://sync.borealos.cn" else "")
+                import sys
+                with patch.dict(sys.modules,{"glacier_sync23":stub}):
+                    transport, owner=client.existing_authorized_transport(state,Online(),18991)
+                self.assertTrue(callable(transport.call))
+                self.assertEqual(owner,"https://sync.borealos.cn|syntheticuser")
+                self.assertEqual(constructed,[("https://sync.borealos.cn",18991,"synthetic-token")])
+
     def test_offline_and_bad_server_response_do_not_change_local_state(self):
         for platform,(_,client) in self.clients.items():
             srv=FakeCAS()
