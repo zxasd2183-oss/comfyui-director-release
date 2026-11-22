@@ -23,6 +23,7 @@ from ue_worker_rpc import (call_ue_worker,
                            enqueue_ue_hero_amber_eyes as enqueue_ue_hero_amber_eyes_rpc,
                            enqueue_ue_hero_face_contour as enqueue_ue_hero_face_contour_rpc,
                            enqueue_ue_hero_cloud_rig as enqueue_ue_hero_cloud_rig_rpc,
+                           enqueue_ue_hero_texture_sources as enqueue_ue_hero_texture_sources_rpc,
                            get_ue_cast_review_png as get_ue_cast_review_png_rpc,
                            get_ue_episode_job_status as get_ue_episode_job_status_rpc,
                            get_ue_job_logs as get_ue_job_logs_rpc,
@@ -42,7 +43,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_codex_message_status as get_codex_message_status_rpc,
                            codex_queue_with_report as codex_queue_with_report_rpc)
 
-UE_HUB_API_VERSION = "1.10.3"
+UE_HUB_API_VERSION = "1.10.4"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -524,6 +525,7 @@ def enqueue_ue_hero_amber_eyes(project_id: str, episode_id: str) -> dict:
 DIRECTOR_TASK_ALLOWLIST = {
     "hero_face_contour_v1": enqueue_ue_hero_face_contour_rpc,
     "hero_full_face_rig_v1": enqueue_ue_hero_cloud_rig_rpc,
+    "hero_highres_textures_v1": enqueue_ue_hero_texture_sources_rpc,
     "codex_queue_probe_v1": lambda project_id, episode_id: codex_queue_message_rpc(
         "CODEX-HUB-1121: This is a read-only remote queue test. Reply ACK. Do not change files."),
     "codex_reply_probe_v1": lambda project_id, episode_id: codex_queue_with_report_rpc(
