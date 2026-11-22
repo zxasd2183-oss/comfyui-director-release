@@ -76,6 +76,17 @@ class RendererConfigTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "project_untrusted"):
                     agent.prepare_hero_cine_render_config()
 
+    def test_conflicting_console_variable_refuses_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "DirectorVirtualStudio"
+            ini, _ = workspace(root,
+                b"[ConsoleVariables]\\nr.GPUSkin.UnlimitedBoneInfluences=False\\n")
+            old = ini.read_bytes()
+            with patch.object(agent, "workspace_root", return_value=root):
+                with self.assertRaisesRegex(ValueError, "existing_conflict"):
+                    agent.prepare_hero_cine_render_config()
+            self.assertEqual(ini.read_bytes(), old)
+
     def test_existing_sm5_can_coexist_with_explicit_sm6(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "DirectorVirtualStudio"
