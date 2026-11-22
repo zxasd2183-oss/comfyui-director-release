@@ -583,6 +583,16 @@ def hero_cine_editor_log_diagnostic(root, started_at, finished_at):
             categories.add("editor_python_error")
         if "out of memory" in value or "outofmemory" in value:
             categories.add("memory_exhaustion")
+        if ("pcd3d_sm5" in value and
+                ("failed" in value or "error" in value) and
+                ("material" in value or "shader" in value)):
+            categories.add("sm5_material_compile_failure")
+        if "metahuman creator core data" in value and (
+                "not installed" in value or "missing" in value):
+            categories.add("metahuman_core_data_missing")
+        if ("metahuman" in value and
+                ("failed to load" in value or "missing package" in value)):
+            categories.add("metahuman_asset_dependency_missing")
     return {
         "available": True,
         "status": "analyzed" if scoped else "no_correlated_timestamped_lines",
