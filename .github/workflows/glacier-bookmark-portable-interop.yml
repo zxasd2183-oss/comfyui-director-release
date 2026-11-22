@@ -11,6 +11,7 @@ on:
       - 'glacier-windows/glacier_bookmark_sync_v1.py'
       - 'glacier-macos/glacier_bookmark_sync_v1.py'
       - 'scripts/test_glacier_bookmark_reconcile_client.py'
+      - 'scripts/test_glacier_bookmark_reconcile_e2e_api.py'
       - 'vps-control/glacier_bookmark_cas_store.py'
       - 'scripts/test_glacier_bookmark_cas_store.py'
       - 'vps-control/glacier_bookmark_api_router.py'
@@ -53,3 +54,7 @@ jobs:
         run: python -m unittest -v scripts.test_glacier_bookmark_cas_store
       - name: Confirm anonymous requests blocked and no client-selectable account
         run: python -m unittest -v scripts.test_glacier_bookmark_api_router
+      - name: Verify end-to-end client sync against authenticated in-process API
+        env:
+          PYTHONPATH: glacier-windows
+        run: python -m unittest -v scripts.test_glacier_bookmark_reconcile_e2e_api
