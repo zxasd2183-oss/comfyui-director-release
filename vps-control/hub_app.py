@@ -42,7 +42,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_codex_message_status as get_codex_message_status_rpc,
                            codex_queue_with_report as codex_queue_with_report_rpc)
 
-UE_HUB_API_VERSION = "1.10.2"
+UE_HUB_API_VERSION = "1.10.3"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -530,6 +530,17 @@ DIRECTOR_TASK_ALLOWLIST = {
         "CODEX-RETURN-1121: Reply CODEX-RETURN-1121-ACK. "
         "Do not run Unreal or change any project files. Only one small "
         "Director Bridge status text file is authorized."),
+    "codex_ep01_gap_matrix_v1": lambda project_id, episode_id: codex_queue_with_report_rpc(
+        "EP01-PRODUCTION-001. 请为《待回答事务所》WaitingOffice/EP01 做一次真实、零渲染的素材缺口清点。现有正式时间轴锁定31镜头、160秒、24fps；"
+        "镜头时长（秒）依次为3,5,5,6,6,5,5,6,5,6,5,5,4,5,5,5,7,5,5,5,6,5,6,5,4,5,5,6,5,5,5。"
+        "请只读查找 C:\\DirectorVirtualStudio 下现有UE项目/作业清单/输出（不要打开凭据、令牌或无关目录），"
+        "在 C:\\DirectorVirtualStudio\\Outputs\\ProductionReadiness\\ep01_gap_matrix_v1.csv 新建CSV，字段："
+        "shot_id,start_frame,end_frame_exclusive,duration_frames,ue_asset_status,video_take_status,audio_status,blocker,evidence_path。"
+        "总共31行，从0帧到3840帧；无逐镜头证据时标记UNVERIFIED，不得把计划或预览视为成片。"
+        "若目标文件已存在则只读核验，绝不能覆盖。"
+        "仅允许新建上述CSV及必要的Outputs子目录；不改动任何UE项目/现有资产/Worker代码，"
+        "不启动Unreal、ComfyUI、渲染或更新器，不运行安装器。"
+        "最后回复CSV路径、31行/3840帧检查结果、已验证可用镜头数以及首要阻塞项；如不能安全写入请说明原因。"),
     "hero_amber_eyes_v1": enqueue_ue_hero_amber_eyes_rpc,
     "hero_runtime_audit_v1": enqueue_ue_hero_runtime_audit_rpc,
 }
