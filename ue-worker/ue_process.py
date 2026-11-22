@@ -495,6 +495,104 @@ def hero_rig_editor_log_diagnostic(root, started_at, finished_at):
             "mutations_performed": False}
 
 
+def hero_cine_editor_log_diagnostic(root, started_at, finished_at):
+    """Classify the FAILED fixed Cine build from one trusted UE log only.
+
+    Read-only, bounded, time-correlated, no caller paths or raw log text.
+    Never exposes personal paths, tokens, URLs or editor diagnostics verbatim.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    root = Path(root)
+    if root != HERO_BRIDGE_ROOT:
+        return {"available": False, "reason": "invalid_diagnostic_target"}
+    try:
+        started = datetime.fromisoformat(started_at)
+        finished = datetime.fromisoformat(finished_at)
+        if (started.tzinfo is None or finished.tzinfo is None
+                or not started < finished <= started + timedelta(minutes=30)):
+            raise ValueError("invalid_job_window")
+        started = started.astimezone(timezone.utc)
+        finished = finished.astimezone(timezone.utc)
+    except (ValueError, TypeError, AttributeError):
+        return {"available": False, "reason": "invalid_job_window"}
+    path = (root / "HeroProjects" / "CHAR_GPT" / "Saved" /
+            "Logs" / "DirectorHeroGPT.log")
+    try:
+        _bridge_safe_parent(path, root)
+        if not path.is_file() or path.is_symlink():
+            return {"available": False, "reason": "editor_log_unavailable"}
+        meta = path.stat()
+        if not 1 <= meta.st_size <= 128 * 1024 * 1024:
+            return {"available": False, "reason": "editor_log_unavailable"}
+        mtime = datetime.fromtimestamp(meta.st_mtime, timezone.utc)
+        if not started - timedelta(minutes=2) <= mtime <= finished + timedelta(minutes=5):
+            return {"available": False, "reason": "editor_log_not_correlated"}
+        with path.open("rb") as fp:
+            fp.seek(max(0, meta.st_size - 4 * 1024 * 1024))
+            data = fp.read(4 * 1024 * 1024 + 1)
+    except (OSError, ValueError, OverflowError):
+        return {"available": False, "reason": "editor_log_unavailable"}
+    if len(data) > 4 * 1024 * 1024:
+        return {"available": False, "reason": "editor_log_changed"}
+
+    stamp = re.compile(
+        r"^\\[(\\d{4})\\.(\\d{2})\\.(\\d{2})-(\\d{2})\\.(\\d{2})\\.(\\d{2}):\\d+\\]")
+    categories = set()
+    scoped = 0
+    exception = "not_observed"
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        match = stamp.match(line)
+        if match is None:
+            continue
+        try:
+            moment = datetime(*[int(part) for part in match.groups()],
+                              tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if not started - timedelta(seconds=30) <= moment <= finished + timedelta(seconds=30):
+            continue
+        scoped += 1
+        value = line.casefold()
+        if "director ue cine phase=build" in value and "exception_class=" in value:
+            hit = re.search(r"exception_class=([A-Za-z_]{1,48})", line)
+            if hit:
+                cls = hit.group(1)
+                exception = (cls if cls in {
+                    "RuntimeError", "AttributeError", "TypeError",
+                    "ValueError", "Exception", "AssertionError",
+                    "NameError", "MemoryError"} else "other")
+            categories.add("cine_script_build_exception")
+        if "cannot break link" in value:
+            categories.add("control_rig_cannot_break_link")
+        if "logcontrolrig" in value and ("error" in value or "failed" in value):
+            categories.add("control_rig_error")
+        if "logrigvm" in value and ("error" in value or "failed" in value):
+            categories.add("rigvm_error")
+        if ("logkismetcompiler" in value or "logblueprint" in value) and (
+                "error" in value or "failed" in value):
+            categories.add("blueprint_compile_error")
+        if ("failed to load" in value or "can't find file" in value
+                or "missing dependency" in value or "missing package" in value):
+            categories.add("asset_dependency_missing")
+        if "wardrobe" in value and ("error" in value or "failed" in value):
+            categories.add("wardrobe_validation_error")
+        if "metahuman" in value and ("error" in value or "failed" in value):
+            categories.add("metahuman_build_error")
+        if "logpython" in value and ("error" in value or "traceback" in value):
+            categories.add("editor_python_error")
+        if "out of memory" in value or "outofmemory" in value:
+            categories.add("memory_exhaustion")
+    return {
+        "available": True,
+        "status": "analyzed" if scoped else "no_correlated_timestamped_lines",
+        "correlated_lines": min(scoped, 1000000),
+        "signals": sorted(categories),
+        "build_exception_class": exception,
+        "mutations_performed": False,
+    }
+
+
 def _windows_session_identity():
     if os.name != "nt":
         raise RuntimeError("interactive_windows_required")
