@@ -13,6 +13,7 @@ LOG_NAMES = {
     "hero_face": "hero_face.log",
     "hero_rig": "hero_rig.log",
     "hero_texture": "hero_texture.log",
+    "hero_cine": "hero_cine.log",
     "render_01": "render_01.log",
     "render_13": "render_13.log",
     "render_26": "render_26.log",

@@ -794,7 +794,7 @@ def status():
         "codex_bridge": __import__("ue_process").codex_bridge_status(workspace_root()),
         "codex_last_report": __import__("ue_process").codex_latest_report(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.5.0",
+        "worker_version": "2.6.0",
     }
 
 
@@ -887,7 +887,8 @@ def capabilities():
                  "build_ep01_hero_amber_eyes",
                  "build_ep01_hero_face_contour",
                  "build_ep01_hero_cloud_rig",
-                 "build_ep01_hero_texture_sources"],
+                 "build_ep01_hero_texture_sources",
+                 "build_ep01_hero_cine_assembly"],
         "job_status_route": "/v2/jobs/<job_id>",
         "job_logs_route": "/v3/jobs/<job_id>/logs/<kind>",
         "job_cancel_route": "/v3/jobs/<job_id>/cancel",
@@ -904,6 +905,7 @@ def capabilities():
         "supports_hero_face_contour_candidate": True,
         "supports_hero_cloud_rig_candidate": True,
         "supports_hero_texture_sources_candidate": True,
+        "supports_hero_cine_assembly_candidate": True,
         "supports_ue_power_readiness": True,
         "power_readiness_route": "/v7/power/readiness",
         "cast_review_image_route": "/v11/jobs/<job_id>/cast-review/<view>",

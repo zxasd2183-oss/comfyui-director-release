@@ -240,7 +240,7 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
     executable, arguments, paths or a session identity from an MCP client.
     """
     from ue_jobs import JobError
-    if task not in ("hero_rig_v200", "hero_textures_v250"):
+    if task not in ("hero_rig_v200", "hero_textures_v250", "hero_cine_v260"):
         raise JobError("hero_interactive_task_not_allowed")
     root, work = Path(root), Path(work)
     if not _hero_bridge_is_windows() or root != HERO_BRIDGE_ROOT:
@@ -262,6 +262,7 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
     request = folder / "requests" / (ident + ".json")
     result = folder / "results" / (ident + ".json")
     heartbeat = folder / "heartbeat" / (ident + ".json")
+    claimed = folder / "claimed" / (ident + ".json")
     if request.exists() or result.exists() or heartbeat.exists():
         raise JobError("hero_interactive_job_collision")
     _bridge_write(heartbeat, {"format": HERO_BRIDGE_FORMAT,
@@ -269,10 +270,17 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
     _bridge_write(request, {"format": HERO_BRIDGE_FORMAT,
                             "task": task, "job_id": ident,
                             "nonce": nonce, "created": requested})
+    claim_started = time.monotonic()
     deadline = time.monotonic() + min(timeout, HERO_BRIDGE_TIMEOUT) + 20
     next_heartbeat = 0
     try:
         while time.monotonic() < deadline:
+            # An old interactive runner does not know the new Cine allowlist.
+            # Fail fast without starting UE or waiting for the full GPU timeout.
+            if (task == "hero_cine_v260" and not claimed.exists()
+                    and time.monotonic() - claim_started > 12):
+                _bridge_signal_cancel(folder, ident)
+                raise JobError("hero_cine_interactive_runner_upgrade_required")
             if _bridge_controller_cancelled():
                 _bridge_signal_cancel(folder, ident)
                 # The UI Worker cannot abandon an interactive UE process before
@@ -565,6 +573,30 @@ def _interactive_hero_texture_preflight(root, job_id):
     return project, script
 
 
+def _interactive_hero_cine_preflight(root, job_id):
+    """Only the SHA-pinned textured hero may enter the new Cine assembly."""
+    from agent import trusted_hero_project_manifest
+    from ue_previs import GPT_HERO_TEXTURE_SOURCE_JOB, GPT_HERO_TEXTURE_SOURCE_SHA256
+    project = root / "HeroProjects" / "CHAR_GPT" / "DirectorHeroGPT.uproject"
+    script = Path(__file__).resolve().with_name("unreal_create_previs_preset.py")
+    if (project.is_symlink() or not project.is_file()
+            or script.is_symlink() or not script.is_file()):
+        raise ValueError("hero_cine_interactive_project_missing")
+    if not trusted_hero_project_manifest(json.loads(project.read_text("utf-8"))):
+        raise ValueError("hero_cine_interactive_project_untrusted")
+    base = project.parent / "Content" / "Director" / "Candidates" / "EP01"
+    source = (base / "HeroTextures" / ("J" + GPT_HERO_TEXTURE_SOURCE_JOB)
+              / "MHC_CHAR_GPT_TexturesV1.uasset")
+    if (source.is_symlink() or not source.is_file()
+            or hashlib.sha256(source.read_bytes()).hexdigest()
+            != GPT_HERO_TEXTURE_SOURCE_SHA256):
+        raise ValueError("hero_cine_interactive_source_changed")
+    target = base / "HeroCine" / ("J" + job_id)
+    if target.exists() or target.is_symlink():
+        raise ValueError("hero_cine_interactive_target_collision")
+    return project, script
+
+
 def _interactive_hero_once(root, folder, ticket, user, session):
     # Use the actual GUI Editor for on-screen Epic login, not
     # UnrealEditor-Cmd.exe (a headless commandlet binary).
@@ -581,11 +613,14 @@ def _interactive_hero_once(root, folder, ticket, user, session):
             project, script = _interactive_hero_preflight(root, ident)
         elif task == "hero_textures_v250":
             project, script = _interactive_hero_texture_preflight(root, ident)
+        elif task == "hero_cine_v260":
+            project, script = _interactive_hero_cine_preflight(root, ident)
         else:
             raise ValueError("hero_interactive_unknown_task")
         if not work.is_dir() or work.is_symlink():
             raise ValueError("hero_interactive_work_missing")
-        receipt = work / ("hero_texture_result.json" if task == "hero_textures_v250"
+        receipt = work / ("hero_cine_result.json" if task == "hero_cine_v260"
+                          else "hero_texture_result.json" if task == "hero_textures_v250"
                           else "hero_rig_result.json")
         if receipt.exists():
             raise ValueError("hero_interactive_receipt_collision")
@@ -602,7 +637,9 @@ def _interactive_hero_once(root, folder, ticket, user, session):
         argv = [str(editor), str(project),
                 "-ExecutePythonScript=" + str(script),
                 "-nop4", "-nosplash", "-NoSound", "-log"]
-        log_name = "hero_texture.log" if task == "hero_textures_v250" else "hero_rig.log"
+        log_name = ("hero_cine.log" if task == "hero_cine_v260"
+                    else "hero_texture.log" if task == "hero_textures_v250"
+                    else "hero_rig.log")
         with (work / log_name).open("wb") as log:
             proc = subprocess.Popen(argv, cwd=str(root), env=env,
                                     stdout=log, stderr=subprocess.STDOUT)
@@ -678,7 +715,7 @@ def interactive_hero_runner_main():
                 if (type(item) is not dict or
                         set(item) != {"format", "task", "job_id", "nonce", "created"} or
                         item["format"] != HERO_BRIDGE_FORMAT or
-                        item["task"] not in ("hero_rig_v200", "hero_textures_v250") or
+                        item["task"] not in ("hero_rig_v200", "hero_textures_v250", "hero_cine_v260") or
                         item["job_id"] != request.stem or
                         not HERO_BRIDGE_ID.fullmatch(item["nonce"]) or
                         type(item["created"]) not in (int, float) or
