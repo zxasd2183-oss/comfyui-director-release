@@ -71,7 +71,8 @@ class V170FaceRpcTests(unittest.TestCase):
         self.assertEqual(set(hub_app.DIRECTOR_TASK_ALLOWLIST),{
             "hero_face_contour_v1","hero_amber_eyes_v1",
             "hero_runtime_audit_v1","hero_full_face_rig_v1",
-            "codex_queue_probe_v1","codex_reply_probe_v1"})
+            "codex_queue_probe_v1","codex_reply_probe_v1",
+            "codex_ep01_gap_matrix_v1"})
         with patch.dict(hub_app.DIRECTOR_TASK_ALLOWLIST,{
             "hero_face_contour_v1":lambda p,e:{"ok":True,"task":"face",
                                                "project_id":p,"episode_id":e}}):
@@ -79,6 +80,28 @@ class V170FaceRpcTests(unittest.TestCase):
                                                    "WaitingOffice","EP01")
         self.assertTrue(response["ok"])
         self.assertEqual(response["task"],"face")
+
+
+    def test_ep01_gap_matrix_dispatch_is_fixed_and_scoped(self):
+        with patch.object(hub_app, "codex_queue_with_report_rpc",
+                          return_value={"ok":True, "state":"staged"}) as deliver:
+            denied = hub_app.submit_director_task(
+                "codex_ep01_gap_matrix_v1", "WaitingOffice", "EP02")
+            self.assertEqual(denied["reason"],
+                             "director_task_requires_locked_ep01")
+            deliver.assert_not_called()
+            accepted = hub_app.submit_director_task(
+                "codex_ep01_gap_matrix_v1", "WaitingOffice", "EP01")
+            self.assertTrue(accepted["ok"])
+            deliver.assert_called_once()
+            message = deliver.call_args.args[0]
+            self.assertIn("ep01_gap_matrix_v1.csv", message)
+            self.assertIn("31", message)
+            self.assertIn("3840", message)
+            self.assertIn("不启动Unreal", message)
+            self.assertIn("绝不能覆盖", message)
+            self.assertLessEqual(len(message), 1200)
+            self.assertLessEqual(len(message.encode("utf-8")), 3000)
 
 
 if __name__=="__main__":
