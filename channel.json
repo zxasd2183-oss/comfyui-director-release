@@ -1,7 +1,7 @@
 {
-  "archive_sha256": "82eac930207db131cd6b2f096fac709137be68c9266d4b57d0ba78f7570cb1c8",
-  "archive_size": 81070,
+  "archive_sha256": "01fe0848361d5db79a3b38b6bd0fdda8f9130a616e7955c64b3b6f124e511464",
+  "archive_size": 82658,
   "format": "director-ue-signed-update-v1",
-  "signature": "41822c70b0fb4c6f8f37d9fb6bac18b7361de01e8d9062d5b7b33edd3d0119088e3f0750cfb9dfb935c0dece3f04a4fba85d6f433275602182e850ab2f3a3f09",
-  "version": "2.6.2"
+  "signature": "62efda807543301090ff2c5899cf05b8d8fc8c36a5831c0b44c687670f03c37817bbd01f525cd3c0495ebd7d99e52f7e8277f7897eb7ef4e3f34ebb356286f0d",
+  "version": "2.6.3"
 }
