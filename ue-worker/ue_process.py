@@ -537,7 +537,7 @@ def hero_cine_editor_log_diagnostic(root, started_at, finished_at):
         return {"available": False, "reason": "editor_log_changed"}
 
     stamp = re.compile(
-        r"^\\[(\\d{4})\\.(\\d{2})\\.(\\d{2})-(\\d{2})\\.(\\d{2})\\.(\\d{2}):\\d+\\]")
+        r"^\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):\d+\]")
     categories = set()
     scoped = 0
     exception = "not_observed"
