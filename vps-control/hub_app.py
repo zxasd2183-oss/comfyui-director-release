@@ -44,7 +44,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_codex_message_status as get_codex_message_status_rpc,
                            codex_queue_with_report as codex_queue_with_report_rpc)
 
-UE_HUB_API_VERSION = "1.10.5"
+UE_HUB_API_VERSION = "1.10.6"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -534,6 +534,14 @@ DIRECTOR_TASK_ALLOWLIST = {
         "CODEX-RETURN-1121: Reply CODEX-RETURN-1121-ACK. "
         "Do not run Unreal or change any project files. Only one small "
         "Director Bridge status text file is authorized."),
+    "codex_cine_failure_diagnostic_v1": lambda project_id, episode_id: codex_queue_with_report_rpc(
+        "EP01-CINE-DIAG-001. 只读诊断失败的吉皮提Cine装配作业3f551a7db8ce46c0b668ed67455d7b02。 只能读取 C:\\"
+        "DirectorVirtualStudio\\Jobs\\3f551a7db8ce46c0b668ed67455d7b02\\hero_cine_result.jso"
+        "n 和 C:\\DirectorVirtualStudio\\HeroProjects\\CHAR_GPT\\Saved\\Logs\\DirectorHeroGPT.lo"
+        "g（若不存在，仅列出同目录日志文件名，不得打开其它目录）。 限定2026-11-22 07:34至07:41 UTC，查找MetaHuman build、Pyt"
+        "hon Exception、ControlRig、Missing Asset、assembly error。 只返回失败阶段、异常类型、最多五条去敏关键错误摘要"
+        "及时间；不返回日志全文、用户名、令牌、邮箱、URL或账号数据。 不启动UE、渲染、自动更新或安装器；不更改、保存、删除资产、任务、代码和日志；不读取无关目录。若"
+        "无证据回复UNVERIFIED。"),
     "codex_ep01_gap_matrix_v1": lambda project_id, episode_id: codex_queue_with_report_rpc(
         "EP01-PRODUCTION-001. 请为《待回答事务所》WaitingOffice/EP01 做一次真实、零渲染的素材缺口清点。现有正式时间轴锁定31镜头、160秒、24fps；"
         "镜头时长（秒）依次为3,5,5,6,6,5,5,6,5,6,5,5,4,5,5,5,7,5,5,5,6,5,6,5,4,5,5,6,5,5,5。"
