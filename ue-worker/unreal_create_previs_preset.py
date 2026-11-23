@@ -1031,6 +1031,27 @@ def hero_face_contour_main():
 
 
 
+def _safe_cine_exception_excerpt(error):
+    """Return one bounded, secret-scrubbed local UE error message.
+
+    Never echo arbitrary user paths, URLs, authentication values or emails.
+    Real-time diagnostics only: no logs or editor project files are read here.
+    """
+    raw = str(error)[:8192]
+    for pattern in (
+        r"(?i)https?://[^\s\)\]\}]+",
+        r"(?i)\b[a-z0-9.+_-]+@[a-z0-9.-]+\.[a-z]{2,}\b",
+        r"(?i)\b(?:token|password|client[_-]?secret|api[_-]?key|authorization|bearer)\s*[:=]\s*[^\s,;]+",
+        r"(?i)[a-z]:\\[^\s,;]*",
+        r"(?i)\\\\[^\s,;]+",
+        r"(?i)/(?:home|users|mnt|var|etc|tmp)/[^\s,;]+",
+    ):
+        raw = re.sub(pattern, "[REDACTED]", raw)
+    raw = re.sub(r"[\x00-\x1f\x7f]+", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw[:480] if raw else "empty_exception_message"
+
+
 def hero_cine_assembly_main():
     """Assemble a pinned MetaHuman to NEW UE Cine assets, without approval.
 
@@ -1137,8 +1158,10 @@ def hero_cine_assembly_main():
         }
     except Exception as exc:
         report = {"ok": False, "reason": "hero_cine_failed_" + phase}
+        excerpt = _safe_cine_exception_excerpt(exc)
         unreal.log_warning("Director UE Cine phase=" + phase +
-                           " exception_class=" + type(exc).__name__)
+                           " exception_class=" + type(exc).__name__ +
+                           " exception_excerpt=" + excerpt)
     finally:
         if registered:
             try:
