@@ -272,7 +272,7 @@ def main():
     record("native_password_manager","Native password manager opens with encrypted-vault summary and site search")
     shot("01-password-manager")
     tap(text="完成")
-    tap(text="关闭")
+    await_ui(desc="Glacier 账号 · 未登录",timeout=25)
     record("mobile_profile_avatar","Circular guest avatar opens the signed-out profile dashboard; no toolbar login word")
     record("m02_mobile_ui","Chrome-style single omnibox row, home, tabs and overflow visible")
     tap(desc="更多选项")
