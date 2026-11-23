@@ -553,6 +553,15 @@ class JobManager:
                     response["editor_log_diagnostic"] = {
                         "available": False, "reason": "diagnostic_unavailable"}
         if (response.get("task") == "build_ep01_hero_cine_assembly"
+                and response.get("state") == "failed"):
+            from ue_process import hero_cine_bridge_diagnostic
+            try:
+                response["interactive_diagnostic"] = hero_cine_bridge_diagnostic(
+                    self.root_factory(), job_id)
+            except (OSError, ValueError, TypeError):
+                response["interactive_diagnostic"] = {
+                    "available": False, "reason": "diagnostic_unavailable"}
+        if (response.get("task") == "build_ep01_hero_cine_assembly"
                 and response.get("state") == "failed"
                 and response.get("reason") == "hero_cine_failed_build"):
             from ue_process import hero_cine_editor_log_diagnostic
