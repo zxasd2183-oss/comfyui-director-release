@@ -1,4 +1,6 @@
 """Zero-UE tests for fixed failed Cine build's sanitized Editor log readback."""
+import ast
+import re
 import os
 import sys
 import tempfile
@@ -50,6 +52,61 @@ class CineFailedBuildLogTests(unittest.TestCase):
             self.assertNotIn("HiddenOwner", str(result))
             self.assertFalse(result["mutations_performed"])
             self.assertEqual(before, path.read_bytes())
+
+    def test_new_build_exception_excerpt_is_scoped_and_safe(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = make_log(root, [
+                "[2026.11.22-07.36.00:111]LogPython: Warning: "
+                "Director UE Cine phase=build exception_class=RuntimeError "
+                "exception_excerpt=Cannot break link Multiply.Result.Z -> RerouteNode_1",
+            ])
+            before = path.read_bytes()
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                result = ue_process.hero_cine_editor_log_diagnostic(root, START, END)
+            self.assertEqual(result["build_exception_class"], "RuntimeError")
+            self.assertEqual(result["build_exception_excerpt"],
+                             "Cannot break link Multiply.Result.Z -> RerouteNode_1")
+            self.assertEqual(before, path.read_bytes())
+
+    def test_unredacted_exception_excerpt_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_log(root, [
+                "[2026.11.22-07.36.00:111]LogPython: Warning: "
+                "Director UE Cine phase=build exception_class=RuntimeError "
+                "exception_excerpt=Authorization: private-key",
+            ])
+            with patch.object(ue_process, "HERO_BRIDGE_ROOT", root):
+                result = ue_process.hero_cine_editor_log_diagnostic(root, START, END)
+            self.assertEqual(result["build_exception_excerpt"],
+                             "redacted_untrusted_excerpt")
+            self.assertNotIn("private-key", str(result))
+
+    def test_editor_helper_redacts_local_secrets_and_bounds_native_error(self):
+        # Extract just the pure helper, not the UE editor script's unreal imports.
+        source = (Path(__file__).resolve().parents[1] /
+                  "unreal_create_previs_preset.py").read_text("utf-8")
+        tree = ast.parse(source)
+        node = next(x for x in tree.body
+                    if isinstance(x, ast.FunctionDef)
+                    and x.name == "_safe_cine_exception_excerpt")
+        module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
+        namespace = {"re": re}
+        exec(compile(module, "<isolated_helper>", "exec"), namespace)
+        fn = namespace["_safe_cine_exception_excerpt"]
+        error = RuntimeError(
+            "Cannot break link Foo.Result.Z -> Bar.Value "
+            "token=secret123 password=secret456 "
+            "C:\\Users\\Somebody\\Documents\\user_file.ini "
+            "contact someone@example.com https://internal.invalid/private")
+        out = fn(error)
+        self.assertIn("Cannot break link", out)
+        for secret in ("secret123", "secret456", "Somebody", "someone@example",
+                       "internal.invalid"):
+            self.assertNotIn(secret, out)
+        self.assertLessEqual(len(out), 480)
+        self.assertNotIn("\\n", out)
 
     def test_missing_or_stale_log_does_not_invent_cause(self):
         with tempfile.TemporaryDirectory() as td:
