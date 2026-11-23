@@ -541,6 +541,7 @@ def hero_cine_editor_log_diagnostic(root, started_at, finished_at):
     categories = set()
     scoped = 0
     exception = "not_observed"
+    excerpt = "not_observed"
     for line in data.decode("utf-8", errors="replace").splitlines():
         match = stamp.match(line)
         if match is None:
@@ -562,6 +563,22 @@ def hero_cine_editor_log_diagnostic(root, started_at, finished_at):
                     "RuntimeError", "AttributeError", "TypeError",
                     "ValueError", "Exception", "AssertionError",
                     "NameError", "MemoryError"} else "other")
+            match_excerpt = re.search(r" exception_excerpt=(.{1,480})$", line)
+            if match_excerpt:
+                possible = match_excerpt.group(1).strip()
+                # Fail closed on any token, URI, OS path or address pattern
+                # even if the UE-side recorder's scrubber regresses.
+                if not re.search(
+                    r"(?i)(?:https?://|[a-z]:\\|\\\\|"
+                    r"/(?:users|home|mnt|var|etc|tmp)/|"
+                    r"\b(?:token|password|authorization|bearer|"
+                    r"api[_-]?key|client[_-]?secret)\s*[:=]|"
+                    r"\b[a-z0-9.+_-]+@[a-z0-9.-]+\.[a-z]{2,})",
+                    possible,
+                ):
+                    excerpt = possible
+                else:
+                    excerpt = "redacted_untrusted_excerpt"
             categories.add("cine_script_build_exception")
         if "cannot break link" in value:
             categories.add("control_rig_cannot_break_link")
@@ -599,6 +616,7 @@ def hero_cine_editor_log_diagnostic(root, started_at, finished_at):
         "correlated_lines": min(scoped, 1000000),
         "signals": sorted(categories),
         "build_exception_class": exception,
+        "build_exception_excerpt": excerpt,
         "mutations_performed": False,
     }
 
