@@ -319,6 +319,27 @@ class InteractiveHeroTests(unittest.TestCase):
         self.assertNotIn("-LogonType Password", code)
         self.assertNotIn("ConvertTo-SecureString", code)
         self.assertNotIn("Invoke-Expression", code)
+        # Two exact triggers: owner logon and owner RDP reconnection.
+        self.assertIn("New-ScheduledTaskTrigger -AtLogOn -User $identity.Name", code)
+        self.assertIn("$currentDefinition.Triggers.Create(11)", code)
+        self.assertIn("$rdpTrigger.UserId = $identity.User.Value", code)
+        self.assertIn("$rdpTrigger.StateChange = 3", code)
+        self.assertIn("$targetSid -ne $expectedSid", code)
+        self.assertIn("$remoteConnectCount -gt 1", code)
+        # Only an already verified task may be migrated; never a foreign one.
+        self.assertIn("verified_logon_only", code)
+        self.assertIn("unexpected_task_action", code)
+        self.assertIn("unexpected_task_description", code)
+        self.assertIn("principal_not_interactive_token", code)
+        self.assertIn("RegisterTaskDefinition(", code)
+        self.assertIn("Task update failed and was restored", code)
+        self.assertIn("Start-ScheduledTask -TaskName $taskName", code)
+        self.assertIn("RestartCount 12", code)
+        self.assertIn("-MultipleInstances IgnoreNew", code)
+        self.assertIn('"2.6.3"', code)
+        self.assertNotIn("Invoke-WebRequest", code)
+        self.assertNotIn("Start-Process", code)
+        self.assertNotIn("RunLevel Highest", code)
 
 
 if __name__ == "__main__":

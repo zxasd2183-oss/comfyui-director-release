@@ -103,6 +103,63 @@ jobs:
           } finally {
             Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
           }
+      - name: Verify RDP reconnect trigger and owner token in Windows Task Scheduler
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $name = 'DirectorHeroRdpCI-' + [Guid]::NewGuid().ToString('N')
+          $action = New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\cmd.exe') -Argument '/c exit 0'
+          $logon = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
+          $principal = New-ScheduledTaskPrincipal -UserId $identity.User.Value -LogonType Interactive -RunLevel Limited
+          try {
+            Register-ScheduledTask -TaskName $name -Action $action -Trigger $logon -Principal $principal -Description 'Director CI owner reconnect' -ErrorAction Stop | Out-Null
+            $scheduler = New-Object -ComObject Schedule.Service
+            $scheduler.Connect()
+            $folder = $scheduler.GetFolder('\')
+            $definition = $folder.GetTask($name).Definition
+            $remote = $definition.Triggers.Create(11)
+            $remote.Id = 'Director-Owner-Rdp-Reconnect'
+            $remote.UserId = $identity.User.Value
+            $remote.StateChange = 3
+            $remote.Enabled = $true
+            $definition.Settings.RestartCount = 12
+            $definition.Settings.RestartInterval = 'PT1M'
+            $folder.RegisterTaskDefinition($name, $definition, 6, $identity.User.Value, $null, 3, $null) | Out-Null
+            $saved = $folder.GetTask($name).Definition
+            if ([int]$saved.Principal.LogonType -ne 3 -or [int]$saved.Principal.RunLevel -ne 0) {
+              throw 'Persisted task may not use an elevated or noninteractive principal'
+            }
+            if ([int]$saved.Triggers.Count -ne 2) { throw 'Unexpected trigger count' }
+            $seenLogon = 0
+            $seenRdp = 0
+            for ($i = 1; $i -le [int]$saved.Triggers.Count; $i++) {
+              $trigger = $saved.Triggers.Item($i)
+              if ([string]$trigger.UserId -eq $identity.User.Value) {
+                $sid = $identity.User.Value
+              } else {
+                $account = New-Object System.Security.Principal.NTAccount([string]$trigger.UserId)
+                $sid = $account.Translate([Security.Principal.SecurityIdentifier]).Value
+              }
+              if ($sid -ne $identity.User.Value -or -not [bool]$trigger.Enabled) {
+                throw 'Trigger is not scoped to the same active Windows user'
+              }
+              if ([int]$trigger.Type -eq 9) {
+                $seenLogon++
+              } elseif ([int]$trigger.Type -eq 11 -and [int]$trigger.StateChange -eq 3) {
+                $seenRdp++
+              } else {
+                throw 'Unexpected trigger type'
+              }
+            }
+            if ($seenLogon -ne 1 -or $seenRdp -ne 1) { throw 'Missing exact owner triggers' }
+            if ([int]$saved.Settings.RestartCount -ne 12 -or [string]$saved.Settings.RestartInterval -cne 'PT1M') {
+              throw 'Crash restart policy not persisted'
+            }
+            Write-Host 'Verified native Task Scheduler owner-only logon and remote reconnect trigger'
+          } finally {
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+          }
       - name: Verify Windows PowerShell bootstrap syntax
         shell: pwsh
         run: |
