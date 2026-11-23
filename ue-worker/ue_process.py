@@ -603,6 +603,83 @@ def hero_cine_editor_log_diagnostic(root, started_at, finished_at):
     }
 
 
+def hero_cine_missing_dependency_audit(root):
+    """Sanitized, read-only dependency evidence for the most recent Cine failure.
+
+    Reads only the isolated MetaHuman project's fixed editor log. No caller
+    paths, no raw errors, and no project or engine file mutations. A missing
+    log or a non-parseable run marker is explicitly inconclusive.
+    """
+    from datetime import datetime, timedelta, timezone
+    root = Path(root)
+    if root != HERO_BRIDGE_ROOT:
+        return {"available": False, "reason": "invalid_diagnostic_target"}
+    log = (root / "HeroProjects" / "CHAR_GPT" / "Saved" /
+           "Logs" / "DirectorHeroGPT.log")
+    try:
+        _bridge_safe_parent(log, root)
+        if log.is_symlink() or not log.is_file():
+            return {"available": False, "reason": "editor_log_unavailable"}
+        size = log.stat().st_size
+        if not 1 <= size <= 128 * 1024 * 1024:
+            return {"available": False, "reason": "editor_log_unavailable"}
+        with log.open("rb") as fp:
+            fp.seek(max(0, size - 4 * 1024 * 1024))
+            raw = fp.read(4 * 1024 * 1024 + 1)
+        if len(raw) > 4 * 1024 * 1024:
+            return {"available": False, "reason": "editor_log_changed"}
+    except (OSError, ValueError):
+        return {"available": False, "reason": "editor_log_unavailable"}
+
+    stamp = re.compile(
+        r"^\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):\d+\]")
+    stamped = []
+    for line in raw.decode("utf-8", "replace").splitlines():
+        match = stamp.match(line)
+        if not match:
+            continue
+        try:
+            at = datetime(*(int(x) for x in match.groups()), tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        stamped.append((at, line.casefold()))
+    markers = [at for at, low in stamped
+               if "director ue cine phase=build exception_class=" in low]
+    if not markers:
+        return {"available": False, "reason": "cine_failure_marker_not_found"}
+    end = max(markers)
+    if not timedelta(0) <= datetime.now(timezone.utc) - end <= timedelta(days=7):
+        return {"available": False, "reason": "cine_failure_not_recent"}
+    start = end - timedelta(minutes=12)
+    missing_signals = ("failed to load", "can't find file",
+                       "missing package", "missing dependency")
+    known_prefixes = ("/engine/plugins/metahuman", "/metahumancreator/")
+    safe_packages = set()
+    counts = {"engine_metahuman": 0, "project_or_other": 0,
+              "missing_package_lines": 0}
+    for at, line in stamped:
+        if not start <= at <= end or not any(k in line for k in missing_signals):
+            continue
+        counts["missing_package_lines"] += 1
+        packages = [p.rstrip(".,;:)]}\'\"")
+                    for p in re.findall(r"/[a-z0-9_./-]{4,150}", line)]
+        engine_names = [p for p in packages
+                        if p.startswith(known_prefixes)
+                        and re.fullmatch(r"/[a-z0-9_./-]{4,150}", p)]
+        if engine_names:
+            counts["engine_metahuman"] += 1
+            # These paths are standard Epic engine plugin packages, not local
+            # user paths. Never return arbitrary project/content filenames.
+            safe_packages.update(engine_names)
+        else:
+            counts["project_or_other"] += 1
+    return {"available": True, "source": "last_timestamped_cine_failure_in_log",
+            "failed_at_utc": end.isoformat(),
+            "categories": counts,
+            "known_engine_meta_packages": sorted(safe_packages)[:5],
+            "scope_minutes": 12, "mutations_performed": False}
+
+
 def _windows_session_identity():
     if os.name != "nt":
         raise RuntimeError("interactive_windows_required")
