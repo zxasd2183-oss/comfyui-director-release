@@ -996,7 +996,7 @@ def status():
         "codex_bridge": __import__("ue_process").codex_bridge_status(workspace_root()),
         "codex_last_report": __import__("ue_process").codex_latest_report(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.6.4",
+        "worker_version": "2.6.5",
     }
 
 

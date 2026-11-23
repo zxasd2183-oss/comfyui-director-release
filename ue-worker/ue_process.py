@@ -655,14 +655,28 @@ def hero_cine_missing_dependency_audit(root):
                        "missing package", "missing dependency")
     known_prefixes = ("/engine/plugins/metahuman", "/metahumancreator/")
     safe_packages = set()
+    ep01_packages = set()
+    signal_kinds = set()
     counts = {"engine_metahuman": 0, "project_or_other": 0,
               "missing_package_lines": 0}
     for at, line in stamped:
         if not start <= at <= end or not any(k in line for k in missing_signals):
             continue
         counts["missing_package_lines"] += 1
+        for phrase, key in (("failed to load", "load_failed"),
+                            ("can't find file", "file_not_found"),
+                            ("missing package", "package_missing"),
+                            ("missing dependency", "dependency_missing")):
+            if phrase in line:
+                signal_kinds.add(key)
         packages = [p.rstrip(".,;:)]}\'\"")
                     for p in re.findall(r"/[a-z0-9_./-]{4,150}", line)]
+        ep01_names = [p for p in packages
+                      if p.startswith("/game/director/candidates/ep01/")
+                      and re.fullmatch(r"/[a-z0-9_./-]{4,150}", p)]
+        # Only the known original EP01 namespace is disclosed. Other
+        # project names, filenames, local paths and URLs stay private.
+        ep01_packages.update(ep01_names)
         engine_names = [p for p in packages
                         if p.startswith(known_prefixes)
                         and re.fullmatch(r"/[a-z0-9_./-]{4,150}", p)]
@@ -677,6 +691,8 @@ def hero_cine_missing_dependency_audit(root):
             "failed_at_utc": end.isoformat(),
             "categories": counts,
             "known_engine_meta_packages": sorted(safe_packages)[:5],
+            "known_ep01_packages": sorted(ep01_packages)[:5],
+            "missing_signal_kinds": sorted(signal_kinds),
             "scope_minutes": 12, "mutations_performed": False}
 
 
