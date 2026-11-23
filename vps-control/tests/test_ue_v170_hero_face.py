@@ -73,6 +73,7 @@ class V170FaceRpcTests(unittest.TestCase):
             "hero_runtime_audit_v1","hero_full_face_rig_v1",
             "hero_highres_textures_v1", "hero_cine_assembly_v1",
             "codex_cine_failure_diagnostic_v1",
+            "codex_cine_second_root_cause_v1",
             "codex_queue_probe_v1","codex_reply_probe_v1",
             "codex_ep01_gap_matrix_v1"})
         with patch.dict(hub_app.DIRECTOR_TASK_ALLOWLIST,{
