@@ -27,8 +27,8 @@ final class GlacierNativePasswordSave {
         if (site.isEmpty() || !site.equals(BrowserAccountsStore.siteFromUrl(entry.origin)))
             return null;
         if (entry.formActionOrigin != null && !entry.formActionOrigin.isEmpty()
-                && BrowserAccountsStore.siteFromUrl(entry.formActionOrigin).isEmpty())
-            return null;
+                && !site.equals(BrowserAccountsStore.siteFromUrl(entry.formActionOrigin)))
+            return null; // Never save a credential form posting to another site.
         if (entry.httpRealm != null && !entry.httpRealm.isEmpty())
             return null; // HTTP Basic Auth is a separate save prompt class.
         if (entry.username==null || entry.username.isEmpty()

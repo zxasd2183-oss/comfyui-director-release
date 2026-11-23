@@ -50,6 +50,8 @@ class PasswordManagerSecurity(unittest.TestCase):
         self.assertIn("window.top !== window",CAPTURE_SCRIPT)
         self.assertIn("location.protocol !== 'https:'",CAPTURE_SCRIPT)
         self.assertIn("pw.length !== 1",CAPTURE_SCRIPT)
+        self.assertIn("action.protocol !== 'https:'",CAPTURE_SCRIPT)
+        self.assertIn("action.host !== location.host",CAPTURE_SCRIPT)
         self.assertIn("bridge.submitted(data)",CAPTURE_SCRIPT)
         self.assertIn("QMessageBox.question",source)
         self.assertNotIn("console.log(",CAPTURE_SCRIPT)
@@ -62,6 +64,13 @@ class PasswordManagerSecurity(unittest.TestCase):
                  "https://accounts.example.org/login")
         self.assertEqual(ok,{"site":"accounts.example.org",
                               "username":"test@example.org","password":"new-password"})
+        # www. and apex host aliases are normalized by the existing account
+        # store, not silently dropped by the new save observer.
+        ok_www=validated_submission(
+            payload("https://www.accounts.example.org"),
+            "https://www.accounts.example.org/login",
+            "https://www.accounts.example.org/login")
+        self.assertEqual(ok_www["site"],"accounts.example.org")
         for incoming,page in [
             (payload("https://evil.example.org"),"https://accounts.example.org"),
             (payload("http://accounts.example.org"),"http://accounts.example.org"),

@@ -42,6 +42,12 @@ public class GlacierNativePasswordSaveInstrumentedTest {
         assertNull(GlacierNativePasswordSave.proposed(
                 "unknown","https://accounts.example.org/login",
                 login("https://accounts.example.org","user","secret")));
+        Autocomplete.LoginEntry crossAction=new Autocomplete.LoginEntry.Builder()
+                .origin("https://accounts.example.org")
+                .formActionOrigin("https://evil.example.net")
+                .username("test").password("secret").build();
+        assertNull(GlacierNativePasswordSave.proposed(
+                "private","https://accounts.example.org/login",crossAction));
     }
 
     @Test public void updatesExistingIdentityWhilePreservingOthersAndCodeApi() {

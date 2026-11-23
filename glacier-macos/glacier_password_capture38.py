@@ -17,7 +17,7 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEngineScript
 from PySide6.QtWidgets import QMessageBox
 
-from glacier_accounts22 import clean_accounts22, page_site22
+from glacier_accounts22 import clean_accounts22, page_site22, safe_site22
 from glacier_password_manager38 import GlacierPasswordManager38
 
 
@@ -41,6 +41,12 @@ CAPTURE_SCRIPT = r"""
     }
     function inspect(form) {
       if (!form || form.tagName !== 'FORM' || location.protocol !== 'https:') return;
+      // A credential form posting to an unrelated/HTTP origin is not eligible
+      // for automatic saving under this site's identity.
+      try {
+        var action = new URL(form.getAttribute('action') || location.href, location.href);
+        if (action.protocol !== 'https:' || action.host !== location.host) return;
+      } catch (e) { return; }
       var fields = Array.from(form.querySelectorAll('input')).filter(visible);
       var pw = fields.filter(el => el.type === 'password' &&
                   el.autocomplete !== 'new-password');
@@ -99,7 +105,7 @@ def validated_submission(raw, page_url, active_page_url):
                    and url.password is None for url in (visible, document))):
             return None
         site = page_site22(QUrl(page_url))
-        if not site or site != page_site22(QUrl(active_page_url)) or origin.hostname != site:
+        if not site or site != page_site22(QUrl(active_page_url)) or safe_site22(origin.hostname) != site:
             return None
         user, pw = data["username"], data["password"]
         if (not isinstance(user, str) or not isinstance(pw, str)
