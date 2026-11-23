@@ -18,6 +18,7 @@ from PySide6.QtWebEngineCore import QWebEngineScript
 from PySide6.QtWidgets import QMessageBox
 
 from glacier_accounts22 import clean_accounts22, page_site22
+from glacier_password_manager38 import GlacierPasswordManager38
 
 
 CAPTURE_SCRIPT = r"""
@@ -25,7 +26,7 @@ CAPTURE_SCRIPT = r"""
   'use strict';
   if (window.top !== window || window.__glacierPasswordCapture38) return;
   window.__glacierPasswordCapture38 = true;
-  if (location.protocol !== 'https:' || !qt || !qt.webChannelTransport ||
+  if (location.protocol !== 'https:' || typeof qt === 'undefined' || !qt.webChannelTransport ||
       typeof QWebChannel !== 'function') return;
   new QWebChannel(qt.webChannelTransport, function(channel) {
     var bridge = channel.objects.glacierNativePasswords38;
@@ -156,7 +157,7 @@ class _NativePasswordBridge38(QObject):
         self._owner._submitted_login38(self._view, payload)
 
 
-class GlacierPasswordCapture38:
+class GlacierPasswordCapture38(GlacierPasswordManager38):
     def prepare_password_capture38(self, view):
         """Attach a separate isolated-world channel to each actual web page."""
         if getattr(view, "_glacier_password_ready38", False):

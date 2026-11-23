@@ -472,7 +472,10 @@ class GlacierAccounts22:
         return True
 
     def manage_accounts22(self):
-        """Local vault directory: expose site names, never passwords in the list."""
+        """Show the browser password manager; old vault list is safe fallback."""
+        manager = getattr(self, "show_password_manager38", None)
+        if callable(manager):
+            return manager()
         dialog = QDialog(self)
         dialog.setWindowTitle("Glacier · 网站账号管理")
         dialog.resize(540, 410)

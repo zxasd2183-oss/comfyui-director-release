@@ -69,7 +69,7 @@ class GlacierAccountCenter26:
         panel = QFrame(self, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         panel.setObjectName("GlacierProfilePopover37")
         panel.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        panel.setFixedWidth(344)
+        panel.setFixedWidth(386)
         panel.setStyleSheet("""
             QFrame#GlacierProfilePopover37 {
                 background: #ffffff;
@@ -181,7 +181,7 @@ class GlacierAccountCenter26:
         elif not approved:
             main_label, main_handler = "检查设备授权", self._sync_activate23
         else:
-            main_label, main_handler = "管理网站账号", self.manage_accounts22
+            main_label, main_handler = "打开密码管理器", self.manage_accounts22
 
         main = QPushButton(main_label, hero)
         main.setObjectName("GlacierProfileMain37")
@@ -269,7 +269,7 @@ class GlacierAccountCenter26:
         scroll.setWidget(body)
         root.addWidget(scroll)
 
-        footer = QLabel("网站密码仅手动复制 · 验证码仅点击获取", panel)
+        footer = QLabel("登录时提示保存 · 本机加密 · 设备授权同步", panel)
         footer.setObjectName("GlacierProfileFooter37")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         footer.setWordWrap(True)
@@ -281,7 +281,7 @@ class GlacierAccountCenter26:
                                   max(120, available.height() - 230)))
         panel.adjustSize()
         panel_height = min(panel.sizeHint().height(), available.height() - 16)
-        panel.resize(344, panel_height)
+        panel.resize(386, panel_height)
         desired = anchor.mapToGlobal(QPoint(anchor.width() - panel.width(),
                                             anchor.height() + 8))
         x = max(available.left() + 8,
