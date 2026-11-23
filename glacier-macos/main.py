@@ -31,6 +31,7 @@ from glacier_site_diagnostic31 import GlacierSiteDiagnostic31
 from glacier_accounts22 import GlacierAccounts22
 from glacier_sync23 import GlacierSync23
 from glacier_account_center26 import GlacierAccountCenter26
+from glacier_password_capture38 import GlacierPasswordCapture38
 from mac_proxy_diagnostics import start_capture, latest_hint, classify
 from glacier_proxy_health29 import ephemeral_proxy_config
 from mac_xray_reality import build_xray_reality_config
@@ -159,11 +160,12 @@ class Page(QWebEngineView):
   profile=account_profile if isinstance(account_profile,QWebEngineProfile) else win.profile
   self._glacier_account_profile22=profile if profile is account_profile else None
   self.setPage(QWebEnginePage(profile,self))
+  win.prepare_password_capture38(self)
  def createWindow(self,typ):
   profile=self._glacier_account_profile22
   return (self.win.new_tab(account_profile=profile)
           if profile is not None else self.win.new_tab())
-class Browser(GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
+class Browser(GlacierPasswordCapture38, GlacierChromeShell33, GlacierDesktopUI32, GlacierSiteDiagnostic31, GlacierChromeUI30, GlacierAccountCenter26, GlacierSync23, GlacierAccounts22, GlacierShell20, GlacierTabs19, GlacierWorkspaces17, GlacierDownloads17, GlacierProductivity16, MacDesktop15, MacChrome14, GlacierTabTools13, GlacierUI12, MacUpdateUI, GlacierUI09, MacGlacierUI08, GlacierFeatures, QMainWindow):
  def __init__(self,process,port):
   super().__init__()
   self.proc=process
