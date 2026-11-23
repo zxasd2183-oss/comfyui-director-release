@@ -22,7 +22,7 @@ class CineDependencyEvidenceTests(unittest.TestCase):
             root = Path(td)
             lines = [
                 "[2026.11.22-07.30.00:000]LogAsset: Failed to load /Game/OldSecret/ShouldBeIgnored",
-                "[2026.11.22-08.10.00:000]LogAsset: Failed to load /Game/PrivateName/SecretAvatar",
+                "[2026.11.22-08.10.00:000]LogAsset: Failed to load /Game/Director/Candidates/EP01/HeroCine/Jabc/Face/SKM_Face",
                 "[2026.11.22-08.11.00:000]LogAsset: Can't find file /Engine/Plugins/MetaHumanCreator/Animation/RTG_MH_IKRig",
                 "[2026.11.22-08.12.00:000]LogPython: Warning: Director UE Cine phase=build exception_class=RuntimeError",
             ]
@@ -35,6 +35,9 @@ class CineDependencyEvidenceTests(unittest.TestCase):
             self.assertEqual(output["categories"]["project_or_other"], 1)
             self.assertEqual(output["categories"]["engine_metahuman"], 1)
             self.assertEqual(len(output["known_engine_meta_packages"]), 1)
+            self.assertIn("/game/director/candidates/ep01/herocine/jabc/face/skm_face", output["known_ep01_packages"])
+            self.assertIn("load_failed", output["missing_signal_kinds"])
+            self.assertIn("file_not_found", output["missing_signal_kinds"])
             self.assertNotIn("SecretAvatar", str(output))
             self.assertNotIn("PrivateName", str(output))
             self.assertNotIn("OldSecret", str(output))
