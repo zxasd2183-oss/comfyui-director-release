@@ -52,12 +52,21 @@ class MobileProfileAvatarGuards(unittest.TestCase):
         self.assertIn('cloudState=next;\n            return "已退出同步账号',self.main)
         self.assertIn('cloudState = GlacierCloudSync.load(this);',self.main)
 
-    def test_signed_in_menu_hides_login_and_keeps_logout(self):
-        self.assertIn('String[] actions = signedIn ? new String[]{',self.main)
-        self.assertIn('"退出 Glacier 账号"',self.main)
-        self.assertIn('"注册 Glacier 账号","登录 / 申请设备授权"',self.main)
-        self.assertIn('" · 等待设备授权"',self.main)
-        self.assertIn('String action = actions[which]',self.main)
+    def test_signed_in_dashboard_hides_login_and_keeps_logout(self):
+        # The old string-array menu is replaced by a real dashboard; check
+        # the state gates instead of requiring the removed widget structure.
+        self.assertIn('final boolean signedIn=!cloudState.token.isEmpty();',self.main)
+        self.assertIn('final boolean approved=signedIn&&cloudState.approved;',self.main)
+        self.assertIn('if(!signedIn) {',self.main)
+        self.assertIn('else if(!approved) {',self.main)
+        self.assertIn('if(signedIn) {',self.main)
+        for label in ('"登录 Glacier"','"创建账号"',
+                      '"密码管理器"','"设备安全与访问权限"',
+                      '"退出 Glacier 账号"'):
+            self.assertIn(label,self.main)
+        self.assertIn('dialog.dismiss();cloudLogout();',self.main)
+        self.assertIn('"已登录 · 等待新设备授权"',self.main)
+        self.assertIn('cloudActionRow38(panel,',self.main)
 
     def test_real_emulator_and_instrumentation_cover_state(self):
         smoke=SMOKE.read_text(encoding='utf-8')
