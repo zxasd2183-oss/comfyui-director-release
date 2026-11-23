@@ -1531,6 +1531,34 @@ public final class MainActivity extends Activity {
         return input;
     }
 
+    /** Profile dashboard with actual browser password/sync/device actions. */
+    private void cloudActionRow38(LinearLayout parent, String headline, String note,
+                                  Runnable handler) {
+        LinearLayout row=new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(16),dp(13),dp(16),dp(13));
+        row.setBackground(surfaceBorder(Color.WHITE,12,HAIRLINE));
+        TextView name=new TextView(this);
+        name.setText(headline);
+        name.setTextSize(15);
+        name.setTextColor(INK);
+        name.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        row.addView(name);
+        TextView hint=new TextView(this);
+        hint.setText(note);
+        hint.setTextSize(12);
+        hint.setTextColor(MUTED);
+        LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
+        hintParams.topMargin=dp(4);
+        row.addView(hint,hintParams);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
+        params.bottomMargin=dp(9);
+        parent.addView(row,params);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(v->handler.run());
+    }
+
     private void showCloudMenu() {
         if(cloudSessionReadonly) {
             new AlertDialog.Builder(this).setTitle("加密登录会话受保护")
@@ -1538,28 +1566,113 @@ public final class MainActivity extends Activity {
                     .setPositiveButton("知道了",null).show();
             return;
         }
-        boolean signedIn = GlacierProfileAvatarState.mode(
-                cloudState, cloudSessionReadonly) != GlacierProfileAvatarState.GUEST;
-        String[] actions = signedIn ? new String[]{
-                "确认设备已获批准","管理其他设备","加密上传当前账号空间",
-                "解密下载当前账号空间","开启安全自动同步（本机加密保存口令）",
-                "关闭自动同步","退出 Glacier 账号"
-        } : new String[]{"注册 Glacier 账号","登录 / 申请设备授权"};
-        String heading = signedIn ? cloudState.username
-                + (cloudState.approved ? " · 已登录" : " · 等待设备授权") : "未登录";
-        new AlertDialog.Builder(this).setTitle("Glacier 统一账号 · " + heading)
-                .setItems(actions,(dialog,which)->{
-                    String action = actions[which];
-                    if("注册 Glacier 账号".equals(action))cloudPromptLogin(true);
-                    else if("登录 / 申请设备授权".equals(action))cloudPromptLogin(false);
-                    else if("确认设备已获批准".equals(action))cloudActivate();
-                    else if("管理其他设备".equals(action))cloudDevices();
-                    else if("加密上传当前账号空间".equals(action))cloudPromptVault(true);
-                    else if("解密下载当前账号空间".equals(action))cloudPromptVault(false);
-                    else if("开启安全自动同步（本机加密保存口令）".equals(action))cloudPromptAuto();
-                    else if("关闭自动同步".equals(action))cloudDisableAuto();
-                    else if("退出 Glacier 账号".equals(action))cloudLogout();
-                }).setNegativeButton("关闭",null).show();
+        final boolean signedIn=!cloudState.token.isEmpty();
+        final boolean approved=signedIn&&cloudState.approved;
+        final String heading=signedIn?cloudState.username:"Glacier 浏览器";
+        final String status=!signedIn?"未登录 Glacier 账号"
+                :approved?"已登录 · 此设备已授权":"已登录 · 等待新设备授权";
+        final LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20),dp(20),dp(20),dp(22));
+        panel.setBackgroundColor(Color.rgb(246,250,254));
+        TextView eyebrow=new TextView(this);
+        eyebrow.setText("GLACIER  /  IDENTITY");
+        eyebrow.setTextSize(11);
+        eyebrow.setTextColor(GLACIER_BLUE);
+        eyebrow.setLetterSpacing(0.14f);
+        panel.addView(eyebrow);
+        TextView title=new TextView(this);
+        title.setText(heading);
+        title.setTextSize(25);
+        title.setTextColor(INK);
+        title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,-2);
+        titleParams.topMargin=dp(5);
+        panel.addView(title,titleParams);
+        TextView sub=new TextView(this);
+        sub.setText(status);
+        sub.setTextSize(13);
+        sub.setTextColor(MUTED);
+        panel.addView(sub);
+        LinearLayout summary=new LinearLayout(this);
+        summary.setOrientation(LinearLayout.VERTICAL);
+        summary.setPadding(dp(16),dp(15),dp(16),dp(16));
+        summary.setBackground(surfaceBorder(ICE,14,HAIRLINE));
+        int savedCount=0;
+        final String profile=active==null?selectedProfile:active.profile;
+        for(BrowserAccountsStore.Card c:accountCards)if(profile.equals(c.profile))savedCount++;
+        TextView count=new TextView(this);
+        count.setText(savedCount+" 个已保存的网站登录");
+        count.setTextColor(INK);
+        count.setTextSize(18);
+        count.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        summary.addView(count);
+        TextView desc=new TextView(this);
+        desc.setText((WORK.equals(profile)?"工作":"私人")+"空间 · 本机 Keystore 加密"
+                +(cloudState.autoEnabled&&approved?" · 已开启账号同步":""));
+        desc.setTextColor(MUTED);
+        desc.setTextSize(12);
+        summary.addView(desc);
+        LinearLayout.LayoutParams sumParams=new LinearLayout.LayoutParams(-1,-2);
+        sumParams.topMargin=dp(17);
+        sumParams.bottomMargin=dp(15);
+        panel.addView(summary,sumParams);
+
+        ScrollView scroll=new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(panel);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setView(scroll).setNegativeButton("关闭",null).create();
+
+        cloudActionRow38(panel,"密码管理器","网站登录时提示保存 · 查看、选择填充和管理已保存密码",()->{
+            dialog.dismiss();
+            showAccountVault();
+        });
+        if(!signedIn) {
+            cloudActionRow38(panel,"登录 Glacier","同步已保存的密码库，保护私人／工作空间",()->{
+                dialog.dismiss();cloudPromptLogin(false);
+            });
+            cloudActionRow38(panel,"创建账号","统一账号与设备授权 · 端到端加密同步",()->{
+                dialog.dismiss();cloudPromptLogin(true);
+            });
+        } else if(!approved) {
+            cloudActionRow38(panel,"确认此设备的授权","在已授权设备批准后才允许加密同步",()->{
+                dialog.dismiss();cloudActivate();
+            });
+            cloudActionRow38(panel,"查看设备与权限","审核或撤销登录设备",()->{
+                dialog.dismiss();cloudDevices();
+            });
+        } else {
+            cloudActionRow38(panel,"设备安全与访问权限","已授权设备、私人／工作空间权限、撤销设备",()->{
+                dialog.dismiss();cloudDevices();
+            });
+            cloudActionRow38(panel,cloudState.autoEnabled?"自动同步已开启":"开启跨设备密码同步",
+                    cloudState.autoEnabled?"加密保存同步口令 · 原有冲突检查继续生效"
+                            :"先完成设备授权与首次同步，再允许自动同步",()->{
+                dialog.dismiss();
+                if(cloudState.autoEnabled)cloudDisableAuto();else cloudPromptAuto();
+            });
+            cloudActionRow38(panel,"同步现有密码数据","首次需明确选择上传或下载 · 不会静默覆盖其他设备",()->{
+                dialog.dismiss();
+                String[] choices={"加密上传当前空间","解密下载当前空间"};
+                new AlertDialog.Builder(this).setTitle("Glacier · 同步登录密码")
+                        .setItems(choices,(d,index)->cloudPromptVault(index==0))
+                        .setNegativeButton("取消",null).show();
+            });
+        }
+        if(signedIn) {
+            cloudActionRow38(panel,"退出 Glacier 账号","仅退出此设备的同步会话，不删除本机加密密码库",()->{
+                dialog.dismiss();cloudLogout();
+            });
+        }
+        TextView disclaimer=new TextView(this);
+        disclaimer.setText("网页密码只在你批准后保存。网站 Cookie 和登录会话不会作为密码自动同步。");
+        disclaimer.setTextSize(12);
+        disclaimer.setTextColor(MUTED);
+        LinearLayout.LayoutParams end=new LinearLayout.LayoutParams(-1,-2);
+        end.topMargin=dp(8);
+        panel.addView(disclaimer,end);
+        dialog.show();
     }
 
     private void cloudPromptLogin(boolean register) {
