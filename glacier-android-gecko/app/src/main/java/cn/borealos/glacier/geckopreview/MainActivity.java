@@ -24,6 +24,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
+import android.text.TextWatcher;
+import android.text.Editable;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -1241,33 +1243,172 @@ public final class MainActivity extends Activity {
     }
 
     private void showAccountVault() {
-        if (accountsReadonly) {
-            new AlertDialog.Builder(this).setTitle("Glacier · 账号资料保护")
-                    .setMessage("本机账号加密文件无法解密，已进入只读保护，原文件不会被覆盖。")
-                    .setPositiveButton("知道了", null).show();
+        if(accountsReadonly) {
+            new AlertDialog.Builder(this).setTitle("Glacier · 密码库只读保护")
+                    .setMessage("已有密码文件无法解密，已保护原始数据。不会以空库覆盖。")
+                    .setPositiveButton("知道了",null).show();
             return;
         }
-        final String profile = active == null ? selectedProfile : active.profile;
-        final String site = currentAccountSite();
-        List<BrowserAccountsStore.Card> shown = new ArrayList<>();
-        for (BrowserAccountsStore.Card card : accountCards) {
-            if (profile.equals(card.profile)) shown.add(card);
+        final String profile=active==null?selectedProfile:active.profile;
+        final String site=currentAccountSite();
+        final String space=WORK.equals(profile)?"工作空间":"私人空间";
+        LinearLayout container=new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(18),dp(20),dp(18),dp(20));
+        container.setBackgroundColor(Color.rgb(247,250,254));
+
+        TextView brand=new TextView(this);
+        brand.setText("GLACIER / PASSWORDS");
+        brand.setTextSize(11);
+        brand.setLetterSpacing(0.12f);
+        brand.setTextColor(GLACIER_BLUE);
+        container.addView(brand);
+        TextView heading=new TextView(this);
+        heading.setText("密码管理器");
+        heading.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        heading.setTextSize(25);
+        heading.setTextColor(INK);
+        container.addView(heading);
+        TextView sub=new TextView(this);
+        sub.setText("网页登录时提示保存，访问已存网站时可选择填充");
+        sub.setTextSize(13);
+        sub.setTextColor(MUTED);
+        container.addView(sub);
+
+        LinearLayout details=new LinearLayout(this);
+        details.setOrientation(LinearLayout.VERTICAL);
+        details.setPadding(dp(14),dp(13),dp(14),dp(13));
+        details.setBackground(surfaceBorder(ICE,13,HAIRLINE));
+        TextView location=new TextView(this);
+        location.setText(space+" · 本机 AES 加密密码库");
+        location.setTextSize(15);
+        location.setTextColor(INK);
+        location.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        details.addView(location);
+        TextView cloud=new TextView(this);
+        cloud.setText(cloudState.approved
+                ?cloudState.autoEnabled?"设备已授权 · 加密自动同步已开启":"设备已授权 · 同步需先开启"
+                :"仅本机 · 登录并批准设备后可同步");
+        cloud.setTextSize(12);
+        cloud.setTextColor(MUTED);
+        details.addView(cloud);
+        LinearLayout.LayoutParams statusParams=new LinearLayout.LayoutParams(-1,-2);
+        statusParams.topMargin=dp(16);
+        statusParams.bottomMargin=dp(16);
+        container.addView(details,statusParams);
+
+        EditText search=new EditText(this);
+        search.setSingleLine(true);
+        search.setHint("搜索已保存网站或用户名");
+        search.setTextSize(14);
+        search.setPadding(dp(13),dp(12),dp(13),dp(12));
+        search.setBackground(surfaceBorder(Color.WHITE,11,HAIRLINE));
+        container.addView(search,new LinearLayout.LayoutParams(-1,dp(50)));
+
+        TextView count=new TextView(this);
+        count.setTextSize(12);
+        count.setTextColor(MUTED);
+        LinearLayout.LayoutParams countParams=new LinearLayout.LayoutParams(-1,-2);
+        countParams.topMargin=dp(16);
+        countParams.bottomMargin=dp(7);
+        container.addView(count,countParams);
+
+        LinearLayout rows=new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        container.addView(rows);
+        Runnable refresh=()->{
+            rows.removeAllViews();
+            String query=search.getText().toString().trim().toLowerCase(Locale.ROOT);
+            int shown=0;
+            for(BrowserAccountsStore.Card card:accountCards) {
+                if(!profile.equals(card.profile))continue;
+                String terms=(card.site+" "+card.name+" "+card.username)
+                        .toLowerCase(Locale.ROOT);
+                if(!query.isEmpty()&&!terms.contains(query))continue;
+                shown++;
+                LinearLayout tile=new LinearLayout(this);
+                tile.setOrientation(LinearLayout.HORIZONTAL);
+                tile.setGravity(Gravity.CENTER_VERTICAL);
+                tile.setPadding(dp(13),dp(12),dp(13),dp(12));
+                tile.setBackground(surfaceBorder(Color.WHITE,12,HAIRLINE));
+                TextView initial=new TextView(this);
+                initial.setText(card.site.substring(0,1).toUpperCase(Locale.ROOT));
+                initial.setGravity(Gravity.CENTER);
+                initial.setTextColor(Color.WHITE);
+                initial.setTextSize(17);
+                initial.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+                initial.setBackground(surface(GLACIER_BLUE,12));
+                tile.addView(initial,new LinearLayout.LayoutParams(dp(42),dp(42)));
+                LinearLayout names=new LinearLayout(this);
+                names.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams namesParams=new LinearLayout.LayoutParams(0,-2,1);
+                namesParams.leftMargin=dp(12);
+                tile.addView(names,namesParams);
+                TextView siteName=new TextView(this);
+                siteName.setText(card.site);
+                siteName.setTextSize(14);
+                siteName.setTextColor(INK);
+                siteName.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+                names.addView(siteName);
+                TextView user=new TextView(this);
+                user.setText(card.name+"  ·  "+card.username);
+                user.setTextSize(12);
+                user.setTextColor(MUTED);
+                user.setMaxLines(1);
+                user.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                names.addView(user);
+                TextView arrow=new TextView(this);
+                arrow.setText("›");
+                arrow.setTextSize(25);
+                arrow.setTextColor(GLACIER_BLUE);
+                tile.addView(arrow);
+                LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);
+                rowParams.bottomMargin=dp(8);
+                rows.addView(tile,rowParams);
+                tile.setClickable(true);
+                tile.setFocusable(true);
+                tile.setOnClickListener(v->showAccountCard(card));
+            }
+            count.setText("已保存登录 · "+shown);
+            if(shown==0) {
+                TextView empty=new TextView(this);
+                empty.setText(query.isEmpty()
+                        ?"这里还没有密码。使用此浏览器登录网站，系统会询问是否保存。"
+                        :"未找到匹配的登录。");
+                empty.setPadding(dp(10),dp(25),dp(10),dp(25));
+                empty.setTextSize(13);
+                empty.setGravity(Gravity.CENTER);
+                empty.setTextColor(MUTED);
+                rows.addView(empty);
+            }
+        };
+        search.addTextChangedListener(new TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){
+                refresh.run();
+            }
+            @Override public void afterTextChanged(Editable editable){}
+        });
+        refresh.run();
+        TextView footer=new TextView(this);
+        footer.setText("密码不会直接显示在列表中。请勿在不可信网站填写登录信息。"
+                +"\\n网站 Cookie 和登录会话不等同于保存的密码。");
+        footer.setTextSize(11);
+        footer.setTextColor(MUTED);
+        footer.setPadding(0,dp(14),0,0);
+        container.addView(footer);
+        ScrollView scroll=new ScrollView(this);
+        scroll.addView(container);
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this)
+                .setView(scroll)
+                .setNegativeButton("完成",null)
+                .setNeutralButton("账号与同步",(d,which)->showCloudMenu());
+        if(!site.isEmpty()) {
+            // Manual entry remains an optional import/recovery action, NOT the
+            // primary method of creating website credentials.
+            dialog.setPositiveButton("手动添加",(d,which)->editAccountCard(null,profile,site));
         }
-        String[] labels = new String[shown.size()];
-        for (int i=0;i<shown.size();i++) {
-            BrowserAccountsStore.Card c=shown.get(i);
-            labels[i]=c.name+" · "+c.site;
-        }
-        String space = WORK.equals(profile) ? "工作空间" : "私人空间";
-        AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle("Glacier · "+space+"账号保险箱")
-                .setItems(labels,(dialog,index)->showAccountCard(shown.get(index)))
-                .setNegativeButton("关闭",null);
-        if (!site.isEmpty()) {
-            builder.setPositiveButton("添加当前网站账号",
-                    (dialog,index)->editAccountCard(null,profile,site));
-        }
-        builder.show();
+        dialog.create().show();
     }
 
     private EditText cardInput(LinearLayout layout,String label,String value,boolean secret) {
