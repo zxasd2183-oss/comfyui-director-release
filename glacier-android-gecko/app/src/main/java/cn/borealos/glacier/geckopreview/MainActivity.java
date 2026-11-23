@@ -40,6 +40,7 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import org.mozilla.geckoview.Autocomplete;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoRuntime;
@@ -1162,6 +1163,83 @@ public final class MainActivity extends Activity {
         },350);
     }
 
+    /**
+     * Native browser password manager: GeckoView detects a user-submitted
+     * login and asks Glacier to offer a Save/Update prompt. Never save before
+     * explicit approval; never expose the submitted password in UI/logs.
+     *
+     * The website account card is already encrypted by Android Keystore and
+     * uses the existing opt-in E2E sync baselines. We do not install Gecko's
+     * global fetch delegate because it lacks a per-session profile argument;
+     * returning credentials from both private/work spaces would be unsafe.
+     */
+    private GeckoResult<GeckoSession.PromptDelegate.PromptResponse>
+    promptToSaveWebsitePassword(GeckoSession source,
+            GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption> request) {
+        if(accountsReadonly || isFinishing() || request==null
+                ||request.options==null ||request.options.length!=1
+                ||active==null ||active.session!=source ||web==null
+                ||web.getSession()!=source ||!tabs.contains(active)
+                ||!selectedProfile.equals(active.profile))
+            return GeckoResult.fromValue(request.dismiss());
+        Tab originTab=active;
+        Autocomplete.LoginSaveOption offered=request.options[0];
+        BrowserAccountsStore.Card proposed=GlacierNativePasswordSave.proposed(
+                originTab.profile,originTab.url,offered.value);
+        if(proposed==null || GlacierNativePasswordSave.existingPasswordUnchanged(
+                accountCards,proposed))
+            return GeckoResult.fromValue(request.dismiss());
+        final List<BrowserAccountsStore.Card> candidate;
+        try {
+            candidate=GlacierNativePasswordSave.previewSave(accountCards,proposed);
+        } catch(IllegalArgumentException error) {
+            return GeckoResult.fromValue(request.dismiss());
+        }
+        GeckoResult<GeckoSession.PromptDelegate.PromptResponse> pending=new GeckoResult<>();
+        String space=WORK.equals(originTab.profile)?"工作空间":"私人空间";
+        boolean updating=false;
+        for(BrowserAccountsStore.Card c:accountCards) {
+            if(c.profile.equals(proposed.profile) && c.site.equals(proposed.site)
+                    && c.username.equals(proposed.username)) {
+                updating=true;break;
+            }
+        }
+        String title=updating?"更新已保存密码？":"保存此网站的密码？";
+        // Never display password, and avoid revealing full login details in
+        // toasts, logs, clipboard or a website-controlled popup.
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(proposed.site+"\\n"+proposed.username+"\\n保存到 "+space
+                        +"，之后可在已授权设备上使用加密账号同步。"
+                        +"\\n仅保存经你确认的登录信息；不会自动提交网页表单。")
+                .setNegativeButton("不保存",(dialog,which)->
+                        pending.complete(request.dismiss()))
+                .setOnCancelListener(dialog->pending.complete(request.dismiss()))
+                .setPositiveButton(updating?"更新密码":"保存密码",(dialog,which)->{
+                    // A tab/account switch while the confirmation is open must
+                    // not cause a password to be written to another workspace.
+                    if(accountsReadonly ||isFinishing()||active!=originTab
+                            ||active.session!=source
+                            ||!selectedProfile.equals(proposed.profile)
+                            ||!proposed.site.equals(BrowserAccountsStore.siteFromUrl(originTab.url))) {
+                        pending.complete(request.dismiss());
+                        return;
+                    }
+                    if(!persistAccountVault(candidate)) {
+                        pending.complete(request.dismiss());
+                        new AlertDialog.Builder(this)
+                                .setTitle("密码未保存")
+                                .setMessage("加密密码库无法写入，原有资料保持不变。")
+                                .setPositiveButton("知道了",null).show();
+                        return;
+                    }
+                    pending.complete(request.confirm(offered));
+                    android.widget.Toast.makeText(this,"密码已保存到加密密码库",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                }).show();
+        return pending;
+    }
+
     private void showAccountVault() {
         if (accountsReadonly) {
             new AlertDialog.Builder(this).setTitle("Glacier · 账号资料保护")
@@ -2063,6 +2141,13 @@ public final class MainActivity extends Activity {
             public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onFilePrompt(
                     GeckoSession source, GeckoSession.PromptDelegate.FilePrompt prompt) {
                 return transfers.onFilePrompt(source, prompt);
+            }
+
+            @Override
+            public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onLoginSave(
+                    GeckoSession source,
+                    GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption> request) {
+                return promptToSaveWebsitePassword(source, request);
             }
         });
         // Debug-only page-load evidence for CI. Never record arbitrary URLs,
