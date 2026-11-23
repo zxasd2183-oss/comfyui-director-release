@@ -36,6 +36,16 @@ def payload(origin="https://accounts.example.org",
 
 
 class PasswordManagerSecurity(unittest.TestCase):
+    def test_browser_password_selection_is_one_click_but_never_auto_submits(self):
+        source=(WIN/"glacier_password_capture38.py").read_text(encoding="utf-8")
+        self.assertIn("def use_saved_password38(", source)
+        self.assertIn("view.loadFinished.connect(after_load)", source)
+        self.assertIn("self.fill_account_form22(c)", source)
+        self.assertIn("view is not self.current()", source)
+        self.assertNotIn("submit()", source)
+        manager=(WIN/"glacier_password_manager38.py").read_text(encoding="utf-8")
+        self.assertIn("self.use_saved_password38", manager)
+
     def test_desktop_source_parity(self):
         for name in ("glacier_password_manager38.py","glacier_password_capture38.py"):
             self.assertEqual((ROOT/"glacier-windows"/name).read_bytes(),

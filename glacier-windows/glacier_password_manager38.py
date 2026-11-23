@@ -279,7 +279,7 @@ class GlacierPasswordManager38:
         space_label.setObjectName("GlacierPasswordsField38")
         info.addWidget(space_label)
         info.addSpacing(8)
-        open_btn = QPushButton("打开独立登录会话", detail)
+        open_btn = QPushButton("使用此账号并填充", detail)
         open_btn.setObjectName("GlacierPasswordsPrimary38")
         fill_btn = QPushButton("填充当前 HTTPS 登录页", detail)
         fill_btn.setObjectName("GlacierPasswordsSecondary38")
@@ -378,7 +378,7 @@ class GlacierPasswordManager38:
         listing.currentItemChanged.connect(lambda _new,_old:show_selected())
         search.textChanged.connect(lambda _value:refresh())
         add.clicked.connect(lambda: (self.add_account22(), refresh()))
-        open_btn.clicked.connect(lambda: selected_action(self.open_account_session22))
+        open_btn.clicked.connect(lambda: selected_action(self.use_saved_password38))
         fill_btn.clicked.connect(lambda: selected_action(self.fill_account_form22))
         copy_btn.clicked.connect(lambda: selected_action(
             lambda c: self._copy_account22(c["password"])))

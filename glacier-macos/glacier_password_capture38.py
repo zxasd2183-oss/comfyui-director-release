@@ -264,3 +264,45 @@ class GlacierPasswordCapture38(GlacierPasswordManager38):
         status = getattr(self, "statusBar", None)
         if callable(status):
             status().showMessage("已保存网站密码 · "+site, 6000)
+
+
+    def use_saved_password38(self, record):
+        """One explicit click opens its own Cookie context and fills on load.
+
+        No auto-submit, background-tab injection, or cross-space account leak.
+        The existing strict fill_account_form22 checks active tab, exact HTTPS
+        host and matching QWebEngineProfile again when loadFinished fires.
+        """
+        profile = self._profile_for_saved_account22(record)
+        if profile is None or not isinstance(record, dict):
+            return False
+        site = record.get("site", "")
+        from glacier_accounts22 import safe_site22
+        if not site or safe_site22(site) != site:
+            return False
+        view = self.new_tab(account_profile=profile)
+        if view is None:
+            return False
+
+        def after_load(ok, v=view, c=dict(record)):
+            try:
+                v.loadFinished.disconnect(after_load)
+            except (RuntimeError, TypeError):
+                pass
+            if not ok or v is not self.current():
+                return
+            try:
+                if (v.page().profile() is not profile
+                        or page_site22(v.url()) != site
+                        or page_site22(v.page().url()) != site):
+                    return
+                self.fill_account_form22(c)
+            except (AttributeError, RuntimeError, ValueError):
+                return
+
+        try:
+            view.loadFinished.connect(after_load)
+            view.setUrl(QUrl("https://" + site + "/"))
+        except (RuntimeError, AttributeError):
+            return False
+        return True
