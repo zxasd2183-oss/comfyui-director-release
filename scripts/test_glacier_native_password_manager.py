@@ -11,7 +11,7 @@ import sys
 import gc
 import json
 import unittest
-from PySide6.QtCore import QTimer, QCoreApplication, QEvent
+from PySide6.QtCore import QTimer, QCoreApplication, QEvent, QUrl
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QListWidget, QLineEdit, QWidget
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -36,6 +36,63 @@ def payload(origin="https://accounts.example.org",
 
 
 class PasswordManagerSecurity(unittest.TestCase):
+    def test_one_click_fill_revalidates_foreground_and_exact_session_origin(self):
+        class Signal:
+            def __init__(self):self.callback=None
+            def connect(self,callback):self.callback=callback
+            def disconnect(self,callback):
+                if self.callback is callback:self.callback=None
+            def emit(self,ok):
+                if self.callback:self.callback(ok)
+        class Page:
+            def __init__(self,profile):
+                self._profile=profile
+                self._url=QUrl("about:blank")
+            def profile(self):return self._profile
+            def url(self):return self._url
+        class View:
+            def __init__(self,profile):
+                self._url=QUrl("about:blank")
+                self._page=Page(profile)
+                self.loadFinished=Signal()
+            def setUrl(self,url):
+                self._url=url
+                self._page._url=url
+                self.loadFinished.emit(True)
+            def url(self):return self._url
+            def page(self):return self._page
+        class Host(GlacierPasswordCapture38):
+            def __init__(self):
+                self.profile=object()
+                self.active=None
+                self.filled=[]
+                self.next_url=None
+            def _profile_for_saved_account22(self,record):
+                return self.profile if record["space"]=="private" else None
+            def new_tab(self,account_profile=None):
+                self.active=View(account_profile)
+                if self.next_url:
+                    def move(other):
+                        self.active._url=QUrl(other)
+                        self.active._page._url=QUrl(other)
+                        self.active.loadFinished.emit(True)
+                    self.active.setUrl=lambda url:move(self.next_url)
+                return self.active
+            def current(self):return self.active
+            def fill_account_form22(self,record):
+                self.filled.append(record)
+                return True
+        h=Host()
+        self.assertTrue(h.use_saved_password38(PRIVATE))
+        self.assertEqual(len(h.filled),1)
+        self.assertEqual(h.filled[0]["site"],"accounts.example.org")
+        h.filled.clear()
+        h.next_url="https://evil.example.net/"
+        self.assertTrue(h.use_saved_password38(PRIVATE))
+        self.assertEqual(h.filled,[])
+        self.assertFalse(h.use_saved_password38(WORK))
+        self.assertEqual(h.filled,[])
+
     def test_browser_password_selection_is_one_click_but_never_auto_submits(self):
         source=(WIN/"glacier_password_capture38.py").read_text(encoding="utf-8")
         self.assertIn("def use_saved_password38(", source)
