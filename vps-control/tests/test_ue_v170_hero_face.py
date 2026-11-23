@@ -73,6 +73,7 @@ class V170FaceRpcTests(unittest.TestCase):
             "hero_runtime_audit_v1","hero_full_face_rig_v1",
             "hero_highres_textures_v1", "hero_cine_assembly_v1",
             "codex_cine_failure_diagnostic_v1",
+            "codex_cine_second_root_cause_v1",
             "codex_queue_probe_v1","codex_reply_probe_v1",
             "codex_ep01_gap_matrix_v1"})
         with patch.dict(hub_app.DIRECTOR_TASK_ALLOWLIST,{
@@ -83,6 +84,26 @@ class V170FaceRpcTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertEqual(response["task"],"face")
 
+
+    def test_second_cine_failure_root_cause_is_fixed_read_only_and_scoped(self):
+        with patch.object(hub_app, "codex_queue_with_report_rpc",
+                          return_value={"ok": True, "state": "staged"}) as deliver:
+            wrong = hub_app.submit_director_task(
+                "codex_cine_second_root_cause_v1", "WaitingOffice", "EP02")
+            self.assertEqual(wrong["reason"], "director_task_requires_locked_ep01")
+            deliver.assert_not_called()
+            ok = hub_app.submit_director_task(
+                "codex_cine_second_root_cause_v1", "WaitingOffice", "EP01")
+            self.assertTrue(ok["ok"])
+            deliver.assert_called_once()
+            message = deliver.call_args.args[0]
+            self.assertIn("08:34:37", message)
+            self.assertIn("DirectorHeroGPT.log", message)
+            self.assertIn("hero_cine_result.json", message)
+            self.assertIn("不写入或更改", message)
+            self.assertIn("不读取其他目录", message)
+            self.assertLessEqual(len(message), 1200)
+            self.assertLessEqual(len(message.encode("utf-8")), 3000)
 
     def test_cine_failure_diagnostic_is_fixed_read_only_and_scoped(self):
         with patch.object(hub_app, "codex_queue_with_report_rpc",
