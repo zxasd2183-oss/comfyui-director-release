@@ -44,7 +44,7 @@ from ue_worker_rpc import (call_ue_worker,
                            get_codex_message_status as get_codex_message_status_rpc,
                            codex_queue_with_report as codex_queue_with_report_rpc)
 
-UE_HUB_API_VERSION = "1.10.6"
+UE_HUB_API_VERSION = "1.10.7"
 
 app = FastMCP("Director Hub Studio Brain", host="127.0.0.1", port=8898,
               stateless_http=True, json_response=True)
@@ -542,6 +542,16 @@ DIRECTOR_TASK_ALLOWLIST = {
         "hon Exception、ControlRig、Missing Asset、assembly error。 只返回失败阶段、异常类型、最多五条去敏关键错误摘要"
         "及时间；不返回日志全文、用户名、令牌、邮箱、URL或账号数据。 不启动UE、渲染、自动更新或安装器；不更改、保存、删除资产、任务、代码和日志；不读取无关目录。若"
         "无证据回复UNVERIFIED。"),
+    "codex_cine_second_root_cause_v1": lambda project_id, episode_id: codex_queue_with_report_rpc(
+        "EP01-CINE-FAILURE-ROOT-001. 对《待回答事务所》吉皮提Cine的第2次构建失败做严格只读根因调查。 只许读取 C:"
+        "\\DirectorVirtualStudio\\HeroProjects\\CHAR_GPT\\Saved\\Logs\\DirectorHeroGP"
+        "T.log，以及 C:\\DirectorVirtualStudio\\Jobs 下相关 job 的 hero_cine_result.json"
+        "（仅找2026-11-22 08:22-08:36 UTC的失败项；若无法安全定位，不读取其它文件）。 重点检查 08:34:37 UTC "
+        "周边 build_meta_human 抛 RuntimeError 前的 Failed to load 原文，判断它属于游戏资产引用、引擎"
+        "插件资源、第三方模块还是非关键噪声。排查同时段 MetaHuman Build/Assembly 的明确终止错误。 只回答：实际确认的失败作"
+        "业ID（否则UNVERIFIED）、至多3条有UTC时间戳的去敏错误摘要、缺失资源的安全类目、可确认的根因或UNVERIFIED、最小修复方"
+        "向。 只有 /Game/Director/Candidates/EP01/ 下的资产包路径才可回显；其他路径、邮箱、URL、账号、令牌和私有"
+        "文件名不得回显。 禁止运行Unreal/渲染/安装/更新，不写入或更改任何文件/进程，不操作开关机，不读取其他目录，不输出原始日志全文。"),
     "codex_ep01_gap_matrix_v1": lambda project_id, episode_id: codex_queue_with_report_rpc(
         "EP01-PRODUCTION-001. 请为《待回答事务所》WaitingOffice/EP01 做一次真实、零渲染的素材缺口清点。现有正式时间轴锁定31镜头、160秒、24fps；"
         "镜头时长（秒）依次为3,5,5,6,6,5,5,6,5,6,5,5,4,5,5,5,7,5,5,5,6,5,6,5,4,5,5,6,5,5,5。"
