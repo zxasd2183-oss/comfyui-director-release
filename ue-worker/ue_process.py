@@ -415,6 +415,40 @@ def interactive_hero_job_diagnostic(root, job_id):
     return report
 
 
+def hero_cine_bridge_diagnostic(root, job_id):
+    """Sanitized, bounded readback for one existing Cine handoff and receipt."""
+    report = interactive_hero_job_diagnostic(root, job_id)
+    report.pop("rig_receipt", None)
+    report.pop("rig_stage", None)
+    if report.get("available") is not True:
+        return report
+    path = Path(root) / "Jobs" / job_id / "hero_cine_result.json"
+    try:
+        _bridge_safe_parent(path, Path(root))
+        if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+            report["cine_receipt"] = "unsafe"
+        elif not path.is_file():
+            report["cine_receipt"] = "missing"
+        elif not 1 <= path.stat().st_size <= 6000:
+            report["cine_receipt"] = "invalid_size"
+        else:
+            data = json.loads(path.read_text("utf-8"))
+            if type(data) is not dict:
+                report["cine_receipt"] = "invalid"
+            elif data.get("ok") is True:
+                report["cine_receipt"] = "success_unverified"
+            elif (data.get("ok") is False and
+                    type(data.get("reason")) is str and
+                    re.fullmatch(r"hero_cine_failed_[a-z_]{1,48}", data["reason"])):
+                report["cine_receipt"] = "failed"
+                report["cine_stage"] = data["reason"]
+            else:
+                report["cine_receipt"] = "invalid"
+    except (OSError, ValueError, TypeError, UnicodeError):
+        report["cine_receipt"] = "unreadable"
+    return report
+
+
 def hero_rig_editor_log_diagnostic(root, started_at, finished_at):
     """Read-only, time-scoped classification of a failed rig's UE project log.
 
