@@ -58,7 +58,7 @@ class AndroidNativePasswordManagerGuards(unittest.TestCase):
         for forbidden in ("Log.d(\"Password\"", "Log.i(\"Password\"", "System.out.println(entry.password)",
                           "System.out.println(proposed.password)"):
             self.assertNotIn(forbidden,self.main+self.native)
-        self.assertIn("No JavaScript password scraping",self.native)
+        self.assertIn("no DOM password scraping",self.native)
         self.assertIn("fill(active.session",self.main)
 
 
