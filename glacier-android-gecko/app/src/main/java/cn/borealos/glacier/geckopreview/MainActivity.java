@@ -1178,7 +1178,8 @@ public final class MainActivity extends Activity {
     private GeckoResult<GeckoSession.PromptDelegate.PromptResponse>
     promptToSaveWebsitePassword(GeckoSession source,
             GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption> request) {
-        if(accountsReadonly || isFinishing() || request==null
+        if(request==null)return GeckoResult.fromValue(null);
+        if(accountsReadonly || isFinishing()
                 ||request.options==null ||request.options.length!=1
                 ||active==null ||active.session!=source ||web==null
                 ||web.getSession()!=source ||!tabs.contains(active)
@@ -1211,9 +1212,9 @@ public final class MainActivity extends Activity {
         // toasts, logs, clipboard or a website-controlled popup.
         new AlertDialog.Builder(this)
                 .setTitle(title)
-                .setMessage(proposed.site+"\\n"+proposed.username+"\\n保存到 "+space
+                .setMessage(proposed.site+"\n"+proposed.username+"\n保存到 "+space
                         +"，之后可在已授权设备上使用加密账号同步。"
-                        +"\\n仅保存经你确认的登录信息；不会自动提交网页表单。")
+                        +"\n仅保存经你确认的登录信息；不会自动提交网页表单。")
                 .setNegativeButton("不保存",(dialog,which)->
                         pending.complete(request.dismiss()))
                 .setOnCancelListener(dialog->pending.complete(request.dismiss()))
@@ -1392,7 +1393,7 @@ public final class MainActivity extends Activity {
         refresh.run();
         TextView footer=new TextView(this);
         footer.setText("密码不会直接显示在列表中。请勿在不可信网站填写登录信息。"
-                +"\\n网站 Cookie 和登录会话不等同于保存的密码。");
+                +"\n网站 Cookie 和登录会话不等同于保存的密码。");
         footer.setTextSize(11);
         footer.setTextColor(MUTED);
         footer.setPadding(0,dp(14),0,0);

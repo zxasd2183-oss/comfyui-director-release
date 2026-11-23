@@ -45,7 +45,7 @@ class PasswordManagerSecurity(unittest.TestCase):
         for guard in ("ApplicationWorld","setRunsOnSubFrames(False)",
                       "document.addEventListener('submit'","e.isTrusted",
                       "login", "setWebChannel"):
-            source=(WIN/"glacier_password_capture38.py").read_text()
+            source=(WIN/"glacier_password_capture38.py").read_text(encoding="utf-8")
             self.assertIn(guard,source)
         self.assertIn("window.top !== window",CAPTURE_SCRIPT)
         self.assertIn("location.protocol !== 'https:'",CAPTURE_SCRIPT)

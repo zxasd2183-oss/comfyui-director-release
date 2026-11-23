@@ -12,7 +12,7 @@ import json
 import time
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import QFile, QObject, QIODevice, QTimer, Slot
+from PySide6.QtCore import QFile, QUrl, QObject, QIODevice, QTimer, Slot
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEngineScript
 from PySide6.QtWidgets import QMessageBox
@@ -67,7 +67,7 @@ CAPTURE_SCRIPT = r"""
     document.addEventListener('submit', function(e) {
       if (e.isTrusted && e.target && e.target.tagName === 'FORM') inspect(e.target);
     }, true);
-    // Some SPA forms invoke fetch() on a trusted submit-button click instead
+    // Some SPA forms send network requests on a trusted submit-button click instead
     // of firing a form submit event. Do not observe arbitrary keystrokes.
     document.addEventListener('click', function(e) {
       if (!e.isTrusted) return;
@@ -98,8 +98,8 @@ def validated_submission(raw, page_url, active_page_url):
                    and url.port in (None, 443) and url.username is None
                    and url.password is None for url in (visible, document))):
             return None
-        site = page_site22(page_url)
-        if not site or site != page_site22(active_page_url) or origin.hostname != site:
+        site = page_site22(QUrl(page_url))
+        if not site or site != page_site22(QUrl(active_page_url)) or origin.hostname != site:
             return None
         user, pw = data["username"], data["password"]
         if (not isinstance(user, str) or not isinstance(pw, str)
