@@ -137,6 +137,8 @@ def run_fixed(command, root, logfile, timeout, env, timeout_reason, failed_reaso
 # from a locally registered TASK_LOGON_INTERACTIVE_TOKEN task.
 HERO_BRIDGE_FORMAT = "director_ue_hero_interactive_v1"
 HERO_BRIDGE_TIMEOUT = 780
+# Tolerate bounded GUI-startup stalls without losing owner-session identity.
+HERO_BRIDGE_READY_GRACE_SECONDS = 30
 HERO_BRIDGE_ID = re.compile(r"[a-f0-9]{32}\Z")
 HERO_BRIDGE_ROOT = Path(r"C:\DirectorVirtualStudio")
 HERO_BRIDGE_SUBDIR = ("JobStatus", "InteractiveHero")
@@ -273,6 +275,7 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
     claim_started = time.monotonic()
     deadline = time.monotonic() + min(timeout, HERO_BRIDGE_TIMEOUT) + 20
     next_heartbeat = 0
+    last_verified_runner = time.monotonic()
     try:
         while time.monotonic() < deadline:
             # An old interactive runner does not know the new Cine allowlist.
@@ -314,7 +317,18 @@ def run_interactive_hero_rig(root, work, timeout=HERO_BRIDGE_TIMEOUT,
                     _bridge_signal_cancel(folder, ident)
                     raise JobError("hero_interactive_heartbeat_write_failed") from None
                 next_heartbeat = time.monotonic() + 2
-            if interactive_hero_status(root).get("available") is not True:
+            # Native UE startup can briefly stall user-session I/O. A stale
+            # ready.json is not proof that the RDP runner logged off. Give the
+            # same already-verified user/session up to 30s to recover; reject
+            # an explicit identity/session change immediately.
+            live = interactive_hero_status(root)
+            if live.get("available") is True:
+                if (live.get("user") != state["user"] or
+                        live.get("session_id") != state["session_id"]):
+                    _bridge_signal_cancel(folder, ident)
+                    raise JobError("hero_interactive_session_changed")
+                last_verified_runner = time.monotonic()
+            elif time.monotonic() - last_verified_runner > HERO_BRIDGE_READY_GRACE_SECONDS:
                 _bridge_signal_cancel(folder, ident)
                 raise JobError("hero_interactive_runner_disconnected")
             time.sleep(0.5)
