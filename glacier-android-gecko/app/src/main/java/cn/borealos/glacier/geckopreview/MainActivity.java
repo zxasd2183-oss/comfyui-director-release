@@ -146,6 +146,7 @@ public final class MainActivity extends Activity {
         byte[] thumbnail;
         boolean pendingRestore;
         String lastAccountPromptSite = "";
+        BrowserAccountsStore.Card pendingAccountFill;
         String expectedRestoreUrl;
         boolean canBack = false;
         boolean canForward = false;
@@ -1160,7 +1161,7 @@ public final class MainActivity extends Activity {
             for(int i=0;i<matchedCards.size();i++)names[i]=matchedCards.get(i).name;
             new AlertDialog.Builder(this)
                     .setTitle("Glacier · "+site+" 的已保存账号")
-                    .setItems(names,(dialog,which)->showAccountCard(matchedCards.get(which)))
+                    .setItems(names,(dialog,which)->openSavedAccountSessionAndFill(matchedCards.get(which)))
                     .setNegativeButton("暂不使用",null).show();
         },350);
     }
@@ -1488,13 +1489,26 @@ public final class MainActivity extends Activity {
     }
 
     private void openSavedAccountSession(BrowserAccountsStore.Card card) {
+        openSavedAccountSession(card,false);
+    }
+
+    private void openSavedAccountSessionAndFill(BrowserAccountsStore.Card card) {
+        openSavedAccountSession(card,true);
+    }
+
+    private void openSavedAccountSession(BrowserAccountsStore.Card card,boolean fill) {
         if (runtime == null || !accountCards.contains(card)
-                || !BrowserAccountsStore.valid(card)) return;
+                || !BrowserAccountsStore.valid(card)
+                || !selectedProfile.equals(card.profile)) return;
         String context = accountCookieContext(card);
         if (!BrowserTabStore.validContextId(card.profile, context)) return;
         Tab tab = createTab(card.profile, context);
         tab.url = "https://" + card.site + "/";
         tab.title = card.name;
+        // The explicit account click authorizes ONE fill attempt after the
+        // correct first-party HTTPS page finishes loading. Never auto-submit.
+        tab.pendingAccountFill=fill?card:null;
+        tab.lastAccountPromptSite=card.site;
         switchTo(tab);
         tab.session.loadUri(tab.url);
         scheduleTabsSave();
@@ -1529,7 +1543,7 @@ public final class MainActivity extends Activity {
         actions.add("复制账号");
         if(!card.password.isEmpty())actions.add("复制密码");
         if(!card.codeApi.isEmpty())actions.add("点击获取验证码");
-        actions.add("在独立会话中打开");
+        actions.add("使用此账号并填充");
         actions.add("填充当前页");
         actions.add("编辑");
         actions.add("删除");
@@ -1540,7 +1554,7 @@ public final class MainActivity extends Activity {
                     if("复制账号".equals(item))copyAccountValue(card.username);
                     else if("复制密码".equals(item))copyAccountValue(card.password);
                     else if("点击获取验证码".equals(item))fetchAccountCode(card.codeApi);
-                    else if("在独立会话中打开".equals(item))openSavedAccountSession(card);
+                    else if("使用此账号并填充".equals(item))openSavedAccountSessionAndFill(card);
                     else if("填充当前页".equals(item))fillCurrentSavedAccount(card);
                     else if("编辑".equals(item))editAccountCard(card,card.profile,card.site);
                     else if("删除".equals(item)) {
@@ -2435,9 +2449,29 @@ public final class MainActivity extends Activity {
                                 "PAGE_STOP site=" + testSite + " success=" + success);
                     }
                     testSite = null;
+                    if (!success) {
+                        Tab failed=findBySession(source);
+                        if(failed!=null)failed.pendingAccountFill=null;
+                    }
                     if (success) {
                         Tab target = findBySession(source);
                         if (target != null) {
+                            BrowserAccountsStore.Card requestedFill=target.pendingAccountFill;
+                            target.pendingAccountFill=null;
+                            if(requestedFill!=null && target==active
+                                    && selectedProfile.equals(requestedFill.profile)
+                                    && target.contextId.equals(accountCookieContext(requestedFill))
+                                    && GlacierAccountFill34.exactHttpsSite(target.url,requestedFill.site)) {
+                                tabSaveHandler.postDelayed(()->{
+                                    if(!isFinishing() && target==active
+                                            && accountCards.contains(requestedFill)
+                                            && selectedProfile.equals(requestedFill.profile)
+                                            && target.contextId.equals(accountCookieContext(requestedFill))
+                                            && GlacierAccountFill34.exactHttpsSite(target.url,requestedFill.site)) {
+                                        fillCurrentSavedAccount(requestedFill);
+                                    }
+                                },650);
+                            }
                             rememberVisit(target);
                             maybePromptSiteAccount(target);
                             if(cloudState.autoEnabled && !cloudAutoBusy)
