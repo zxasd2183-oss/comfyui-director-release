@@ -991,11 +991,12 @@ def status():
         "hero_character_readiness": hero_character_readiness(),
         "hero_source_integrity": hero_source_integrity(),
         "hero_cine_config_audit": hero_cine_config_audit(),
+        "hero_cine_dependency_audit": __import__("ue_process").hero_cine_missing_dependency_audit(workspace_root()),
         "interactive_hero_runner": __import__("ue_process").interactive_hero_status(workspace_root()),
         "codex_bridge": __import__("ue_process").codex_bridge_status(workspace_root()),
         "codex_last_report": __import__("ue_process").codex_latest_report(workspace_root()),
         "control_mode": "allowlisted_only",
-        "worker_version": "2.6.3",
+        "worker_version": "2.6.4",
     }
 
 
