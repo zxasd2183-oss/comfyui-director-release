@@ -24,6 +24,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
+import android.text.TextWatcher;
+import android.text.Editable;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -40,6 +42,7 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import org.mozilla.geckoview.Autocomplete;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoRuntime;
@@ -143,6 +146,7 @@ public final class MainActivity extends Activity {
         byte[] thumbnail;
         boolean pendingRestore;
         String lastAccountPromptSite = "";
+        BrowserAccountsStore.Card pendingAccountFill;
         String expectedRestoreUrl;
         boolean canBack = false;
         boolean canForward = false;
@@ -1157,39 +1161,256 @@ public final class MainActivity extends Activity {
             for(int i=0;i<matchedCards.size();i++)names[i]=matchedCards.get(i).name;
             new AlertDialog.Builder(this)
                     .setTitle("Glacier · "+site+" 的已保存账号")
-                    .setItems(names,(dialog,which)->showAccountCard(matchedCards.get(which)))
+                    .setItems(names,(dialog,which)->openSavedAccountSessionAndFill(matchedCards.get(which)))
                     .setNegativeButton("暂不使用",null).show();
         },350);
     }
 
+    /**
+     * Native browser password manager: GeckoView detects a user-submitted
+     * login and asks Glacier to offer a Save/Update prompt. Never save before
+     * explicit approval; never expose the submitted password in UI/logs.
+     *
+     * The website account card is already encrypted by Android Keystore and
+     * uses the existing opt-in E2E sync baselines. We do not install Gecko's
+     * global fetch delegate because it lacks a per-session profile argument;
+     * returning credentials from both private/work spaces would be unsafe.
+     */
+    private GeckoResult<GeckoSession.PromptDelegate.PromptResponse>
+    promptToSaveWebsitePassword(GeckoSession source,
+            GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption> request) {
+        if(request==null)return GeckoResult.fromValue(null);
+        if(accountsReadonly || isFinishing()
+                ||request.options==null ||request.options.length!=1
+                ||active==null ||active.session!=source ||web==null
+                ||web.getSession()!=source ||!tabs.contains(active)
+                ||!selectedProfile.equals(active.profile))
+            return GeckoResult.fromValue(request.dismiss());
+        Tab originTab=active;
+        Autocomplete.LoginSaveOption offered=request.options[0];
+        BrowserAccountsStore.Card proposed=GlacierNativePasswordSave.proposed(
+                originTab.profile,originTab.url,offered.value);
+        if(proposed==null || GlacierNativePasswordSave.existingPasswordUnchanged(
+                accountCards,proposed))
+            return GeckoResult.fromValue(request.dismiss());
+        final List<BrowserAccountsStore.Card> candidate;
+        try {
+            candidate=GlacierNativePasswordSave.previewSave(accountCards,proposed);
+        } catch(IllegalArgumentException error) {
+            return GeckoResult.fromValue(request.dismiss());
+        }
+        GeckoResult<GeckoSession.PromptDelegate.PromptResponse> pending=new GeckoResult<>();
+        String space=WORK.equals(originTab.profile)?"工作空间":"私人空间";
+        boolean updating=false;
+        for(BrowserAccountsStore.Card c:accountCards) {
+            if(c.profile.equals(proposed.profile) && c.site.equals(proposed.site)
+                    && c.username.equals(proposed.username)) {
+                updating=true;break;
+            }
+        }
+        String title=updating?"更新已保存密码？":"保存此网站的密码？";
+        // Never display password, and avoid revealing full login details in
+        // toasts, logs, clipboard or a website-controlled popup.
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(proposed.site+"\n"+proposed.username+"\n保存到 "+space
+                        +"，之后可在已授权设备上使用加密账号同步。"
+                        +"\n仅保存经你确认的登录信息；不会自动提交网页表单。")
+                .setNegativeButton("不保存",(dialog,which)->
+                        pending.complete(request.dismiss()))
+                .setOnCancelListener(dialog->pending.complete(request.dismiss()))
+                .setPositiveButton(updating?"更新密码":"保存密码",(dialog,which)->{
+                    // A tab/account switch while the confirmation is open must
+                    // not cause a password to be written to another workspace.
+                    if(accountsReadonly ||isFinishing()||active!=originTab
+                            ||active.session!=source
+                            ||!selectedProfile.equals(proposed.profile)
+                            ||!proposed.site.equals(BrowserAccountsStore.siteFromUrl(originTab.url))) {
+                        pending.complete(request.dismiss());
+                        return;
+                    }
+                    if(!persistAccountVault(candidate)) {
+                        pending.complete(request.dismiss());
+                        new AlertDialog.Builder(this)
+                                .setTitle("密码未保存")
+                                .setMessage("加密密码库无法写入，原有资料保持不变。")
+                                .setPositiveButton("知道了",null).show();
+                        return;
+                    }
+                    pending.complete(request.confirm(offered));
+                    android.widget.Toast.makeText(this,"密码已保存到加密密码库",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                }).show();
+        return pending;
+    }
+
     private void showAccountVault() {
-        if (accountsReadonly) {
-            new AlertDialog.Builder(this).setTitle("Glacier · 账号资料保护")
-                    .setMessage("本机账号加密文件无法解密，已进入只读保护，原文件不会被覆盖。")
-                    .setPositiveButton("知道了", null).show();
+        if(accountsReadonly) {
+            new AlertDialog.Builder(this).setTitle("Glacier · 密码库只读保护")
+                    .setMessage("已有密码文件无法解密，已保护原始数据。不会以空库覆盖。")
+                    .setPositiveButton("知道了",null).show();
             return;
         }
-        final String profile = active == null ? selectedProfile : active.profile;
-        final String site = currentAccountSite();
-        List<BrowserAccountsStore.Card> shown = new ArrayList<>();
-        for (BrowserAccountsStore.Card card : accountCards) {
-            if (profile.equals(card.profile)) shown.add(card);
+        final String profile=active==null?selectedProfile:active.profile;
+        final String site=currentAccountSite();
+        final String space=WORK.equals(profile)?"工作空间":"私人空间";
+        LinearLayout container=new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(18),dp(20),dp(18),dp(20));
+        container.setBackgroundColor(Color.rgb(247,250,254));
+
+        TextView brand=new TextView(this);
+        brand.setText("GLACIER / PASSWORDS");
+        brand.setTextSize(11);
+        brand.setLetterSpacing(0.12f);
+        brand.setTextColor(GLACIER_BLUE);
+        container.addView(brand);
+        TextView heading=new TextView(this);
+        heading.setText("密码管理器");
+        heading.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        heading.setTextSize(25);
+        heading.setTextColor(INK);
+        container.addView(heading);
+        TextView sub=new TextView(this);
+        sub.setText("网页登录时提示保存，访问已存网站时可选择填充");
+        sub.setTextSize(13);
+        sub.setTextColor(MUTED);
+        container.addView(sub);
+
+        LinearLayout details=new LinearLayout(this);
+        details.setOrientation(LinearLayout.VERTICAL);
+        details.setPadding(dp(14),dp(13),dp(14),dp(13));
+        details.setBackground(surfaceBorder(ICE,13,HAIRLINE));
+        TextView location=new TextView(this);
+        location.setText(space+" · 本机 AES 加密密码库");
+        location.setTextSize(15);
+        location.setTextColor(INK);
+        location.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        details.addView(location);
+        TextView cloud=new TextView(this);
+        cloud.setText(cloudState.approved
+                ?cloudState.autoEnabled?"设备已授权 · 加密自动同步已开启":"设备已授权 · 同步需先开启"
+                :"仅本机 · 登录并批准设备后可同步");
+        cloud.setTextSize(12);
+        cloud.setTextColor(MUTED);
+        details.addView(cloud);
+        LinearLayout.LayoutParams statusParams=new LinearLayout.LayoutParams(-1,-2);
+        statusParams.topMargin=dp(16);
+        statusParams.bottomMargin=dp(16);
+        container.addView(details,statusParams);
+
+        EditText search=new EditText(this);
+        search.setSingleLine(true);
+        search.setHint("搜索已保存网站或用户名");
+        search.setTextSize(14);
+        search.setPadding(dp(13),dp(12),dp(13),dp(12));
+        search.setBackground(surfaceBorder(Color.WHITE,11,HAIRLINE));
+        container.addView(search,new LinearLayout.LayoutParams(-1,dp(50)));
+
+        TextView count=new TextView(this);
+        count.setTextSize(12);
+        count.setTextColor(MUTED);
+        LinearLayout.LayoutParams countParams=new LinearLayout.LayoutParams(-1,-2);
+        countParams.topMargin=dp(16);
+        countParams.bottomMargin=dp(7);
+        container.addView(count,countParams);
+
+        LinearLayout rows=new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        container.addView(rows);
+        Runnable refresh=()->{
+            rows.removeAllViews();
+            String query=search.getText().toString().trim().toLowerCase(Locale.ROOT);
+            int shown=0;
+            for(BrowserAccountsStore.Card card:accountCards) {
+                if(!profile.equals(card.profile))continue;
+                String terms=(card.site+" "+card.name+" "+card.username)
+                        .toLowerCase(Locale.ROOT);
+                if(!query.isEmpty()&&!terms.contains(query))continue;
+                shown++;
+                LinearLayout tile=new LinearLayout(this);
+                tile.setOrientation(LinearLayout.HORIZONTAL);
+                tile.setGravity(Gravity.CENTER_VERTICAL);
+                tile.setPadding(dp(13),dp(12),dp(13),dp(12));
+                tile.setBackground(surfaceBorder(Color.WHITE,12,HAIRLINE));
+                TextView initial=new TextView(this);
+                initial.setText(card.site.substring(0,1).toUpperCase(Locale.ROOT));
+                initial.setGravity(Gravity.CENTER);
+                initial.setTextColor(Color.WHITE);
+                initial.setTextSize(17);
+                initial.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+                initial.setBackground(surface(GLACIER_BLUE,12));
+                tile.addView(initial,new LinearLayout.LayoutParams(dp(42),dp(42)));
+                LinearLayout names=new LinearLayout(this);
+                names.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams namesParams=new LinearLayout.LayoutParams(0,-2,1);
+                namesParams.leftMargin=dp(12);
+                tile.addView(names,namesParams);
+                TextView siteName=new TextView(this);
+                siteName.setText(card.site);
+                siteName.setTextSize(14);
+                siteName.setTextColor(INK);
+                siteName.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+                names.addView(siteName);
+                TextView user=new TextView(this);
+                user.setText(card.name+"  ·  "+card.username);
+                user.setTextSize(12);
+                user.setTextColor(MUTED);
+                user.setMaxLines(1);
+                user.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                names.addView(user);
+                TextView arrow=new TextView(this);
+                arrow.setText("›");
+                arrow.setTextSize(25);
+                arrow.setTextColor(GLACIER_BLUE);
+                tile.addView(arrow);
+                LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(-1,-2);
+                rowParams.bottomMargin=dp(8);
+                rows.addView(tile,rowParams);
+                tile.setClickable(true);
+                tile.setFocusable(true);
+                tile.setOnClickListener(v->showAccountCard(card));
+            }
+            count.setText("已保存登录 · "+shown);
+            if(shown==0) {
+                TextView empty=new TextView(this);
+                empty.setText(query.isEmpty()
+                        ?"这里还没有密码。使用此浏览器登录网站，系统会询问是否保存。"
+                        :"未找到匹配的登录。");
+                empty.setPadding(dp(10),dp(25),dp(10),dp(25));
+                empty.setTextSize(13);
+                empty.setGravity(Gravity.CENTER);
+                empty.setTextColor(MUTED);
+                rows.addView(empty);
+            }
+        };
+        search.addTextChangedListener(new TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){
+                refresh.run();
+            }
+            @Override public void afterTextChanged(Editable editable){}
+        });
+        refresh.run();
+        TextView footer=new TextView(this);
+        footer.setText("密码不会直接显示在列表中。请勿在不可信网站填写登录信息。"
+                +"\n网站 Cookie 和登录会话不等同于保存的密码。");
+        footer.setTextSize(11);
+        footer.setTextColor(MUTED);
+        footer.setPadding(0,dp(14),0,0);
+        container.addView(footer);
+        ScrollView scroll=new ScrollView(this);
+        scroll.addView(container);
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this)
+                .setView(scroll)
+                .setNegativeButton("完成",null)
+                .setNeutralButton("账号与同步",(d,which)->showCloudMenu());
+        if(!site.isEmpty()) {
+            // Manual entry remains an optional import/recovery action, NOT the
+            // primary method of creating website credentials.
+            dialog.setPositiveButton("手动添加",(d,which)->editAccountCard(null,profile,site));
         }
-        String[] labels = new String[shown.size()];
-        for (int i=0;i<shown.size();i++) {
-            BrowserAccountsStore.Card c=shown.get(i);
-            labels[i]=c.name+" · "+c.site;
-        }
-        String space = WORK.equals(profile) ? "工作空间" : "私人空间";
-        AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle("Glacier · "+space+"账号保险箱")
-                .setItems(labels,(dialog,index)->showAccountCard(shown.get(index)))
-                .setNegativeButton("关闭",null);
-        if (!site.isEmpty()) {
-            builder.setPositiveButton("添加当前网站账号",
-                    (dialog,index)->editAccountCard(null,profile,site));
-        }
-        builder.show();
+        dialog.create().show();
     }
 
     private EditText cardInput(LinearLayout layout,String label,String value,boolean secret) {
@@ -1268,13 +1489,26 @@ public final class MainActivity extends Activity {
     }
 
     private void openSavedAccountSession(BrowserAccountsStore.Card card) {
+        openSavedAccountSession(card,false);
+    }
+
+    private void openSavedAccountSessionAndFill(BrowserAccountsStore.Card card) {
+        openSavedAccountSession(card,true);
+    }
+
+    private void openSavedAccountSession(BrowserAccountsStore.Card card,boolean fill) {
         if (runtime == null || !accountCards.contains(card)
-                || !BrowserAccountsStore.valid(card)) return;
+                || !BrowserAccountsStore.valid(card)
+                || !selectedProfile.equals(card.profile)) return;
         String context = accountCookieContext(card);
         if (!BrowserTabStore.validContextId(card.profile, context)) return;
         Tab tab = createTab(card.profile, context);
         tab.url = "https://" + card.site + "/";
         tab.title = card.name;
+        // The explicit account click authorizes ONE fill attempt after the
+        // correct first-party HTTPS page finishes loading. Never auto-submit.
+        tab.pendingAccountFill=fill?card:null;
+        tab.lastAccountPromptSite=card.site;
         switchTo(tab);
         tab.session.loadUri(tab.url);
         scheduleTabsSave();
@@ -1309,7 +1543,7 @@ public final class MainActivity extends Activity {
         actions.add("复制账号");
         if(!card.password.isEmpty())actions.add("复制密码");
         if(!card.codeApi.isEmpty())actions.add("点击获取验证码");
-        actions.add("在独立会话中打开");
+        actions.add("使用此账号并填充");
         actions.add("填充当前页");
         actions.add("编辑");
         actions.add("删除");
@@ -1320,7 +1554,7 @@ public final class MainActivity extends Activity {
                     if("复制账号".equals(item))copyAccountValue(card.username);
                     else if("复制密码".equals(item))copyAccountValue(card.password);
                     else if("点击获取验证码".equals(item))fetchAccountCode(card.codeApi);
-                    else if("在独立会话中打开".equals(item))openSavedAccountSession(card);
+                    else if("使用此账号并填充".equals(item))openSavedAccountSessionAndFill(card);
                     else if("填充当前页".equals(item))fillCurrentSavedAccount(card);
                     else if("编辑".equals(item))editAccountCard(card,card.profile,card.site);
                     else if("删除".equals(item)) {
@@ -1453,6 +1687,34 @@ public final class MainActivity extends Activity {
         return input;
     }
 
+    /** Profile dashboard with actual browser password/sync/device actions. */
+    private void cloudActionRow38(LinearLayout parent, String headline, String note,
+                                  Runnable handler) {
+        LinearLayout row=new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(16),dp(13),dp(16),dp(13));
+        row.setBackground(surfaceBorder(Color.WHITE,12,HAIRLINE));
+        TextView name=new TextView(this);
+        name.setText(headline);
+        name.setTextSize(15);
+        name.setTextColor(INK);
+        name.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        row.addView(name);
+        TextView hint=new TextView(this);
+        hint.setText(note);
+        hint.setTextSize(12);
+        hint.setTextColor(MUTED);
+        LinearLayout.LayoutParams hintParams=new LinearLayout.LayoutParams(-1,-2);
+        hintParams.topMargin=dp(4);
+        row.addView(hint,hintParams);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
+        params.bottomMargin=dp(9);
+        parent.addView(row,params);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(v->handler.run());
+    }
+
     private void showCloudMenu() {
         if(cloudSessionReadonly) {
             new AlertDialog.Builder(this).setTitle("加密登录会话受保护")
@@ -1460,28 +1722,113 @@ public final class MainActivity extends Activity {
                     .setPositiveButton("知道了",null).show();
             return;
         }
-        boolean signedIn = GlacierProfileAvatarState.mode(
-                cloudState, cloudSessionReadonly) != GlacierProfileAvatarState.GUEST;
-        String[] actions = signedIn ? new String[]{
-                "确认设备已获批准","管理其他设备","加密上传当前账号空间",
-                "解密下载当前账号空间","开启安全自动同步（本机加密保存口令）",
-                "关闭自动同步","退出 Glacier 账号"
-        } : new String[]{"注册 Glacier 账号","登录 / 申请设备授权"};
-        String heading = signedIn ? cloudState.username
-                + (cloudState.approved ? " · 已登录" : " · 等待设备授权") : "未登录";
-        new AlertDialog.Builder(this).setTitle("Glacier 统一账号 · " + heading)
-                .setItems(actions,(dialog,which)->{
-                    String action = actions[which];
-                    if("注册 Glacier 账号".equals(action))cloudPromptLogin(true);
-                    else if("登录 / 申请设备授权".equals(action))cloudPromptLogin(false);
-                    else if("确认设备已获批准".equals(action))cloudActivate();
-                    else if("管理其他设备".equals(action))cloudDevices();
-                    else if("加密上传当前账号空间".equals(action))cloudPromptVault(true);
-                    else if("解密下载当前账号空间".equals(action))cloudPromptVault(false);
-                    else if("开启安全自动同步（本机加密保存口令）".equals(action))cloudPromptAuto();
-                    else if("关闭自动同步".equals(action))cloudDisableAuto();
-                    else if("退出 Glacier 账号".equals(action))cloudLogout();
-                }).setNegativeButton("关闭",null).show();
+        final boolean signedIn=!cloudState.token.isEmpty();
+        final boolean approved=signedIn&&cloudState.approved;
+        final String heading=signedIn?cloudState.username:"Glacier 浏览器";
+        final String status=!signedIn?"未登录 Glacier 账号"
+                :approved?"已登录 · 此设备已授权":"已登录 · 等待新设备授权";
+        final LinearLayout panel=new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20),dp(20),dp(20),dp(22));
+        panel.setBackgroundColor(Color.rgb(246,250,254));
+        TextView eyebrow=new TextView(this);
+        eyebrow.setText("GLACIER  /  IDENTITY");
+        eyebrow.setTextSize(11);
+        eyebrow.setTextColor(GLACIER_BLUE);
+        eyebrow.setLetterSpacing(0.14f);
+        panel.addView(eyebrow);
+        TextView title=new TextView(this);
+        title.setText(heading);
+        title.setTextSize(25);
+        title.setTextColor(INK);
+        title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,-2);
+        titleParams.topMargin=dp(5);
+        panel.addView(title,titleParams);
+        TextView sub=new TextView(this);
+        sub.setText(status);
+        sub.setTextSize(13);
+        sub.setTextColor(MUTED);
+        panel.addView(sub);
+        LinearLayout summary=new LinearLayout(this);
+        summary.setOrientation(LinearLayout.VERTICAL);
+        summary.setPadding(dp(16),dp(15),dp(16),dp(16));
+        summary.setBackground(surfaceBorder(ICE,14,HAIRLINE));
+        int savedCount=0;
+        final String profile=active==null?selectedProfile:active.profile;
+        for(BrowserAccountsStore.Card c:accountCards)if(profile.equals(c.profile))savedCount++;
+        TextView count=new TextView(this);
+        count.setText(savedCount+" 个已保存的网站登录");
+        count.setTextColor(INK);
+        count.setTextSize(18);
+        count.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        summary.addView(count);
+        TextView desc=new TextView(this);
+        desc.setText((WORK.equals(profile)?"工作":"私人")+"空间 · 本机 Keystore 加密"
+                +(cloudState.autoEnabled&&approved?" · 已开启账号同步":""));
+        desc.setTextColor(MUTED);
+        desc.setTextSize(12);
+        summary.addView(desc);
+        LinearLayout.LayoutParams sumParams=new LinearLayout.LayoutParams(-1,-2);
+        sumParams.topMargin=dp(17);
+        sumParams.bottomMargin=dp(15);
+        panel.addView(summary,sumParams);
+
+        ScrollView scroll=new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(panel);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setView(scroll).setNegativeButton("关闭",null).create();
+
+        cloudActionRow38(panel,"密码管理器","网站登录时提示保存 · 查看、选择填充和管理已保存密码",()->{
+            dialog.dismiss();
+            showAccountVault();
+        });
+        if(!signedIn) {
+            cloudActionRow38(panel,"登录 Glacier","同步已保存的密码库，保护私人／工作空间",()->{
+                dialog.dismiss();cloudPromptLogin(false);
+            });
+            cloudActionRow38(panel,"创建账号","统一账号与设备授权 · 端到端加密同步",()->{
+                dialog.dismiss();cloudPromptLogin(true);
+            });
+        } else if(!approved) {
+            cloudActionRow38(panel,"确认此设备的授权","在已授权设备批准后才允许加密同步",()->{
+                dialog.dismiss();cloudActivate();
+            });
+            cloudActionRow38(panel,"查看设备与权限","审核或撤销登录设备",()->{
+                dialog.dismiss();cloudDevices();
+            });
+        } else {
+            cloudActionRow38(panel,"设备安全与访问权限","已授权设备、私人／工作空间权限、撤销设备",()->{
+                dialog.dismiss();cloudDevices();
+            });
+            cloudActionRow38(panel,cloudState.autoEnabled?"自动同步已开启":"开启跨设备密码同步",
+                    cloudState.autoEnabled?"加密保存同步口令 · 原有冲突检查继续生效"
+                            :"先完成设备授权与首次同步，再允许自动同步",()->{
+                dialog.dismiss();
+                if(cloudState.autoEnabled)cloudDisableAuto();else cloudPromptAuto();
+            });
+            cloudActionRow38(panel,"同步现有密码数据","首次需明确选择上传或下载 · 不会静默覆盖其他设备",()->{
+                dialog.dismiss();
+                String[] choices={"加密上传当前空间","解密下载当前空间"};
+                new AlertDialog.Builder(this).setTitle("Glacier · 同步登录密码")
+                        .setItems(choices,(d,index)->cloudPromptVault(index==0))
+                        .setNegativeButton("取消",null).show();
+            });
+        }
+        if(signedIn) {
+            cloudActionRow38(panel,"退出 Glacier 账号","仅退出此设备的同步会话，不删除本机加密密码库",()->{
+                dialog.dismiss();cloudLogout();
+            });
+        }
+        TextView disclaimer=new TextView(this);
+        disclaimer.setText("网页密码只在你批准后保存。网站 Cookie 和登录会话不会作为密码自动同步。");
+        disclaimer.setTextSize(12);
+        disclaimer.setTextColor(MUTED);
+        LinearLayout.LayoutParams end=new LinearLayout.LayoutParams(-1,-2);
+        end.topMargin=dp(8);
+        panel.addView(disclaimer,end);
+        dialog.show();
     }
 
     private void cloudPromptLogin(boolean register) {
@@ -2064,6 +2411,13 @@ public final class MainActivity extends Activity {
                     GeckoSession source, GeckoSession.PromptDelegate.FilePrompt prompt) {
                 return transfers.onFilePrompt(source, prompt);
             }
+
+            @Override
+            public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onLoginSave(
+                    GeckoSession source,
+                    GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption> request) {
+                return promptToSaveWebsitePassword(source, request);
+            }
         });
         // Debug-only page-load evidence for CI. Never record arbitrary URLs,
         // query strings, proxy links, account data, or credentials.
@@ -2095,9 +2449,29 @@ public final class MainActivity extends Activity {
                                 "PAGE_STOP site=" + testSite + " success=" + success);
                     }
                     testSite = null;
+                    if (!success) {
+                        Tab failed=findBySession(source);
+                        if(failed!=null)failed.pendingAccountFill=null;
+                    }
                     if (success) {
                         Tab target = findBySession(source);
                         if (target != null) {
+                            BrowserAccountsStore.Card requestedFill=target.pendingAccountFill;
+                            target.pendingAccountFill=null;
+                            if(requestedFill!=null && target==active
+                                    && selectedProfile.equals(requestedFill.profile)
+                                    && target.contextId.equals(accountCookieContext(requestedFill))
+                                    && GlacierAccountFill34.exactHttpsSite(target.url,requestedFill.site)) {
+                                tabSaveHandler.postDelayed(()->{
+                                    if(!isFinishing() && target==active
+                                            && accountCards.contains(requestedFill)
+                                            && selectedProfile.equals(requestedFill.profile)
+                                            && target.contextId.equals(accountCookieContext(requestedFill))
+                                            && GlacierAccountFill34.exactHttpsSite(target.url,requestedFill.site)) {
+                                        fillCurrentSavedAccount(requestedFill);
+                                    }
+                                },650);
+                            }
                             rememberVisit(target);
                             maybePromptSiteAccount(target);
                             if(cloudState.autoEnabled && !cloudAutoBusy)

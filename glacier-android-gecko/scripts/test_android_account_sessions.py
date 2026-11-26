@@ -29,7 +29,11 @@ class AndroidAccountSessionGuards(unittest.TestCase):
         source = (JAVA / "MainActivity.java").read_text(encoding="utf-8")
         self.assertIn("accountCards.contains(card)", source)
         self.assertIn("BrowserAccountsStore.valid(card)", source)
-        self.assertIn("在独立会话中打开", source)
+        self.assertIn("使用此账号并填充", source)
+        self.assertIn("openSavedAccountSessionAndFill", source)
+        self.assertIn("tab.pendingAccountFill=fill?card:null;", source)
+        self.assertIn("target.contextId.equals(accountCookieContext(requestedFill))", source)
+        self.assertIn("GlacierAccountFill34.exactHttpsSite(target.url,requestedFill.site)", source)
         self.assertIn("selectedProfile = next.profile", source)
         self.assertIn("GlacierCloudSync.encrypt", source)
 

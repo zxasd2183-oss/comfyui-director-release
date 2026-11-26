@@ -472,7 +472,10 @@ class GlacierAccounts22:
         return True
 
     def manage_accounts22(self):
-        """Local vault directory: expose site names, never passwords in the list."""
+        """Show the browser password manager; old vault list is safe fallback."""
+        manager = getattr(self, "show_password_manager38", None)
+        if callable(manager):
+            return manager()
         dialog = QDialog(self)
         dialog.setWindowTitle("Glacier · 网站账号管理")
         dialog.resize(540, 410)
@@ -771,10 +774,11 @@ class GlacierAccounts22:
                 code_button.clicked.connect(
                     lambda checked=False, ep=record["code_api"]: self.request_account_code22(ep, dialog))
                 row.addWidget(code_button)
-            own_session = QPushButton("在独立会话中打开", dialog)
+            own_session = QPushButton("使用此账号并填充", dialog)
             own_session.setToolTip("此账号使用自己的 Cookie 和网站存储；不会覆盖同站其他账号")
             def open_current_account(checked=False, r=dict(record)):
-                if self.open_account_session22(r):
+                use = getattr(self, "use_saved_password38", self.open_account_session22)
+                if use(r):
                     dialog.accept()
             own_session.clicked.connect(open_current_account)
             row.addWidget(own_session)
